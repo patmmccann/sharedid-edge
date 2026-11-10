@@ -524,9 +524,9 @@ The payload is unchanged apart from `"reflect": { "ms": 0, "status": "empty" }` 
 {
   "reflect": {
     "cookies": [
-      { "name": "_ga", "maxAgeDays": 400, "domain": "example.com", "restore": true },
+      { "name": "_ga", "maxAgeDays": 400, "domain": "example.com", "restore": true, "prefer": "older" },
       { "name": "_gcl_aw", "maxAgeDays": 90, "domain": "example.com", "restore": true },
-      { "name": "_gcl_au", "maxAgeDays": 90, "domain": "example.com", "restore": true }
+      { "name": "_gcl_au", "maxAgeDays": 90, "domain": "example.com", "restore": true, "prefer": "older" }
     ]
   }
 }
@@ -536,7 +536,8 @@ The payload is unchanged apart from `"reflect": { "ms": 0, "status": "empty" }` 
 Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0; Max-Age=34560000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
 ```
 
-- **Call `/_sid/v1` before gtag.js loads,** or a deleted `_ga` is replaced by a new one before the worker can restore it. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/modules/reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/modules/reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
+- **`prefer`** decides which value wins when the page already wrote a new one: `"browser"` (default), `"backup"` (the saved value, always) or `"older"` (the one created first, read from `_ga`'s and `_gcl_au`'s timestamps). With `"older"`, a `_ga` that gtag.js re-minted before `/_sid/v1` ran is replaced by the saved one from the next page view. See [Which value wins](packages/modules/reflect/README.md#which-value-wins-prefer).
+- **Call `/_sid/v1` before gtag.js loads** to keep the client ID on the current page view too; otherwise a deleted `_ga` is replaced by a new one before the worker can restore it. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/modules/reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/modules/reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
 - **Consent:** when storage isn't allowed the keeper is deleted (the original cookies are left alone), and `/_sid/optout` always deletes it.
 
 ## Self-host with Node.js
