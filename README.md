@@ -44,7 +44,7 @@ Full reference: [`packages/adapters/cloudflare/README.md`](packages/adapters/clo
 
 - Your site's DNS is on Cloudflare, and the hostname you serve pages from (for example `www.example.com`) is **proxied** (orange cloud). Workers routes only run on proxied hostnames.
 - A Cloudflare account with permission to deploy Workers and edit routes on the zone. Each sync is one Worker request; the free plan has a daily request limit, so check expected volume against your plan.
-- Node.js 22 or later and npm.
+- Node.js 24 or later and npm.
 - The site is served over https (the cookies are `Secure`).
 
 ### 1. Get the code and build it
@@ -146,7 +146,7 @@ If your site is served through Amazon CloudFront, run SharedID Edge as a Lambda 
 
 - An existing CloudFront distribution serving your site over https, and its ID (like `E2ABCDEFGHIJKL`).
 - The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html), with credentials that can create Lambda, IAM, CloudWatch Logs and CloudFront resources (`aws configure`).
-- Node.js 22 or later and npm.
+- Node.js 24 or later and npm.
 
 ### 1. Build
 
@@ -167,7 +167,7 @@ sam deploy --guided
 
 Answer the prompts: a stack name (like `sharedid-edge`), your region, `DistributionId` = your distribution's ID, and the `Sid*` settings you need (empty means the default; `SidCookieDomain` = `.example.com` to share the cookie across subdomains). Let SAM save the answers to `samconfig.toml`; later deploys are `sam deploy`.
 
-This creates a Node.js 22 function with a function URL that accepts only requests signed by your distribution (`AWS_IAM` auth and an origin access control), and an origin request policy. The stack's outputs list what step 3 needs.
+This creates a Node.js 24 function with a function URL that accepts only requests signed by your distribution (`AWS_IAM` auth and an origin access control), and an origin request policy. The stack's outputs list what step 3 needs.
 
 ### 3. Add the `/_sid/*` behaviour to your distribution
 
@@ -554,9 +554,9 @@ The payload is unchanged apart from `"reflect": { "ms": 0, "status": "empty" }` 
 {
   "reflect": {
     "cookies": [
-      { "name": "_ga", "maxAgeDays": 400, "domain": "example.com", "restore": true },
+      { "name": "_ga", "maxAgeDays": 400, "domain": "example.com", "restore": true, "prefer": "older" },
       { "name": "_gcl_aw", "maxAgeDays": 90, "domain": "example.com", "restore": true },
-      { "name": "_gcl_au", "maxAgeDays": 90, "domain": "example.com", "restore": true }
+      { "name": "_gcl_au", "maxAgeDays": 90, "domain": "example.com", "restore": true, "prefer": "older" }
     ]
   }
 }
@@ -566,7 +566,8 @@ The payload is unchanged apart from `"reflect": { "ms": 0, "status": "empty" }` 
 Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0; Max-Age=34560000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
 ```
 
-- **For `_ga`, call `/_sid/v1` before gtag.js loads,** or a deleted `_ga` is replaced by a new one before the worker can restore it. Prebid.js's pixel call usually comes after gtag.js, so it restores `_gcl_aw` and keeps everything refreshed, but is too late for `_ga`. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/modules/reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/modules/reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
+- **`prefer`** decides which value wins when the page already wrote a new one: `"browser"` (default), `"backup"` (the saved value, always) or `"older"` (the one created first, read from `_ga`'s and `_gcl_au`'s timestamps). With `"older"`, a `_ga` that gtag.js re-minted before the worker was called is replaced by the saved one from the next page view. See [Which value wins](packages/modules/reflect/README.md#which-value-wins-prefer).
+- **Call `/_sid/v1` before gtag.js loads** to keep the client ID on the current page view too; otherwise a deleted `_ga` is replaced by a new one before the worker can restore it. Prebid.js's pixel call usually comes after gtag.js: it keeps everything refreshed and restores `_gcl_aw`, and with `"older"` it brings a re-minted `_ga` back from the next page view, but it's too late for the current one. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/modules/reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/modules/reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
 - **Consent:** when storage isn't allowed the keeper is deleted (the original cookies are left alone), and `/_sid/optout` always deletes it.
 
 ## Self-host with Node.js

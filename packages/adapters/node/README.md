@@ -51,7 +51,7 @@ location /_sid/ {
 - **Overwrite `X-Forwarded-For`:** use `$remote_addr`, not `$proxy_add_x_forwarded_for`. Appending keeps whatever the visitor sent first, and that's the entry the server trusts.
 - **No shared cache:** neither a CDN nor `proxy_cache` may store `/_sid/` responses; they carry per-visitor cookies.
 - **Behind Cloudflare, with an origin running this server:** enable Cloudflare's **"Add visitor location headers"** managed transform if you want the `geo` module. Cloudflare sends `cf-ipcountry`, `cf-ipcity` and the rest, which the server reads with `SID_TRUST_PROXY`. Make sure only Cloudflare can reach your origin, or visitors could send those headers themselves.
-- **Process management:** run it under systemd, in a container, or with another process manager, like any Node.js service. It needs Node.js 22 or later.
+- **Process management:** run it under systemd, in a container, or with another process manager, like any Node.js service. It needs Node.js 24 or later.
 
 ## Configuration and secrets
 

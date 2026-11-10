@@ -1,0 +1,136 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The reflect keeper's prefer setting (SID_MODULES=reflect), all with restore: true: _ga (400 days) and _gcl_au (90 days) with prefer: older, their format from the name; uid1 (365 days) with prefer: backup; site_ga (400 days) with prefer: older and format: ga, as gtag's cookie_prefix would name it. All have domain example.com, so the keeper is _sid_keep, HttpOnly, 400 days (Max-Age=34560000), Domain=.example.com. Keeper values are Buffer.from(JSON.stringify({ ... })).toString('base64url') of the saved values in configured order, as each case name says. Creation times 1700000000 (November 2023) and 1750000000 (June 2025) are in the past; 9999999999 (2286) is more than a day in the future, so it doesn't parse.",
+  "config": {
+    "SID_MODULES": "reflect",
+    "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"_ga\",\"maxAgeDays\":400,\"domain\":\"example.com\",\"restore\":true,\"prefer\":\"older\"},{\"name\":\"_gcl_au\",\"maxAgeDays\":90,\"domain\":\"example.com\",\"restore\":true,\"prefer\":\"older\"},{\"name\":\"uid1\",\"maxAgeDays\":365,\"domain\":\"example.com\",\"restore\":true,\"prefer\":\"backup\"},{\"name\":\"site_ga\",\"maxAgeDays\":400,\"domain\":\"example.com\",\"restore\":true,\"prefer\":\"older\",\"format\":\"ga\"}]}}"
+  },
+  "cases": [
+    {
+      "name": "older: restores the saved _ga and _gcl_au (1700000000) over re-minted ones (1750000000), and keeps {_ga, _gcl_au}",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "_ga=GA1.1.555555555.1750000000; _gcl_au=1.1.444444444.1750000000; _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "_ga", "value": "GA1.1.1234567890.1700000000", "maxAge": 34560000, "domain": ".example.com", "httpOnly": false, "sameSite": "Lax", "path": "/" },
+          { "name": "_gcl_au", "value": "1.1.987654321.1700000000", "maxAge": 7776000, "domain": ".example.com", "httpOnly": false, "sameSite": "Lax", "path": "/" },
+          { "name": "_sid_keep", "value": "eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0", "maxAge": 34560000, "domain": ".example.com", "httpOnly": true }
+        ],
+        "onlyListedCookies": true,
+        "jsonIncludes": { "ext": { "modules": { "reflect": { "status": "empty" } } } }
+      }
+    },
+    {
+      "name": "older: present values older than the saved ones win and replace them with {_ga, _gcl_au}",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "_ga=GA1.1.1234567890.1700000000; _gcl_au=1.1.987654321.1700000000; _sid_keep=eyJfZ2EiOiJHQTEuMS41NTU1NTU1NTUuMTc1MDAwMDAwMCIsIl9nY2xfYXUiOiIxLjEuNDQ0NDQ0NDQ0LjE3NTAwMDAwMDAifQ" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "_ga", "value": "GA1.1.1234567890.1700000000", "maxAge": 34560000 },
+          { "name": "_gcl_au", "value": "1.1.987654321.1700000000", "maxAge": 7776000 },
+          { "name": "_sid_keep", "value": "eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0", "maxAge": 34560000, "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "older: on equal times the browser's _ga wins over the saved GA1.2 one, and {_ga} is kept",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "_ga=GA1.1.1234567890.1700000000; _sid_keep=eyJfZ2EiOiJHQTEuMi45OTk5OTk5OTkuMTcwMDAwMDAwMCJ9" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "_ga", "value": "GA1.1.1234567890.1700000000" },
+          { "name": "_sid_keep", "value": "eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAifQ", "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "older: a present _ga with a far-future time doesn't parse, so it wins as with browser, and {_ga: far-future} is kept",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "_ga=GA1.1.555555555.9999999999; _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAifQ" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "_ga", "value": "GA1.1.555555555.9999999999" },
+          { "name": "_sid_keep", "value": "eyJfZ2EiOiJHQTEuMS41NTU1NTU1NTUuOTk5OTk5OTk5OSJ9", "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "older: a present _ga that doesn't parse wins as with browser, and {_ga: GA1.1.custom} is kept",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "_ga=GA1.1.custom; _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAifQ" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "_ga", "value": "GA1.1.custom" },
+          { "name": "_sid_keep", "value": "eyJfZ2EiOiJHQTEuMS5jdXN0b20ifQ", "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "older with format ga: restores the saved site_ga over a re-minted one, and keeps {site_ga}",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "site_ga=GA1.1.555555555.1750000000; _sid_keep=eyJzaXRlX2dhIjoiR0ExLjEuMTIzNDU2Nzg5MC4xNzAwMDAwMDAwIn0" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "site_ga", "value": "GA1.1.1234567890.1700000000", "maxAge": 34560000, "domain": ".example.com", "httpOnly": false },
+          { "name": "_sid_keep", "value": "eyJzaXRlX2dhIjoiR0ExLjEuMTIzNDU2Nzg5MC4xNzAwMDAwMDAwIn0", "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "backup: restores the saved uid1 byte for byte over the present one, restores the missing _ga, and keeps {_ga, uid1}",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "uid1=new-value; _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJ1aWQxIjoiQWJDK29sZC96PT0ifQ" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "_ga", "value": "GA1.1.1234567890.1700000000", "maxAge": 34560000 },
+          { "name": "uid1", "value": "AbC+old/z==", "maxAge": 31536000, "domain": ".example.com", "httpOnly": false, "sameSite": "Lax", "path": "/" },
+          { "name": "_sid_keep", "value": "eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJ1aWQxIjoiQWJDK29sZC96PT0ifQ", "maxAge": 34560000, "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "backup: with nothing saved, the present uid1 is reflected and {uid1} is kept",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "uid1=new-value" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "uid1", "value": "new-value", "maxAge": 31536000 },
+          { "name": "_sid_keep", "value": "eyJ1aWQxIjoibmV3LXZhbHVlIn0", "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "with Global Privacy Control, restores nothing over re-minted values and deletes the keeper",
+      "request": { "path": "/_sid/v1", "headers": { "sec-gpc": "1", "cookie": "_ga=GA1.1.555555555.1750000000; uid1=new-value; _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJ1aWQxIjoiQWJDK29sZC96PT0ifQ" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "_sid_keep", "value": "", "maxAge": 0, "domain": ".example.com", "httpOnly": true }],
+        "onlyListedCookies": true,
+        "jsonIncludes": { "ext": { "modules": { "reflect": { "status": "empty" } } } }
+      }
+    }
+  ]
+}
