@@ -124,4 +124,9 @@ async function run({ platform, consent, cookies, optedOut, config, secrets }: Mo
  * The `ec` module: Trusted Server Edge Cookies. Off until listed in `SID_MODULES`, and needs a passphrase in
  * `SID_MODULE_SECRETS`. It sets the `HttpOnly` `ts-ec` cookie and returns the EC as `ortb2.user.id`.
  */
-export const ecModule: EdgeModule = defineModule({ name: 'ec', run });
+export const ecModule: EdgeModule = defineModule({
+  name: 'ec',
+  run,
+  // An opt-out at /optout deletes ts-ec straight away, not only on the next /v1 call.
+  optOutCookies: config => [ecCookie('', 0, ecModuleConfig(config))]
+});

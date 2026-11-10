@@ -248,6 +248,23 @@ describe('v1 payload', () => {
     expect(seen[1]).toEqual({ existing: undefined, secret: 's3cret', optedOut: true });
   });
 
+  it('deletes installed modules\' cookies on opt-out, listed in SID_MODULES or not, and skips bad hooks', async () => {
+    const owner = defineModule({ name: 'owner', run: () => undefined, optOutCookies: config => [{ name: 'owned', value: '', maxAgeSeconds: 0, httpOnly: true, domain: String(config['domain']) }] });
+    const notADeletion = defineModule({ name: 'keeps', run: () => undefined, optOutCookies: () => [{ name: 'kept', value: 'x', maxAgeSeconds: 60, httpOnly: false }] });
+    const throws = defineModule({ name: 'throws', run: () => undefined, optOutCookies: () => { throw new Error('secret'); } });
+    const h = handler({ SID_MODULE_CONFIG: '{"owner":{"domain":".example.com"}}' }, { modules: [owner, notADeletion, throws] });
+    const response = await h(get('/_sid/optout', { Cookie: 'owned=1; kept=1' }));
+    expect(response.status).toBe(204);
+    // a cookie the browser didn't send isn't deleted
+    expect(setCookies(await h(get('/_sid/optout'))).map(c => c.name)).not.toContain('owned');
+    expect(setCookies(response).map(c => [c.name, c.attributes.get('max-age'), c.attributes.get('domain')])).toEqual([
+      ['_pubcid_optout', String(365 * 86_400), undefined],
+      ['_pubcid', '0', undefined],
+      ['_pubcid_sv', '0', undefined],
+      ['owned', '0', '.example.com']
+    ]);
+  });
+
   it('rejects module cookies that clash with the worker\'s or are malformed, leaving the module out', async () => {
     const make = (name: string, value = 'x'): ReturnType<typeof defineModule> => defineModule({
       name: `bad-${String(name.length)}-${String(value.length)}`,

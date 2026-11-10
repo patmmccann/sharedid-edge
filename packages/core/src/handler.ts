@@ -2,7 +2,7 @@ import { DEFAULT_CONFIG, type SharedIdEdgeConfig } from './config.js';
 import { readConsent, storageDecision, type ConsentContext } from './consent.js';
 import { parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
 import { idFromSyncParam, isValidId, mintId } from './id.js';
-import { ModuleRegistry, runModules, type EdgeModule } from './modules.js';
+import { ModuleRegistry, optOutCookies, runModules, type EdgeModule, type ModuleCookie } from './modules.js';
 import type { Eid, PayloadV1, PlatformInfo } from './types.js';
 
 /** The 43-byte transparent GIF the WordPress and Drupal plugins return, so `pixelUrl` image requests load. */
@@ -66,7 +66,9 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
       case ROUTES.optout:
         return withCookies(new Response(null, { status: 204, headers: NO_STORE }), [
           serializeCookie(config.optOutCookieName, '1', cookieOptions(config, secure, false), date),
-          ...expireIdCookies(config, secure, date)
+          ...expireIdCookies(config, secure, date),
+          // Only cookies the browser sent: nothing to delete otherwise.
+          ...optOutCookies(registry, config).filter(cookie => cookies.has(cookie.name)).map(cookie => serializeModuleCookie(cookie, config, secure, date))
         ]);
       case ROUTES.optin:
         return withCookies(new Response(null, { status: 204, headers: NO_STORE }), [
@@ -207,17 +209,19 @@ async function payloadResponse(inputs: PayloadInputs): Promise<Response> {
     headers: { 'Content-Type': 'application/json; charset=utf-8', ...NO_STORE, 'X-Robots-Tag': 'noindex' }
   });
   applyCors(request, config, response.headers);
-  for (const cookie of modules.cookies) {
-    const options: CookieOptions = {
-      maxAgeSeconds: cookie.maxAgeSeconds,
-      domain: cookie.domain ?? config.cookieDomain,
-      secure,
-      httpOnly: cookie.httpOnly,
-      sameSite: 'Lax'
-    };
-    response.headers.append('Set-Cookie', serializeCookie(cookie.name, cookie.value, options, date));
-  }
+  for (const cookie of modules.cookies) response.headers.append('Set-Cookie', serializeModuleCookie(cookie, config, secure, date));
   return response;
+}
+
+function serializeModuleCookie(cookie: ModuleCookie, config: SharedIdEdgeConfig, secure: boolean, date: Date): string {
+  const options: CookieOptions = {
+    maxAgeSeconds: cookie.maxAgeSeconds,
+    domain: cookie.domain ?? config.cookieDomain,
+    secure,
+    httpOnly: cookie.httpOnly,
+    sameSite: 'Lax'
+  };
+  return serializeCookie(cookie.name, cookie.value, options, date);
 }
 
 function applyCors(request: Request, config: SharedIdEdgeConfig, headers: Headers): void {

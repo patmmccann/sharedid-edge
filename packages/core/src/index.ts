@@ -14,6 +14,7 @@ export {
   deepMerge,
   defineModule,
   ModuleRegistry,
+  optOutCookies,
   runModules,
   type EdgeModule,
   type ModuleContext,

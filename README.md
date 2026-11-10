@@ -331,6 +331,8 @@ The address is only returned to the browser that sent the request. The worker do
 
 ### `ec`: Trusted Server Edge Cookies
 
+Full documentation: [`packages/module-ec/README.md`](packages/module-ec/README.md).
+
 The `ec` module implements IAB Tech Lab [Trusted Server](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html) Edge Cookies, for publishers who use Trusted Server or want its identifier. It sets the `ts-ec` cookie and returns the EC as `ortb2.user.id` in `/_sid/v1`.
 
 > **This ID is derived from the visitor's IP address.** An EC is `HMAC-SHA256(passphrase, IP)` as 64 hex characters, a dot, and 6 random characters. Everyone behind the same IPv4 address, or the same IPv6 /64, gets the same 64-character prefix, and anyone with the passphrase can test which address an EC came from. That's how Trusted Server defines it, and it's why the module is off unless you turn it on. The SharedID itself stays random.
@@ -357,7 +359,7 @@ npm exec -w @sharedid-edge/cloudflare -- wrangler secret put SID_MODULE_SECRETS
 
 **Behaviour.**
 - An existing `ts-ec` is returned as is and isn't refreshed, as in Trusted Server.
-- Opt-out, GPC, `coppa=1`, a US privacy opt-out, or a TC string without Purpose 1 consent deletes it.
+- Opt-out (including a visit to `/_sid/optout`), GPC, `coppa=1`, a US privacy opt-out, or a TC string without Purpose 1 consent deletes it.
 - An undecodable TC string, or GDPR without a TC string, sets and returns nothing but leaves an existing cookie alone.
 - Changing the passphrase changes the prefix for new ECs only.
 

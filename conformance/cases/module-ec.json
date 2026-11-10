@@ -36,6 +36,15 @@
       }
     },
     {
+      "name": "deletes ts-ec on opt-out",
+      "request": { "path": "/_sid/optout", "headers": { "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
+      "expect": {
+        "status": 204,
+        "cookies": [{ "name": "_pubcid_optout", "value": "1" }, { "name": "_pubcid", "maxAge": 0 }, { "name": "_pubcid_sv", "maxAge": 0 }, { "name": "ts-ec", "value": "", "maxAge": 0, "domain": ".example.com", "httpOnly": true }],
+        "onlyListedCookies": true
+      }
+    },
+    {
       "name": "deletes ts-ec with Global Privacy Control",
       "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "sec-gpc": "1", "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
       "expect": { "status": 200, "cookies": [{ "name": "ts-ec", "value": "", "maxAge": 0, "domain": ".example.com", "httpOnly": true }], "onlyListedCookies": true }

@@ -120,6 +120,12 @@ describe('the ec module in the handler', () => {
       expect(body.ortb2).toBeUndefined();
     }
   });
+  it('deletes ts-ec on /optout, even when ec isn\'t in SID_MODULES', async () => {
+    for (const overrides of [{}, { SID_MODULES: '' }]) {
+      const response = await handler(overrides)(new Request('https://www.example.com/_sid/optout', { headers: { Cookie: `ts-ec=${'a'.repeat(64)}.Ab12z9` } }), { clientIp: '192.0.2.77' });
+      expect(response.headers.getSetCookie().find(c => c.startsWith('ts-ec='))).toMatch(/^ts-ec=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=\/; Domain=\.example\.com; SameSite=Lax; Secure; HttpOnly$/);
+    }
+  });
   it('fails closed without deleting when GDPR applies and there is no TC string', async () => {
     const { body, ec } = await call('/_sid/v1?gdpr=1', { clientIp: '192.0.2.77' }, { Cookie: `ts-ec=${'a'.repeat(64)}.Ab12z9` });
     expect(ec).toBeUndefined();

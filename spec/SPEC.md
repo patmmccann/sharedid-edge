@@ -133,6 +133,8 @@ The context has the request, its URL and cookies, the platform information (clie
 
 A module's `cookies` are set on the `/v1` response with `Path=/`, `SameSite=Lax`, `Secure` over https, the module's `Domain` (else `SID_COOKIE_DOMAIN`), `Max-Age` (0 deletes) and `HttpOnly` as given. A module MUST NOT set the worker's own cookie names; a malformed or reserved cookie makes the module an `error`, and none of its output is used. A module that returns only cookies reports `empty`.
 
+A module that sets cookies SHOULD also declare the deletions for opt-out. `{basePath}/optout` deletes the ones the browser sent along with the ID cookies, for every installed module (whether or not it's in `SID_MODULES`), so an opt-out takes effect at once and not only on the next `/v1` call.
+
 Modules work only from what the worker has; by default they make no network calls. The worker:
 
 - runs the modules listed in `SID_MODULES`, in order, reporting unknown names as `skipped`;
@@ -165,7 +167,7 @@ Name `ec`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`,
 - **Cookie:** `ts-ec=<id>; Max-Age=31536000; Path=/; [Domain=.<domain>;] SameSite=Lax; Secure; HttpOnly`, with `domain` from `SID_MODULE_CONFIG.ec.domain`. An existing cookie with a valid format (`^[0-9a-f]{64}\.[A-Za-z0-9]{6}$`) is used as is and not refreshed; an invalid one is replaced.
 - **Output:** the EC as `ortb2.user.id`.
 - **Consent:**
-  - opt-out, `Sec-GPC: 1`, `coppa=1`, a `us_privacy` opt-out of sale, or a TC string without consent for Purpose 1 (core segment) **withdraws**: an existing `ts-ec` is deleted and nothing is returned;
+  - opt-out, `Sec-GPC: 1`, `coppa=1`, a `us_privacy` opt-out of sale, or a TC string without consent for Purpose 1 (core segment) **withdraws**: an existing `ts-ec` is deleted and nothing is returned. `{basePath}/optout` deletes `ts-ec` too;
   - an undecodable TC string, or GDPR applying without a TC string, fails closed: nothing is set, returned or deleted.
 - It runs on `/v1` only, so an EC is set only when the page calls `/v1`.
 

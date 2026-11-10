@@ -58,6 +58,12 @@ export interface EdgeModule {
   /** TCF purposes the module needs when GDPR applies. */
   readonly purposes?: readonly number[];
   run(context: ModuleContext): ModuleResult | undefined | Promise<ModuleResult | undefined>;
+  /**
+   * The cookies to delete when the browser opts out at `{basePath}/optout`, given the module's `SID_MODULE_CONFIG`
+   * entry. Called for every installed module, listed in `SID_MODULES` or not, so cookies from a module that has since
+   * been turned off are cleaned up too. Only cookies the browser sent are deleted. Each must have `maxAgeSeconds: 0`.
+   */
+  optOutCookies?(config: Readonly<Record<string, unknown>>): readonly ModuleCookie[];
 }
 
 const MODULE_NAME = /^[a-z][a-z0-9-]{0,63}$/;
@@ -92,6 +98,32 @@ export class ModuleRegistry {
   names(): string[] {
     return [...this.#modules.keys()];
   }
+
+  modules(): EdgeModule[] {
+    return [...this.#modules.values()];
+  }
+}
+
+/**
+ * The cookie deletions every installed module asks for on opt-out. A module whose hook throws, or returns a cookie
+ * that isn't a valid deletion, is left out; the others still apply.
+ */
+export function optOutCookies(registry: ModuleRegistry, config: SharedIdEdgeConfig): ModuleCookie[] {
+  const cookies: ModuleCookie[] = [];
+  for (const module of registry.modules()) {
+    if (module.optOutCookies === undefined) continue;
+    try {
+      const deletions = module.optOutCookies(config.moduleConfig[module.name] ?? {});
+      for (const cookie of deletions) {
+        checkModuleCookie(cookie, config);
+        if (cookie.maxAgeSeconds !== 0) throw new TypeError('opt-out cookies must be deletions');
+      }
+      cookies.push(...deletions);
+    } catch {
+      // Nothing about the failure is returned; the rest of the opt-out still applies.
+    }
+  }
+  return cookies;
 }
 
 export interface ModuleRunOutput {
