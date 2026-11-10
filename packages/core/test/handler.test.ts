@@ -118,6 +118,14 @@ describe('sync (pixelUrl)', () => {
     expect(setCookies(response).map(c => [c.name, c.value, c.attributes.get('max-age')])).toEqual([['_pubcid', '', '0'], ['_pubcid_sv', '', '0']]);
   });
 
+  it('deletes the cookies and sets none for a COPPA request', async () => {
+    const response = await handler()(get(`/_sid/sync?id=pubcid:${UUID}&coppa=1`, { Cookie: `_pubcid=${UUID}; _pubcid_sv=${UUID}` }));
+    expect(response.headers.get('X-SharedID-Status')).toBe('denied: coppa');
+    expect(setCookies(response).map(c => [c.name, c.value, c.attributes.get('max-age')])).toEqual([['_pubcid', '', '0'], ['_pubcid_sv', '', '0']]);
+    const payload = await (await handler()(get('/_sid/v1?coppa=1', { Cookie: `_pubcid=${UUID}` }))).json() as PayloadV1;
+    expect(payload.sharedid).toBeUndefined();
+  });
+
   it('deletes host-only copies too when a cookie domain is configured', async () => {
     const response = await handler({ SID_COOKIE_DOMAIN: '.example.com' })(get('/_sid/sync', { 'Sec-GPC': '1', Cookie: `_pubcid=${UUID}` }));
     expect(setCookies(response).map(c => [c.name, c.attributes.get('domain'), c.attributes.get('max-age')])).toEqual([

@@ -1,6 +1,6 @@
 {
   "$schema": "../case-file.schema.json",
-  "description": "Consent in publisher mode (the default). Global Privacy Control denies storage. A TC string needs publisher consent (the publisher TC segment) for Purpose 1, and publisher consent or legitimate interest for at least one of Purposes 2-10, even with gdpr=0. When GDPR applies, no TC string denies storage. Denied requests delete existing ID cookies. TC strings: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA has publisher consent for purposes 1-2; ….cAAAAAAAAA for purpose 1 only; ….cAAAAEAAAA consent for purpose 1 and legitimate interest for purpose 7; ….aAAAAAAAAA for purpose 2 only; CAAAAAAAAAAAAAAAAAAAAAAAAPAAAAAAAAAAAAAAAAAA has vendor consent for purposes 1-4 and no publisher segment.",
+  "description": "Consent in publisher mode (the default). Global Privacy Control, or coppa=1, denies storage. A TC string needs publisher consent (the publisher TC segment) for Purpose 1, and publisher consent or legitimate interest for at least one of Purposes 2-10, even with gdpr=0. When GDPR applies, no TC string denies storage. Denied requests delete existing ID cookies. TC strings: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA has publisher consent for purposes 1-2; ….cAAAAAAAAA for purpose 1 only; ….cAAAAEAAAA consent for purpose 1 and legitimate interest for purpose 7; ….aAAAAAAAAA for purpose 2 only; CAAAAAAAAAAAAAAAAAAAAAAAAPAAAAAAAAAAAAAAAAAA has vendor consent for purposes 1-4 and no publisher segment.",
   "config": {},
   "cases": [
     {
@@ -70,6 +70,16 @@
     {
       "name": "deletes existing cookies with Global Privacy Control",
       "request": { "path": "/_sid/sync", "headers": { "sec-gpc": "1", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "", "maxAge": 0 }, { "name": "_pubcid_sv", "value": "", "maxAge": 0 }], "onlyListedCookies": true }
+    },
+    {
+      "name": "sets nothing for a COPPA request, even with consent",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&coppa=1&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA" },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "denied: coppa" }, "noCookies": true }
+    },
+    {
+      "name": "deletes existing cookies for a COPPA request",
+      "request": { "path": "/_sid/sync?coppa=1", "headers": { "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
       "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "", "maxAge": 0 }, { "name": "_pubcid_sv", "value": "", "maxAge": 0 }], "onlyListedCookies": true }
     },
     {

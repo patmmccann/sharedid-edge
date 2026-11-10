@@ -53,7 +53,7 @@ Behaviour that must not regress, each covered by tests:
 
 - An existing valid ID is never replaced; the `HttpOnly` recovery copy restores a re-minted one.
 - The worker answers only its own routes and never forwards requests to the origin.
-- Opt-out, Global Privacy Control and denied consent delete existing ID cookies and set none.
+- Opt-out, Global Privacy Control, COPPA and denied consent delete existing ID cookies and set none.
 - IDs are random; nothing is derived from the IP address or other request data, and nothing about requests is logged.
 - `Access-Control-Allow-Origin` is never `*`.
 

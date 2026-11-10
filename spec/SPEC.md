@@ -79,7 +79,7 @@ When storage isn't allowed, no ID cookie is set and existing ID cookies MUST be 
 Storage is **not allowed** when, in this order:
 
 1. the opt-out cookie is present (reason `opt-out`);
-2. the request has `Sec-GPC: 1`, Global Privacy Control (reason `gpc`);
+2. the request has `Sec-GPC: 1`, Global Privacy Control (reason `gpc`), or is subject to COPPA, signalled by the query parameter `coppa=1` as in OpenRTB `regs.coppa` (reason `coppa`);
 3. there is a TC string and it doesn't give the consent below (reason `tcf: …`);
 4. GDPR applies and there is no TC string (reason `tcf: GDPR applies and there is no TC string`): that counts as no consent.
 
@@ -93,7 +93,7 @@ When storage isn't allowed, existing ID cookies are deleted (see [Cookies](#cook
 - **Vendor mode** (`SID_VENDOR_ID` set, for a publisher registered as a TCF vendor). The core segment's vendor consents MUST include that vendor ID, its purpose consents MUST include Purpose 1, and its purpose consents or purpose legitimate interests MUST include at least one of Purposes 2 to 10. The publisher TC segment isn't used. Reasons: `tcf: no consent for vendor <id>`, `tcf: no vendor consent for purpose 1`, `tcf: no vendor consent or legitimate interest for any of purposes 2-10`.
 - Purpose 1 always needs consent; legitimate interest isn't a legal basis for it.
 - Implementations need only decode the core segment's version (must be 2), purpose consents (bits 152 to 175), purpose legitimate interests (176 to 199) and vendor consent section (from bit 213, bit field or range encoded), and the publisher TC segment's purpose consents (bits 3 to 26) and legitimate interests (27 to 50).
-- `us_privacy`, `gpp` and `gpp_sid` query parameters are read and passed to modules.
+- `us_privacy`, `gpp`, `gpp_sid` and `coppa` query parameters are read and passed to modules. Modules MUST treat `coppa=1` like GPC.
 
 A response where storage was denied SHOULD carry `X-SharedID-Status: denied: <reason>`. A response that set an ID SHOULD carry `X-SharedID-Source: cookie|recovery|param|minted`.
 
