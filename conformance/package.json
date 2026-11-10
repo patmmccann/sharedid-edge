@@ -10,9 +10,11 @@
     "conformance:wrangler": "node dist/run.js --target wrangler",
     "conformance:lambda": "node dist/run.js --target lambda",
     "conformance:vercel": "node dist/run.js --target vercel",
-    "conformance:azure": "node dist/run.js --target azure"
+    "conformance:azure": "node dist/run.js --target azure",
+    "conformance:gcp": "node dist/run.js --target gcp"
   },
   "devDependencies": {
-    "@azure/functions": "^4.17.1"
+    "@azure/functions": "^4.17.1",
+    "@google-cloud/functions-framework": "^5.0.5"
   }
 }

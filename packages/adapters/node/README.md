@@ -105,6 +105,8 @@ createNodeServer({
 
 `createNodeServer` returns a plain `node:http` `Server`. Repeated `Set-Cookie` headers are sent separately.
 
+The conversion is exported too, for platforms that hand you Node.js requests (or Express's, like Google Cloud's Functions Framework, which [`@sharedid-edge/gcp-functions`](../gcp-functions/README.md) uses): `toWebRequest(req, origin)` builds a `Request` with that origin, `sendWebResponse(res, response, method)` writes a `Response` with each `Set-Cookie` separate, and `utf8(value)` re-decodes a header value Node.js read as Latin-1.
+
 ## Verify
 
 ```sh

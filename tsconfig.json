@@ -12,6 +12,8 @@
     { "path": "packages/adapters/aws-lambda/test" },
     { "path": "packages/adapters/azure-functions" },
     { "path": "packages/adapters/azure-functions/test" },
+    { "path": "packages/adapters/gcp-functions" },
+    { "path": "packages/adapters/gcp-functions/test" },
     { "path": "packages/adapters/node" },
     { "path": "packages/adapters/node/test" },
     { "path": "packages/adapters/vercel" },
