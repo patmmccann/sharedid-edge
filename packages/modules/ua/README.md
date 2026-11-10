@@ -23,7 +23,7 @@ The worker sees the request headers before any script on the page runs. Prebid.j
 
 ## Turning it on
 
-The module is built into the Cloudflare Worker, the Node.js server, the AWS Lambda adapter and the Vercel adapter. It does nothing until you list it in `SID_MODULES`.
+The module is built into the Cloudflare Worker, the Node.js server, and the AWS Lambda, Vercel and Azure Functions adapters. It does nothing until you list it in `SID_MODULES`.
 
 1. **Enable it** in `packages/adapters/cloudflare/wrangler.jsonc`:
 
@@ -272,28 +272,30 @@ The browser then sends those hints with its later requests to your origin, inclu
 
 By default the module reads device data from Client Hints, which Chromium browsers send and Safari and Firefox don't; it only checks the `User-Agent` for bots. [Bowser](https://github.com/bowser-js/bowser) parses the `User-Agent` itself, so Safari, Firefox, smart TVs and requests without hints get device data too. It's **off by default and not in the default bundles**, to keep them small: you build it in, then choose it with a setting.
 
-**Bundle size.** Bowser adds about 8.5 KB gzipped to each bundle. Minified and gzipped, against the 32 KB budget CI checks for both builds:
+**Bundle size.** Bowser adds about 8 to 8.7 KB gzipped to each bundle. Minified and gzipped, against the 32 KB budget CI checks for both builds:
 
 | Bundle | Default (no Bowser) | With Bowser |
 | --- | --- | --- |
-| Cloudflare Worker | 16.2 KB | 24.8 KB |
-| AWS Lambda | 17.2 KB | 25.6 KB |
-| Vercel | 17.0 KB | 25.5 KB |
+| Cloudflare Worker | 18.0 KB | 25.8 KB |
+| AWS Lambda | 18.9 KB | 27.4 KB |
+| Vercel | 18.7 KB | 27.2 KB |
+| Azure Functions | 19.5 KB | 28.0 KB |
 
 The Node.js server isn't bundled, and always has Bowser.
 
 **Turning it on** takes two steps:
 
-1. **Build with Bowser,** one command per adapter. Each swaps in `@sharedid-edge/modules/bowser`, the built-in list with `uaModuleWithBowser`, through a bundler alias; no code changes.
+1. **Build with Bowser,** one command per adapter. Each swaps in `@sharedid-edge/modules/bowser`, the built-in list with `uaModuleWithBowser` (the Worker through its `src/bowser.ts` entry point, the other bundles through an esbuild alias); no code changes.
 
    | Adapter | Build with Bowser |
    | --- | --- |
    | Cloudflare Worker | `npm run deploy:bowser -w @sharedid-edge/cloudflare` in place of `deploy` (also `dev:bowser`, and `build:bowser` for a dry run into `dist-bowser/`) |
    | AWS Lambda | `npm run bundle:bowser -w @sharedid-edge/aws-lambda` in place of `bundle`; it writes `deploy/lambda.mjs` as usual, so `sam deploy` is unchanged |
    | Vercel | `npm run bundle:bowser -w @sharedid-edge/vercel` in place of `bundle`; copy `deploy/sharedid-edge.mjs` into your site as usual |
+   | Azure Functions | `npm run bundle:bowser -w @sharedid-edge/azure-functions` in place of `bundle`; the same `deploy/` function app |
    | Node.js server | Nothing: it always has Bowser |
 
-2. **Choose it** with the `parser` setting, wherever the adapter takes its settings (the Worker's `vars` in `wrangler.jsonc`, the Node.js server's environment, the Lambda function's or the Vercel project's environment variables):
+2. **Choose it** with the `parser` setting, wherever the adapter takes its settings (the Worker's `vars` in `wrangler.jsonc`, the Node.js server's environment, or the Lambda function's, Vercel project's or Function App's environment variables):
 
    ```jsonc
    "vars": {

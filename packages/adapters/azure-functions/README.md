@@ -77,11 +77,17 @@ npm install --omit=dev                              # @azure/functions, the v4 p
 
 | File | |
 | --- | --- |
-| `sharedid-edge.mjs` | The function: `src/functions.ts` with core and the built-in modules, in one minified ESM file (about 14 KB gzipped; the bundle step fails it over 32 KB). |
+| `sharedid-edge.mjs` | The function: `src/functions.ts` with core and the built-in modules, in one minified ESM file (about 20 KB gzipped; the bundle step fails it over 32 KB). |
 | `host.json` | `extensions.http.routePrefix` is empty, so the route is the URL path (`/_sid/…`, not `/api/_sid/…`). Request telemetry is turned down; see [Logging](#logging). |
 | `package.json` | `main` is the bundle; its one dependency is `@azure/functions`. That library isn't bundled: it reaches the Functions worker through a module only the worker provides. |
 
 Rebuild and bundle after updating the code.
+
+**Bowser (opt-in).** The `ua` module's [full `User-Agent` parsing](../../modules/ua/README.md#full-parsing-with-bowser) fills `device` (`sua`, `devicetype`, `make`, `model`, `os`, `osv`) for Safari, Firefox, TVs and other browsers that send no Client Hints. It isn't in the default bundle, to keep it small. `npm run bundle:bowser -w @sharedid-edge/azure-functions` (in place of `bundle`; the same `deploy/` function app) builds it in, then `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` turns it on. The cost, minified and gzipped, against the 32 KB budget CI checks for both builds:
+
+| Bundle | Default (no Bowser) | With Bowser |
+| --- | --- | --- |
+| Azure Functions (`deploy/sharedid-edge.mjs`) | 19.5 KB | 28.0 KB |
 
 ## Deploy the infrastructure
 
