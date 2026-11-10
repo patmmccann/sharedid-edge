@@ -28,8 +28,8 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 Run before every commit; CI runs all of them:
 
 ```sh
-npm run lint
 npm run build                                   # tsc -b: every project, sources and tests
+npm run lint                                    # after the build: typed lint reads the packages' built declarations
 npm run typecheck:ts7                           # the same with TypeScript 7
 npm run typecheck:cloudflare                    # the Worker against the Workers runtime types
 npm run types:check -w @sharedid-edge/cloudflare # worker-configuration.d.ts matches wrangler.jsonc
