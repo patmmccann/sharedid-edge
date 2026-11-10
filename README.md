@@ -8,6 +8,7 @@ It also has a **module** interface for IDs and signals that are best computed at
 
 - [How it works](#how-it-works)
 - [Deploy on Cloudflare](#deploy-on-cloudflare)
+- [Deploy on AWS (Lambda and CloudFront)](#deploy-on-aws-lambda-and-cloudfront)
 - [Configure Prebid.js](#configure-prebidjs)
 - [Migrate from the WordPress or Drupal plugin](#migrate-from-the-wordpress-or-drupal-plugin)
 - [Consent and opt-out](#consent-and-opt-out)
@@ -133,6 +134,62 @@ Before attaching the production route, you can deploy with `"workers_dev": true`
 
 A company running SharedID Edge for several publishers can deploy one Worker per publisher, each with its own routes and `vars`, using Wrangler environments (`env.<publisher>`) or separate config files (`wrangler deploy -c publisher-a.jsonc`). Each Worker must run on the zone that serves that publisher's site, so the publisher needs to delegate the route (or the zone) to your Cloudflare account. The IP rule means it can't run on your own domain behind a CNAME.
 
+## Deploy on AWS (Lambda and CloudFront)
+
+If your site is served through Amazon CloudFront, run SharedID Edge as a Lambda function behind a `/_sid/*` behaviour of **your site's own distribution**. Full guide (architecture, the template's options, configuration, troubleshooting): [`packages/aws-lambda/README.md`](packages/aws-lambda/README.md).
+
+**Why your own distribution:** since Safari 16.4, cookies set by a server whose IP address doesn't match the website's are capped at 7 days. A behaviour on the distribution that serves `www.example.com` shares its IP addresses; a separate distribution or API endpoint on another hostname doesn't.
+
+### Prerequisites
+
+- An existing CloudFront distribution serving your site over https, and its ID (like `E2ABCDEFGHIJKL`).
+- The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html), with credentials that can create Lambda, IAM, CloudWatch Logs and CloudFront resources (`aws configure`).
+- Node.js 22 or later and npm.
+
+### 1. Build
+
+```sh
+git clone https://github.com/patmmccann/sharedid-edge.git
+cd sharedid-edge
+npm ci
+npm run build
+npm run bundle -w @sharedid-edge/aws-lambda    # one file: packages/aws-lambda/dist/lambda.mjs
+```
+
+### 2. Deploy the function
+
+```sh
+cd packages/aws-lambda
+sam deploy --guided
+```
+
+Answer the prompts: a stack name (like `sharedid-edge`), your region, `DistributionId` = your distribution's ID, and the `Sid*` settings you need (empty means the default; `SidCookieDomain` = `.example.com` to share the cookie across subdomains). Let SAM save the answers to `samconfig.toml`; later deploys are `sam deploy`.
+
+This creates a Node.js 22 function with a function URL that accepts only requests signed by your distribution (`AWS_IAM` auth and an origin access control), and an origin request policy. The stack's outputs list what step 3 needs.
+
+### 3. Add the `/_sid/*` behaviour to your distribution
+
+In the CloudFront console, on your distribution:
+
+1. **Origins → Create origin:** origin domain = the `OriginDomainName` output (`<id>.lambda-url.<region>.on.aws`), protocol HTTPS only, and origin access control = the stack's (the `OriginAccessControlId` output).
+2. **Behaviors → Create behavior:** path pattern `/_sid/*`, that origin, viewer protocol policy *Redirect HTTP to HTTPS*, allowed methods *GET, HEAD, OPTIONS*, cache policy **CachingDisabled**, origin request policy = the stack's (the `OriginRequestPolicyId` output). Make sure it's above any `*` behaviour that would catch `/_sid/*` first.
+
+Wait for the distribution to deploy. To try it on a new distribution instead, deploy with `CreateDistribution=true` (see the [package README](packages/aws-lambda/README.md#a-new-distribution)).
+
+### 4. Configure
+
+Settings are the function's `SID_*` environment variables (the [Configuration reference](#configuration-reference)), set through the template's parameters: `sam deploy --parameter-overrides SidModules=ip`. Secrets (`SID_MODULE_SECRETS`, for example the `ec` passphrase) go in the `SidModuleSecrets` parameter, which CloudFormation doesn't display; Lambda stores it as an environment variable encrypted at rest. The [package README](packages/aws-lambda/README.md#secrets) explains why this rather than Secrets Manager. Invalid settings make every request return a 500; the reason is in the function's CloudWatch logs.
+
+### 5. Verify
+
+```sh
+npm run verify-deployment -- --site https://www.example.com
+```
+
+It checks that `/_sid/*` shares the site's IP addresses, sets the cookies correctly, isn't cached, and returns the JSON payload. Then [turn it on in Prebid.js](#configure-prebidjs).
+
+Lambda@Edge (running in CloudFront's edge locations, without a separate origin) is possible future work; see the [package README](packages/aws-lambda/README.md#lambdaedge).
+
 ## Configure Prebid.js
 
 SharedID Edge works with the unmodified `sharedIdSystem` module. Build Prebid.js with `userId` and `sharedIdSystem`, and set `pixelUrl` to the sync route on your own host:
@@ -253,7 +310,7 @@ Existing visitors keep their IDs: the worker adopts the cookie the plugin set. T
 - **Publisher mode** (the default). SharedID is your own first-party ID, so the worker reads the **publisher** consents (the TC string's publisher TC segment): it needs consent for Purpose 1 (store and access information on a device), and consent or legitimate interest for at least one of Purposes 2 to 10. Configure your CMP to ask for publisher consent for these purposes, or it won't include a publisher TC segment and no one gets a server cookie.
 - **Vendor mode.** If your company is registered as a TCF vendor, set `SID_VENDOR_ID` to your vendor ID. The worker then needs consent for that vendor, consent for Purpose 1, and consent or legitimate interest for at least one of Purposes 2 to 10, all from the vendor part of the TC string instead of the publisher segment.
 
-When GDPR applies and there's no TC string, that counts as no consent: the worker sets nothing and deletes the ID cookies. GDPR applies when Cloudflare places the request in the EU (`request.cf.isEUCountry`), or when the request says so with `gdpr=1`.
+When GDPR applies and there's no TC string, that counts as no consent: the worker sets nothing and deletes the ID cookies. GDPR applies when Cloudflare places the request in the EU (`request.cf.isEUCountry`; behind CloudFront, `CloudFront-Viewer-Country` is one of the 27 EU member states), or when the request says so with `gdpr=1`.
 
 The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` parameter. Prebid.js doesn't add consent parameters to `pixelUrl`, so for the sync route **your CMP must store the TC string in the `euconsent-v2` cookie** (check yours: some keep it only in local storage). Without it, EU visitors get no server cookie, which is the safe failure. Sending the consent strings from Prebid.js to the worker is planned.
 
@@ -325,7 +382,7 @@ fetch('/_sid/v1', { credentials: 'include' })
 - a TCF TC string doesn't opt in to Special Feature 1 (precise geolocation);
 - GDPR applies and there's no TC string.
 
-**Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
+**Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. Behind CloudFront it's the address in `CloudFront-Viewer-Address`, which CloudFront sets itself. With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
 
 The address is only returned to the browser that sent the request. The worker doesn't store or log it, and SharedIDs are never derived from it. `/_sid/v1` responses are `Cache-Control: no-store`.
 
@@ -439,7 +496,7 @@ Responses carry two debug headers: `X-SharedID-Source` (`cookie`, `recovery`, `p
 | No `set-cookie` in the response | See `X-SharedID-Status`. In `tcf` mode, check the `euconsent-v2` cookie exists. |
 | Cookie set but gone after a week in Safari | Run `verify-deployment`: the endpoint's IP addresses probably don't match the site's. |
 | Cookie not readable by Prebid.js | The cookie name or domain doesn't match Prebid.js's `storage` config, or the page and the route are on hosts the cookie's domain doesn't cover. |
-| A 500 with "misconfigured" | A setting is invalid: `npm exec -w @sharedid-edge/cloudflare -- wrangler tail` shows the reason. |
+| A 500 with "misconfigured" | A setting is invalid: `npm exec -w @sharedid-edge/cloudflare -- wrangler tail` shows the reason (on AWS, the function's CloudWatch logs). |
 | `getUserIdsAsync()` never resolves | The known Prebid.js issue under [Configure Prebid.js](#configure-prebidjs). |
 
 ## Development
@@ -450,6 +507,7 @@ conformance/          HTTP cases every implementation must pass, and their runne
 packages/core/        the platform-neutral handler, consent, cookies and module interface
 packages/cloudflare/  the Cloudflare Worker
 packages/node/        the Node.js server (local development, self-hosting, conformance target)
+packages/aws-lambda/  the AWS Lambda adapter, its bundle and SAM template
 e2e/                  unmodified Prebid.js against the worker, in Chromium, Firefox and WebKit
 scripts/              verify-deployment, and the type checks below
 ```
@@ -471,10 +529,10 @@ TypeScript is strict from the start, and CI checks types several ways:
 Tests:
 
 - `npm test`: unit tests, including the Worker's tests inside workerd, the Workers runtime.
-- `npm run conformance`: the conformance suite against the Node.js server; `npm run conformance:wrangler` runs it against the Worker under `wrangler dev`.
+- `npm run conformance`: the conformance suite against the Node.js server; `npm run conformance:wrangler` runs it against the Worker under `wrangler dev`, and `npm run conformance:lambda` against the bundled Lambda handler behind a local stand-in for CloudFront.
 - In `e2e/`: `npm ci && npx playwright install && npm test` runs unmodified Prebid.js against the worker in three browsers.
 
-None of this needs a Cloudflare account.
+None of this needs a Cloudflare or AWS account.
 
 ### Adding a module
 
@@ -492,13 +550,13 @@ export const geo = defineModule({
 });
 ```
 
-Publish it as its own package like [`packages/module-ip`](packages/module-ip), register it in [`packages/cloudflare/src/modules.ts`](packages/cloudflare/src/modules.ts) (and the Node.js CLI), and enable it with `SID_MODULES=geo`. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/core/AGENTS.md`](packages/core/AGENTS.md).
+Publish it as its own package like [`packages/module-ip`](packages/module-ip), register it in [`packages/cloudflare/src/modules.ts`](packages/cloudflare/src/modules.ts) (and the Node.js CLI and [`packages/aws-lambda/src/modules.ts`](packages/aws-lambda/src/modules.ts)), and enable it with `SID_MODULES=geo`. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/core/AGENTS.md`](packages/core/AGENTS.md).
 
 ## Roadmap
 
 1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, and the `ip` module.
 2. **Next:** Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
-3. A Prebid.js RTD module that reads `/_sid/v1`, plus first-party modules for geography, bot scores and device type, and a Fastly adapter.
+3. A Prebid.js RTD module that reads `/_sid/v1`, plus first-party modules for geography, bot scores and device type, a Fastly adapter, and Lambda@Edge.
 4. Vendor modules, a Rust implementation, and inline mode.
 
 ## License

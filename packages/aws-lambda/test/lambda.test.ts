@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defineModule, resolveConfig } from '@sharedid-edge/core';
 import {
@@ -191,10 +193,34 @@ describe('handlerFromEnv', () => {
     }
   });
 
+  it('builds in the ec module, with its secret from SID_MODULE_SECRETS', async () => {
+    const handler = handlerFromEnv({
+      SID_MODULES: 'ec',
+      SID_MODULE_CONFIG: '{"ec":{"domain":"example.com"}}',
+      SID_MODULE_SECRETS: '{"ec":{"passphrase":"conformance-passphrase-0123456789abcdef"}}'
+    });
+    const result = await handler(cloudFrontEvent({ path: '/_sid/v1', headers: { 'cloudfront-viewer-address': '192.0.2.77:443' } }));
+    expect(payload(result.body).ext.modules['ec']?.status).toBe('ok');
+    // HMAC-SHA256 of 192.0.2.77 with that passphrase, as in conformance/cases/module-ec.json.
+    expect(result.cookies.find(c => c.startsWith('ts-ec='))).toMatch(/^ts-ec=7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc.[A-Za-z0-9]{6};/);
+  });
+
   it('reads SID_PUBLIC_ORIGIN and SID_BEHIND_CLOUDFRONT', async () => {
     const handler = handlerFromEnv({ SID_MODULES: 'ip', SID_PUBLIC_ORIGIN: 'http://localhost:3000', SID_BEHIND_CLOUDFRONT: 'false' });
     const result = await handler(cloudFrontEvent({ path: '/_sid/v1', omitHeaders: ['cloudfront-viewer-country'] }));
     expect(payload(result.body).ortb2?.device?.ip).toBe('64.252.0.10');
     expect(result.cookies[0]).not.toContain('Secure');
+  });
+});
+
+describe('template.yaml', () => {
+  it('passes every SID_* setting core reads to the function', () => {
+    const root = join(import.meta.dirname, '..');
+    const core = readFileSync(join(root, '../core/dist/config.js'), 'utf8');
+    const settings = new Set(Array.from(core.matchAll(/'(SID_[A-Z_]+)'/g), m => m[1]));
+    const template = readFileSync(join(root, 'template.yaml'), 'utf8');
+    const passed = new Set(Array.from(template.matchAll(/^ {10}(SID_[A-Z_]+): !Ref /gm), m => m[1]));
+    expect(settings.size).toBeGreaterThan(10);
+    expect([...passed].sort()).toEqual([...settings].sort());
   });
 });
