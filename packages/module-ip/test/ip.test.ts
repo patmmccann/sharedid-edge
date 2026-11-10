@@ -65,6 +65,7 @@ describe('omissionReason', () => {
     gppString: undefined,
     gppSid: undefined,
     gpc: false,
+    coppa: false,
     ...overrides
   });
 
@@ -76,6 +77,7 @@ describe('omissionReason', () => {
   });
   it('omits the address with Global Privacy Control or a US privacy opt-out', () => {
     expect(omissionReason(consent({ gpc: true }))).toBe('gpc');
+    expect(omissionReason(consent({ coppa: true }))).toBe('coppa');
     expect(omissionReason(consent({ usPrivacy: '1YYN' }))).toBe('us-privacy');
     expect(omissionReason(consent({ usPrivacy: '1nyn' }))).toBe('us-privacy');
   });
@@ -108,7 +110,8 @@ describe('the ip module in the handler', () => {
       ['/_sid/v1?gdpr=1', { clientIp: '192.0.2.77' }, {}],
       ['/_sid/v1', { clientIp: '192.0.2.77', isEU: true }, {}],
       ['/_sid/v1', { clientIp: '192.0.2.77' }, { 'Sec-GPC': '1' }],
-      ['/_sid/v1?us_privacy=1YYN', { clientIp: '2001:db8::7' }, {}]
+      ['/_sid/v1?us_privacy=1YYN', { clientIp: '2001:db8::7' }, {}],
+      ['/_sid/v1?coppa=1', { clientIp: '192.0.2.77' }, {}]
     ] as const) {
       const body = await payload({ SID_MODULES: 'ip' }, path, platform, headers);
       expect(body.ortb2).toBeUndefined();

@@ -218,7 +218,7 @@ fetch('/_sid/v1', { credentials: 'include' })
 ```
 
 **Full address or nothing.** The module never sends a truncated address, which would look real but place the user in the wrong network. It sends nothing (`ext.modules.ip.status` is `empty`) when:
-- the visitor sends Global Privacy Control;
+- the visitor sends Global Privacy Control, or the request has `coppa=1`;
 - a US privacy string opts out of sale;
 - a TCF TC string doesn't opt in to Special Feature 1 (precise geolocation);
 - GDPR applies and there's no TC string.

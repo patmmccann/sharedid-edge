@@ -6,6 +6,6 @@ It's the pattern for module packages: a separate workspace package depending onl
 
 - **Platform-neutral**, like core (`lib: ["ES2023", "WebWorker"]`, no Node or DOM types), and no runtime dependencies besides core: it's bundled into the worker.
 - `src/ip.ts` parses and formats (RFC 5952) addresses without platform APIs. Reject anything that isn't a plain address rather than echo it back; zone IDs aren't accepted.
-- `src/index.ts` has the omission rules (`omissionReason`: GPC, US privacy opt-out, no TCF Special Feature 1 opt-in, GDPR without a TC string) and the module. Don't add truncation: a truncated address is worse than none. Changing the rules is a behaviour change: spec, conformance (`conformance/cases/module-ip.json`), tests, README.
+- `src/index.ts` has the omission rules (`omissionReason`: GPC, COPPA, US privacy opt-out, no TCF Special Feature 1 opt-in, GDPR without a TC string) and the module. Don't add truncation: a truncated address is worse than none. Changing the rules is a behaviour change: spec, conformance (`conformance/cases/module-ip.json`), tests, README.
 - Never log, store or hash the address, or put it anywhere but the response to the same request.
 - Tests in `test/ip.test.ts` cover parsing, the omission rules and the module through `createHandler`.

@@ -1,6 +1,6 @@
 {
   "$schema": "../case-file.schema.json",
-  "description": "The ip module (SID_MODULES=ip): the full client IP in the v1 payload's ortb2.device, or nothing (status empty) with GPC, a US privacy opt-out, or under GDPR without opt-in to TCF Special Feature 1. It never sends a truncated address. Requests carry the client IP as both X-Forwarded-For (the Node.js target runs with SID_TRUST_PROXY) and CF-Connecting-IP (the Workers runtime). TC strings: CAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAA opts in to Special Feature 1 and nothing else; CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA has no special features.",
+  "description": "The ip module (SID_MODULES=ip): the full client IP in the v1 payload's ortb2.device, or nothing (status empty) with GPC, COPPA, a US privacy opt-out, or under GDPR without opt-in to TCF Special Feature 1. It never sends a truncated address. Requests carry the client IP as both X-Forwarded-For (the Node.js target runs with SID_TRUST_PROXY) and CF-Connecting-IP (the Workers runtime). TC strings: CAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAA opts in to Special Feature 1 and nothing else; CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA has no special features.",
   "config": { "SID_MODULES": "ip", "SID_TRUST_PROXY": "true" },
   "cases": [
     {
@@ -16,6 +16,11 @@
     {
       "name": "sends nothing with Global Privacy Control",
       "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "sec-gpc": "1" } },
+      "expect": { "status": 200, "jsonIncludes": { "ext": { "modules": { "ip": { "status": "empty" } } } } }
+    },
+    {
+      "name": "sends nothing for a COPPA request",
+      "request": { "path": "/_sid/v1?coppa=1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
       "expect": { "status": 200, "jsonIncludes": { "ext": { "modules": { "ip": { "status": "empty" } } } } }
     },
     {
