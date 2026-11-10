@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', 'packages/aws-lambda/deploy/**', '**/.tsbuild/**', '**/.wrangler/**', '**/node_modules/**', 'e2e/**', 'consumer-types/**', '**/worker-configuration.d.ts']
+    ignores: ['**/dist/**', 'packages/adapters/*/deploy/**', '**/.tsbuild/**', '**/.wrangler/**', '**/node_modules/**', 'e2e/**', 'consumer-types/**', '**/worker-configuration.d.ts']
   },
   js.configs.recommended,
   // The strictest type-aware presets: no `any` leaks, no floating promises, no unnecessary conditions.
@@ -13,7 +13,9 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ['eslint.config.js', 'scripts/*.mjs', 'packages/*/vitest.config.ts', 'conformance/vitest.config.ts']
+          allowDefaultProject: ['eslint.config.js', 'scripts/*.mjs', 'packages/*/vitest.config.ts', 'packages/*/*/vitest.config.ts', 'conformance/vitest.config.ts'],
+          // One default project per package's vitest.config.ts.
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 32
         },
         tsconfigRootDir: import.meta.dirname
       }
@@ -34,7 +36,7 @@ export default tseslint.config(
   },
   {
     // The CLIs and runners print to stdout by design.
-    files: ['packages/node/src/cli.ts', 'conformance/src/**', 'scripts/**', 'packages/*/scripts/**'],
+    files: ['packages/adapters/node/src/cli.ts', 'conformance/src/**', 'scripts/**', 'packages/*/*/scripts/**'],
     rules: { 'no-console': 'off' }
   },
   {
@@ -42,8 +44,16 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked
   },
   {
+    // JavaScript can't carry type annotations.
+    files: ['**/*.js', '**/*.mjs'],
+    rules: {
+      '@typescript-eslint/explicit-function-return-type': 'off',
+      '@typescript-eslint/explicit-module-boundary-types': 'off'
+    }
+  },
+  {
     // Build scripts run on Node.
-    files: ['scripts/*.mjs', 'packages/*/scripts/*.mjs'],
+    files: ['scripts/*.mjs', 'packages/*/*/scripts/*.mjs'],
     languageOptions: { globals: { process: 'readonly', console: 'readonly' } }
   }
 );

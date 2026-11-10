@@ -1,0 +1,18 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    // Platform-neutral, like core: every adapter bundles this list.
+    "lib": ["ES2023", "WebWorker"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../core" },
+    { "path": "../ip" },
+    { "path": "../ec" },
+    { "path": "../geo" },
+    { "path": "../reflect" }
+  ]
+}

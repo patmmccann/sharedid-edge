@@ -1,0 +1,27 @@
+{
+  "$schema": "../../../node_modules/wrangler/config-schema.json",
+  "name": "sharedid-edge",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  // Answer only the SharedID Edge routes on the publisher's own zone, so the cookie is first-party and comes from
+  // the same IPs as the site (Safari caps cookies set by servers on other IPs). Replace with your domain:
+  // "routes": [{ "pattern": "www.example.com/_sid/*", "zone_name": "example.com" }],
+  "workers_dev": true,
+  "observability": { "enabled": false },
+  // Configuration: see packages/core/src/config.ts. Empty values use the defaults.
+  "vars": {
+    "SID_BASE_PATH": "/_sid",
+    "SID_COOKIE_NAME": "_pubcid",
+    "SID_COOKIE_DOMAIN": "",
+    "SID_MAX_AGE_DAYS": "365",
+    "SID_CREATE": "true",
+    "SID_RECOVERY_COOKIE": "_pubcid_sv",
+    "SID_OPTOUT_COOKIE": "_pubcid_optout",
+    "SID_VENDOR_ID": "",
+    "SID_ALLOWED_ORIGINS": "",
+    "SID_SYNC_CACHE_SECONDS": "86400",
+    "SID_MODULES": "",
+    "SID_MODULE_CONFIG": "{}",
+    "SID_MODULE_TIMEOUT_MS": "50"
+  }
+}

@@ -27,6 +27,10 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      - name: tsconfig.json references every workspace project
+        run: npm run check:projects
+      - name: Relative links in Markdown files resolve
+        run: npm run check:links
       - name: Build and type-check every project, including tests (TypeScript 6.0)
         run: npm run build
       # Typed lint reads the built declarations of the workspace packages, so it runs after the build.
@@ -52,13 +56,33 @@ jobs:
           node -e '
             const { readFileSync } = require("node:fs");
             const { gzipSync } = require("node:zlib");
-            const gz = gzipSync(readFileSync("packages/cloudflare/dist/index.js")).length;
+            const gz = gzipSync(readFileSync("packages/adapters/cloudflare/dist/index.js")).length;
             const budget = 20 * 1024;
             console.log(`Worker bundle: ${gz} bytes gzipped (budget ${budget})`);
             if (gz > budget) { console.error("Over the bundle size budget"); process.exit(1); }
           '
       - name: Lambda bundle, size budget, and conformance suite against it (local CloudFront stand-in)
         run: npm run conformance:lambda
+
+  # Vendor modules (packages/vendor-modules/*) are tested in their own job, so one vendor's failing tests don't block
+  # changes elsewhere; branch protection can leave this job not required. Their types and lint are still checked in
+  # the checks job, with everything else. Succeeds when there are no vendor modules.
+  vendor-modules:
+    name: Vendor modules (tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Each vendor module's tests
+        run: npm run test:vendor-modules
 
   aws-template:
     name: SAM template (cfn-lint, no AWS account)
@@ -68,8 +92,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Lint packages/aws-lambda/template.yaml
-        run: pipx run --spec 'cfn-lint>=1,<2' cfn-lint packages/aws-lambda/template.yaml
+      - name: Lint packages/adapters/aws-lambda/template.yaml
+        run: pipx run --spec 'cfn-lint>=1,<2' cfn-lint packages/adapters/aws-lambda/template.yaml
 
   conformance-workerd:
     name: Conformance (Workers runtime, wrangler dev)

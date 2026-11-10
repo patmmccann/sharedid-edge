@@ -1,6 +1,6 @@
 node_modules/
 dist/
-packages/aws-lambda/deploy/
+packages/adapters/*/deploy/
 .tsbuild/
 .wrangler/
 coverage/

@@ -38,7 +38,7 @@ The worker never replaces an existing ID: when you turn it on, it adopts the IDs
 
 ## Deploy on Cloudflare
 
-Full reference: [`packages/cloudflare/README.md`](packages/cloudflare/README.md).
+Full reference: [`packages/adapters/cloudflare/README.md`](packages/adapters/cloudflare/README.md).
 
 ### Prerequisites
 
@@ -60,7 +60,7 @@ npm run build
 
 ### 2. Configure the worker
 
-Edit [`packages/cloudflare/wrangler.jsonc`](packages/cloudflare/wrangler.jsonc):
+Edit [`packages/adapters/cloudflare/wrangler.jsonc`](packages/adapters/cloudflare/wrangler.jsonc):
 
 ```jsonc
 {
@@ -138,7 +138,7 @@ A company running SharedID Edge for several publishers can deploy one Worker per
 
 ## Deploy on AWS (Lambda and CloudFront)
 
-If your site is served through Amazon CloudFront, run SharedID Edge as a Lambda function behind a `/_sid/*` behaviour of **your site's own distribution**. Full guide (architecture, the template's options, configuration, troubleshooting): [`packages/aws-lambda/README.md`](packages/aws-lambda/README.md).
+If your site is served through Amazon CloudFront, run SharedID Edge as a Lambda function behind a `/_sid/*` behaviour of **your site's own distribution**. Full guide (architecture, the template's options, configuration, troubleshooting): [`packages/adapters/aws-lambda/README.md`](packages/adapters/aws-lambda/README.md).
 
 **Why your own distribution:** since Safari 16.4, cookies set by a server whose IP address doesn't match the website's are capped at 7 days. A behaviour on the distribution that serves `www.example.com` shares its IP addresses; a separate distribution or API endpoint on another hostname doesn't.
 
@@ -155,13 +155,13 @@ git clone https://github.com/patmmccann/sharedid-edge.git
 cd sharedid-edge
 npm ci
 npm run build
-npm run bundle -w @sharedid-edge/aws-lambda    # one file: packages/aws-lambda/deploy/lambda.mjs
+npm run bundle -w @sharedid-edge/aws-lambda    # one file: packages/adapters/aws-lambda/deploy/lambda.mjs
 ```
 
 ### 2. Deploy the function
 
 ```sh
-cd packages/aws-lambda
+cd packages/adapters/aws-lambda
 sam deploy --guided
 ```
 
@@ -176,11 +176,11 @@ In the CloudFront console, on your distribution:
 1. **Origins → Create origin:** origin domain = the `OriginDomainName` output (`<id>.lambda-url.<region>.on.aws`), protocol HTTPS only, and origin access control = the stack's (the `OriginAccessControlId` output).
 2. **Behaviors → Create behavior:** path pattern `/_sid/*`, that origin, viewer protocol policy *Redirect HTTP to HTTPS*, allowed methods *GET, HEAD, OPTIONS*, cache policy **CachingDisabled**, origin request policy = the stack's (the `OriginRequestPolicyId` output). Make sure it's above any `*` behaviour that would catch `/_sid/*` first.
 
-Wait for the distribution to deploy. To try it on a new distribution instead, deploy with `CreateDistribution=true` (see the [package README](packages/aws-lambda/README.md#a-new-distribution)).
+Wait for the distribution to deploy. To try it on a new distribution instead, deploy with `CreateDistribution=true` (see the [package README](packages/adapters/aws-lambda/README.md#a-new-distribution)).
 
 ### 4. Configure
 
-Settings are the function's `SID_*` environment variables (the [Configuration reference](#configuration-reference)), set through the template's parameters: `sam deploy --parameter-overrides SidModules=ip`. Secrets (`SID_MODULE_SECRETS`, for example the `ec` passphrase) go in the `SidModuleSecrets` parameter, which CloudFormation doesn't display; Lambda stores it as an environment variable encrypted at rest. The [package README](packages/aws-lambda/README.md#secrets) explains why this rather than Secrets Manager. Invalid settings make every request return a 500; the reason is in the function's CloudWatch logs.
+Settings are the function's `SID_*` environment variables (the [Configuration reference](#configuration-reference)), set through the template's parameters: `sam deploy --parameter-overrides SidModules=ip`. Secrets (`SID_MODULE_SECRETS`, for example the `ec` passphrase) go in the `SidModuleSecrets` parameter, which CloudFormation doesn't display; Lambda stores it as an environment variable encrypted at rest. The [package README](packages/adapters/aws-lambda/README.md#secrets) explains why this rather than Secrets Manager. Invalid settings make every request return a 500; the reason is in the function's CloudWatch logs.
 
 ### 5. Verify
 
@@ -190,7 +190,7 @@ npm run verify-deployment -- --site https://www.example.com
 
 It checks that `/_sid/*` shares the site's IP addresses, sets the cookies correctly, isn't cached, and returns the JSON payload. Then [turn it on in Prebid.js](#configure-prebidjs).
 
-Lambda@Edge (running in CloudFront's edge locations, without a separate origin) is possible future work; see the [package README](packages/aws-lambda/README.md#lambdaedge).
+Lambda@Edge (running in CloudFront's edge locations, without a separate origin) is possible future work; see the [package README](packages/adapters/aws-lambda/README.md#lambdaedge).
 
 ## Configure Prebid.js
 
@@ -381,16 +381,16 @@ Built-in modules:
 
 | Name | Adds | Settings |
 | --- | --- | --- |
-| [`ip`](packages/module-ip/README.md) | `ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out | none |
-| [`ec`](packages/module-ec/README.md) | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**; see below | `domain`; secret `passphrase` |
-| [`geo`](packages/module-geo/README.md) | `ortb2.device.geo`: country, region, metro and UTC offset, plus city, postal code and coordinates when consent allows | `precision`: `precise` (default) or `coarse` |
-| [`reflect`](packages/module-reflect/README.md) | Nothing in the payload: re-sets first-party cookies other scripts wrote (such as `uid1` or `_ga`) with the same value and a new expiry, so Safari doesn't cap them, and with `restore`, sets them again from an `HttpOnly` keeper cookie after Safari deletes them | `cookies`, `keeper` |
+| [`ip`](packages/modules/ip/README.md) | `ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out | none |
+| [`ec`](packages/modules/ec/README.md) | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**; see below | `domain`; secret `passphrase` |
+| [`geo`](packages/modules/geo/README.md) | `ortb2.device.geo`: country, region, metro and UTC offset, plus city, postal code and coordinates when consent allows | `precision`: `precise` (default) or `coarse` |
+| [`reflect`](packages/modules/reflect/README.md) | Nothing in the payload: re-sets first-party cookies other scripts wrote (such as `uid1` or `_ga`) with the same value and a new expiry, so Safari doesn't cap them, and with `restore`, sets them again from an `HttpOnly` keeper cookie after Safari deletes them | `cookies`, `keeper` |
 
-To build your own, see [Adding a module](#adding-a-module).
+To build your own, see [Adding a module](#adding-a-module). Modules from vendors (in [`packages/vendor-modules/`](packages/vendor-modules/README.md); none yet) aren't built in: you add them to your build, and any that forwards data to another service says so at the top of its README and is marked "⚠ forwards data to `<host>`" here.
 
 ### `ip`: the real client IP
 
-Full documentation: [`packages/module-ip/README.md`](packages/module-ip/README.md).
+Full documentation: [`packages/modules/ip/README.md`](packages/modules/ip/README.md).
 
 Bid requests made from the page, or relayed by Prebid Server, don't always carry the user's own IP address. The `ip` module returns the address the worker sees, so you can add it to the auction's first-party data. It's built into the worker but **off until you enable it**:
 
@@ -424,7 +424,7 @@ The address is only returned to the browser that sent the request. The worker do
 
 ### `ec`: Trusted Server Edge Cookies
 
-Full documentation: [`packages/module-ec/README.md`](packages/module-ec/README.md).
+Full documentation: [`packages/modules/ec/README.md`](packages/modules/ec/README.md).
 
 The `ec` module implements IAB Tech Lab [Trusted Server](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html) Edge Cookies, for publishers who use Trusted Server or want its identifier. It sets the `ts-ec` cookie and returns the EC as `ortb2.user.id` in `/_sid/v1`.
 
@@ -463,7 +463,7 @@ npm exec -w @sharedid-edge/cloudflare -- wrangler secret put SID_MODULE_SECRETS
 
 ### `geo`: the visitor's location as `device.geo`
 
-Full documentation: [`packages/module-geo/README.md`](packages/module-geo/README.md).
+Full documentation: [`packages/modules/geo/README.md`](packages/modules/geo/README.md).
 
 Cloudflare geolocates every request, and the Worker already has the result. The `geo` module returns it as OpenRTB 2.6 `ortb2.device.geo`, so the page can give bidders the location the edge sees, without a geolocation script or a call to a geo service. It's **off until you enable it**:
 
@@ -494,7 +494,7 @@ Like the IP address, the location is only returned to the browser that sent the 
 
 ### `reflect`: keep other first-party cookies durable
 
-Full documentation: [`packages/module-reflect/README.md`](packages/module-reflect/README.md).
+Full documentation: [`packages/modules/reflect/README.md`](packages/modules/reflect/README.md).
 
 Scripts on your pages write other first-party cookies with `document.cookie`, such as an ID vendor's `uid1`, and Safari caps those at 7 days just like a script-written `_pubcid`. The `reflect` module sets the cookies you name again from the worker, with the **same value, byte for byte**, and a new expiry, so they become server-set cookies too. It's off until you enable it:
 
@@ -536,12 +536,12 @@ The payload is unchanged apart from `"reflect": { "ms": 0, "status": "empty" }` 
 Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0; Max-Age=34560000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
 ```
 
-- **Call `/_sid/v1` before gtag.js loads,** or a deleted `_ga` is replaced by a new one before the worker can restore it. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/module-reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/module-reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
+- **Call `/_sid/v1` before gtag.js loads,** or a deleted `_ga` is replaced by a new one before the worker can restore it. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/modules/reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/modules/reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
 - **Consent:** when storage isn't allowed the keeper is deleted (the original cookies are left alone), and `/_sid/optout` always deletes it.
 
 ## Self-host with Node.js
 
-Full reference: [`packages/node/README.md`](packages/node/README.md).
+Full reference: [`packages/adapters/node/README.md`](packages/adapters/node/README.md).
 
 If your site isn't on Cloudflare, you can run the same handler as a Node.js server behind the web server or load balancer that serves your site. It must answer on your site's own hostname and IP addresses, for the same reason as above.
 
@@ -550,7 +550,7 @@ npm ci && npm run build
 PORT=8787 \
 SID_PUBLIC_ORIGIN=https://www.example.com \
 SID_TRUST_PROXY=true \
-node packages/node/dist/cli.js
+node packages/adapters/node/dist/cli.js
 ```
 
 - `SID_PUBLIC_ORIGIN` is the public origin. TLS ends at your proxy, and the cookies need to know they're served over https to be `Secure`.
@@ -618,16 +618,23 @@ Responses carry two debug headers: `X-SharedID-Source` (`cookie`, `recovery`, `p
 ## Development
 
 ```text
-spec/                 the specification
-conformance/          HTTP cases every implementation must pass, and their runner
-packages/core/        the platform-neutral handler, consent, cookies and module interface
-packages/cloudflare/  the Cloudflare Worker
-packages/module-*/    the built-in modules: ip, ec, geo, reflect
-packages/node/        the Node.js server (local development, self-hosting, conformance target)
-packages/aws-lambda/  the AWS Lambda adapter, its bundle and SAM template
-e2e/                  unmodified Prebid.js against the worker, in Chromium, Firefox and WebKit
-scripts/              verify-deployment, and the type checks below
+spec/                          the specification
+conformance/                   HTTP cases every implementation must pass, and their runner
+packages/
+  core/                        the platform-neutral handler, consent, cookies and module interface
+  adapters/                    deployable platform packages; rules for all of them in AGENTS.md
+    cloudflare/                the Cloudflare Worker
+    node/                      the Node.js server (local development, self-hosting, conformance target)
+    aws-lambda/                the AWS Lambda adapter, its bundle and SAM template
+  modules/                     modules maintained by this project, built into every adapter
+    ip/  ec/  geo/  reflect/   the built-in modules
+    all/                       @sharedid-edge/modules: the built-in list the adapters import
+  vendor-modules/              modules contributed and maintained by vendors, opt-in at build time
+e2e/                           unmodified Prebid.js against the worker, in Chromium, Firefox and WebKit
+scripts/                       verify-deployment, the type checks and the repo checks below
 ```
+
+Each package has its own `README.md` and `AGENTS.md`. Workspaces, `tsc -b` references and the TypeScript 7 check are derived from these folders, so a new package needs no list edits beyond `node scripts/check-projects.mjs --write`.
 
 ```sh
 npm ci
@@ -642,10 +649,11 @@ TypeScript is strict from the start, and CI checks types several ways:
 - `npm run consumer-types`: the packed `@sharedid-edge/core` type-checked by a strict consumer, for each module resolution and TypeScript version.
 - `npm run attw`: the published types resolve correctly.
 - `npm run lint`: `typescript-eslint`'s strict type-checked rules.
+- `npm run check:projects` and `npm run check:links`: the root `tsconfig.json` references every workspace project, and every relative link and heading anchor in the Markdown files resolves.
 
 Tests:
 
-- `npm test`: unit tests, including the Worker's tests inside workerd, the Workers runtime.
+- `npm test`: unit tests, including the Worker's tests inside workerd, the Workers runtime. Vendor modules' tests run separately, with `npm run test:vendor-modules`.
 - `npm run conformance`: the conformance suite against the Node.js server; `npm run conformance:wrangler` runs it against the Worker under `wrangler dev`, and `npm run conformance:lambda` against the bundled Lambda handler behind a local stand-in for CloudFront.
 - In `e2e/`: `npm ci && npx playwright install && npm test` runs unmodified Prebid.js against the worker in three browsers.
 
@@ -667,7 +675,7 @@ export const continent = defineModule({
 });
 ```
 
-Publish it as its own package like [`packages/module-ip`](packages/module-ip), register it in [`packages/cloudflare/src/modules.ts`](packages/cloudflare/src/modules.ts) (and the Node.js CLI and [`packages/aws-lambda/src/modules.ts`](packages/aws-lambda/src/modules.ts)), and enable it with `SID_MODULES=continent`. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/core/AGENTS.md`](packages/core/AGENTS.md).
+Publish it as its own package like [`packages/modules/ip`](packages/modules/ip), add it to `builtInModules` in [`packages/modules/all`](packages/modules/all/README.md) (every adapter imports that list), and enable it with `SID_MODULES=continent`. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). A module from a vendor goes in [`packages/vendor-modules/`](packages/vendor-modules/README.md) instead, and isn't built in.
 
 ## Roadmap
 
