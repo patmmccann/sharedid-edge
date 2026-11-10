@@ -1,0 +1,36 @@
+version: 2
+updates:
+  # Keeps the e2e lockfile on current Prebid.js and Playwright, so local runs match what CI tests.
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule:
+      interval: weekly
+    groups:
+      e2e:
+        patterns: ['*']
+    ignore:
+      # The project requires Node.js 24 (engines >=24): types for a newer Node major would allow APIs the supported
+      # runtime doesn't have. Bump this major together with engines, .nvmrc and the platform runtimes.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+
+  # The workspace: core, adapters, modules, conformance and tooling.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      workspace:
+        patterns: ['*']
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # TypeScript 6 is the main compiler because typescript-eslint doesn't support 7 yet; TypeScript 7 is checked
+      # separately through the typescript7 alias. Move the main compiler to 7 deliberately, once typescript-eslint does.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

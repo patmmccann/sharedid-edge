@@ -21,7 +21,7 @@
     "!dist/**/*.tsbuildinfo"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "test": "vitest run",

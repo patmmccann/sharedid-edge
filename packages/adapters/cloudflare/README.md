@@ -41,7 +41,7 @@ Wrangler bundles `src/index.ts` with the workspace packages at deploy time. The 
 1. **Prerequisites:**
    - your site's hostname is **proxied** (orange cloud) on Cloudflare;
    - an account that can deploy Workers and edit routes on the zone;
-   - Node.js 22 or later.
+   - Node.js 24 or later.
 2. **Set the route and settings** in [`wrangler.jsonc`](wrangler.jsonc):
 
    ```jsonc

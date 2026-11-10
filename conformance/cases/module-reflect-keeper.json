@@ -62,9 +62,31 @@
       }
     },
     {
-      "name": "doesn't restore on /sync",
+      "name": "restores missing _ga and _gcl_au from a keeper of {_ga, _gcl_au} on /sync, and refreshes the keeper",
       "request": { "path": "/_sid/sync", "headers": { "cookie": "_sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0" } },
-      "expect": { "status": 200, "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }], "onlyListedCookies": true }
+      "expect": {
+        "status": 200,
+        "headers": { "content-type": "image/gif", "x-sharedid-modules": "reflect=empty" },
+        "bodyLength": 43,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "_ga", "value": "GA1.1.1234567890.1700000000", "maxAge": 34560000, "domain": ".example.com", "httpOnly": false, "sameSite": "Lax", "path": "/" },
+          { "name": "_gcl_au", "value": "1.1.987654321.1700000000", "maxAge": 7776000, "domain": ".example.com", "httpOnly": false },
+          { "name": "_sid_keep", "value": "eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0", "maxAge": 34560000, "domain": ".example.com", "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "with Global Privacy Control on /sync, deletes the keeper only",
+      "request": { "path": "/_sid/sync", "headers": { "sec-gpc": "1", "cookie": "_ga=GA1.1.1234567890.1700000000; _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0" } },
+      "expect": {
+        "status": 200,
+        "headers": { "cache-control": "no-store" },
+        "cookies": [{ "name": "_sid_keep", "value": "", "maxAge": 0, "domain": ".example.com", "httpOnly": true }],
+        "onlyListedCookies": true
+      }
     },
     {
       "name": "with Global Privacy Control, deletes the keeper and neither restores, refreshes nor deletes the originals",

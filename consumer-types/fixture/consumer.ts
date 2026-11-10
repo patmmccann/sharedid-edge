@@ -10,6 +10,7 @@ import {
   type LocationSource,
   type ModuleContext,
   type ModuleResult,
+  type ModuleRoute,
   type PayloadV1,
   type PlatformInfo,
   type PlatformLocation,
@@ -40,8 +41,17 @@ const source: LocationSource = { country: 'US', latitude: '30.2713', longitude: 
 const location: PlatformLocation = locationInfo(source);
 export const located: PlatformInfo = { clientIp: '203.0.113.1', ...location };
 
-const config: SharedIdEdgeConfig = resolveConfig({ SID_MODULES: 'geo' });
-const handler: SharedIdEdgeHandler = createHandler({ config, modules: [geo] });
+// A module that only maintains a cookie, so it also runs on Prebid.js's pixelUrl calls (/sync).
+const routes: readonly ModuleRoute[] = ['v1', 'sync'];
+const keeper: EdgeModule = defineModule({
+  name: 'keeper',
+  routes,
+  run: context => (context.storage.allowed ? { cookies: [{ name: 'kept', value: '1', maxAgeSeconds: 86_400, httpOnly: true }] } : undefined)
+});
+
+const config: SharedIdEdgeConfig = resolveConfig({ SID_MODULES: 'geo,keeper', SID_SYNC_MODULES: 'keeper' });
+export const syncModules: readonly string[] | undefined = config.syncModules;
+const handler: SharedIdEdgeHandler = createHandler({ config, modules: [geo, keeper] });
 const platform: PlatformInfo = { clientIp: '203.0.113.1', isEU: false };
 
 export async function payload(request: Request): Promise<PayloadV1> {

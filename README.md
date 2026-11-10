@@ -44,7 +44,7 @@ Full reference: [`packages/adapters/cloudflare/README.md`](packages/adapters/clo
 
 - Your site's DNS is on Cloudflare, and the hostname you serve pages from (for example `www.example.com`) is **proxied** (orange cloud). Workers routes only run on proxied hostnames.
 - A Cloudflare account with permission to deploy Workers and edit routes on the zone. Each sync is one Worker request; the free plan has a daily request limit, so check expected volume against your plan.
-- Node.js 22 or later and npm.
+- Node.js 24 or later and npm.
 - The site is served over https (the cookies are `Secure`).
 
 ### 1. Get the code and build it
@@ -146,7 +146,7 @@ If your site is served through Amazon CloudFront, run SharedID Edge as a Lambda 
 
 - An existing CloudFront distribution serving your site over https, and its ID (like `E2ABCDEFGHIJKL`).
 - The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html), with credentials that can create Lambda, IAM, CloudWatch Logs and CloudFront resources (`aws configure`).
-- Node.js 22 or later and npm.
+- Node.js 24 or later and npm.
 
 ### 1. Build
 
@@ -167,7 +167,7 @@ sam deploy --guided
 
 Answer the prompts: a stack name (like `sharedid-edge`), your region, `DistributionId` = your distribution's ID, and the `Sid*` settings you need (empty means the default; `SidCookieDomain` = `.example.com` to share the cookie across subdomains). Let SAM save the answers to `samconfig.toml`; later deploys are `sam deploy`.
 
-This creates a Node.js 22 function with a function URL that accepts only requests signed by your distribution (`AWS_IAM` auth and an origin access control), and an origin request policy. The stack's outputs list what step 3 needs.
+This creates a Node.js 24 function with a function URL that accepts only requests signed by your distribution (`AWS_IAM` auth and an origin access control), and an origin request policy. The stack's outputs list what step 3 needs.
 
 ### 3. Add the `/_sid/*` behaviour to your distribution
 
@@ -215,7 +215,7 @@ pbjs.setConfig({
 });
 ```
 
-- **`extend: true`** makes Prebid.js call `pixelUrl` on later visits too, which refreshes the cookie's lifetime. The response is cached privately by the browser for a day (`SID_SYNC_CACHE_SECONDS`), so a frequent visitor triggers at most about one request a day.
+- **`extend: true`** makes Prebid.js call `pixelUrl` on later visits too, which refreshes the cookie's lifetime. The response is cached privately by the browser for a day (`SID_SYNC_CACHE_SECONDS`), so a frequent visitor triggers at most about one request a day. Cookie-only modules such as `reflect` and `ec` also run on these calls; see [Modules on `/_sid/sync`](#modules-on-_sidsync).
 - **`storage.type` must be `cookie`**, so the page and the worker share the ID. `html5` (localStorage) won't pick up the server's cookie.
 - If Prebid.js runs on a different subdomain than the route, set `pixelUrl` to an absolute URL on a host that shares the cookie's domain, and set `SID_COOKIE_DOMAIN`.
 
@@ -238,7 +238,22 @@ Set-Cookie: _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; E
 X-SharedID-Source: param
 ```
 
-Modules don't run on `/sync`.
+Modules that only set cookies (`reflect`, `ec`) also run here, and add their cookies and an `X-SharedID-Modules` header with each one's status; anything else they return is ignored. With `SID_COOKIE_DOMAIN=.example.com`, `SID_MODULES=reflect` configured for `uid1` and for `_ga` with `restore`, and a request carrying `_pubcid`, `uid1` and `_ga`:
+
+```http
+HTTP/1.1 200 OK
+Cache-Control: private, max-age=86400
+Content-Length: 43
+Content-Type: image/gif
+X-Robots-Tag: noindex
+X-SharedID-Modules: reflect=empty
+X-SharedID-Source: cookie
+Set-Cookie: uid1=AbC123xyz; Max-Age=31536000; Expires=Wed, 10 Nov 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure
+Set-Cookie: _ga=GA1.1.1234567890.1700000000; Max-Age=34560000; Expires=Wed, 15 Dec 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure
+Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAifQ; Max-Age=34560000; Expires=Wed, 15 Dec 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
+Set-Cookie: _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=Wed, 10 Nov 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure
+Set-Cookie: _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=Wed, 10 Nov 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
+```
 
 ### `GET /_sid/v1`: the ID and the modules' output
 
@@ -343,6 +358,7 @@ To read `/v1` from a page on another origin, list that origin in `SID_ALLOWED_OR
 
 - `X-SharedID-Source`: where the ID came from: `cookie`, `recovery` (restored from the `HttpOnly` copy), `param` (adopted from Prebid.js's `?id=`) or `minted`.
 - `X-SharedID-Status: denied: <reason>`: why no ID was set. The reason is `opt-out`, `gpc`, `coppa` or `tcf: …`.
+- `X-SharedID-Modules` (on `/sync` only): each module that ran there, with its status, as in `ext.modules`: `reflect=empty, ec=ok`. Never cookie names, values or error details. `empty` is the normal status for a module that only sets cookies.
 
 ## Migrate from the WordPress or Drupal plugin
 
@@ -379,7 +395,7 @@ The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` pa
 
 ## Modules
 
-Modules add IDs and signals to `/_sid/v1`. They're built into the worker but **none runs until you list it**.
+Modules add IDs and signals to `/_sid/v1`, and some maintain cookies on `/_sid/sync` too. They're built into the worker but **none runs until you list it**.
 
 ### Choosing modules
 
@@ -403,6 +419,20 @@ curl -s https://www.example.com/_sid/v1 | jq .ext.modules
 - **Unknown names** are reported as `skipped` with reason `not installed`: check the spelling, or that your build includes the module.
 - **Failures are contained:** a module that errors or exceeds `SID_MODULE_TIMEOUT_MS` is reported and left out, and the rest of the response is unaffected.
 - **Removing a module** from `SID_MODULES` turns it off.
+
+### Modules on `/_sid/sync`
+
+Prebid.js calls `/_sid/sync` (its `pixelUrl`) on page views with `extend: true`, with no code of yours. Modules that only maintain cookies run there too, so they work without the page calling `/_sid/v1`:
+
+| Module | On `/_sid/sync` |
+| --- | --- |
+| `reflect` | yes: refreshes the cookies you name, and restores them from the keeper |
+| `ec` | yes: sets `ts-ec` (or deletes it when consent is withdrawn), as Trusted Server does on page loads |
+| `ip`, `geo`, `ua` | no: they return data, and `/_sid/sync` returns an image |
+
+- **Same rules as `/_sid/v1`:** the same consent, opt-out, time limit and failure handling. Only the modules' cookies are used; the GIF, status and other headers Prebid.js gets are unchanged, apart from `X-SharedID-Modules` (see [Debugging headers](#debugging-headers)).
+- **Choosing:** by default, every module in `SID_MODULES` that supports it runs on `/_sid/sync`. `SID_SYNC_MODULES` overrides that with a list (`"SID_SYNC_MODULES": "reflect"`), or `none`. Each name must also be in `SID_MODULES`, or every request fails with a 500 (a configuration error), so a typo can't go unnoticed; a listed module that doesn't run on `/_sid/sync`, such as `ip`, is reported `skipped`.
+- **Daily by default:** the browser caches a successful sync response for `SID_SYNC_CACHE_SECONDS` (`86400`, a day), so these modules run there about once a day per browser. That keeps cookies from expiring, and a visitor whose cookies Safari deleted after 7 days away gets them back on the first page view, since the cache has expired by then. Lower `SID_SYNC_CACHE_SECONDS` to run them more often (`0`: every page view), at the cost of a worker request each time.
 
 Built-in modules:
 
@@ -454,7 +484,7 @@ The address is only returned to the browser that sent the request. The worker do
 
 Full documentation: [`packages/modules/ec/README.md`](packages/modules/ec/README.md).
 
-The `ec` module implements IAB Tech Lab [Trusted Server](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html) Edge Cookies, for publishers who use Trusted Server or want its identifier. It sets the `ts-ec` cookie and returns the EC as `ortb2.user.id` in `/_sid/v1`.
+The `ec` module implements IAB Tech Lab [Trusted Server](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html) Edge Cookies, for publishers who use Trusted Server or want its identifier. It sets the `ts-ec` cookie, on Prebid.js's `/_sid/sync` calls as well as on `/_sid/v1`, and returns the EC as `ortb2.user.id` in `/_sid/v1`.
 
 > **This ID is derived from the visitor's IP address.** An EC is `HMAC-SHA256(passphrase, IP)` as 64 hex characters, a dot, and 6 random characters. Everyone behind the same IPv4 address, or the same IPv6 /64, gets the same 64-character prefix, and anyone with the passphrase can test which address an EC came from. That's how Trusted Server defines it, and it's why the module is off unless you turn it on. The SharedID itself stays random.
 
@@ -485,7 +515,7 @@ npm exec -w @sharedid-edge/cloudflare -- wrangler secret put SID_MODULE_SECRETS
 - Changing the passphrase changes the prefix for new ECs only.
 
 **Differences from Trusted Server.**
-- The EC is set only when the page calls `/_sid/v1`, not on page loads.
+- The EC is set on Prebid.js's `/_sid/sync` calls (about once a day per browser, with the default `SID_SYNC_CACHE_SECONDS`) and on `/_sid/v1`, not on every page load.
 - There's no server-side identity graph, partner sync or `/identify` API.
 - Consent uses this worker's signals (`gdpr`, the TC string, GPC, `us_privacy`, `coppa`), not Trusted Server's per-country and per-state jurisdiction lists, and GPP isn't decoded yet.
 
@@ -543,18 +573,18 @@ The payload is unchanged apart from `"reflect": { "ms": 0, "status": "empty" }` 
 
 - **Match the original's domain and `HttpOnly`.** The worker can't see how a cookie was first set. If the original is host-only and you set `domain` (or the other way round), the browser keeps two cookies of that name. `httpOnly` defaults to `false`, since the script that wrote the cookie usually reads it.
 - **Consent:** it reflects only when the worker would set the SharedID: not on opt-out, GPC, `coppa=1`, denied TCF consent, or GDPR without a TC string. It never deletes these cookies on `/_sid/v1`, and on `/_sid/optout` only those you mark `deleteOnOptOut`.
-- **Only on `/_sid/v1`.** Prebid.js's `pixelUrl` calls `/_sid/sync`, where modules don't run, so the page has to call `/_sid/v1` (for example with the `fetch` snippet under [`ip`](#ip-the-real-client-ip)).
+- **On Prebid.js's pixel call too.** It runs on `/_sid/sync`, so with `pixelUrl` and `extend: true` cookies are refreshed and restored on page views with no page code, about once a day per browser (see [Modules on `/_sid/sync`](#modules-on-_sidsync)). Calling `/_sid/v1` works as well.
 - Up to 10 cookies, 1 to 400 days each. The SharedID cookies, `ts-ec` and `euconsent-v2` can't be reflected.
 
-**Restoring deleted cookies.** A cookie marked `"restore": true` is also saved in one `HttpOnly` cookie the worker owns, the keeper (`_sid_keep`, base64url of a JSON object, at most 4096 bytes). When Safari has deleted the cookie, the next `/_sid/v1` call sets it again from the keeper, as `_pubcid_sv` does for `_pubcid`. For Google Analytics and Ads:
+**Restoring deleted cookies.** A cookie marked `"restore": true` is also saved in one `HttpOnly` cookie the worker owns, the keeper (`_sid_keep`, base64url of a JSON object, at most 4096 bytes). When Safari has deleted the cookie, the next call (Prebid.js's `/_sid/sync`, or `/_sid/v1`) sets it again from the keeper, as `_pubcid_sv` does for `_pubcid`. For Google Analytics and Ads:
 
 ```json
 {
   "reflect": {
     "cookies": [
-      { "name": "_ga", "maxAgeDays": 400, "domain": "example.com", "restore": true },
+      { "name": "_ga", "maxAgeDays": 400, "domain": "example.com", "restore": true, "prefer": "older" },
       { "name": "_gcl_aw", "maxAgeDays": 90, "domain": "example.com", "restore": true },
-      { "name": "_gcl_au", "maxAgeDays": 90, "domain": "example.com", "restore": true }
+      { "name": "_gcl_au", "maxAgeDays": 90, "domain": "example.com", "restore": true, "prefer": "older" }
     ]
   }
 }
@@ -564,7 +594,8 @@ The payload is unchanged apart from `"reflect": { "ms": 0, "status": "empty" }` 
 Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0; Max-Age=34560000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
 ```
 
-- **Call `/_sid/v1` before gtag.js loads,** or a deleted `_ga` is replaced by a new one before the worker can restore it. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/modules/reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/modules/reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
+- **`prefer`** decides which value wins when the page already wrote a new one: `"browser"` (default), `"backup"` (the saved value, always) or `"older"` (the one created first, read from `_ga`'s and `_gcl_au`'s timestamps). With `"older"`, a `_ga` that gtag.js re-minted before the worker was called is replaced by the saved one from the next page view. See [Which value wins](packages/modules/reflect/README.md#which-value-wins-prefer).
+- **Call `/_sid/v1` before gtag.js loads** to keep the client ID on the current page view too; otherwise a deleted `_ga` is replaced by a new one before the worker can restore it. Prebid.js's pixel call usually comes after gtag.js: it keeps everything refreshed and restores `_gcl_aw`, and with `"older"` it brings a re-minted `_ga` back from the next page view, but it's too late for the current one. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/modules/reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/modules/reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
 - **Consent:** when storage isn't allowed the keeper is deleted (the original cookies are left alone), and `/_sid/optout` always deletes it.
 
 ### `ua`: device data and the bot flag
@@ -654,8 +685,9 @@ All settings are strings, set as Worker `vars` (Cloudflare) or environment varia
 | `SID_OPTOUT_COOKIE` | `_pubcid_optout` | The opt-out cookie; Prebid.js reads `_pubcid_optout`. |
 | `SID_VENDOR_ID` | (empty: publisher mode) | Your TCF vendor ID, for vendor mode. |
 | `SID_ALLOWED_ORIGINS` | none | Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin. |
-| `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. |
-| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`, `ec`, `geo`, `reflect`, `ua`. |
+| `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. Also limits how often modules run on `/_sid/sync`. |
+| `SID_MODULES` | none | Comma-separated modules to run, in order. Built in: `ip`, `ec`, `geo`, `reflect`, `ua`. |
+| `SID_SYNC_MODULES` | the modules in `SID_MODULES` that run on `/_sid/sync` (`reflect`, `ec`) | Comma-separated modules to run on `/_sid/sync`, each also in `SID_MODULES`, or `none`. See [Modules on `/_sid/sync`](#modules-on-_sidsync). |
 | `SID_MODULE_CONFIG` | `{}` | JSON settings per module, keyed by module name. |
 | `SID_MODULE_SECRETS` | `{}` | JSON secrets per module, e.g. the `ec` passphrase. Set it as a secret (`wrangler secret put SID_MODULE_SECRETS`), not in `vars`. |
 | `SID_MODULE_TIMEOUT_MS` | `50` | Time limit for each module. |
@@ -664,7 +696,7 @@ Routes, under `SID_BASE_PATH`:
 
 | Route | |
 | --- | --- |
-| `GET /_sid/sync?id=pubcid:<id>` | The `pixelUrl` endpoint: a 1×1 GIF with the cookies. |
+| `GET /_sid/sync?id=pubcid:<id>` | The `pixelUrl` endpoint: a 1×1 GIF with the cookies, including those of modules that run there. |
 | `GET /_sid/v1` | JSON: the SharedID, its eid, and the modules' output. |
 | `GET /_sid/optout`, `GET /_sid/optin` | Set or clear the opt-out cookie. |
 
@@ -744,7 +776,7 @@ export const continent = defineModule({
 });
 ```
 
-Publish it as its own package like [`packages/modules/ip`](packages/modules/ip), add it to `builtInModules` in [`packages/modules/all`](packages/modules/all/README.md) (every adapter imports that list), and enable it with `SID_MODULES=continent`. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). A module from a vendor goes in [`packages/vendor-modules/`](packages/vendor-modules/README.md) instead, and isn't built in.
+Publish it as its own package like [`packages/modules/ip`](packages/modules/ip), add it to `builtInModules` in [`packages/modules/all`](packages/modules/all/README.md) (every adapter imports that list), and enable it with `SID_MODULES=continent`. A module that only maintains cookies can also run on `/_sid/sync` with `routes: ['v1', 'sync']`; there only its cookies are used. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). A module from a vendor goes in [`packages/vendor-modules/`](packages/vendor-modules/README.md) instead, and isn't built in.
 
 ## Roadmap
 

@@ -13,6 +13,7 @@ The modules this project maintains: [`ip`](ip/README.md), [`ec`](ec/README.md), 
 export const example = defineModule({
   name: 'example',          // lowercase, digits and -
   purposes: [1, 7],         // TCF purposes it needs publisher consent for when GDPR applies; omit if none
+  routes: ['v1'],           // where it runs: 'v1' (the default) and/or 'sync'; see below
   run(context) {            // may be async; must not make network calls
     return { ortb2: { device: { ext: { example: 1 } } } };   // or { eids: [...] }, or undefined
   }
@@ -20,6 +21,7 @@ export const example = defineModule({
 ```
 
 - Output is OpenRTB: `eids` in the `user.ext.eids` shape, other signals as an `ortb2` fragment. It's deep-merged with other modules' output in `SID_MODULES` order.
+- **`routes`** says where the module runs: `['v1']` (the default) or `['v1', 'sync']`. Add `'sync'` only for modules that maintain cookies (`reflect`, `ec`): Prebid.js calls `/sync` (its `pixelUrl`) on page views, so they run with no page code. On `/sync` the module gets the same context, but only its `cookies` are used; `eids` and `ortb2` are dropped, since the response is a GIF. Modules that return data (`ip`, `geo`) stay on `v1`. Deployers can narrow it with `SID_SYNC_MODULES`. The browser caches a successful sync for `SID_SYNC_CACHE_SECONDS` (a day by default), so don't rely on running there on every page view.
 - Use `context.config` for settings (from `SID_MODULE_CONFIG`), and validate them: it's `Record<string, unknown>`. Settings that could leak data on a typo throw, so the module reports `error` instead.
 - Secrets come from `SID_MODULE_SECRETS` (`context.secrets`). Never return, log or put them in an error message.
 - Data that locates the user precisely (a full IP address, coordinates, a postal code, a city) is sent in full or not at all, and left out when `preciseLocationDenial(consent)` gives a reason.
@@ -31,7 +33,7 @@ export const example = defineModule({
 ## Tests
 
 - Test each module with the handler (`createHandler({ modules: [module], config: resolveConfig({ SID_MODULES: 'name' }) })`), including every consent skip.
-- Add conformance cases (`conformance/cases/module-<name>*.json`) when its output is part of the payload contract.
+- Add conformance cases (`conformance/cases/module-<name>*.json`) when its output is part of the payload contract, and through `/_sid/sync` for a module that runs there.
 
 ## Docs
 

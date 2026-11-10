@@ -2,6 +2,8 @@
 
 The `ua` module for [SharedID Edge](../../../README.md): the browser's User-Agent Client Hints and `User-Agent` header in the `/_sid/v1` payload as OpenRTB 2.6 device data (`ortb2.device.sua`, `devicetype`, `os`, `osv`, `make`, `model`), plus a **bot flag** for crawlers that identify themselves, in the shared traffic signal `ortb2.device.ext.traffic`.
 
+It runs on `/_sid/v1` only: `/_sid/sync` returns an image, so there's nowhere to put the device data.
+
 The worker sees the request headers before any script on the page runs. Prebid.js fills `device.sua` from `navigator.userAgentData` too, but only once it has loaded, only in Chromium browsers, and not where a privacy extension blocks the API. The headers arrive regardless. The bot flag lets the page skip or mark auctions for Googlebot, Bingbot, link previewers such as Slackbot or `facebookexternalhit`, and other automated clients.
 
 ## Contents
