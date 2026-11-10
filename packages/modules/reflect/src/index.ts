@@ -255,6 +255,8 @@ function run({ request, storage, config }: ModuleContext): ModuleResult | undefi
  */
 export const reflectModule: EdgeModule = defineModule({
   name: 'reflect',
+  // Also on /sync, so Prebid.js's pixelUrl call refreshes and restores cookies on page views without a /v1 call.
+  routes: ['v1', 'sync'],
   run,
   // Only cookies the publisher marked: by default, opting out of the SharedID leaves other parties' cookies alone. The
   // keeper is this worker's own, so it's always deleted (core deletes only cookies the browser sent).

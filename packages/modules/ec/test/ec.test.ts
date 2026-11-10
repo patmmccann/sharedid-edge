@@ -137,6 +137,37 @@ describe('the ec module in the handler', () => {
     expect(ec).toBeUndefined();
     expect(JSON.stringify(body)).not.toContain('short');
   });
+  const sync = async (headers: Record<string, string> = {}, overrides: Record<string, string> = {}): Promise<{ response: Response; ec: string | undefined }> => {
+    const response = await handler(overrides)(new Request('https://www.example.com/_sid/sync', { headers }), { clientIp: '192.0.2.77' });
+    return { response, ec: response.headers.getSetCookie().find(c => c.startsWith(`${EC_COOKIE}=`)) };
+  };
+  it('sets ts-ec on /sync, without returning it, and keeps the pixel response', async () => {
+    const { response, ec } = await sync();
+    expect(ec).toMatch(/^ts-ec=7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc\.[A-Za-z0-9]{6}; Max-Age=31536000; Expires=[^;]+; Path=\/; Domain=\.example\.com; SameSite=Lax; Secure; HttpOnly$/);
+    expect(response.headers.get('Content-Type')).toBe('image/gif');
+    expect(response.headers.get('Cache-Control')).toBe('private, max-age=86400');
+    expect(response.headers.get('X-SharedID-Modules')).toBe('ec=ok');
+    expect((await response.arrayBuffer()).byteLength).toBe(43);
+  });
+  it('on /sync, keeps an existing EC and deletes it on withdrawal', async () => {
+    const existing = `ts-ec=${'a'.repeat(64)}.Ab12z9`;
+    expect((await sync({ Cookie: existing })).ec).toBeUndefined();
+    for (const headers of [{ 'Sec-GPC': '1', Cookie: existing }, { Cookie: `_pubcid_optout=1; ${existing}` }]) {
+      const { response, ec } = await sync(headers);
+      expect(ec).toMatch(/^ts-ec=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=\/; Domain=\.example\.com; SameSite=Lax; Secure; HttpOnly$/);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+    }
+  });
+  it('on /sync, still deletes ts-ec on withdrawal with a short passphrase, and otherwise sets nothing', async () => {
+    const short = { SID_MODULE_SECRETS: '{"ec":{"passphrase":"short"}}' };
+    expect((await sync({ 'Sec-GPC': '1', Cookie: `ts-ec=${'a'.repeat(64)}.Ab12z9` }, short)).ec).toMatch(/^ts-ec=; Max-Age=0;/);
+    const { response, ec } = await sync({}, short);
+    expect(ec).toBeUndefined();
+    expect(response.headers.get('X-SharedID-Modules')).toBe('ec=error');
+  });
+  it('doesn\'t run on /sync when SID_SYNC_MODULES leaves it out', async () => {
+    expect((await sync({}, { SID_SYNC_MODULES: 'none' })).ec).toBeUndefined();
+  });
   it('still deletes ts-ec on withdrawal when the passphrase is missing or short', async () => {
     for (const secrets of ['{"ec":{"passphrase":"short"}}', '{}']) {
       for (const [path, headers] of [['/_sid/v1', { 'Sec-GPC': '1' }], ['/_sid/v1?coppa=1', {}]] as const) {

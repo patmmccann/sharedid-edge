@@ -29,6 +29,7 @@ export {
   type ModuleContext,
   type ModuleCookie,
   type ModuleResult,
+  type ModuleRoute,
   type ModuleRunOutput
 } from './modules.js';
 export type { Eid, ModuleReport, PayloadV1, PlatformInfo } from './types.js';
