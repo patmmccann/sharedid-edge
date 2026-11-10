@@ -21,7 +21,7 @@
   },
   "scripts": {
     "test": "vitest run",
-    "attw": "attw --pack . --profile esm-only"
+    "attw": "attw --pack . --profile esm-only --quiet || attw --pack . --profile esm-only"
   },
   "dependencies": {
     "@sharedid-edge/core": "0.1.0"
