@@ -136,6 +136,13 @@ jobs:
       - name: Install e2e dependencies
         working-directory: e2e
         run: npm ci
+      - name: Use the latest published Prebid.js
+        # e2e/package.json allows any Prebid.js from 11.48 up; CI tests the newest release, so a Prebid.js change
+        # that breaks the pixelUrl contract shows up here rather than in production.
+        working-directory: e2e
+        run: |
+          npm install --no-save prebid.js@latest
+          node -e "console.log('Prebid.js', require('./node_modules/prebid.js/package.json').version)"
       - name: Cache the Playwright browser
         uses: actions/cache@v4
         with:
@@ -183,6 +190,13 @@ jobs:
       - name: Install e2e dependencies
         working-directory: e2e
         run: npm ci
+      - name: Use the latest published Prebid.js
+        # e2e/package.json allows any Prebid.js from 11.48 up; CI tests the newest release, so a Prebid.js change
+        # that breaks the pixelUrl contract shows up here rather than in production.
+        working-directory: e2e
+        run: |
+          npm install --no-save prebid.js@latest
+          node -e "console.log('Prebid.js', require('./node_modules/prebid.js/package.json').version)"
       - name: Cache the Playwright browser
         uses: actions/cache@v4
         with:

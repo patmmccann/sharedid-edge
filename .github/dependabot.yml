@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # Keeps the e2e lockfile on current Prebid.js and Playwright, so local runs match what CI tests.
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule:
+      interval: weekly
+    groups:
+      e2e:
+        patterns: ['*']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
