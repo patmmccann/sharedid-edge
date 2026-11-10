@@ -231,7 +231,9 @@ Name `reflect`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODU
   - `domain` (optional): a registrable domain without a leading dot, such as `example.com`; the cookie gets `Domain=.<domain>`. Without it, `SID_COOKIE_DOMAIN` applies, else the cookie is host-only;
   - `httpOnly` (optional, default `false`);
   - `deleteOnOptOut` (optional, default `false`);
-  - `restore` (optional, default `false`): save the cookie in the keeper cookie and restore it from there (below).
+  - `restore` (optional, default `false`): save the cookie in the keeper cookie and restore it from there (below);
+  - `prefer` (optional, default `"browser"`; only with `restore: true`): which value wins when the request carries the cookie and the keeper also has a value for it: `"browser"`, `"backup"` or `"older"` (below);
+  - `format` (optional; only with `prefer: "older"`): the value's format, `"ga"`, `"gcl_au"` or `"gcl_aw"`. Without it, the format comes from the name: `_ga` is `"ga"`, `_gcl_au` is `"gcl_au"` and `_gcl_aw` is `"gcl_aw"`. `prefer: "older"` on any other name without `format` is invalid.
 
   `keeper` (optional; its defaults apply when it's omitted) configures the keeper cookie:
   - `cookie` (default `_sid_keep`): a cookie name, with the same rules as `name`, and MUST NOT be one of the configured `cookies`;
@@ -244,10 +246,21 @@ Name `reflect`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODU
 - **The keeper cookie** holds the last known value of each `restore` cookie. Its value is the base64url encoding (RFC 4648 section 5, without padding) of a JSON object mapping cookie names to values, with keys in configuration order. It's set `HttpOnly`, with the keeper's `maxAgeDays` and `Domain`, and with `Path=/`, `SameSite=Lax` and `Secure` (over https) like the others. Its name and value together MUST NOT exceed 4096 bytes: entries are added in configuration order, and one that would take it over is left out (that cookie is still reflected) while later ones are still tried.
 - **Reading the keeper:** its value is read byte for byte, like the other cookies. A value that isn't base64url without padding, isn't a JSON object, or is over 4096 characters counts as empty, and so does each entry whose value isn't a string that could be reflected. It's never an error.
 - **Restoring,** on each `/v1` request where storage is allowed, for each `restore` cookie in configuration order:
+  - the request carries it, the keeper has a value for it, and the **backup wins** (below): it's **restored** over the request's value, set with the saved value and its own configured attributes as if reflected, and the saved value stays saved;
   - the request carries it with a value that can be reflected: it's reflected, and that value is saved;
   - the request doesn't carry it, and the keeper has a value for it: it's **restored**, set with that value and its own configured attributes as if reflected, and the value stays saved;
   - the request carries it with a value that can't be reflected: it's left alone, and its saved value is dropped;
   - otherwise nothing is saved for it.
+
+  Whether the backup wins over a value the request carries depends on `prefer`:
+  - `"browser"`: never. The request's value is current (the behaviour above).
+  - `"backup"`: always, whatever the request's value is, including one that can't be reflected.
+  - `"older"`: when both values parse in the cookie's `format` and the saved value's creation time is strictly earlier than the request's. On equal times, or when either value doesn't parse, the request's value wins, as with `"browser"`. A value parses when it matches its format exactly, with the creation time `<t>` as exactly 10 decimal digits (Unix seconds) no later than 86400 seconds after the worker's current time:
+    - `"ga"`: `GA1.<d>.<n>.<t>`, where `<d>` is 1 or 2 digits not starting with `0` and `<n>` is 1 to 20 digits (the Google Analytics `_ga` cookie, `GA1.1.…` or `GA1.2.…`);
+    - `"gcl_au"`: `1.<d>.<n>.<t>`, with `<d>` and `<n>` as for `"ga"` (the Google conversion linker's `_gcl_au`);
+    - `"gcl_aw"`: `GCL.<t>.<c>`, where `<c>` is one or more of `A`–`Z`, `a`–`z`, `0`–`9`, `_` and `-` (the Google Ads click cookie `_gcl_aw`; `<t>` is the click's time).
+
+  Values are compared and copied, never changed: a restored value is the saved value byte for byte.
 
   The keeper is then set with the saved values on every such request, which refreshes its expiry. When nothing is left to save and the request carried a keeper, it's deleted. With no `restore` cookie configured, no keeper is set, and one the request carries is deleted.
 - **Output:** cookies only, so the status is `empty`. Nothing is added to `eids` or `ortb2`, and neither names nor values are reported.

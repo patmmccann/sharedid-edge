@@ -4,7 +4,7 @@ The `reflect` module for [SharedID Edge](../../../README.md): it keeps other fir
 
 Scripts on your pages write first-party cookies with `document.cookie`, such as an ID vendor's `uid1` or Google's `_ga`. Safari caps cookies written by script at 7 days. The worker already sees those cookies on every request to `/_sid/*` on your site. With this module, each `/_sid/v1` call sets them again in a `Set-Cookie` header with the **same value** and a **new expiry**. They become server-set cookies, which Safari doesn't cap the same way, and their lifetime is refreshed on each visit.
 
-Cookies you mark `restore` are also saved in one `HttpOnly` cookie the worker owns, the **keeper**. When Safari has deleted one of them (a visitor who didn't come back for 7 days), the next `/_sid/v1` call sets it again from the keeper. It's what the worker's `_pubcid_sv` recovery copy does for `_pubcid`.
+Cookies you mark `restore` are also saved in one `HttpOnly` cookie the worker owns, the **keeper**. When Safari has deleted one of them (a visitor who didn't come back for 7 days), the next `/_sid/v1` call sets it again from the keeper. It's what the worker's `_pubcid_sv` recovery copy does for `_pubcid`. If the page's script has already written a new value by then, [`prefer`](#which-value-wins-prefer) decides whether the new value or the saved one is kept.
 
 The module never changes, returns or logs the values. It only sets cookies, and only when the worker would be allowed to store the SharedID itself.
 
@@ -16,6 +16,7 @@ The module never changes, returns or logs the values. It only sets cookies, and 
 - [Make `uid1` sticky and server-set](#make-uid1-sticky-and-server-set)
 - [Restore Google Analytics and Ads cookies after Safari deletes them (`_ga`, `_gcl_aw`, `_gcl_au`)](#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au)
 - [The keeper cookie](#the-keeper-cookie)
+- [Which value wins: `prefer`](#which-value-wins-prefer)
 - [Response](#response)
 - [Consent and opt-out](#consent-and-opt-out)
 - [Settings](#settings)
@@ -69,7 +70,8 @@ On each `/_sid/v1` request, for each configured cookie, in the order listed:
 
 | Situation | Cookie |
 | --- | --- |
-| The request carries the cookie, and the worker may store the SharedID | set again: same value, new `Max-Age` and `Expires`; with `restore`, its value is saved in the keeper |
+| The request carries the cookie, it has `restore`, the keeper has a value for it, and [`prefer`](#which-value-wins-prefer) picks the saved value (`backup`, or `older` when the saved value is older) | **restored**: set with the saved value and the configured attributes, replacing the one the browser sent |
+| The request carries the cookie otherwise, and the worker may store the SharedID | set again: same value, new `Max-Age` and `Expires`; with `restore`, its value is saved in the keeper |
 | The request doesn't carry it, it has `restore`, and the keeper has a value for it | **restored**: set with the saved value and the configured attributes |
 | The request doesn't carry it otherwise, or its value is empty | none |
 | Its value is quoted (`"…"`), longer than 1024 characters, or has characters a cookie value can't have (spaces, commas, `;`, `\`, non-ASCII) | none: it can't be set again unchanged, so it's left alone (and with `restore`, its saved value is dropped) |
@@ -141,6 +143,7 @@ You can check in the browser's developer tools after a `/_sid/v1` call: there sh
    - `maxAgeDays: 365` gives a one-year expiry, refreshed on every `/_sid/v1` call.
    - `domain` and `httpOnly` match the original, so the browser keeps one `uid1`, not two.
    - `restore: true` is optional. It saves `uid1` in the [keeper](#the-keeper-cookie), so if Safari has already deleted `uid1` when the visitor comes back, the worker sets the old value again instead of letting the vendor mint a new one. Leave it out if the vendor's own deletion of `uid1` means something (for example, its opt-out).
+   - `"prefer": "backup"` (optional, with `restore`) also puts the saved `uid1` back when the vendor's script already wrote a new one before `/_sid/v1` ran. Add it only if the vendor never changes `uid1` on purpose; see [Which value wins](#which-value-wins-prefer).
 
 3. **Call `/_sid/v1` from the page,** after the vendor's script has written `uid1`, so the request carries it:
 
@@ -172,9 +175,9 @@ gtag usually sets these cookies on your registrable domain (Domain `.example.com
 {
   "reflect": {
     "cookies": [
-      { "name": "_ga", "maxAgeDays": 400, "domain": "example.com", "restore": true },
+      { "name": "_ga", "maxAgeDays": 400, "domain": "example.com", "restore": true, "prefer": "older" },
       { "name": "_gcl_aw", "maxAgeDays": 90, "domain": "example.com", "restore": true },
-      { "name": "_gcl_au", "maxAgeDays": 90, "domain": "example.com", "restore": true }
+      { "name": "_gcl_au", "maxAgeDays": 90, "domain": "example.com", "restore": true, "prefer": "older" }
     ],
     "keeper": { "cookie": "_sid_keep", "maxAgeDays": 400 }
   }
@@ -186,9 +189,12 @@ As a variable:
 ```jsonc
 "vars": {
   "SID_MODULES": "reflect",
-  "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"_ga\",\"maxAgeDays\":400,\"domain\":\"example.com\",\"restore\":true},{\"name\":\"_gcl_aw\",\"maxAgeDays\":90,\"domain\":\"example.com\",\"restore\":true},{\"name\":\"_gcl_au\",\"maxAgeDays\":90,\"domain\":\"example.com\",\"restore\":true}],\"keeper\":{\"cookie\":\"_sid_keep\",\"maxAgeDays\":400}}}"
+  "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"_ga\",\"maxAgeDays\":400,\"domain\":\"example.com\",\"restore\":true,\"prefer\":\"older\"},{\"name\":\"_gcl_aw\",\"maxAgeDays\":90,\"domain\":\"example.com\",\"restore\":true},{\"name\":\"_gcl_au\",\"maxAgeDays\":90,\"domain\":\"example.com\",\"restore\":true,\"prefer\":\"older\"}],\"keeper\":{\"cookie\":\"_sid_keep\",\"maxAgeDays\":400}}}"
 }
 ```
+
+- **`prefer: "older"`** on `_ga` and `_gcl_au` (recommended): if gtag.js loaded before `/_sid/v1` and minted a new `_ga` or `_gcl_au` because Safari had deleted the old one, the worker sees that the new value was created after the saved one and puts the saved one back. See [Which value wins](#which-value-wins-prefer). It only replaces a value with an older one, so a visitor's established client ID is kept, and the cookie is fixed from the **next** page view (the current page's hits were already sent with the new ID).
+- **`_gcl_aw` keeps the default, `prefer: "browser"`.** gtag writes `_gcl_aw` only when the visitor lands from an ad click, and its time is that click's. A newer `_gcl_aw` means a newer click, which should replace the old one, so `older` would undo it.
 
 - **`maxAgeDays`:** Google gives `_ga` about 2 years, but browsers cap cookies at 400 days, so 400 is the most you can set. Google gives `_gcl_aw` and `_gcl_au` 90 days by default; keep your tag's setting. The expiry is refreshed on every `/_sid/v1` call, so it counts from the visitor's latest visit, not from when Google first set the cookie.
 - **`httpOnly`:** left out (`false`). gtag has to read these cookies.
@@ -222,7 +228,7 @@ So call `/_sid/v1` **before gtag.js loads**, and load gtag when the call is done
 
 The restored cookies are set by the `/_sid/v1` response, so gtag.js finds them when it loads. With Google Tag Manager, load the container the same way.
 
-If you'd rather not change how gtag loads, call `/_sid/v1` anywhere on the page. Cookies the browser still has are refreshed as usual. Cookies Safari deleted are restored on that call, but that page view has already run without them: **the restore takes effect from the next page view**, and only for cookies gtag didn't write again in the meantime. gtag writes a new `_ga` on load when it finds none (and the conversion linker does the same for `_gcl_au`); a present value always wins, so for those the saved value is replaced by the new one. `_gcl_aw`, which is written only when the visitor lands from an ad click, is restored. So for `_ga`, calling `/_sid/v1` before gtag.js is the option that keeps the client ID.
+If you'd rather not change how gtag loads, call `/_sid/v1` anywhere on the page. Cookies the browser still has are refreshed as usual. Cookies Safari deleted are restored on that call, but that page view has already run without them: **the restore takes effect from the next page view**. gtag writes a new `_ga` on load when it finds none (and the conversion linker does the same for `_gcl_au`). With `"prefer": "older"`, as in the configuration above, the worker replaces those new values with the older saved ones, so the visitor keeps their client ID from the next page view on; with the default, `"prefer": "browser"`, the new value wins and replaces the saved one. `_gcl_aw`, which is written only when the visitor lands from an ad click, is restored either way. Calling `/_sid/v1` before gtag.js is still the only option that keeps the client ID on the current page view too.
 
 If you pass consent to the worker (`gdpr`, `gdpr_consent`), add the same query parameters to that early call.
 
@@ -232,7 +238,7 @@ If you pass consent to the worker (`gdpr`, `gdpr_consent`), add the same query p
 - When storage isn't allowed, the worker **deletes the keeper** (it's the worker's own store of these values) but leaves `_ga`, `_gcl_aw` and `_gcl_au` alone: they're Google's tag's cookies, and they expire on their own schedule.
 - **`/_sid/optout`** always deletes the keeper. It deletes the Google cookies only if you set `"deleteOnOptOut": true` on them.
 - The keeper follows the worker's storage decision, not Google consent mode or your CMP's analytics and advertising choices. If your consent setup can refuse analytics or ads storage while allowing the SharedID, either leave `restore` off, or call `/_sid/v1` only when those are allowed too.
-- If a script deletes one of these cookies on purpose, the keeper restores it on the next `/_sid/v1` call while storage is allowed. Use `restore` only for cookies whose owner doesn't delete them as a signal.
+- If a script deletes one of these cookies on purpose, the keeper restores it on the next `/_sid/v1` call while storage is allowed. Use `restore` only for cookies whose owner doesn't delete them as a signal. Likewise, with `prefer: "older"` a deliberately reset `_ga` (one written with a new client ID) is replaced by the saved one; with `prefer: "backup"`, any new value is.
 
 ### Compared with Stape's Cookie Keeper
 
@@ -245,13 +251,55 @@ This is similar to Stape's Cookie Keeper power-up, which stores a first-party ma
 ## The keeper cookie
 
 - **Name:** `_sid_keep`, or `keeper.cookie`. It can't be one of the configured cookies, a [reserved name](#settings), or one of the worker's configured cookie names.
-- **What it holds:** the last known value of every `restore` cookie. Present values win; values for cookies the browser no longer has are kept, so they can be restored again later.
+- **What it holds:** the last known value of every `restore` cookie: the value the browser sent, unless [`prefer`](#which-value-wins-prefer) picked the saved one. Values for cookies the browser no longer has are kept, so they can be restored again later.
 - **Format:** base64url (no padding) of a JSON object, `{"_ga":"GA1.1.1234567890.1700000000","_gcl_au":"1.1.987654321.1700000000"}` becomes `eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0`. That keeps it a valid cookie value whatever characters the saved values use. It's not encrypted: anyone with the browser's cookies can read it, as they can read the cookies themselves. It's `HttpOnly`, so page scripts can't.
 - **Malformed values** (edited by hand, or from an older version) count as empty: they're overwritten on the next call, or deleted if there's nothing to save. They never cause an error.
 - **Size:** a cookie's name and value can't be more than 4096 bytes together. The cookies are added in the order you list them; one that doesn't fit is left out of the keeper (it's still reflected, just not restorable), and later ones that fit are still saved. Three Google cookies take about 200 bytes. It takes several cookies near the 1024-character value limit to reach it.
 - **Attributes:** `HttpOnly`, `Path=/`, `SameSite=Lax`, `Secure` over https, `Max-Age` from `keeper.maxAgeDays` (default 400 days), and `Domain` from `keeper.domain`; without it, the **first `restore` cookie's `domain`**, so the keeper reaches the same hosts as the cookies it restores; without that, `SID_COOKIE_DOMAIN`, else host-only.
 - **Refreshed on every call:** the worker sets it on every `/_sid/v1` call where it has something to keep, so its expiry moves forward with each visit, like the cookies it keeps.
 - With no `restore` cookie configured, no keeper is set, and a left-over one is deleted.
+
+## Which value wins: `prefer`
+
+A `restore` cookie can be in the request **and** in the keeper with a different value. That happens when Safari deleted the cookie and the page's script minted a new one before `/_sid/v1` ran: gtag.js does it with `_ga` when it loads first. Each `restore` cookie's `prefer` setting says which value is kept:
+
+| `prefer` | The request carries the cookie and the keeper has another value | Use it for |
+| --- | --- | --- |
+| `"browser"` (default) | The browser's value wins: it's set again and replaces the saved one. | Cookies whose owner may change them on purpose. This is how the keeper has always worked. |
+| `"backup"` | The saved value wins: it's set over the browser's, whatever that is, and stays saved. | Identifiers that should never change once set, like `uid1` in [the example above](#make-uid1-sticky-and-server-set). |
+| `"older"` | Whichever was **created first** wins, read from the creation time in the value. On a tie, or if either value doesn't have the expected format, the browser's value wins, as with `"browser"`. | `_ga` and `_gcl_au`, which carry the time they were minted. |
+
+In every mode, a cookie missing from the request is restored from the keeper, and the browser's value is saved when the keeper has nothing for it. A value that wins is set **byte for byte** with the cookie's configured attributes: the worker compares values, it never changes them. Nothing is restored when the worker may not store the SharedID ([consent](#consent-and-opt-out)), and the keeper is deleted then, as always.
+
+**Example, `older`.** The keeper has `_ga=GA1.1.1234567890.1700000000` (created November 2023). Safari deleted `_ga`, and gtag.js minted `GA1.1.555555555.1750000000` (June 2025) before the page called `/_sid/v1`:
+
+```http
+Cookie: _ga=GA1.1.555555555.1750000000; _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAifQ
+```
+
+The saved value is older, so it's restored, and the keeper keeps it:
+
+```http
+Set-Cookie: _ga=GA1.1.1234567890.1700000000; Max-Age=34560000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure
+Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAifQ; Max-Age=34560000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
+```
+
+With `"prefer": "browser"`, the same request gets `_ga=GA1.1.555555555.1750000000` back and a keeper holding that new value. With `"backup"`, it gets the saved value, as with `older`; but `backup` would also restore it if the browser's `_ga` were the older one.
+
+**Caveats:**
+- **It fixes later page views, not the current one.** By the time the page calls `/_sid/v1`, a script that minted a new value has already used it: gtag.js has sent the page view's hits with the new client ID. The restored cookie is what gtag reads from the next page view on. To keep the ID on the current page view too, call `/_sid/v1` before the script loads ([timing](#timing-gtagjs-reads-_ga-when-it-loads)).
+- **`backup` overrides the cookie's owner.** If the script resets its cookie on purpose (a new client ID after the user asked for one, or its own opt-out marker), `backup` puts the old value back on the next `/_sid/v1` call, for as long as the keeper has it. That's why it isn't the default. `older` does the same for a deliberate reset that writes a newer value.
+- **The creation time comes from the visitor's clock.** gtag writes it with the browser's time. A value more than a day in the future (by the worker's clock) doesn't count as parsed, so the browser's value wins. A clock that's behind can make a new value look older than the saved one; then the new value wins, as it would by default.
+
+**Formats `older` reads.** Each value must match its format exactly, and the creation time must be 10 digits of Unix seconds:
+
+| `format` | Value | Assumed for the cookie named |
+| --- | --- | --- |
+| `"ga"` | `GA1.<d>.<random>.<seconds>`, where `<d>` is the cookie domain's depth: `GA1.1.…` (gtag.js) and `GA1.2.…` (older analytics.js) both match. | `_ga` |
+| `"gcl_au"` | `1.<d>.<random>.<seconds>` | `_gcl_au` |
+| `"gcl_aw"` | `GCL.<seconds>.<click ID>`; the time is the ad click's | `_gcl_aw` |
+
+The format comes from the cookie's exact name. For a cookie gtag writes under another name (its `cookie_prefix` setting, such as `site_ga`), set `"format"`. `"prefer": "older"` on any other cookie without `"format"` is a settings error, since there would be nothing to compare. Other cookies, like `uid1` or a UUID, don't carry their creation time; use `"browser"` or `"backup"` for them. The `_ga_<container>` session cookies aren't in the `"ga"` format.
 
 ## Response
 
@@ -327,6 +375,8 @@ All in `SID_MODULE_CONFIG.reflect`. Unknown keys, wrong types and out-of-range v
 | `cookies[].httpOnly` | optional | `true` adds `HttpOnly`. Default `false`. |
 | `cookies[].deleteOnOptOut` | optional | `true` deletes the cookie on `/_sid/optout`. Default `false`. |
 | `cookies[].restore` | optional | `true` saves the cookie in the keeper and restores it when the browser no longer has it. Default `false`. |
+| `cookies[].prefer` | optional | With `"restore": true`: which value wins when the browser sends the cookie and the keeper has another, `"browser"`, `"backup"` or `"older"`. See [Which value wins](#which-value-wins-prefer). Default `"browser"`. |
+| `cookies[].format` | optional | With `"prefer": "older"`: the value's format, `"ga"`, `"gcl_au"` or `"gcl_aw"`. Default: from the name (`_ga`, `_gcl_au`, `_gcl_aw`); required for other names. |
 | `keeper` | optional | The keeper cookie's settings, below. Leave it out to use the defaults. |
 | `keeper.cookie` | optional | The keeper's name. Default `_sid_keep`. Same rules as `cookies[].name`, and not one of the configured cookies. |
 | `keeper.maxAgeDays` | optional | The keeper's lifetime in days, 1 to 400. Default `400`. |
@@ -360,6 +410,8 @@ Other exports:
 - `rawCookieValue(header, name)`: a cookie's value exactly as the `Cookie` header carries it.
 - `isReflectable(value)`: whether a value can be set again unchanged.
 - `encodeKeeper(entries, maxLength)` and `decodeKeeper(value)`: the keeper's value format. `decodeKeeper` never throws.
+- `cookieTimestamp(format, value, nowSeconds)`: the creation time `prefer: "older"` reads from a value, or `undefined`. Never throws.
+- The types `ReflectModuleConfig`, `ReflectedCookie`, `KeeperSettings`, `KeeperPreference` and `TimestampFormat`.
 - `RESERVED_COOKIE_NAMES`, `MAX_REFLECTED_COOKIES`, `MAX_REFLECTED_VALUE_LENGTH`, `MAX_REFLECT_AGE_DAYS`, `DEFAULT_KEEPER_COOKIE`, `DEFAULT_KEEPER_AGE_DAYS`, `MAX_KEEPER_COOKIE_BYTES`.
 
 ## Troubleshooting
@@ -367,12 +419,14 @@ Other exports:
 | Symptom | Cause |
 | --- | --- |
 | `ext.modules.reflect` is missing | `reflect` isn't in `SID_MODULES`. |
-| `ext.modules.reflect.status` is `error` | The settings are invalid: check the JSON, that each entry has `name` and `maxAgeDays` (1 to 400), that `domain` has no leading dot, that no name is reserved or listed twice, and that `keeper` has only `cookie`, `maxAgeDays` and `domain`, with a name that isn't also in `cookies`. |
+| `ext.modules.reflect.status` is `error` | The settings are invalid: check the JSON, that each entry has `name` and `maxAgeDays` (1 to 400), that `domain` has no leading dot, that no name is reserved or listed twice, and that `keeper` has only `cookie`, `maxAgeDays` and `domain`, with a name that isn't also in `cookies`. `prefer` other than `"browser"` needs `"restore": true`; `"older"` needs a cookie named `_ga`, `_gcl_au` or `_gcl_aw`, or a `format`; `format` is only for `"older"`. |
 | No `Set-Cookie` for the cookie | The request didn't carry it (check the page calls `/_sid/v1` after the cookie is written, and that `/_sid/*` is on a host the cookie's domain covers); or its value is quoted, too long or has characters that can't be copied; or storage isn't allowed: see `X-SharedID-Status`. |
 | Two cookies of the same name in the browser | The configured `domain` doesn't match the original's. See [Match the original cookie's attributes](#match-the-original-cookies-attributes). Delete the stray copy once (developer tools), then fix the setting. |
 | The page's script can't read the cookie any more | `httpOnly` is `true`. Set it to `false`. |
 | The cookie still expires after 7 days in Safari | Run `verify-deployment` (see the main README): the endpoint's IP addresses probably don't match the site's, so Safari still caps it. Or the page doesn't call `/_sid/v1`. |
 | No `_sid_keep` cookie | No cookie has `"restore": true`; or none of them was in the request yet; or storage isn't allowed (the keeper is then deleted). |
-| A deleted cookie isn't restored | The keeper didn't have it: it was never in a `/_sid/v1` request with storage allowed, or it didn't fit in 4096 bytes, or the keeper was deleted by an opt-out or missing consent (or expired). Or the page's script wrote a new value before `/_sid/v1` ran: a present value always wins. |
-| A new `_ga` in Safari after a week, even with `restore` | gtag.js loaded before `/_sid/v1` and minted a new one. Call `/_sid/v1` before gtag.js; see [the timing caveat](#timing-gtagjs-reads-_ga-when-it-loads). |
+| A deleted cookie isn't restored | The keeper didn't have it: it was never in a `/_sid/v1` request with storage allowed, or it didn't fit in 4096 bytes, or the keeper was deleted by an opt-out or missing consent (or expired). Or the page's script wrote a new value before `/_sid/v1` ran: with the default `"prefer": "browser"`, a present value wins. See [Which value wins](#which-value-wins-prefer). |
+| A new `_ga` in Safari after a week, even with `restore` | gtag.js loaded before `/_sid/v1` and minted a new one. Set `"prefer": "older"` on `_ga` to restore the old one from the next page view, and call `/_sid/v1` before gtag.js to keep it on the first one too; see [the timing caveat](#timing-gtagjs-reads-_ga-when-it-loads). |
+| `"prefer": "older"` keeps the new `_ga` | The values don't both match the [`ga` format](#which-value-wins-prefer) (a renamed cookie needs `"format"`), the new value's time is more than a day ahead of the worker's clock, or the visitor's clock was behind when gtag minted it. The browser's value wins then. |
+| A cookie's owner reset it, and the old value came back | `"prefer": "backup"` (or `"older"`, for a newer value) restores the saved value over any new one. Use `"browser"` for cookies their owner changes on purpose. |
 | `_sid_keep` is deleted on every call | Storage isn't allowed (see `X-SharedID-Status`), or no cookie has `restore` any more. |
