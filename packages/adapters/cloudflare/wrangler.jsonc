@@ -8,6 +8,9 @@
   // "routes": [{ "pattern": "www.example.com/_sid/*", "zone_name": "example.com" }],
   "workers_dev": true,
   "observability": { "enabled": false },
+  // Minified to keep the bundle small; source maps are uploaded so errors in Cloudflare's logs point at the original code.
+  "minify": true,
+  "upload_source_maps": true,
   // Configuration: see packages/core/src/config.ts. Empty values use the defaults.
   "vars": {
     "SID_BASE_PATH": "/_sid",
