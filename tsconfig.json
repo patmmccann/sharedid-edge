@@ -8,6 +8,8 @@
     { "path": "packages/core/test" },
     { "path": "packages/module-ip" },
     { "path": "packages/module-ip/test" },
+    { "path": "packages/module-ec" },
+    { "path": "packages/module-ec/test" },
     { "path": "packages/node" },
     { "path": "packages/node/test" },
     { "path": "conformance" },
