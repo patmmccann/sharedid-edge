@@ -1,6 +1,6 @@
 # @sharedid-edge/aws-lambda
 
-[SharedID Edge](../../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `ec`, `geo` and `reflect`, and it passes the same conformance suite.
+[SharedID Edge](../../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `ec`, `geo`, `reflect` and `ua`, and it passes the same conformance suite.
 
 The main README has a [quick start](../../../README.md#deploy-on-aws-lambda-and-cloudfront). This is the full guide.
 
@@ -224,6 +224,8 @@ The handler gets the client IP and location (`PlatformInfo`) from headers CloudF
 | `isEU` | from `country` | `true` for the 27 EU member states, `false` for other countries, unknown without a country. |
 
 Core's `locationInfo` validates the location values the same way as on the other platforms (dropping empty values, `XX`, and out-of-range coordinates). CloudFront has no continent header, so `continent` is never set on Lambda. The template's origin request policy forwards all these headers. If you use your own policy, forward them too, or the `geo` module only gets what you forward.
+
+**The `ua` module** reads the visitor's `User-Agent` and User-Agent Client Hints (`Sec-CH-UA`, `Sec-CH-UA-Mobile`, `Sec-CH-UA-Platform`, and any high-entropy hints you ask for). The template's policy doesn't forward them yet, and CloudFront then sends `User-Agent: Amazon CloudFront`, which the module ignores, so it reports `empty`. Add them to the policy's headers to use it; CloudFront allows 10 headers per policy by default. See the [`ua` module's README](../../modules/ua/README.md#on-aws-lambda-behind-cloudfront).
 
 - **`requestContext.http.sourceIp` is never used behind CloudFront:** it's CloudFront's address, not the visitor's. Nor is `X-Forwarded-For`.
 - **`isEU`** comes from a bundled list of the 27 EU member states (`EU_COUNTRY_CODES`), the same meaning as Cloudflare's `request.cf.isEUCountry`, so both platforms treat a visitor the same way. It's EU membership, not the EEA (Iceland, Liechtenstein, Norway) or the UK: pages there should send `gdpr=1` (the [consent rules](../../../README.md#consent-and-opt-out)). When it's `true`, GDPR applies unless the request says `gdpr=0`. When CloudFront sends no country (the header isn't forwarded, or the location is unknown) `isEU` is unknown, as on the other platforms.

@@ -1,7 +1,7 @@
 {
   "name": "@sharedid-edge/modules",
   "version": "0.1.0",
-  "description": "The SharedID Edge built-in module list (ip, ec, geo, reflect) that every adapter bundles",
+  "description": "The SharedID Edge built-in module list (ip, ec, geo, reflect, ua) that every adapter bundles",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
@@ -28,7 +28,8 @@
     "@sharedid-edge/module-ec": "0.1.0",
     "@sharedid-edge/module-geo": "0.1.0",
     "@sharedid-edge/module-ip": "0.1.0",
-    "@sharedid-edge/module-reflect": "0.1.0"
+    "@sharedid-edge/module-reflect": "0.1.0",
+    "@sharedid-edge/module-ua": "0.1.0"
   },
   "repository": {
     "type": "git",

@@ -83,7 +83,7 @@ Core's `locationInfo` validates the values the same way for every adapter, dropp
 
 ## Built-in modules
 
-The CLI builds in `ip`, `ec`, `geo` and `reflect`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../../README.md#modules).
+The CLI builds in `ip`, `ec`, `geo`, `reflect` and `ua`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../../README.md#modules).
 
 ## Using it as a library
 

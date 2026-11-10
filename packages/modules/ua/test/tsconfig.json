@@ -1,0 +1,12 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../../../.tsbuild/module-ua-test",
+    "emitDeclarationOnly": true,
+    "isolatedDeclarations": false,
+    "lib": ["ES2023", "WebWorker"]
+  },
+  "include": ["."],
+  "references": [{ "path": ".." }, { "path": "../../../core" }]
+}

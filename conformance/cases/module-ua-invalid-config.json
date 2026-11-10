@@ -1,0 +1,8 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The ua module with an invalid setting (SID_MODULE_CONFIG={\"ua\":{\"ua\":\"yes\"}}: ua must be true or false): the module fails (status error) and adds nothing, not even the traffic signal, and the rest of the payload is returned.",
+  "config": { "SID_MODULES": "ua", "SID_MODULE_CONFIG": "{\"ua\":{\"ua\":\"yes\"}}" },
+  "cases": [
+    { "name": "reports the module as an error and adds no device data", "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", "sec-ch-ua": "\"Chromium\";v=\"131\"", "sec-ch-ua-mobile": "?0", "sec-ch-ua-platform": "\"Linux\"" } }, "expect": { "status": 200, "jsonIncludes": { "v": 1, "ext": { "modules": { "ua": { "status": "error" } } } }, "jsonAbsent": ["ortb2"] } }
+  ]
+}

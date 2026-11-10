@@ -1,0 +1,230 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The ua module (SID_MODULES=ua): User-Agent Client Hints as ortb2.device (sua, devicetype, os, osv, model), and the shared traffic signal device.ext.traffic for self-identified crawlers. sua.source is 1 with low-entropy hints only and 2 with high-entropy hints; GREASE brands are dropped. High-entropy fields (full versions, platform version, model, architecture, bitness, osv, device.ua) are left out with GPC, COPPA, a US privacy opt-out, an invalid TC string, or GDPR without a TC string; the traffic signal is always sent. User-Agent parsing beyond bot detection is implementation-defined, so these cases assert only what comes from Client Hints and the bot flag. SID_MODULE_CONFIG turns on device.ua.",
+  "config": { "SID_MODULES": "ua", "SID_MODULE_CONFIG": "{\"ua\":{\"ua\":true}}" },
+  "cases": [
+    {
+      "name": "maps Chrome's high-entropy Client Hints to device, dropping the GREASE brand",
+      "request": {
+        "path": "/_sid/v1",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+          "sec-ch-ua": "\"Chromium\";v=\"131\", \"Not A(Brand\";v=\"8\", \"Google Chrome\";v=\"131\"",
+          "sec-ch-ua-mobile": "?1",
+          "sec-ch-ua-platform": "\"Android\"",
+          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"131.0.6778.81\", \"Not A(Brand\";v=\"8.0.0.0\", \"Google Chrome\";v=\"131.0.6778.81\"",
+          "sec-ch-ua-platform-version": "\"14.0.0\"",
+          "sec-ch-ua-model": "\"Pixel 8\""
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": { "cache-control": "no-store" },
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "ua": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+              "sua": {
+                "browsers": [{ "brand": "Chromium", "version": ["131", "0", "6778", "81"] }, { "brand": "Google Chrome", "version": ["131", "0", "6778", "81"] }],
+                "platform": { "brand": "Android", "version": ["14", "0", "0"] },
+                "mobile": 1,
+                "model": "Pixel 8",
+                "source": 2
+              },
+              "devicetype": 4,
+              "os": "Android",
+              "osv": "14.0.0",
+              "model": "Pixel 8"
+            }
+          },
+          "ext": { "modules": { "ua": { "status": "ok" } } }
+        },
+        "jsonAbsent": ["ortb2.device.ext"]
+      }
+    },
+    {
+      "name": "maps the default Client Hints with source 1, and Windows 11 from the platform version",
+      "request": {
+        "path": "/_sid/v1",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Windows\""
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "sua": { "browsers": [{ "brand": "Google Chrome", "version": ["131"] }, { "brand": "Chromium", "version": ["131"] }], "platform": { "brand": "Windows" }, "mobile": 0, "source": 1 },
+              "devicetype": 2,
+              "os": "Windows"
+            }
+          },
+          "ext": { "modules": { "ua": { "status": "ok" } } }
+        },
+        "jsonAbsent": ["ortb2.device.osv", "ortb2.device.sua.platform.version", "ortb2.device.ext"]
+      }
+    },
+    {
+      "name": "reads the Windows release from Sec-CH-UA-Platform-Version",
+      "request": {
+        "path": "/_sid/v1",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Windows\"",
+          "sec-ch-ua-platform-version": "\"15.0.0\"",
+          "sec-ch-ua-arch": "\"x86\"",
+          "sec-ch-ua-bitness": "\"64\"",
+          "sec-ch-ua-model": "\"\""
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "sua": { "platform": { "brand": "Windows", "version": ["15", "0", "0"] }, "mobile": 0, "architecture": "x86", "bitness": "64", "source": 2 },
+              "devicetype": 2,
+              "os": "Windows",
+              "osv": "11"
+            }
+          }
+        },
+        "jsonAbsent": ["ortb2.device.model", "ortb2.device.sua.model"]
+      }
+    },
+    {
+      "name": "ignores malformed Client Hints",
+      "request": {
+        "path": "/_sid/v1",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "sec-ch-ua": "Google Chrome;v=131",
+          "sec-ch-ua-mobile": "yes",
+          "sec-ch-ua-platform": "\"Windows\""
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "ortb2": { "device": { "sua": { "platform": { "brand": "Windows" }, "source": 1 }, "devicetype": 2, "os": "Windows" } } },
+        "jsonAbsent": ["ortb2.device.sua.browsers", "ortb2.device.sua.mobile"]
+      }
+    },
+    {
+      "name": "flags a self-identified crawler in the traffic signal",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "declared", "sources": ["ua"] } } } }, "ext": { "modules": { "ua": { "status": "ok" } } } }
+      }
+    },
+    {
+      "name": "flags a link previewer in the traffic signal",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "declared", "sources": ["ua"] } } } } }
+      }
+    },
+    {
+      "name": "sends the traffic signal with Global Privacy Control",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)", "sec-gpc": "1" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "declared", "sources": ["ua"] } } } } },
+        "jsonAbsent": ["ortb2.device.ua"]
+      }
+    },
+    {
+      "name": "sends the traffic signal for a COPPA request",
+      "request": { "path": "/_sid/v1?coppa=1", "headers": { "user-agent": "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "declared", "sources": ["ua"] } } } } },
+        "jsonAbsent": ["ortb2.device.ua"]
+      }
+    },
+    {
+      "name": "sends only low-entropy fields with Global Privacy Control",
+      "request": {
+        "path": "/_sid/v1",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+          "sec-ch-ua": "\"Chromium\";v=\"131\", \"Not A(Brand\";v=\"8\", \"Google Chrome\";v=\"131\"",
+          "sec-ch-ua-mobile": "?1",
+          "sec-ch-ua-platform": "\"Android\"",
+          "sec-ch-ua-full-version-list": "\"Chromium\";v=\"131.0.6778.81\", \"Not A(Brand\";v=\"8.0.0.0\", \"Google Chrome\";v=\"131.0.6778.81\"",
+          "sec-ch-ua-platform-version": "\"14.0.0\"",
+          "sec-ch-ua-model": "\"Pixel 8\"",
+          "sec-gpc": "1"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "sua": { "browsers": [{ "brand": "Chromium", "version": ["131"] }, { "brand": "Google Chrome", "version": ["131"] }], "platform": { "brand": "Android" }, "mobile": 1, "source": 1 },
+              "devicetype": 4,
+              "os": "Android"
+            }
+          },
+          "ext": { "modules": { "ua": { "status": "ok" } } }
+        },
+        "jsonAbsent": ["ortb2.device.ua", "ortb2.device.osv", "ortb2.device.model", "ortb2.device.sua.model", "ortb2.device.sua.platform.version"]
+      }
+    },
+    {
+      "name": "sends only low-entropy fields when GDPR applies and there is no TC string",
+      "request": {
+        "path": "/_sid/v1?gdpr=1",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Windows\"",
+          "sec-ch-ua-platform-version": "\"15.0.0\"",
+          "sec-ch-ua-arch": "\"x86\"",
+          "sec-ch-ua-bitness": "\"64\""
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "ortb2": { "device": { "sua": { "platform": { "brand": "Windows" }, "mobile": 0, "source": 1 }, "devicetype": 2, "os": "Windows" } } },
+        "jsonAbsent": ["ortb2.device.ua", "ortb2.device.osv", "ortb2.device.sua.architecture", "ortb2.device.sua.bitness", "ortb2.device.sua.platform.version"]
+      }
+    },
+    {
+      "name": "sends only low-entropy fields with a US privacy opt-out of sale",
+      "request": {
+        "path": "/_sid/v1?us_privacy=1YYN",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Windows\"",
+          "sec-ch-ua-platform-version": "\"15.0.0\""
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "ortb2": { "device": { "sua": { "platform": { "brand": "Windows" }, "source": 1 }, "os": "Windows" } } },
+        "jsonAbsent": ["ortb2.device.ua", "ortb2.device.osv", "ortb2.device.sua.platform.version"]
+      }
+    },
+    {
+      "name": "returns nothing without a User-Agent or Client Hints",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "ext": { "modules": { "ua": { "status": "empty" } } } },
+        "jsonAbsent": ["ortb2"]
+      }
+    }
+  ]
+}

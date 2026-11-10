@@ -4,11 +4,11 @@ import { builtInModules } from '../src/index.js';
 
 describe('builtInModules', () => {
   it('lists every project module once, in the documented order', () => {
-    expect(builtInModules.map(m => m.name)).toEqual(['ip', 'ec', 'geo', 'reflect']);
+    expect(builtInModules.map(m => m.name)).toEqual(['ip', 'ec', 'geo', 'reflect', 'ua']);
   });
 
   it('registers cleanly: valid names and purposes, no duplicates', () => {
-    expect(new ModuleRegistry(builtInModules).names()).toEqual(['ip', 'ec', 'geo', 'reflect']);
+    expect(new ModuleRegistry(builtInModules).names()).toEqual(['ip', 'ec', 'geo', 'reflect', 'ua']);
   });
 
   it('cannot be changed at run time', () => {

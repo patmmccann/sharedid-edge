@@ -298,6 +298,33 @@ With `SID_MODULES=ip,geo`, `geo` still returns the coarse location, without city
 }
 ```
 
+With `SID_MODULES=ua`, Chrome on Windows (sending the default Client Hints) gets device data, and a crawler gets the bot flag:
+
+```json
+{
+  "ortb2": {
+    "device": {
+      "sua": {
+        "browsers": [{ "brand": "Google Chrome", "version": ["131"] }, { "brand": "Chromium", "version": ["131"] }],
+        "platform": { "brand": "Windows" },
+        "mobile": 0,
+        "source": 1
+      },
+      "devicetype": 2,
+      "os": "Windows"
+    }
+  },
+  "ext": { "modules": { "ua": { "ms": 0, "status": "ok" } } }
+}
+```
+
+```json
+{
+  "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "declared", "sources": ["ua"] } } } },
+  "ext": { "modules": { "ua": { "ms": 0, "status": "ok" } } }
+}
+```
+
 | Field | |
 | --- | --- |
 | `v` | Payload version, `1`. |
@@ -385,6 +412,7 @@ Built-in modules:
 | [`ec`](packages/modules/ec/README.md) | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**; see below | `domain`; secret `passphrase` |
 | [`geo`](packages/modules/geo/README.md) | `ortb2.device.geo`: country, region, metro and UTC offset, plus city, postal code and coordinates when consent allows | `precision`: `precise` (default) or `coarse` |
 | [`reflect`](packages/modules/reflect/README.md) | Nothing in the payload: re-sets first-party cookies other scripts wrote (such as `uid1` or `_ga`) with the same value and a new expiry, so Safari doesn't cap them, and with `restore`, sets them again from an `HttpOnly` keeper cookie after Safari deletes them | `cookies`, `keeper` |
+| [`ua`](packages/modules/ua/README.md) | `ortb2.device` from User-Agent Client Hints (`sua`, `devicetype`, `os`, `osv`, `model`), and `device.ext.traffic` with `bot: true` for crawlers that identify themselves | `ua`: also send `device.ua` |
 
 To build your own, see [Adding a module](#adding-a-module). Modules from vendors (in [`packages/vendor-modules/`](packages/vendor-modules/README.md); none yet) aren't built in: you add them to your build, and any that forwards data to another service says so at the top of its README and is marked "⚠ forwards data to `<host>`" here.
 
@@ -539,6 +567,47 @@ Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2
 - **Call `/_sid/v1` before gtag.js loads,** or a deleted `_ga` is replaced by a new one before the worker can restore it. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/modules/reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/modules/reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
 - **Consent:** when storage isn't allowed the keeper is deleted (the original cookies are left alone), and `/_sid/optout` always deletes it.
 
+### `ua`: device data and the bot flag
+
+Full documentation: [`packages/modules/ua/README.md`](packages/modules/ua/README.md).
+
+The worker sees the browser's User-Agent Client Hints and `User-Agent` before any script runs. The `ua` module returns them as OpenRTB 2.6 device data, and flags crawlers that identify themselves (Googlebot, Bingbot, Slackbot, `facebookexternalhit`, `curl`, headless browsers, …) in the shared traffic signal `device.ext.traffic`, so the page can skip or mark auctions for them. It's **off until you enable it**:
+
+```jsonc
+"vars": {
+  "SID_MODULES": "ua",                   // or "ip,geo,ua"
+  "SID_MODULE_CONFIG": "{}"              // "{\"ua\":{\"ua\":true}}" also sends device.ua
+}
+```
+
+Chrome on Android, with high-entropy hints, then gets (merge it into Prebid.js as shown for `ip`):
+
+```json
+{
+  "ortb2": {
+    "device": {
+      "sua": {
+        "browsers": [{ "brand": "Chromium", "version": ["131", "0", "6778", "81"] }, { "brand": "Google Chrome", "version": ["131", "0", "6778", "81"] }],
+        "platform": { "brand": "Android", "version": ["14", "0", "0"] },
+        "mobile": 1,
+        "model": "Pixel 8",
+        "source": 2
+      },
+      "devicetype": 4,
+      "model": "Pixel 8",
+      "os": "Android",
+      "osv": "14.0.0"
+    }
+  }
+}
+```
+
+- **Client Hints first.** `sua.source` is `1` with the default hints and `2` with high-entropy ones. GREASE brands like `"Not A(Brand"` are dropped. Browsers send high-entropy hints only after your **page** asks with an `Accept-CH` header; the module's README has the header to add.
+- **Bots** are detected with [isbot](https://github.com/omrilotan/isbot): `{ "bot": true, "botKind": "declared", "sources": ["ua"] }`. The signal is sent whatever the consent, under GPC and COPPA too: it describes the traffic, not the person.
+- **Consent:** with GPC, `coppa=1`, a US privacy opt-out, an invalid TC string, or GDPR without a TC string, only low-entropy fields are sent (major versions, platform name, mobile, `devicetype`, `os`): no full versions, OS version, model, architecture or `device.ua`.
+- **Safari and Firefox** send no Client Hints, so the built-in module only checks them for bots. Full `User-Agent` parsing with [Bowser](https://github.com/bowser-js/bowser) is available as `@sharedid-edge/module-ua/bowser`, but isn't built in: it adds about 12 KB gzipped, over the Worker's size budget.
+- **On AWS Lambda**, forward `User-Agent` and the `Sec-CH-UA*` headers in the CloudFront origin request policy, which the stack's template doesn't do yet.
+
 ## Self-host with Node.js
 
 Full reference: [`packages/adapters/node/README.md`](packages/adapters/node/README.md).
@@ -586,7 +655,7 @@ All settings are strings, set as Worker `vars` (Cloudflare) or environment varia
 | `SID_VENDOR_ID` | (empty: publisher mode) | Your TCF vendor ID, for vendor mode. |
 | `SID_ALLOWED_ORIGINS` | none | Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin. |
 | `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. |
-| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`, `ec`, `geo`, `reflect`. |
+| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`, `ec`, `geo`, `reflect`, `ua`. |
 | `SID_MODULE_CONFIG` | `{}` | JSON settings per module, keyed by module name. |
 | `SID_MODULE_SECRETS` | `{}` | JSON secrets per module, e.g. the `ec` passphrase. Set it as a secret (`wrangler secret put SID_MODULE_SECRETS`), not in `vars`. |
 | `SID_MODULE_TIMEOUT_MS` | `50` | Time limit for each module. |
@@ -679,7 +748,7 @@ Publish it as its own package like [`packages/modules/ip`](packages/modules/ip),
 
 ## Roadmap
 
-1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, an AWS Lambda adapter, and the `ip`, `ec`, `geo` and `reflect` modules.
+1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, an AWS Lambda adapter, and the `ip`, `ec`, `geo`, `reflect` and `ua` modules.
 2. **Next:** Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
 3. A Prebid.js RTD module that reads `/_sid/v1`, plus first-party modules for bot scores and device type, a Fastly adapter, and Lambda@Edge.
 4. Vendor modules, a Rust implementation, and inline mode.

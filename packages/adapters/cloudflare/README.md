@@ -91,7 +91,7 @@ Core's `locationInfo` validates every location value the same way for all adapte
 
 ## Built-in modules
 
-The Worker builds in `ip`, `ec`, `geo` and `reflect`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../../README.md#modules) and each module's README. To add your own or a vendor module, import it in `src/index.ts` and pass `[...builtInModules, yourModule]`.
+The Worker builds in `ip`, `ec`, `geo`, `reflect` and `ua`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../../README.md#modules) and each module's README. To add your own or a vendor module, import it in `src/index.ts` and pass `[...builtInModules, yourModule]`.
 
 ## Verify
 
