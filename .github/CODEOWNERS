@@ -1,0 +1,7 @@
+# Code owners review changes to the paths they own. Later lines take precedence over earlier ones.
+* @patmmccann
+
+# Vendor modules: each vendor's folder maps to the people who maintain it (see packages/vendor-modules/AGENTS.md),
+# alongside a project maintainer. For example:
+#
+# /packages/vendor-modules/example/  @example-vendor-github-user @patmmccann

@@ -5,27 +5,9 @@ The platform-neutral implementation: `createHandler` (routes, ID choice, cookies
 - **No platform APIs.** The project compiles with `lib: ["ES2023", "WebWorker"]` and no Node or DOM types: only `Request`, `Response`, `Headers`, `URL`, `crypto.randomUUID`, `TextEncoder` and timers. Anything platform-specific (the client IP, `request.cf`) comes in through `PlatformInfo` from the adapter. Adapters validate location data with `locationInfo` (`location.ts`), so every platform drops the same bad values.
 - **No runtime dependencies.** It's bundled into every worker. A full TCF decoder is deliberately not used; `tcf.ts` reads only what's needed.
 - **Public API.** Everything exported from `src/index.ts` is public. Changing an exported type or signature is a breaking change for adapters and module authors: check `consumer-types/fixture/consumer.ts` still compiles (`npm run consumer-types`) and update it to cover new exports. `isolatedDeclarations` is on, so exports need explicit types.
-- **Configuration.** New settings go in `SharedIdEdgeConfig`, `DEFAULT_CONFIG` and `resolveConfig` (with validation that throws `ConfigError`), the table in `resolveConfig`'s JSDoc, `spec/SPEC.md`, the README's configuration reference, and `packages/cloudflare/wrangler.jsonc` `vars` (then `npm run types -w @sharedid-edge/cloudflare`).
+- **Configuration.** New settings go in `SharedIdEdgeConfig`, `DEFAULT_CONFIG` and `resolveConfig` (with validation that throws `ConfigError`), the table in `resolveConfig`'s JSDoc, `spec/SPEC.md`, the README's configuration reference, and `packages/adapters/cloudflare/wrangler.jsonc` `vars` (then `npm run types -w @sharedid-edge/cloudflare`).
 - **Tests** are in `test/` (Vitest, Node environment): `unit.test.ts` for the building blocks, `handler.test.ts` for behaviour through the handler. `test/helpers.ts` has `tcString(purposes, { publisher, vendors })` and `publisherTc(purposes)` to build TC strings and `setCookies(response)` to parse cookies. Use a fixed clock and ID generator (`createHandler({ now, mintId })`) for deterministic assertions.
 
-## Writing a module
+## Modules
 
-```ts
-export const example = defineModule({
-  name: 'example',          // lowercase, digits and -
-  purposes: [1, 7],         // TCF purposes it needs publisher consent for when GDPR applies; omit if none
-  run(context) {            // may be async; must not make network calls
-    return { ortb2: { device: { ext: { example: 1 } } } };   // or { eids: [...] }, or undefined
-  }
-});
-```
-
-- Output is OpenRTB: `eids` in the `user.ext.eids` shape, other signals as an `ortb2` fragment. It's deep-merged with other modules' output in `SID_MODULES` order.
-- Use `context.config` for settings (from `SID_MODULE_CONFIG`), and validate them: it's `Record<string, unknown>`.
-- Data that locates the user precisely (a full IP address, coordinates, a postal code, a city) is sent in full or not at all, and left out when `preciseLocationDenial(consent)` gives a reason.
-- `context.storage` is the worker's own storage decision for the SharedID (`{ allowed: false, reason }` on opt-out, GPC, COPPA or denied consent). A module that stores or extends an identifier should follow it, as `reflect` does.
-- Don't put personal data in the output unless the publisher enabled it in the module's config, and default to off. Don't log request data.
-- A module that throws or exceeds `SID_MODULE_TIMEOUT_MS` is reported (`ext.modules`) and left out. Don't rely on that for control flow; return `undefined` when there's nothing to add.
-- Modules with a `gvlid` don't run when GDPR applies until vendor consent decoding exists.
-- Give each module package its own README.md: turning it on, response shapes with JSON examples, consent rules, settings and troubleshooting (see `packages/module-ip/README.md`). Link it from the main README's Modules section.
-- Test each module with the handler (`createHandler({ modules: [module], config: resolveConfig({ SID_MODULES: 'name' }) })`), including consent skips, and add conformance cases when its output is part of the payload contract.
+Core defines the module interface (`EdgeModule`, `ModuleContext`, `defineModule`, `runModules` in `modules.ts`) and runs modules, but never depends on one. How to write a module, and the rules for them, are in [`../modules/AGENTS.md`](../modules/AGENTS.md); vendor modules add [`../vendor-modules/AGENTS.md`](../vendor-modules/AGENTS.md). Changing the interface is a public API change for every module.

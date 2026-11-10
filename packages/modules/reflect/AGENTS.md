@@ -1,8 +1,8 @@
-# packages/module-reflect
+# packages/modules/reflect
 
-User documentation is in [README.md](README.md) (also the npm package page); keep it in step with behaviour changes.
+User documentation is in [README.md](README.md) (also the npm package page); keep it in step with behaviour changes. The rules for every module are in [`../AGENTS.md`](../AGENTS.md).
 
-The `reflect` module (`@sharedid-edge/module-reflect`): re-sets first-party cookies other scripts wrote (named in `SID_MODULE_CONFIG.reflect.cookies`) with the same value and a new `Max-Age`, so they become server-set cookies. Cookies marked `restore` are also saved in one `HttpOnly` keeper cookie (`_sid_keep` by default) and set again from it when the browser has deleted them. See the [spec section](../../spec/SPEC.md#the-reflect-module).
+The `reflect` module (`@sharedid-edge/module-reflect`): re-sets first-party cookies other scripts wrote (named in `SID_MODULE_CONFIG.reflect.cookies`) with the same value and a new `Max-Age`, so they become server-set cookies. Cookies marked `restore` are also saved in one `HttpOnly` keeper cookie (`_sid_keep` by default) and set again from it when the browser has deleted them. See the [spec section](../../../spec/SPEC.md#the-reflect-module).
 
 - **Values are opaque.** Copy them byte for byte from the raw `Cookie` header (`rawCookieValue`, not `context.cookies`, which strips quotes). Never decode, re-encode, trim, inspect, log or return them, and never put cookie names or values in the payload or in errors. A value that can't be set unchanged (quoted, over 1024 characters, not cookie-octets) is skipped, not fixed. The keeper is the one place values are encoded: it wraps them unchanged (base64url of a JSON object, `encodeKeeper`), and a restored value must come back byte for byte.
 - **The keeper is untrusted input.** `decodeKeeper` never throws: anything malformed is empty, and entries are kept only if `isReflectable`. Only configured `restore` names are ever restored from it. It stays within 4096 bytes (name plus value), skipping entries in configured order; don't make it an error.
