@@ -11,6 +11,7 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | `packages/core/` | Platform-neutral handler, consent, cookies, module interface | Published as `@sharedid-edge/core`. |
 | `packages/cloudflare/` | The Cloudflare Worker | |
 | `packages/module-ip/` | The `ip` module: client IP in `ortb2.device` | Published as `@sharedid-edge/module-ip`; the pattern for module packages. |
+| `packages/module-ec/` | The `ec` module: Trusted Server Edge Cookies (`ts-ec`) | Opt-in; its ID prefix is derived from the client IP. |
 | `packages/node/` | Node.js server | Local development, self-hosting, conformance target. |
 | `e2e/` | Unmodified Prebid.js against the worker in three browsers | Separate install. |
 | `scripts/` | Type-check helpers and `verify-deployment` | |
@@ -55,7 +56,7 @@ Behaviour that must not regress, each covered by tests:
 - An existing valid ID is never replaced; the `HttpOnly` recovery copy restores a re-minted one.
 - The worker answers only its own routes and never forwards requests to the origin.
 - Opt-out, Global Privacy Control, COPPA and denied consent delete existing ID cookies and set none.
-- IDs are random; nothing is derived from the IP address or other request data, and nothing about requests is logged.
+- The SharedID is random; nothing is derived from the IP address or other request data, and nothing about requests is logged. The one exception is the opt-in `ec` module (`packages/module-ec`), which implements Trusted Server Edge Cookies as specified: its ID prefix is an HMAC of the client IP. Don't add other IP-derived IDs, and don't make `ec` the default.
 - `Access-Control-Allow-Origin` is never `*`.
 
 ## Conventions

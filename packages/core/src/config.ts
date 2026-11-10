@@ -27,6 +27,8 @@ export interface SharedIdEdgeConfig {
   readonly modules: readonly string[];
   /** Per-module configuration, keyed by module name. */
   readonly moduleConfig: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  /** Per-module secrets (strings), keyed by module name; from a platform secret. Never logged or returned. */
+  readonly moduleSecrets: Readonly<Record<string, Readonly<Record<string, string>>>>;
   /** Time limit for each module, in milliseconds. */
   readonly moduleTimeoutMs: number;
 }
@@ -46,6 +48,7 @@ export const DEFAULT_CONFIG: SharedIdEdgeConfig = Object.freeze({
   syncCacheSeconds: 86_400,
   modules: Object.freeze([]),
   moduleConfig: Object.freeze({}),
+  moduleSecrets: Object.freeze({}),
   moduleTimeoutMs: 50
 });
 
@@ -115,6 +118,7 @@ function list(env: Env, key: string): string[] {
  * | `SID_SYNC_CACHE_SECONDS` | `86400` | |
  * | `SID_MODULES` | (none) | comma-separated module names |
  * | `SID_MODULE_CONFIG` | `{}` | JSON object keyed by module name |
+ * | `SID_MODULE_SECRETS` | `{}` | JSON object of string secrets keyed by module name; set as a platform secret |
  * | `SID_MODULE_TIMEOUT_MS` | `50` | |
  *
  * @throws ConfigError when a value is invalid, so a misconfigured deployment fails loudly instead of setting bad cookies.
@@ -159,6 +163,22 @@ export function resolveConfig(env: Env): SharedIdEdgeConfig {
     moduleConfig = parsed as Record<string, Readonly<Record<string, unknown>>>;
   }
 
+  const moduleSecretsText = str(env, 'SID_MODULE_SECRETS');
+  let moduleSecrets: Record<string, Readonly<Record<string, string>>> = {};
+  if (moduleSecretsText !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(moduleSecretsText);
+    } catch {
+      // Don't echo the value: it's a secret.
+      throw new ConfigError('SID_MODULE_SECRETS must be a JSON object');
+    }
+    if (!isRecord(parsed) || !Object.values(parsed).every(v => isRecord(v) && Object.values(v).every(s => typeof s === 'string'))) {
+      throw new ConfigError('SID_MODULE_SECRETS must be a JSON object of objects of strings, keyed by module name');
+    }
+    moduleSecrets = parsed as Record<string, Readonly<Record<string, string>>>;
+  }
+
   const cookie = cookieName(env, 'SID_COOKIE_NAME', DEFAULT_CONFIG.cookieName) ?? DEFAULT_CONFIG.cookieName;
   const optOut = cookieName(env, 'SID_OPTOUT_COOKIE', DEFAULT_CONFIG.optOutCookieName) ?? DEFAULT_CONFIG.optOutCookieName;
   if (recoveryCookieName === cookie || optOut === cookie) {
@@ -182,6 +202,7 @@ export function resolveConfig(env: Env): SharedIdEdgeConfig {
     syncCacheSeconds: int(env, 'SID_SYNC_CACHE_SECONDS', DEFAULT_CONFIG.syncCacheSeconds, 0, 31_536_000),
     modules: Object.freeze(list(env, 'SID_MODULES')),
     moduleConfig: Object.freeze(moduleConfig),
+    moduleSecrets: Object.freeze(moduleSecrets),
     moduleTimeoutMs: int(env, 'SID_MODULE_TIMEOUT_MS', DEFAULT_CONFIG.moduleTimeoutMs, 1, 10_000)
   });
 }

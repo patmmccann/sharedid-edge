@@ -31,6 +31,7 @@ Implementations read these settings, normally as environment variables. Defaults
 | `SID_SYNC_CACHE_SECONDS` | [`86400`] | Private browser cache lifetime of a successful sync response. |
 | `SID_MODULES` | [none] | Comma-separated module names to run for `/v1`, in order. |
 | `SID_MODULE_CONFIG` | [`{}`] | JSON object of per-module settings, keyed by module name. |
+| `SID_MODULE_SECRETS` | [`{}`] | JSON object of per-module secrets (strings), keyed by module name. Set as a platform secret; MUST NOT appear in responses, errors or logs. |
 | `SID_MODULE_TIMEOUT_MS` | [`50`] | Time limit for each module. |
 
 The three cookie names (`SID_COOKIE_NAME`, `SID_RECOVERY_COOKIE`, `SID_OPTOUT_COOKIE`) MUST all differ. Invalid configuration MUST fail every request with a 5xx rather than set cookies.
@@ -54,7 +55,7 @@ Prebid.js's `sharedIdSystem` calls `pixelUrl` with `id=pubcid:<id>`, percent-enc
 
 ## The ID
 
-A valid ID matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. Minted IDs are random UUID v4s, never derived from the IP address or other request data.
+A valid ID matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. Minted IDs are random UUID v4s, never derived from the IP address or other request data. (The opt-in [`ec` module](#the-ec-module) sets a separate, IP-derived cookie; the SharedID is unaffected.)
 
 For `/sync` and `/v1`, when storage is allowed, the ID is the first of:
 
@@ -126,9 +127,13 @@ A module has:
 
 - a `name` (`^[a-z][a-z0-9-]{0,63}$`), used in `SID_MODULES` and `SID_MODULE_CONFIG`;
 - optionally `purposes` (TCF purposes it needs publisher consent for when GDPR applies) and `gvlid` (its IAB vendor ID);
-- a `run(context)` function returning `{ eids?, ortb2? }` or nothing.
+- a `run(context)` function returning `{ eids?, ortb2?, cookies? }` or nothing.
 
-The context has the request, its URL, the platform information (client IP, country, region, EU flag), the SharedID (when storage is allowed), the consent signals, and the module's configuration.
+The context has the request, its URL and cookies, the platform information (client IP, country, region, EU flag), the SharedID (when storage is allowed), whether the browser opted out, the consent signals, and the module's configuration and secrets.
+
+A module's `cookies` are set on the `/v1` response with `Path=/`, `SameSite=Lax`, `Secure` over https, the module's `Domain` (else `SID_COOKIE_DOMAIN`), `Max-Age` (0 deletes) and `HttpOnly` as given. A module MUST NOT set the worker's own cookie names; a malformed or reserved cookie makes the module an `error`, and none of its output is used. A module that returns only cookies reports `empty`.
+
+A module that sets cookies SHOULD also declare the deletions for opt-out. `{basePath}/optout` deletes the ones the browser sent along with the ID cookies, for every installed module (whether or not it's in `SID_MODULES`), so an opt-out takes effect at once and not only on the next `/v1` call.
 
 Modules work only from what the worker has; by default they make no network calls. The worker:
 
@@ -152,6 +157,19 @@ Name `ip`; no `purposes`, no `gvlid`, no settings. It runs only when listed in `
   - the platform has no client IP, or it isn't a valid address.
 - It MUST NOT return a truncated address: a truncated address looks real but is wrong, which is worse than none.
 - The address MUST NOT be stored, logged or used to derive an ID.
+
+### The `ec` module
+
+Name `ec`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`, and implements IAB Tech Lab [Trusted Server Edge Cookies](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html).
+
+- **The ID is derived from the client IP**, as Trusted Server specifies: `{HMAC-SHA256(passphrase, normalized IP), as 64 lowercase hex}.{6 random characters from A-Za-z0-9}`. Normalization: IPv4 in dotted decimal; IPv6 as its first four hextets, zero-padded lowercase hex without separators (`2001:db8:85a3::1` gives `20010db885a30000`). Clients behind the same IPv4 address or IPv6 /64 share the prefix.
+- The passphrase is `SID_MODULE_SECRETS.ec.passphrase`, at least 32 bytes; otherwise the module is an `error`.
+- **Cookie:** `ts-ec=<id>; Max-Age=31536000; Path=/; [Domain=.<domain>;] SameSite=Lax; Secure; HttpOnly`, with `domain` from `SID_MODULE_CONFIG.ec.domain`. An existing cookie with a valid format (`^[0-9a-f]{64}\.[A-Za-z0-9]{6}$`) is used as is and not refreshed; an invalid one is replaced.
+- **Output:** the EC as `ortb2.user.id`.
+- **Consent:**
+  - opt-out, `Sec-GPC: 1`, `coppa=1`, a `us_privacy` opt-out of sale, or a TC string without consent for Purpose 1 (core segment) **withdraws**: an existing `ts-ec` is deleted and nothing is returned. `{basePath}/optout` deletes `ts-ec` too;
+  - an undecodable TC string, or GDPR applying without a TC string, fails closed: nothing is set, returned or deleted.
+- It runs on `/v1` only, so an EC is set only when the page calls `/v1`.
 
 ## Versioning
 

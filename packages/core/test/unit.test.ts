@@ -93,6 +93,7 @@ describe('resolveConfig', () => {
       SID_SYNC_CACHE_SECONDS: '0',
       SID_MODULES: 'ip, geo',
       SID_MODULE_CONFIG: '{"ip":{"field":"ipv6"}}',
+      SID_MODULE_SECRETS: '{"ec":{"passphrase":"p"}}',
       SID_MODULE_TIMEOUT_MS: '20'
     });
     expect(config).toEqual({
@@ -108,8 +109,12 @@ describe('resolveConfig', () => {
       syncCacheSeconds: 0,
       modules: ['ip', 'geo'],
       moduleConfig: { ip: { field: 'ipv6' } },
+      moduleSecrets: { ec: { passphrase: 'p' } },
       moduleTimeoutMs: 20
     } satisfies SharedIdEdgeConfig);
+  });
+  it('never echoes SID_MODULE_SECRETS in errors', () => {
+    expect(() => resolveConfig({ SID_MODULE_SECRETS: 'hunter2-not-json' })).toThrow(/^(?!.*hunter2)/);
   });
   it.each([
     ['SID_MAX_AGE_DAYS', '401'],
@@ -122,6 +127,8 @@ describe('resolveConfig', () => {
     ['SID_VENDOR_ID', 'abc'],
     ['SID_ALLOWED_ORIGINS', 'https://example.com/path'],
     ['SID_MODULE_CONFIG', '[1]'],
+    ['SID_MODULE_SECRETS', '{"ec":{"passphrase":1}}'],
+    ['SID_MODULE_SECRETS', 'not json'],
     ['SID_RECOVERY_COOKIE', '_pubcid'],
     ['SID_RECOVERY_COOKIE', '_pubcid_optout']
   ])('rejects %s=%s', (key, value) => {
