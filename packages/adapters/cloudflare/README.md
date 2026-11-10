@@ -34,7 +34,7 @@ npm run build                                      # compiles core and the modul
 npm run build -w @sharedid-edge/cloudflare         # optional: a dry-run bundle into dist/, to check the size
 ```
 
-Wrangler bundles `src/index.ts` with the workspace packages at deploy time. The gzipped bundle is checked against a 20 KB budget in CI.
+Wrangler bundles `src/index.ts` with the workspace packages at deploy time. It's minified (`"minify": true` in `wrangler.jsonc`, with source maps uploaded so errors in Cloudflare's logs show the original code), and the gzipped bundle is checked against a 32 KB budget in CI.
 
 ## Deploy
 

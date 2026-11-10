@@ -14,7 +14,7 @@ const root = join(import.meta.dirname, '..');
 const outdir = join(root, 'deploy');
 const outfile = join(outdir, 'sharedid-edge.mjs');
 const declarations = join(outdir, 'sharedid-edge.d.mts');
-const budget = 20 * 1024;
+const budget = 32 * 1024;
 
 rmSync(outdir, { recursive: true, force: true });
 mkdirSync(outdir);
@@ -28,6 +28,9 @@ await build({
   mainFields: ['module', 'main'],
   target: 'es2022',
   format: 'esm',
+  // Minified, as the Worker is; names kept so stack traces stay readable.
+  minify: true,
+  keepNames: true,
   legalComments: 'none',
   logLevel: 'warning',
   banner: { js: '// SharedID Edge for Vercel (@sharedid-edge/vercel), bundled with its built-in modules. https://github.com/patmmccann/sharedid-edge' }

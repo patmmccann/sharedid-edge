@@ -77,7 +77,7 @@ npm install --omit=dev                              # @azure/functions, the v4 p
 
 | File | |
 | --- | --- |
-| `sharedid-edge.mjs` | The function: `src/functions.ts` with core and the built-in modules, in one ESM file (about 17 KB gzipped; the bundle step fails it over 20 KB). |
+| `sharedid-edge.mjs` | The function: `src/functions.ts` with core and the built-in modules, in one minified ESM file (about 14 KB gzipped; the bundle step fails it over 32 KB). |
 | `host.json` | `extensions.http.routePrefix` is empty, so the route is the URL path (`/_sid/…`, not `/api/_sid/…`). Request telemetry is turned down; see [Logging](#logging). |
 | `package.json` | `main` is the bundle; its one dependency is `@azure/functions`. That library isn't bundled: it reaches the Functions worker through a module only the worker provides. |
 
