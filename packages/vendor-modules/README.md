@@ -30,7 +30,7 @@ Each vendor module's README says what it needs (usually an account or licence wi
    - core's privacy lines apply: GPC, COPPA, opt-out and consent.
 4. **Forwarding** requests or data to any service is off by default, enabled per deployment with an explicit list of destination hosts, preferably to a service on the same platform and network, and **disclosed at the top of your README** in a clearly marked box: what is sent, to which host, when, and under which consent conditions. See [Forwarding requests or data](AGENTS.md#forwarding-requests-or-data).
 5. **Name a maintainer** for your folder in [`.github/CODEOWNERS`](../../.github/CODEOWNERS). You review changes to your module and answer its issues.
-6. **Document it** to the project's module README standard (turning it on, the response with JSON examples when it returns data and when it doesn't, consent rules, settings and secrets, troubleshooting), and add a row to the main README's module table, marked as a vendor module.
+6. **Document it** to the project's module README standard (turning it on, the response with JSON examples when it returns data and when it doesn't, consent rules, settings and secrets, troubleshooting), and add a `sharedidEdge` block to its `package.json` (see [Development](../../docs/development.md#package-metadata)): the [module index](../../docs/modules.md#module-index) is generated from it, and marks vendor modules.
 
 ## Checks
 

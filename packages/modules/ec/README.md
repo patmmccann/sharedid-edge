@@ -60,7 +60,7 @@ The module is built into the Cloudflare Worker, the Node.js server and the AWS L
    # set-cookie: ts-ec=…; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
    ```
 
-5. **On the page,** nothing is needed to set the cookie if Prebid.js calls `/_sid/sync` (its `pixelUrl`, with `extend: true`). To send the EC to bidders, merge the `/_sid/v1` payload's `ortb2` into Prebid.js before the auction, as the main README shows. The EC then reaches bidders as `user.id`.
+5. **On the page,** nothing is needed to set the cookie if Prebid.js calls `/_sid/sync` (its `pixelUrl`, with `extend: true`). To send the EC to bidders, merge the `/_sid/v1` payload's `ortb2` into Prebid.js before the auction, as [Configure Prebid.js](../../../docs/prebid.md#module-output-_sidv1) shows. The EC then reaches bidders as `user.id`.
 
 ## What it does
 

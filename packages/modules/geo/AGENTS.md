@@ -2,7 +2,7 @@
 
 User documentation is in [README.md](README.md) (also the npm package page); keep it in step with behaviour changes.
 
-The `geo` module (`@sharedid-edge/module-geo`): the platform's location data as the `/v1` payload's OpenRTB 2.6 `ortb2.device.geo`. See the [spec section](../../../spec/SPEC.md#the-geo-module). It follows the module rules in [`../AGENTS.md`](../AGENTS.md).
+The `geo` module (`@sharedid-edge/module-geo`): the platform's location data as the `/v1` payload's OpenRTB 2.6 `ortb2.device.geo`. See the [spec section](../../../spec/modules/geo.md). It follows the module rules in [`../AGENTS.md`](../AGENTS.md).
 
 - **Location comes from `PlatformInfo`,** never from `request.cf` or headers directly. Adapters fill it with core's `locationInfo` (`packages/core/src/location.ts`), which does the validation (empty values, `XX`, `T1`, non-finite or out-of-range coordinates). Add new location fields there and in the adapters, not here.
 - **Coarse versus precise is the privacy boundary.** Coarse (`type`, `country`, `region`, `metro`, `utcoffset`) is always sent; precise (`city`, `zip`, `lat`, `lon`) in full or not at all, under core's `preciseLocationDenial` (shared with the `ip` module) and never with `{"precision":"coarse"}`. Don't round or truncate precise values, and don't move a field across the boundary without a spec change.

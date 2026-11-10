@@ -58,7 +58,7 @@ Prebid.js's `sharedIdSystem` calls `pixelUrl` with `id=pubcid:<id>`, percent-enc
 
 ## The ID
 
-A valid ID matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. Minted IDs are random UUID v4s, never derived from the IP address or other request data. (The opt-in [`ec` module](#the-ec-module) sets a separate, IP-derived cookie; the SharedID is unaffected.)
+A valid ID matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. Minted IDs are random UUID v4s, never derived from the IP address or other request data. (The opt-in [`ec` module](modules/ec.md) sets a separate, IP-derived cookie; the SharedID is unaffected.)
 
 For `/sync` and `/v1`, when storage is allowed, the ID is the first of:
 
@@ -122,7 +122,7 @@ A response where storage was denied SHOULD carry `X-SharedID-Status: denied: <re
 
 ### Traffic signal
 
-`ortb2.device.ext.traffic` describes the traffic: whether it comes from a bot, through what kind of proxy, and whether it's the site's own staff. Several sources report to it: modules (the [`bot` module](#the-bot-module), and others such as user agent or IP intelligence modules) and the platform itself (its [traffic verdict](#platform-traffic-verdict)). The implementation merges their reports; no source writes the field directly.
+`ortb2.device.ext.traffic` describes the traffic: whether it comes from a bot, through what kind of proxy, and whether it's the site's own staff. Several sources report to it: modules (the [`bot` module](modules/bot.md), and others such as user agent or IP intelligence modules) and the platform itself (its [traffic verdict](#platform-traffic-verdict)). The implementation merges their reports; no source writes the field directly.
 
 ```json
 { "bot": true, "botKind": "declared", "proxy": "datacenter", "score": 12, "internal": false, "sources": ["platform", "ua"] }
@@ -193,7 +193,7 @@ Modules work only from what the worker has; by default they make no network call
 
 ### Modules on `/sync`
 
-Prebid.js calls `/sync` (its `pixelUrl`) on page views without any page code, so modules that only maintain cookies, like [`reflect`](#the-reflect-module) and [`ec`](#the-ec-module), or report to the [traffic signal](#traffic-signal), like [`bot`](#the-bot-module), also run there. Modules that return data (`ip`, `geo`, `ua`) don't, since `/sync` returns an image.
+Prebid.js calls `/sync` (its `pixelUrl`) on page views without any page code, so modules that only maintain cookies, like [`reflect`](modules/reflect.md) and [`ec`](modules/ec.md), or report to the [traffic signal](#traffic-signal), like [`bot`](modules/bot.md), also run there. Modules that return data (`ip`, `geo`, `ua`) don't, since `/sync` returns an image.
 
 - **Which modules:** without `SID_SYNC_MODULES`, every installed module in `SID_MODULES` whose `routes` include `sync`. With it, the modules it lists, which MUST all be in `SID_MODULES` (otherwise the configuration is invalid); `none` runs none. A listed module that isn't installed, or whose `routes` leave out `sync`, is reported `skipped` and doesn't run. Modules run in `SID_MODULES` order, whatever the order in `SID_SYNC_MODULES`.
 - **The same context as on `/v1`:** the request, its cookies, the platform information, the SharedID, whether the browser opted out, the consent signals, the storage decision, and the module's configuration and secrets. Consent skips, the time limit and failure isolation work as on `/v1`.
@@ -204,35 +204,6 @@ Prebid.js calls `/sync` (its `pixelUrl`) on page views without any page code, so
 ### Platform information
 
 Each platform adapter fills the platform information from values the platform itself sets, which visitors can't forge: on Cloudflare `CF-Connecting-IP` and `request.cf`; behind CloudFront the `CloudFront-Viewer-Address` (`ip:port`), `CloudFront-Viewer-Country` and `CloudFront-Viewer-Country-Region` headers, accepted only when the origin can be reached through CloudFront alone. On Vercel, `x-real-ip` (else the first `x-forwarded-for` entry) and the `x-vercel-ip-*` geolocation headers, which Vercel's proxy sets and overwrites; they're trusted only on Vercel (the same code run elsewhere is configured to ignore them). Vercel reports no metro code. Behind Azure Front Door, `X-Azure-ClientIP`, and the location from headers a Front Door rule overwrites on every request (Front Door's `{geo_country}`; it has no other location data), accepted only when the function app can be reached through that Front Door profile alone (its `X-Azure-FDID`). An adapter whose platform changes cookie values in transit (Azure Functions percent-encodes them) leaves out a cookie it can't set unchanged, rather than set a different value. Behind Google Cloud's external Application Load Balancer, the `X-Forwarded-For` entry the load balancer appends for the client (the second-to-last; the first is the visitor's own), and the location from the backend service's custom request headers (`{client_region}`, `{client_region_subdivision}`, `{client_city}`, `{client_city_lat_long}`), which overwrite a visitor's copies; accepted only when the function can be reached through the load balancer alone (ingress). It has no metro code, postal code or time zone. A value the platform doesn't provide is left out, never guessed. The EU flag means the country is one of the 27 EU member states (the meaning of Cloudflare's `isEUCountry`), and is unknown when the country is.
-
-### The `ip` module
-
-Name `ip`; no `purposes`, no `gvlid`, no settings. It runs only when listed in `SID_MODULES`, and on `/v1` only.
-
-- It returns the platform's full client IP address as `ortb2.device.ip` (IPv4) or `ortb2.device.ipv6` (IPv6). An IPv4-mapped IPv6 address (`::ffff:192.0.2.1`) is IPv4. IPv6 is written in RFC 5952 form.
-- It returns **nothing** (status `empty`) when:
-  - the request has `Sec-GPC: 1`, or `coppa=1`;
-  - the `us_privacy` string opts out of sale (its third character is `Y`);
-  - there is a TC string that is invalid or doesn't opt in to Special Feature 1 (use precise geolocation data);
-  - GDPR applies and there is no TC string;
-  - the platform has no client IP, or it isn't a valid address.
-- It MUST NOT return a truncated address: a truncated address looks real but is wrong, which is worse than none.
-- The address MUST NOT be stored, logged or used to derive an ID.
-
-### The `ec` module
-
-Name `ec`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`, and implements IAB Tech Lab [Trusted Server Edge Cookies](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html).
-
-- **The ID is derived from the client IP**, as Trusted Server specifies: `{HMAC-SHA256(passphrase, normalized IP), as 64 lowercase hex}.{6 random characters from A-Za-z0-9}`. Normalization: IPv4 in dotted decimal; IPv6 as its first four hextets, zero-padded lowercase hex without separators (`2001:db8:85a3::1` gives `20010db885a30000`). Clients behind the same IPv4 address or IPv6 /64 share the prefix.
-- The passphrase is `SID_MODULE_SECRETS.ec.passphrase`, at least 32 bytes; otherwise the module is an `error`. Withdrawal (below) doesn’t depend on it: an existing `ts-ec` MUST still be deleted when the passphrase is missing or short.
-- **Cookie:** `ts-ec=<id>; Max-Age=31536000; Path=/; [Domain=.<domain>;] SameSite=Lax; Secure; HttpOnly`, with `domain` from `SID_MODULE_CONFIG.ec.domain`. An existing cookie with a valid format (`^[0-9a-f]{64}\.[A-Za-z0-9]{6}$`) is used as is and not refreshed; an invalid one is replaced.
-- **Output:** the EC as `ortb2.user.id`.
-- **Consent:**
-  - opt-out, `Sec-GPC: 1`, `coppa=1`, a `us_privacy` opt-out of sale, or a TC string without consent for Purpose 1 (core segment) **withdraws**: an existing `ts-ec` is deleted and nothing is returned. `{basePath}/optout` deletes `ts-ec` too;
-  - an undecodable TC string, or GDPR applying without a TC string, fails closed: nothing is set, returned or deleted.
-- Its `routes` are `v1` and `sync`: an EC is set (or withdrawn) when Prebid.js calls `/sync` on a page view, as well as on `/v1`, which is closer to Trusted Server setting it on page loads. `/sync` doesn't return it.
-
-### Platform information
 
 What the platform knows about the request beyond the request itself: the client IP, whether it comes from the EU (on Cloudflare, `request.cf.isEUCountry`), and its location. Every field is optional; a platform that doesn't know a value, or gets one that isn't valid, leaves it out. The location fields:
 
@@ -261,131 +232,12 @@ The platform information MAY carry the platform's own traffic verdict, a report 
 
 Without Bot Management the object is absent, or has no score and false flags, and the platform adds nothing. `request.cf.verifiedBotCategory` isn't in the Workers runtime types, so it isn't read. Other platforms add nothing.
 
-### The `geo` module
+### Module specifications
 
-Name `geo`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`, and on `/v1` only.
+Each module's behaviour is specified in its own file under [`modules/`](modules), named after the module:
 
-It returns the platform's location as the OpenRTB 2.6 `ortb2.device.geo` object:
-
-| `device.geo` | From | |
-| --- | --- | --- |
-| `type` | | `2` (IP address), whenever any other field is present. |
-| `country` | country | ISO 3166-1 **alpha-3** (`USA`), from a bundled table of every assigned code. Codes not in the table are left out. |
-| `region` | region | The subdivision code without the country prefix (`US-TX` and `TX` are both `TX`), upper case. |
-| `metro` | metro code | A string, as in OpenRTB. |
-| `utcoffset` | time zone | The zone's offset from UTC in minutes at the time of the request, so it follows daylight saving time. Left out when the zone is unknown to the runtime. |
-| `city` | city | Precise. |
-| `zip` | postal code | Precise. |
-| `lat`, `lon` | latitude, longitude | Precise; numbers. |
-
-- **Coarse** fields (`type`, `country`, `region`, `metro`, `utcoffset`) are always returned when known.
-- **Precise** fields (`city`, `zip`, `lat`, `lon`) are returned in full or not at all; they MUST NOT be rounded or truncated. They're left out under the same conditions as the `ip` module's address:
-  - the request has `Sec-GPC: 1`, or `coppa=1`;
-  - the `us_privacy` string opts out of sale (its third character is `Y`);
-  - there is a TC string that is invalid or doesn't opt in to Special Feature 1 (use precise geolocation data);
-  - GDPR applies and there is no TC string.
-- **Setting:** `SID_MODULE_CONFIG={"geo":{"precision":"coarse"}}` returns only the coarse fields; `"precise"` is the default. Any other value of `precision`, or any other key, is a configuration mistake: the module fails (status `error`) on every request rather than guess.
-- When there's no field to return, it returns nothing (status `empty`).
-- The location MUST NOT be stored, logged or used to derive an ID.
-
-### The `reflect` module
-
-Name `reflect`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`. It re-sets first-party cookies that other scripts on the page wrote, so they become server-set cookies with a new lifetime, as the worker does for the SharedID.
-
-- **Settings,** `SID_MODULE_CONFIG.reflect`: `{ "cookies": [ … ], "keeper": { … } }`. `cookies` has 1 to 10 entries, each:
-  - `name` (required): a cookie name (an RFC 6265 token, at most 64 characters). It MUST NOT be `_pubcid`, `_pubcid_sv`, `_pubcid_optout`, `ts-ec` or `euconsent-v2`, nor the worker's configured cookie names, and MUST NOT repeat;
-  - `maxAgeDays` (required): an integer from 1 to 400;
-  - `domain` (optional): a registrable domain without a leading dot, such as `example.com`; the cookie gets `Domain=.<domain>`. Without it, `SID_COOKIE_DOMAIN` applies, else the cookie is host-only;
-  - `httpOnly` (optional, default `false`);
-  - `deleteOnOptOut` (optional, default `false`);
-  - `restore` (optional, default `false`): save the cookie in the keeper cookie and restore it from there (below);
-  - `prefer` (optional, default `"browser"`; only with `restore: true`): which value wins when the request carries the cookie and the keeper also has a value for it: `"browser"`, `"backup"` or `"older"` (below);
-  - `format` (optional; only with `prefer: "older"`): the value's format, `"ga"`, `"gcl_au"` or `"gcl_aw"`. Without it, the format comes from the name: `_ga` is `"ga"`, `_gcl_au` is `"gcl_au"` and `_gcl_aw` is `"gcl_aw"`. `prefer: "older"` on any other name without `format` is invalid.
-
-  `keeper` (optional; its defaults apply when it's omitted) configures the keeper cookie:
-  - `cookie` (default `_sid_keep`): a cookie name, with the same rules as `name`, and MUST NOT be one of the configured `cookies`;
-  - `maxAgeDays` (default `400`): an integer from 1 to 400;
-  - `domain` (optional): as for a cookie. Without it, the first `restore` cookie's `domain` applies; without that, `SID_COOKIE_DOMAIN`, else host-only.
-
-  Any other key, a wrong type or an out-of-range value makes the module an `error` on every call, with no details.
-- **Reflection:** for each configured cookie the request carries, in configuration order, the module sets `<name>=<value>; Max-Age=<maxAgeDays × 86400>; Expires=…; Path=/; [Domain=.<domain>;] SameSite=Lax; [Secure;] [HttpOnly]`. The value MUST be the request's value byte for byte: not decoded, re-encoded, trimmed beyond the `Cookie` header's own whitespace, or otherwise changed. When the name repeats in the `Cookie` header, the first is used.
-- A cookie is **not reflected** when its value is empty, longer than 1024 characters, quoted, or contains a character that isn't a cookie-octet (RFC 6265). The other cookies are still reflected.
-- **The keeper cookie** holds the last known value of each `restore` cookie. Its value is the base64url encoding (RFC 4648 section 5, without padding) of a JSON object mapping cookie names to values, with keys in configuration order. It's set `HttpOnly`, with the keeper's `maxAgeDays` and `Domain`, and with `Path=/`, `SameSite=Lax` and `Secure` (over https) like the others. Its name and value together MUST NOT exceed 4096 bytes: entries are added in configuration order, and one that would take it over is left out (that cookie is still reflected) while later ones are still tried.
-- **Reading the keeper:** its value is read byte for byte, like the other cookies. A value that isn't base64url without padding, isn't a JSON object, or is over 4096 characters counts as empty, and so does each entry whose value isn't a string that could be reflected. It's never an error.
-- **Restoring,** on each `/v1` or `/sync` request where storage is allowed, for each `restore` cookie in configuration order:
-  - the request carries it, the keeper has a value for it, and the **backup wins** (below): it's **restored** over the request's value, set with the saved value and its own configured attributes as if reflected, and the saved value stays saved;
-  - the request carries it with a value that can be reflected: it's reflected, and that value is saved;
-  - the request doesn't carry it, and the keeper has a value for it: it's **restored**, set with that value and its own configured attributes as if reflected, and the value stays saved;
-  - the request carries it with a value that can't be reflected: it's left alone, and its saved value is dropped;
-  - otherwise nothing is saved for it.
-
-  Whether the backup wins over a value the request carries depends on `prefer`:
-  - `"browser"`: never. The request's value is current (the behaviour above).
-  - `"backup"`: always, whatever the request's value is, including one that can't be reflected.
-  - `"older"`: when both values parse in the cookie's `format` and the saved value's creation time is strictly earlier than the request's. On equal times, or when either value doesn't parse, the request's value wins, as with `"browser"`. A value parses when it matches its format exactly, with the creation time `<t>` as exactly 10 decimal digits (Unix seconds) no later than 86400 seconds after the worker's current time:
-    - `"ga"`: `GA1.<d>.<n>.<t>`, where `<d>` is 1 or 2 digits not starting with `0` and `<n>` is 1 to 20 digits (the Google Analytics `_ga` cookie, `GA1.1.…` or `GA1.2.…`);
-    - `"gcl_au"`: `1.<d>.<n>.<t>`, with `<d>` and `<n>` as for `"ga"` (the Google conversion linker's `_gcl_au`);
-    - `"gcl_aw"`: `GCL.<t>.<c>`, where `<c>` is one or more of `A`–`Z`, `a`–`z`, `0`–`9`, `_` and `-` (the Google Ads click cookie `_gcl_aw`; `<t>` is the click's time).
-
-  Values are compared and copied, never changed: a restored value is the saved value byte for byte.
-
-  The keeper is then set with the saved values on every such request, which refreshes its expiry. When nothing is left to save and the request carried a keeper, it's deleted. With no `restore` cookie configured, no keeper is set, and one the request carries is deleted.
-- **Output:** cookies only, so the status is `empty`. Nothing is added to `eids` or `ortb2`, and neither names nor values are reported.
-- **Consent:** the module reflects only when `storage.allowed` is true: not on opt-out, `Sec-GPC: 1`, `coppa=1`, a TC string that doesn't give the SharedID's consent, or GDPR applying without a TC string. It then reflects and restores nothing, and deletes none of the configured cookies, which belong to other scripts. It deletes the keeper cookie, this worker's own store of identifiers, when the request carries it.
-- **Opt-out:** `{basePath}/optout` deletes a configured cookie the browser sent only when its `deleteOnOptOut` is `true`, with the configured `Domain` and `HttpOnly`. It always deletes the keeper cookie the browser sent, whatever `deleteOnOptOut` says, and also when `reflect` isn't in `SID_MODULES` or no cookie has `restore` (then at the configured or default name).
-- **Attributes:** the worker can't see a cookie's original attributes. If they differ (for example the original is host-only and `domain` is set), the browser keeps two cookies of that name. Configuration SHOULD match the original's `Domain` and `HttpOnly`.
-- Its `routes` are `v1` and `sync`: Prebid.js's `/sync` call on page views reflects, saves and restores cookies without the page calling `/v1`, as often as the sync response's browser cache allows (see [Modules on `/sync`](#modules-on-sync)).
-
-### The `bot` module
-
-Name `bot`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`, on `v1` and `sync` (its `routes`), and reports to the [traffic signal](#traffic-signal) (status `ok` when it reports something, else `empty`). It doesn't repeat the [platform's verdict](#platform-traffic-verdict), which is merged on its own, and doesn't recognize crawlers by user agent.
-
-- **Settings,** `SID_MODULE_CONFIG.bot`, both optional:
-  - `missingHeaders` (boolean, default `false`): report `bot: true, botKind: likely` when the user agent claims to be a browser (it starts with `Mozilla/5.0 (`) and the request lacks headers browsers send:
-    - an `Accept-Language` header that's missing or empty; or
-    - all of `Sec-Fetch-Site`, `Sec-Fetch-Mode` and `Sec-Fetch-Dest`, when the request URL is https (or the host is `localhost`, `127.0.0.1` or `[::1]`) and the user agent is a version that sends them: `Chrome/` 80 or later; else `Firefox/` 90 or later, but not `FxiOS/`; else `Version/` 17 or later followed by `Safari/`, but not with `CriOS`, `FxiOS`, `EdgiOS` or `Android`.
-  - `internalCookie` (a cookie name): report `internal: true` when the request carries that cookie with a non-empty value.
-
-  Any other key, or a wrong type, makes the module an `error`.
-- **Secret,** `SID_MODULE_SECRETS.bot.internalToken` (optional, at least 16 characters): the internal cookie then counts only when its value is the token. Any other key, or a shorter token, makes the module an `error`.
-- **Consent:** as for every traffic report, it runs and reports whatever the consent signals say.
-- On `/sync`, its report counts towards [Skipping bots](#skipping-bots), so a likely bot gets no ID from Prebid.js's `pixelUrl` call when `SID_SKIP_BOTS` would deny it one on `/v1`.
-- It MUST NOT store or log anything about the request.
-
-### The `ua` module
-
-Name `ua`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`, and on `/v1` only. It maps the request's User-Agent Client Hints and `User-Agent` header to OpenRTB 2.6 `ortb2.device` fields, and flags self-identified bots in the shared traffic signal.
-
-- **Client Hints** are read as RFC 8941 structured fields:
-  - `Sec-CH-UA` and `Sec-CH-UA-Full-Version-List`: a list of strings, each with a string `v` parameter. Members without one are left out. **GREASE** brands (`Not`, `A` and `Brand` separated and surrounded by punctuation, such as `Not A(Brand`, `Not_A Brand` or `(Not(A:Brand`) MUST be left out. A malformed list is ignored as a whole. At most 8 brands are kept, of at most 64 characters each.
-  - `Sec-CH-UA-Mobile`: `?1` or `?0`.
-  - `Sec-CH-UA-Platform`, `-Platform-Version`, `-Model`, `-Arch` and `-Bitness`: a string. Empty strings, strings over 64 characters, malformed values, and the platform `Unknown` are ignored.
-  - Header values over 1024 characters are ignored.
-  - **Low-entropy** hints are `Sec-CH-UA`, `Sec-CH-UA-Mobile` and `Sec-CH-UA-Platform` (browsers send them by default); the others are **high-entropy**.
-- **The User-Agent** is parsed by the parser the `parser` setting chooses (see Settings): `isbot` (the default) recognizes only bots; `bowser` also recognizes the browser and its version, the OS and its version, the device class (phone, tablet, desktop, smart TV, set-top box), the maker and the model. What a parser recognizes in a given User-Agent is implementation-defined; the mapping below isn't. The first 512 characters are parsed. A `User-Agent` of exactly `Amazon CloudFront` (what CloudFront sends when it doesn't forward the visitor's) is treated as absent.
-- **Output,** each field only when known:
-
-  | `device` | From |
-  | --- | --- |
-  | `sua` | From Client Hints, when any low-entropy hint is present: `browsers` (the full version list when high entropy is allowed and it was sent, else `Sec-CH-UA` with major versions), `platform` (`brand` from `Sec-CH-UA-Platform`, `version` from `-Platform-Version`), `mobile` (`1` or `0`), `architecture`, `bitness`, `model`. Versions are arrays of their dot-separated components (`["131","0","6778","86"]`); a version that isn't dot-separated digits is left out. `source` is `2` when any high-entropy field is included, else `1`. Without hints, from the parsed User-Agent when it gives a browser or OS: `browsers` with the one browser, `platform` with the OS, `mobile` when the device type is known (`1` for a phone), and `source` `3`. A User-Agent version of the form `N.0.0.0` (Chromium's reduced User-Agent) gives only `[N]`. |
-  | `devicetype` | `Sec-CH-UA-Mobile: ?1` gives `4` (phone), or `5` if the User-Agent says tablet. `?0` with a desktop platform (`Windows`, `macOS`, `Linux`, `Chrome OS`, `Chromium OS`) gives `2`. Otherwise the parsed device class: phone `4`, tablet `5`, smart TV `3`, set-top box `7`, desktop `2`. Otherwise a desktop OS gives `2`. |
-  | `os` | `Sec-CH-UA-Platform`, else the parsed OS name. |
-  | `osv` | `Sec-CH-UA-Platform-Version`; on Windows, `13` and up is `11`, `1` to `12` is `10`, and `0` is left out. Else the parsed OS version, only when the parsed OS is the hinted one (or there's no hint). Values browsers freeze MUST NOT be sent: macOS `10.15.7` and `10.15`, Windows `NT 10.0` (10 or 11), and Android `10` in Chrome's reduced User-Agent (`Android 10; K`). |
-  | `make` | The parsed device maker. A bot's operator isn't a maker. |
-  | `model` | `Sec-CH-UA-Model`, else the parsed model. |
-  | `ua` | The `User-Agent` header, only with the `ua` setting. |
-  | `ext.traffic` | `{ "bot": true, "botKind": "declared", "sources": ["ua"] }` when the User-Agent identifies the client as a crawler, bot or other automated client. Absent otherwise: the module never claims a request is human. |
-
-- **Consent:** high-entropy data (`sua.browsers` full versions, `sua.platform.version`, `sua.architecture`, `sua.bitness`, `sua.model`, `osv`, `model` and `ua`) is left out, and `sua.source` is then `1` or `3`, when:
-  - the request has `Sec-GPC: 1`, or `coppa=1`;
-  - the `us_privacy` string opts out of sale (its third character is `Y`);
-  - there is a TC string that is invalid;
-  - GDPR applies and there is no TC string.
-
-  `sua` browser brands with major versions, `sua.platform.brand`, `sua.mobile`, `devicetype`, `os` and `make` are always sent. **The traffic signal is always sent**, under GPC and COPPA too: it describes the traffic, not the person.
-- **Settings,** `SID_MODULE_CONFIG.ua`: `ua` (optional boolean, default `false`) adds `device.ua`. `parser` (optional, `"isbot"` or `"bowser"`, default `"isbot"`) chooses the User-Agent parser; Client Hints take precedence over either, as in the table. An implementation MAY leave `bowser` out of a build (this one does by default, to keep bundles small); the module MUST then report `error` when the setting asks for it, rather than ignore it. Any other key or a value of another type makes the module an `error` on every request.
-- **The traffic signal:** the module's `device.ext.traffic` is its report to the [traffic signal](#traffic-signal), merged by core with the other reports.
-- When there's no field to return, it returns nothing (status `empty`). Nothing is stored or logged.
+<!-- generated:spec-modules:start -->
+<!-- generated:spec-modules:end -->
 
 ## Versioning
 

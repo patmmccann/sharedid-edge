@@ -35,7 +35,7 @@ Parameters:
     Default: ''
     Description: With CreateDistribution and Aliases, an ACM certificate for them, in us-east-1.
 
-  # SharedID Edge settings. Empty means the default; see the configuration reference in the main README.
+  # SharedID Edge settings. Empty means the default; see docs/configuration.md.
   SidBasePath:
     Type: String
     Default: /_sid

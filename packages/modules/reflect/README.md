@@ -148,13 +148,13 @@ You can check in the browser's developer tools after a `/_sid/sync` or `/_sid/v1
    - `restore: true` is optional. It saves `uid1` in the [keeper](#the-keeper-cookie), so if Safari has already deleted `uid1` when the visitor comes back, the worker sets the old value again instead of letting the vendor mint a new one. Leave it out if the vendor's own deletion of `uid1` means something (for example, its opt-out).
    - `"prefer": "backup"` (optional, with `restore`) also puts the saved `uid1` back when the vendor's script already wrote a new one before the worker was called. Add it only if the vendor never changes `uid1` on purpose; see [Which value wins](#which-value-wins-prefer).
 
-3. **Let Prebid.js's pixel call carry it.** With `pixelUrl: '/_sid/sync'` and `extend: true` (see the main README), Prebid.js calls the worker on page views, and that call reflects `uid1` when the browser has it. If the vendor's script writes `uid1` after Prebid.js's call, the next call picks it up. Without Prebid.js's pixel call, call `/_sid/v1` from the page, after the vendor's script has written `uid1`:
+3. **Let Prebid.js's pixel call carry it.** With `pixelUrl: '/_sid/sync'` and `extend: true` (see [Configure Prebid.js](../../../docs/prebid.md)), Prebid.js calls the worker on page views, and that call reflects `uid1` when the browser has it. If the vendor's script writes `uid1` after Prebid.js's call, the next call picks it up. Without Prebid.js's pixel call, call `/_sid/v1` from the page, after the vendor's script has written `uid1`:
 
    ```js
    fetch('/_sid/v1', { credentials: 'include' }).catch(() => {});
    ```
 
-   If you already call it for the payload (the snippet in the main README that merges `ortb2` into Prebid.js), that call is enough. With `restore`, a call early in the page also restores `uid1` before the vendor's script reads it; see [the timing caveat](#timing-gtagjs-reads-_ga-when-it-loads) below, which applies to any script.
+   If you already call it for the payload (the [snippet](../../../docs/prebid.md#module-output-_sidv1) that merges `ortb2` into Prebid.js), that call is enough. With `restore`, a call early in the page also restores `uid1` before the vendor's script reads it; see [the timing caveat](#timing-gtagjs-reads-_ga-when-it-loads) below, which applies to any script.
 
 4. **Verify.** Load a page, then in the developer tools:
    - **Network:** select the `/_sid/sync` (or `/_sid/v1`) request; if it says "(disk cache)", disable the cache and reload. Its response headers include `Set-Cookie: uid1=…; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure`, with the same value the request's `Cookie` header carried. With `restore`, there's also `Set-Cookie: _sid_keep=…; …; HttpOnly`.
@@ -373,7 +373,7 @@ Reflecting or restoring a cookie extends how long an identifier is stored on the
 - the SharedID opt-out cookie (`_pubcid_optout`);
 - Global Privacy Control (`Sec-GPC: 1`);
 - `coppa=1`;
-- a TC string that doesn't give the SharedID's consent (publisher mode: the publisher TC segment needs Purpose 1, and one of Purposes 2 to 10; vendor mode: see the main README);
+- a TC string that doesn't give the SharedID's consent (publisher mode: the publisher TC segment needs Purpose 1, and one of Purposes 2 to 10; vendor mode: see [Consent and opt-out](../../../docs/consent.md));
 - GDPR applying (`gdpr=1`, or an EU location on Cloudflare) without a TC string.
 
 The response's `X-SharedID-Status: denied: <reason>` header shows which.
@@ -413,7 +413,7 @@ There are no secrets.
 The module runs on both routes, with the same rules:
 
 - **`/_sid/sync`**, Prebid.js's `pixelUrl`. With `extend: true`, Prebid.js calls it on page views, so cookies are refreshed, saved and restored **with no code on your page**. The response is still the 1×1 GIF; only the cookies and an `X-SharedID-Modules: reflect=…` header are added.
-- **`/_sid/v1`**, when your page calls it: for the payload (the `fetch` snippet in the main README), or early in the page to restore a cookie before its script reads it ([the timing caveat](#timing-gtagjs-reads-_ga-when-it-loads)).
+- **`/_sid/v1`**, when your page calls it: for the payload (the `fetch` snippet in [Configure Prebid.js](../../../docs/prebid.md#module-output-_sidv1)), or early in the page to restore a cookie before its script reads it ([the timing caveat](#timing-gtagjs-reads-_ga-when-it-loads)).
 
 **The sync response is cached.** A browser keeps a successful `/_sid/sync` response for `SID_SYNC_CACHE_SECONDS` (default `86400`, a day) and doesn't call the worker again until it expires, so from Prebid.js's pixel the module runs about once a day per browser. That's enough to keep a cookie from expiring, and a cookie Safari deleted after 7 days without a visit is restored on the visitor's first page view back, since the cached response has expired by then. A cookie deleted some other way is restored when the cache next expires, or on the next `/_sid/v1` call. To run it more often, lower `SID_SYNC_CACHE_SECONDS` (`3600` for hourly; `0` for every page view, at the cost of a worker request on every page view).
 
@@ -448,7 +448,7 @@ Other exports:
 | No `Set-Cookie` for the cookie | The request didn't carry it (check the cookie is written before Prebid.js's pixel call or your `/_sid/v1` call, and that `/_sid/*` is on a host the cookie's domain covers); or its value is quoted, too long or has characters that can't be copied; or storage isn't allowed: see `X-SharedID-Status`. |
 | Two cookies of the same name in the browser | The configured `domain` doesn't match the original's. See [Match the original cookie's attributes](#match-the-original-cookies-attributes). Delete the stray copy once (developer tools), then fix the setting. |
 | The page's script can't read the cookie any more | `httpOnly` is `true`. Set it to `false`. |
-| The cookie still expires after 7 days in Safari | Run `verify-deployment` (see the main README): the endpoint's IP addresses probably don't match the site's, so Safari still caps it. Or neither Prebid.js's pixel call (`pixelUrl` with `extend: true`) nor a `/_sid/v1` call reaches the worker. |
+| The cookie still expires after 7 days in Safari | Run `verify-deployment` (see your platform's README): the endpoint's IP addresses probably don't match the site's, so Safari still caps it. Or neither Prebid.js's pixel call (`pixelUrl` with `extend: true`) nor a `/_sid/v1` call reaches the worker. |
 | No `_sid_keep` cookie | No cookie has `"restore": true`; or none of them was in the request yet; or storage isn't allowed (the keeper is then deleted). |
 | A deleted cookie isn't restored | The keeper didn't have it: it was never in a `/_sid/sync` or `/_sid/v1` request with storage allowed, or it didn't fit in 4096 bytes, or the keeper was deleted by an opt-out or missing consent (or expired). Or the page's script wrote a new value before the worker was called: with the default `"prefer": "browser"`, a present value wins. See [Which value wins](#which-value-wins-prefer). |
 | A new `_ga` in Safari after a week, even with `restore` | gtag.js loaded before the worker was called (Prebid.js's pixel call usually comes after gtag.js) and minted a new one. Set `"prefer": "older"` on `_ga` to restore the old one from the next page view, and call `/_sid/v1` before gtag.js to keep it on the first one too; see [the timing caveat](#timing-gtagjs-reads-_ga-when-it-loads). |

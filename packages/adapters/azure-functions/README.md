@@ -2,7 +2,7 @@
 
 [SharedID Edge](../../../README.md) on Azure: an Azure Functions app (Node.js v4 programming model) behind a `/_sid/*` route of **the Azure Front Door profile that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server, the Lambda function and the Vercel adapter, with built-in modules `ip`, `ec`, `geo`, `reflect`, `bot` and `ua`. It passes the same conformance suite, except for one documented limitation of Azure Functions: [cookie values](#cookie-values).
 
-The main README has a [quick start](../../../README.md#deploy-on-azure-functions-and-front-door). This is the full guide.
+This is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform).
 
 ## Contents
 
@@ -173,7 +173,7 @@ Find the ID under the Front Door profile's Overview ("Front Door ID"), or with `
 
 ## Configuration
 
-Settings are the function app's app settings, the same `SID_*` variables as everywhere else (see the [configuration reference](../../../README.md#configuration-reference)). The template has a parameter for each (`sidCookieName` for `SID_COOKIE_NAME` and so on), and passes empty values through as "use the default". Change them by redeploying the template, or directly:
+Settings are the function app's app settings, the same `SID_*` variables as everywhere else (see the [configuration reference](../../../docs/configuration.md)). The template has a parameter for each (`sidCookieName` for `SID_COOKIE_NAME` and so on), and passes empty values through as "use the default". Change them by redeploying the template, or directly:
 
 ```sh
 az functionapp config appsettings set -g sharedid-edge -n <appName> --settings SID_MODULES=ip,geo
@@ -217,7 +217,7 @@ curl -sI 'https://<appName>.azurewebsites.net/_sid/v1'                   # 403: 
 curl -sI -H 'X-Azure-FDID: <your id>' 'https://<appName>.azurewebsites.net/_sid/v1'   # still 403: not from Front Door
 ```
 
-Then [turn it on in Prebid.js](../../../README.md#configure-prebidjs).
+Then [turn it on in Prebid.js](../../../docs/prebid.md).
 
 ## Platform information
 
@@ -233,7 +233,7 @@ Core's `locationInfo` validates every value the same way as on the other platfor
 
 **The trust model.** Front Door sets `X-Azure-ClientIP` and `X-Azure-FDID` itself. The template's rule *overwrites* `x-sid-country` on every request, so a copy the visitor sends is replaced. These headers are only trustworthy because the function app accepts traffic from your Front Door profile alone ([Origin lock](#origin-lock-only-your-front-door)). If you name your own location headers in `SID_LOCATION_HEADERS`, the rule that sets them must overwrite them on every request, with no conditions, or visitors could send their own. With `SID_BEHIND_FRONT_DOOR=false`, nothing is trusted.
 
-**GDPR.** Front Door adds no location headers by default. Without the country rule (`addCountryHeader=false`, or your own Front Door setup without it), `isEU` is always unknown, and GDPR applies only when the page sends `gdpr=1`, as on the other platforms when the location is unknown. With it, EU visitors get GDPR from their country. Either way, EEA countries outside the EU (Iceland, Liechtenstein, Norway) and the UK aren't in the list: pages there should send `gdpr=1` (the [consent rules](../../../README.md#consent-and-opt-out)).
+**GDPR.** Front Door adds no location headers by default. Without the country rule (`addCountryHeader=false`, or your own Front Door setup without it), `isEU` is always unknown, and GDPR applies only when the page sends `gdpr=1`, as on the other platforms when the location is unknown. With it, EU visitors get GDPR from their country. Either way, EEA countries outside the EU (Iceland, Liechtenstein, Norway) and the UK aren't in the list: pages there should send `gdpr=1` (the [consent rules](../../../docs/consent.md)).
 
 ## Cookie values
 

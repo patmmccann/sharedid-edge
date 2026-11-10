@@ -1,0 +1,14 @@
+# The `ec` module
+
+Part of the [SharedID Edge specification](../SPEC.md). The general rules for modules, including consent, time limits and [modules on `/sync`](../SPEC.md#modules-on-sync), are there.
+
+Name `ec`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`, and implements IAB Tech Lab [Trusted Server Edge Cookies](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html).
+
+- **The ID is derived from the client IP**, as Trusted Server specifies: `{HMAC-SHA256(passphrase, normalized IP), as 64 lowercase hex}.{6 random characters from A-Za-z0-9}`. Normalization: IPv4 in dotted decimal; IPv6 as its first four hextets, zero-padded lowercase hex without separators (`2001:db8:85a3::1` gives `20010db885a30000`). Clients behind the same IPv4 address or IPv6 /64 share the prefix.
+- The passphrase is `SID_MODULE_SECRETS.ec.passphrase`, at least 32 bytes; otherwise the module is an `error`. Withdrawal (below) doesn’t depend on it: an existing `ts-ec` MUST still be deleted when the passphrase is missing or short.
+- **Cookie:** `ts-ec=<id>; Max-Age=31536000; Path=/; [Domain=.<domain>;] SameSite=Lax; Secure; HttpOnly`, with `domain` from `SID_MODULE_CONFIG.ec.domain`. An existing cookie with a valid format (`^[0-9a-f]{64}\.[A-Za-z0-9]{6}$`) is used as is and not refreshed; an invalid one is replaced.
+- **Output:** the EC as `ortb2.user.id`.
+- **Consent:**
+  - opt-out, `Sec-GPC: 1`, `coppa=1`, a `us_privacy` opt-out of sale, or a TC string without consent for Purpose 1 (core segment) **withdraws**: an existing `ts-ec` is deleted and nothing is returned. `{basePath}/optout` deletes `ts-ec` too;
+  - an undecodable TC string, or GDPR applying without a TC string, fails closed: nothing is set, returned or deleted.
+- Its `routes` are `v1` and `sync`: an EC is set (or withdrawn) when Prebid.js calls `/sync` on a page view, as well as on `/v1`, which is closer to Trusted Server setting it on page loads. `/sync` doesn't return it.

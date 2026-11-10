@@ -1,6 +1,6 @@
 # @sharedid-edge/cloudflare
 
-SharedID Edge as a **Cloudflare Worker**: the `/_sid/*` routes on your own site, answered at Cloudflare's edge, never reaching your origin. The main [README](../../../README.md#deploy-on-cloudflare) has the short deployment walkthrough. This page is the adapter's full reference.
+SharedID Edge as a **Cloudflare Worker**: the `/_sid/*` routes on your own site, answered at Cloudflare's edge, never reaching your origin. This page is the adapter's full guide: the deployment walkthrough and the reference.
 
 ## Contents
 
@@ -44,32 +44,92 @@ Wrangler bundles `src/index.ts` with the workspace packages at deploy time. It's
 
 ## Deploy
 
-1. **Prerequisites:**
-   - your site's hostname is **proxied** (orange cloud) on Cloudflare;
-   - an account that can deploy Workers and edit routes on the zone;
-   - Node.js 24 or later.
-2. **Set the route and settings** in [`wrangler.jsonc`](wrangler.jsonc):
+### Prerequisites
 
-   ```jsonc
-   "routes": [{ "pattern": "www.example.com/_sid/*", "zone_name": "example.com" }],
-   "workers_dev": false,
-   "vars": { "SID_COOKIE_DOMAIN": ".example.com", "SID_MODULES": "ip,geo" }
-   ```
+- Your site's DNS is on Cloudflare, and the hostname you serve pages from (for example `www.example.com`) is **proxied** (orange cloud). Workers routes only run on proxied hostnames.
+- A Cloudflare account with permission to deploy Workers and edit routes on the zone. Each sync is one Worker request; the free plan has a daily request limit, so check expected volume against your plan.
+- Node.js 24 or later and npm.
+- The site is served over https (the cookies are `Secure`).
 
-   After changing `vars`, run `npm run types -w @sharedid-edge/cloudflare`, which regenerates `worker-configuration.d.ts` (CI checks it's current).
-3. **Log in and deploy:**
+### 1. Get the code and build it
 
-   ```sh
-   npm exec -w @sharedid-edge/cloudflare -- wrangler login     # or set CLOUDFLARE_API_TOKEN
-   npm run deploy -w @sharedid-edge/cloudflare
-   ```
+```sh
+git clone https://github.com/patmmccann/sharedid-edge.git
+cd sharedid-edge
+npm ci
+npm run build
+```
 
-   An API token for CI needs **Account → Workers Scripts → Edit** and **Zone → Workers Routes → Edit**.
-4. **Staging:** use a Wrangler environment on a staging hostname of your own zone (`--env staging`). See the main README's [Staging and previews](../../../README.md#staging-and-previews) and [Deploying for many publishers](../../../README.md#deploying-for-many-publishers).
+`npm run build` compiles the shared core package that the worker bundles. Rerun it after updating the code.
+
+### 2. Configure the worker
+
+Edit [`wrangler.jsonc`](wrangler.jsonc):
+
+```jsonc
+{
+  "name": "sharedid-edge",                 // the Worker's name in your account
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "routes": [
+    { "pattern": "www.example.com/_sid/*", "zone_name": "example.com" }
+  ],
+  "workers_dev": false,                    // no public *.workers.dev URL in production
+  "vars": {
+    "SID_COOKIE_NAME": "_pubcid",          // must match storage.name in Prebid.js
+    "SID_COOKIE_DOMAIN": "",               // e.g. ".example.com" to share across subdomains
+    "SID_MAX_AGE_DAYS": "365",
+    "SID_VENDOR_ID": ""                    // your TCF vendor ID, only if you are one; see Consent and opt-out
+    // … every setting is listed in the Configuration reference
+  }
+}
+```
+
+- **Route:** use the hostname your pages are served from, with the `/_sid/*` path. If your site answers on both `example.com` and `www.example.com`, add a route for each and set `SID_COOKIE_DOMAIN` to `.example.com`, so both hosts share one cookie.
+- **Path:** to use something other than `/_sid`, change both the route and `SID_BASE_PATH`.
+- **Cookie name:** keep `_pubcid` unless Prebid.js is configured with a different `storage.name`.
+
+After changing `vars`, regenerate the Worker's TypeScript types with `npm run types -w @sharedid-edge/cloudflare` (CI checks they're current).
+
+### 3. Log in and deploy
+
+```sh
+npm exec -w @sharedid-edge/cloudflare -- wrangler login   # opens a browser; or set CLOUDFLARE_API_TOKEN
+npm run deploy -w @sharedid-edge/cloudflare
+```
+
+For CI or a shared machine, create an API token (Cloudflare dashboard → My Profile → API Tokens) with **Account → Workers Scripts → Edit** and **Zone → Workers Routes → Edit** for your zone, and set `CLOUDFLARE_API_TOKEN` (and `CLOUDFLARE_ACCOUNT_ID` if you have several accounts) instead of logging in.
+
+`wrangler deploy` uploads the Worker and attaches the route. Requests to `www.example.com/_sid/*` are answered by the Worker from then on; everything else on your site is unaffected.
+
+### 4. Verify
+
+Run `npm run verify-deployment -- --site https://www.example.com`; see [Verify](#verify) for what it checks.
+
+### 5. Turn it on in Prebid.js
+
+See [Configure Prebid.js](../../../docs/prebid.md). Deploying the worker changes nothing on your pages until Prebid.js calls it.
+
+### Updating
+
+```sh
+git pull
+npm ci
+npm run build
+npm run deploy -w @sharedid-edge/cloudflare
+```
+
+### Staging and previews
+
+Before attaching the production route, you can deploy with `"workers_dev": true` and no `routes` to get a `https://sharedid-edge.<your-subdomain>.workers.dev` URL. Cookies set there belong to `workers.dev`, not your site, so use it only to check that the Worker runs. Test the real behaviour on a staging hostname of your own zone (for example a route on `staging.example.com/_sid/*`), using a Wrangler environment (`"env": { "staging": { … } }` in `wrangler.jsonc`, deployed with `--env staging`).
+
+### Deploying for many publishers
+
+A company running SharedID Edge for several publishers can deploy one Worker per publisher, each with its own routes and `vars`, using Wrangler environments (`env.<publisher>`) or separate config files (`wrangler deploy -c publisher-a.jsonc`). Each Worker must run on the zone that serves that publisher's site, so the publisher needs to delegate the route (or the zone) to your Cloudflare account. The IP rule means it can't run on your own domain behind a CNAME.
 
 ## Configuration and secrets
 
-- **Settings:** every setting is a `SID_*` variable, listed in [`wrangler.jsonc`](wrangler.jsonc) and described in the main README's [Configuration reference](../../../README.md#configuration-reference). An empty string means "use the default".
+- **Settings:** every setting is a `SID_*` variable, listed in [`wrangler.jsonc`](wrangler.jsonc) and described in the [Configuration reference](../../../docs/configuration.md). An empty string means "use the default".
 - **Invalid settings** make every request return `500 SharedID Edge is misconfigured`, rather than setting wrong cookies. The reason is written to the Worker's logs (`wrangler tail`).
 - **Secrets** (the `ec` module's passphrase) go in `SID_MODULE_SECRETS`, set as a Worker secret, never in `vars`:
 
@@ -98,7 +158,7 @@ Core's `locationInfo` validates every location value the same way for all adapte
 
 ## Built-in modules
 
-The Worker builds in `ip`, `ec`, `geo`, `reflect`, `bot` and `ua`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../../README.md#modules) and each module's README. To add your own or a vendor module, import it in `src/index.ts` and pass `[...builtInModules, yourModule]`.
+The Worker builds in `ip`, `ec`, `geo`, `reflect`, `bot` and `ua`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the [Modules](../../../docs/modules.md) and each module's README. To add your own or a vendor module, import it in `src/index.ts` and pass `[...builtInModules, yourModule]`.
 
 ## Verify
 
@@ -106,11 +166,20 @@ The Worker builds in `ip`, `ec`, `geo`, `reflect`, `bot` and `ua`, from the list
 npm run verify-deployment -- --site https://www.example.com
 ```
 
-This checks that `/_sid/*` shares IP addresses with your site, sets `_pubcid` and its `HttpOnly` recovery copy correctly, isn't cached by a shared cache, and that `/_sid/v1` returns the payload. By hand:
+This checks, from outside, that:
+
+- the endpoint shares IP addresses with your site (the Safari rule in [Architecture](#architecture));
+- `/_sid/sync` returns the pixel and sets `_pubcid` (Secure, SameSite=Lax, at least 300 days, readable by script) and the `HttpOnly` recovery copy, adopting the ID it's sent;
+- the response isn't served from a shared cache;
+- `/_sid/v1` returns the JSON payload.
+
+Options: `--endpoint https://www.example.com/identity` for a different path, `--cookie-name`, `--min-days`.
+
+By hand:
 
 ```sh
 curl -sI 'https://www.example.com/_sid/sync?id=pubcid:test-id'   # 200, image/gif, two set-cookie headers
-curl -s https://www.example.com/_sid/v1 | jq .                    # the payload; see the main README's Responses
+curl -s https://www.example.com/_sid/v1 | jq .                    # the payload; see Responses
 ```
 
 ## Local development and tests
