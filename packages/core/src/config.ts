@@ -1,3 +1,5 @@
+import { trimEnd } from './text.js';
+
 /** The resolved configuration. See {@link resolveConfig} for the environment variables. */
 export interface SharedIdEdgeConfig {
   /** Path prefix the worker answers under, e.g. `/_sid`. Never ends with `/`. */
@@ -227,7 +229,7 @@ export function resolveConfig(env: Env): SharedIdEdgeConfig {
 }
 
 function trimTrailingSlashes(path: string): string {
-  const trimmed = path.replace(/\/+$/, '');
+  const trimmed = trimEnd(path, '/');
   return trimmed === '' ? '/' : trimmed;
 }
 

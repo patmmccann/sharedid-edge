@@ -35,7 +35,10 @@ if (values.site === undefined) {
 }
 
 const site = new URL(values.site);
-const endpoint = new URL((values.endpoint ?? `${site.origin}/_sid`).replace(/\/+$/, ''));
+let endpointText = values.endpoint ?? `${site.origin}/_sid`;
+// Trailing slashes off with a loop (a /\/+$/ regular expression backtracks polynomially on long runs of '/').
+while (endpointText.endsWith('/')) endpointText = endpointText.slice(0, -1);
+const endpoint = new URL(endpointText);
 const cookieName = values['cookie-name'];
 const recoveryName = values['recovery-cookie-name'];
 const minSeconds = Number(values['min-days']) * 86_400;

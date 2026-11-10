@@ -1,0 +1,39 @@
+{
+  "name": "@sharedid-edge/vercel",
+  "version": "0.1.0",
+  "description": "Run SharedID Edge on Vercel: a Next.js route handler or Routing Middleware on the site's own deployment",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.tsbuildinfo"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "attw": "attw --pack . --profile esm-only",
+    "bundle": "node scripts/bundle.mjs"
+  },
+  "dependencies": {
+    "@sharedid-edge/core": "0.1.0",
+    "@sharedid-edge/modules": "0.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patmmccann/sharedid-edge.git",
+    "directory": "packages/adapters/vercel"
+  }
+}

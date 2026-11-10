@@ -54,9 +54,7 @@ function anchors(file) {
     for (const match of line.matchAll(/<a\s+(?:name|id)="([^"]+)"/g)) set.add(match[1]);
     const heading = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
     if (heading === null) continue;
-    const base = heading[1]
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-      .replace(/<[^>]+>/g, '')
+    const base = withoutTags(heading[1].replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'))
       .toLowerCase()
       .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, '')
       .replace(/\s/g, '-');
@@ -101,4 +99,15 @@ if (problems.length > 0) {
   process.exitCode = 1;
 } else {
   console.log(`ok - ${String(checked)} relative links in ${String(files.length)} Markdown files resolve`);
+}
+
+/** `text` with HTML tags removed, repeatedly until none are left (a single pass can leave a tag from nested ones). */
+function withoutTags(text) {
+  let previous;
+  let current = text;
+  do {
+    previous = current;
+    current = current.replace(/<[^<>]*>/g, '');
+  } while (current !== previous);
+  return current;
 }

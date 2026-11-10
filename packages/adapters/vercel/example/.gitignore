@@ -1,0 +1,9 @@
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+.vercel/
+.env*.local
+# Copied from ../deploy by copy-sharedid-edge.mjs; a real site commits its copy.
+lib/sharedid-edge.mjs
+lib/sharedid-edge.d.mts

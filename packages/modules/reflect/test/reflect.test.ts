@@ -128,6 +128,10 @@ describe('reading values', () => {
     expect(rawCookieValue(' \t uid1=abc \t; other=x', 'uid1')).toBe('abc');
     expect(rawCookieValue('uid1=\u00a0abc; other=x', 'uid1')).toBe('\u00a0abc');
     expect(isReflectable('\u00a0abc')).toBe(false);
+    // stays fast on a long run of whitespace in a hostile Cookie header
+    const started = Date.now();
+    expect(rawCookieValue(`uid1=${' '.repeat(100_000)}x${' \t'.repeat(50_000)}`, 'uid1')).toBe('x');
+    expect(Date.now() - started).toBeLessThan(500);
   });
 
   it('reflects only non-empty cookie-octet values up to 1024 characters', () => {
