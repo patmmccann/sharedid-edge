@@ -17,6 +17,7 @@ export {
   runModules,
   type EdgeModule,
   type ModuleContext,
+  type ModuleCookie,
   type ModuleResult,
   type ModuleRunOutput
 } from './modules.js';

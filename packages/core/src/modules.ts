@@ -10,8 +10,31 @@ export interface ModuleContext {
   /** The SharedID for this request, when storage is allowed. */
   readonly sharedId: string | undefined;
   readonly consent: ConsentContext;
+  /** The request's cookies. */
+  readonly cookies: ReadonlyMap<string, string>;
+  /** Whether the browser has opted out (the SharedID opt-out cookie is present). */
+  readonly optedOut: boolean;
   /** This module's entry from `SID_MODULE_CONFIG`, or `{}`. */
   readonly config: Readonly<Record<string, unknown>>;
+  /**
+   * This module's entry from `SID_MODULE_SECRETS` (set as a platform secret, not a plain variable), or `{}`. Never put
+   * these in the output or in errors.
+   */
+  readonly secrets: Readonly<Record<string, string>>;
+}
+
+/**
+ * A cookie a module sets on the `/v1` response. The worker adds `Path=/`, `SameSite=Lax`, `Secure` (over https) and
+ * `Expires`. Names must be valid cookie names and differ from the worker's own cookies; values must be cookie-octets.
+ * `maxAgeSeconds: 0` deletes the cookie.
+ */
+export interface ModuleCookie {
+  readonly name: string;
+  readonly value: string;
+  readonly maxAgeSeconds: number;
+  readonly httpOnly: boolean;
+  /** The `Domain` attribute; `SID_COOKIE_DOMAIN` when omitted, host-only when that's unset too. */
+  readonly domain?: string;
 }
 
 /** What a module adds to the payload. Every field is optional. */
@@ -19,6 +42,8 @@ export interface ModuleResult {
   readonly eids?: readonly Eid[];
   /** An OpenRTB 2.x fragment, deep-merged into the payload's `ortb2`. */
   readonly ortb2?: Readonly<Record<string, unknown>>;
+  /** Cookies to set (or delete) on the response. */
+  readonly cookies?: readonly ModuleCookie[];
 }
 
 /**
@@ -71,6 +96,7 @@ export class ModuleRegistry {
 
 export interface ModuleRunOutput {
   readonly eids: Eid[];
+  readonly cookies: ModuleCookie[];
   readonly ortb2: Record<string, unknown> | undefined;
   readonly reports: Record<string, ModuleReport>;
 }
@@ -82,10 +108,11 @@ export interface ModuleRunOutput {
 export async function runModules(
   registry: ModuleRegistry,
   config: SharedIdEdgeConfig,
-  base: Omit<ModuleContext, 'config'>,
+  base: Omit<ModuleContext, 'config' | 'secrets'>,
   now: () => number
 ): Promise<ModuleRunOutput> {
   const eids: Eid[] = [];
+  const cookies: ModuleCookie[] = [];
   let ortb2: Record<string, unknown> | undefined;
   const reports: Record<string, ModuleReport> = {};
 
@@ -103,7 +130,7 @@ export async function runModules(
     const start = now();
     try {
       const result = await withTimeout(
-        Promise.resolve(module.run({ ...base, config: config.moduleConfig[name] ?? {} })),
+        Promise.resolve(module.run({ ...base, config: config.moduleConfig[name] ?? {}, secrets: config.moduleSecrets[name] ?? {} })),
         config.moduleTimeoutMs
       );
       const ms = Math.round(now() - start);
@@ -111,19 +138,37 @@ export async function runModules(
         reports[name] = { ms, status: 'timeout' };
         continue;
       }
-      if (result === undefined || (result.eids === undefined && result.ortb2 === undefined)) {
+      if (result === undefined || (result.eids === undefined && result.ortb2 === undefined && result.cookies === undefined)) {
         reports[name] = { ms, status: 'empty' };
         continue;
       }
+      // Checked before anything from this module is used, so a bad cookie leaves the whole result out.
+      for (const cookie of result.cookies ?? []) checkModuleCookie(cookie, config);
+      if (result.cookies !== undefined) cookies.push(...result.cookies);
       if (result.eids !== undefined) eids.push(...result.eids);
       if (result.ortb2 !== undefined) ortb2 = deepMerge(ortb2 ?? {}, result.ortb2);
-      reports[name] = { ms, status: 'ok' };
+      reports[name] = { ms, status: result.eids === undefined && result.ortb2 === undefined ? 'empty' : 'ok' };
     } catch {
       // The error isn't reported to the page: it may contain request data.
       reports[name] = { ms: Math.round(now() - start), status: 'error' };
     }
   }
-  return { eids, ortb2, reports };
+  return { eids, cookies, ortb2, reports };
+}
+
+const MODULE_COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,64}$/;
+const COOKIE_VALUE = /^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]{0,4096}$/;
+const COOKIE_DOMAIN = /^\.?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
+
+/** Throws on a cookie a module may not set. */
+function checkModuleCookie(cookie: ModuleCookie, config: SharedIdEdgeConfig): void {
+  const reserved = [config.cookieName, config.recoveryCookieName, config.optOutCookieName];
+  if (!MODULE_COOKIE_NAME.test(cookie.name) || reserved.includes(cookie.name)) throw new TypeError('invalid module cookie name');
+  if (!COOKIE_VALUE.test(cookie.value)) throw new TypeError('invalid module cookie value');
+  if (!Number.isInteger(cookie.maxAgeSeconds) || cookie.maxAgeSeconds < 0 || cookie.maxAgeSeconds > 400 * 86_400) {
+    throw new TypeError('invalid module cookie lifetime');
+  }
+  if (cookie.domain !== undefined && !COOKIE_DOMAIN.test(cookie.domain)) throw new TypeError('invalid module cookie domain');
 }
 
 /**

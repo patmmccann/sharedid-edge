@@ -259,7 +259,7 @@ The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` pa
 
 **Deleting the cookie.** When consent is missing or withdrawn, or with GPC, COPPA or opt-out, the worker deletes the ID cookies it finds: it overwrites each with an empty value, `Max-Age=0` and an `Expires` date in 1970, which browsers treat as a delete. With `SID_COOKIE_DOMAIN` set, it deletes a host-only copy too.
 
-**What's stored and logged.** IDs are random UUIDs, never derived from the IP address or other request data. The worker stores nothing server-side and logs nothing about requests (Workers observability is off in the default config).
+**What's stored and logged.** SharedIDs are random UUIDs, never derived from the IP address or other request data. (The opt-in `ec` module is the exception: see below.) The worker stores nothing server-side and logs nothing about requests (Workers observability is off in the default config).
 
 ## Modules
 
@@ -293,6 +293,7 @@ Built-in modules:
 | Name | Adds | Settings |
 | --- | --- | --- |
 | `ip` | `ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out | none |
+| `ec` | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**; see below | `domain`; secret `passphrase` |
 
 To build your own, see [Adding a module](#adding-a-module).
 
@@ -327,6 +328,43 @@ fetch('/_sid/v1', { credentials: 'include' })
 **Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
 
 The address is only returned to the browser that sent the request. The worker doesn't store or log it, and SharedIDs are never derived from it. `/_sid/v1` responses are `Cache-Control: no-store`.
+
+### `ec`: Trusted Server Edge Cookies
+
+The `ec` module implements IAB Tech Lab [Trusted Server](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html) Edge Cookies, for publishers who use Trusted Server or want its identifier. It sets the `ts-ec` cookie and returns the EC as `ortb2.user.id` in `/_sid/v1`.
+
+> **This ID is derived from the visitor's IP address.** An EC is `HMAC-SHA256(passphrase, IP)` as 64 hex characters, a dot, and 6 random characters. Everyone behind the same IPv4 address, or the same IPv6 /64, gets the same 64-character prefix, and anyone with the passphrase can test which address an EC came from. That's how Trusted Server defines it, and it's why the module is off unless you turn it on. The SharedID itself stays random.
+
+Turn it on with a passphrase of at least 32 bytes, kept as a secret:
+
+```sh
+npm exec -w @sharedid-edge/cloudflare -- wrangler secret put SID_MODULE_SECRETS
+# paste: {"ec":{"passphrase":"<at least 32 random bytes, e.g. from openssl rand -hex 32>"}}
+```
+
+```jsonc
+"vars": {
+  "SID_MODULES": "ip,ec",
+  "SID_MODULE_CONFIG": "{\"ec\":{\"domain\":\"example.com\"}}"   // the cookie gets Domain=.example.com
+}
+```
+
+`/_sid/v1` then sets `ts-ec=<id>; Max-Age=31536000; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly` on the first call, and returns:
+
+```json
+{ "ortb2": { "user": { "id": "7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc.nZ1GxL" } } }
+```
+
+**Behaviour.**
+- An existing `ts-ec` is returned as is and isn't refreshed, as in Trusted Server.
+- Opt-out, GPC, `coppa=1`, a US privacy opt-out, or a TC string without Purpose 1 consent deletes it.
+- An undecodable TC string, or GDPR without a TC string, sets and returns nothing but leaves an existing cookie alone.
+- Changing the passphrase changes the prefix for new ECs only.
+
+**Differences from Trusted Server.**
+- The EC is set only when the page calls `/_sid/v1`, not on page loads.
+- There's no server-side identity graph, partner sync or `/identify` API.
+- Consent uses this worker's signals (`gdpr`, the TC string, GPC, `us_privacy`, `coppa`), not Trusted Server's per-country and per-state jurisdiction lists, and GPP isn't decoded yet.
 
 ## Self-host with Node.js
 
@@ -375,6 +413,7 @@ All settings are strings, set as Worker `vars` (Cloudflare) or environment varia
 | `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. |
 | `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`. |
 | `SID_MODULE_CONFIG` | `{}` | JSON settings per module, keyed by module name. |
+| `SID_MODULE_SECRETS` | `{}` | JSON secrets per module, e.g. the `ec` passphrase. Set it as a secret (`wrangler secret put SID_MODULE_SECRETS`), not in `vars`. |
 | `SID_MODULE_TIMEOUT_MS` | `50` | Time limit for each module. |
 
 Routes, under `SID_BASE_PATH`:

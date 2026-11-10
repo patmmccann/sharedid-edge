@@ -89,7 +89,7 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
 
         const response = route === ROUTES.sync
           ? syncResponse(config, state, decision.allowed)
-          : await payloadResponse(request, url, platform, consent, state, registry, config, now);
+          : await payloadResponse({ request, url, platform, consent, cookies, optedOut, state, registry, config, now, secure, date });
         if (!decision.allowed) response.headers.set('X-SharedID-Status', `denied: ${decision.reason}`);
         if (state.source !== undefined) response.headers.set('X-SharedID-Source', state.source);
         return withCookies(response, setCookies);
@@ -175,17 +175,24 @@ function syncResponse(config: SharedIdEdgeConfig, state: IdState, allowed: boole
   });
 }
 
-async function payloadResponse(
-  request: Request,
-  url: URL,
-  platform: PlatformInfo,
-  consent: ConsentContext,
-  state: IdState,
-  registry: ModuleRegistry,
-  config: SharedIdEdgeConfig,
-  now: () => Date
-): Promise<Response> {
-  const modules = await runModules(registry, config, { request, url, platform, sharedId: state.id, consent }, () => now().getTime());
+interface PayloadInputs {
+  readonly request: Request;
+  readonly url: URL;
+  readonly platform: PlatformInfo;
+  readonly consent: ConsentContext;
+  readonly cookies: ReadonlyMap<string, string>;
+  readonly optedOut: boolean;
+  readonly state: IdState;
+  readonly registry: ModuleRegistry;
+  readonly config: SharedIdEdgeConfig;
+  readonly now: () => Date;
+  readonly secure: boolean;
+  readonly date: Date;
+}
+
+async function payloadResponse(inputs: PayloadInputs): Promise<Response> {
+  const { request, url, platform, consent, cookies, optedOut, state, registry, config, now, secure, date } = inputs;
+  const modules = await runModules(registry, config, { request, url, platform, sharedId: state.id, consent, cookies, optedOut }, () => now().getTime());
   const eids: Eid[] = state.id === undefined ? [] : [{ source: 'pubcid.org', uids: [{ id: state.id, atype: 1 }] }];
   eids.push(...modules.eids);
   const payload: PayloadV1 = {
@@ -200,6 +207,16 @@ async function payloadResponse(
     headers: { 'Content-Type': 'application/json; charset=utf-8', ...NO_STORE, 'X-Robots-Tag': 'noindex' }
   });
   applyCors(request, config, response.headers);
+  for (const cookie of modules.cookies) {
+    const options: CookieOptions = {
+      maxAgeSeconds: cookie.maxAgeSeconds,
+      domain: cookie.domain ?? config.cookieDomain,
+      secure,
+      httpOnly: cookie.httpOnly,
+      sameSite: 'Lax'
+    };
+    response.headers.append('Set-Cookie', serializeCookie(cookie.name, cookie.value, options, date));
+  }
   return response;
 }
 
