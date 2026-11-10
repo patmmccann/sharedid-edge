@@ -17,6 +17,8 @@ export interface ConsentContext {
   readonly gppSid: readonly number[] | undefined;
   /** Global Privacy Control (`Sec-GPC: 1`). */
   readonly gpc: boolean;
+  /** The request is subject to COPPA (`coppa=1`, as in OpenRTB `regs.coppa`). */
+  readonly coppa: boolean;
 }
 
 export const TCF_COOKIE = 'euconsent-v2';
@@ -36,7 +38,8 @@ export function readConsent(url: URL, headers: Headers, cookies: ReadonlyMap<str
     usPrivacy: nonEmpty(url.searchParams.get('us_privacy')),
     gppString: nonEmpty(url.searchParams.get('gpp')),
     gppSid,
-    gpc: headers.get('Sec-GPC')?.trim() === '1'
+    gpc: headers.get('Sec-GPC')?.trim() === '1',
+    coppa: url.searchParams.get('coppa') === '1'
   };
 }
 
@@ -48,7 +51,7 @@ const USE_PURPOSES: readonly number[] = [2, 3, 4, 5, 6, 7, 8, 9, 10];
 /**
  * Whether the SharedID cookie may be set or refreshed. Opt-out is checked separately, before this. Storage is denied:
  *
- * - with Global Privacy Control (`Sec-GPC: 1`);
+ * - with Global Privacy Control (`Sec-GPC: 1`), or for a request subject to COPPA (`coppa=1`);
  * - when there is a TC string, unless it is valid, consents to Purpose 1, and has consent or legitimate interest for at
  *   least one of Purposes 2 to 10:
  *   - by default (publisher mode), in the publisher TC segment: SharedID is the publisher's own ID;
@@ -57,6 +60,7 @@ const USE_PURPOSES: readonly number[] = [2, 3, 4, 5, 6, 7, 8, 9, 10];
  */
 export function storageDecision(config: Pick<SharedIdEdgeConfig, 'vendorId'>, consent: ConsentContext): StorageDecision {
   if (consent.gpc) return { allowed: false, reason: 'gpc' };
+  if (consent.coppa) return { allowed: false, reason: 'coppa' };
   if (consent.tcString !== undefined) {
     const tcf = consent.tcf;
     if (tcf === undefined) return { allowed: false, reason: 'tcf: invalid TC string' };

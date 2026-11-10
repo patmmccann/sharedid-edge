@@ -233,6 +233,12 @@ describe('storageDecision', () => {
     expect(storageDecision(publisherMode, consent(`gdpr_consent=${publisherTc([1, 2])}`)).allowed).toBe(true);
     expect(storageDecision(publisherMode, consent('gdpr_consent=not-a-tc-string'))).toEqual(denied('tcf: invalid TC string'));
   });
+  it('denies storage for a COPPA request, like GPC, whatever the TC string says', () => {
+    expect(storageDecision(publisherMode, consent('coppa=1'))).toEqual(denied('coppa'));
+    expect(storageDecision(publisherMode, consent(`coppa=1&gdpr=1&gdpr_consent=${publisherTc([1, 2])}`))).toEqual(denied('coppa'));
+    expect(storageDecision(vendorMode, consent('coppa=1'))).toEqual(denied('coppa'));
+    expect(storageDecision(publisherMode, consent('coppa=0')).allowed).toBe(true);
+  });
   it('denies storage when GDPR applies and there is no TC string', () => {
     expect(storageDecision(publisherMode, consent('gdpr=1'))).toEqual(denied('tcf: GDPR applies and there is no TC string'));
     expect(storageDecision(publisherMode, consent('', { isEU: true }))).toEqual(denied('tcf: GDPR applies and there is no TC string'));
