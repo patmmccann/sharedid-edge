@@ -132,6 +132,10 @@ describe('createVercelMiddleware', () => {
     expect(ownsPath('/blog', '/')).toBe(false);
     expect(ownsPath('/identity/v1', '/identity')).toBe(true);
     expect(ownsPath('/identityx', '/identity')).toBe(false);
+    // linear on long runs of '/' (a regular expression here could backtrack polynomially)
+    const started = Date.now();
+    expect(ownsPath(`/${'/'.repeat(100_000)}x`, '/')).toBe(false);
+    expect(Date.now() - started).toBeLessThan(500);
   });
 
   it('is configured from the environment, and a misconfiguration fails only the base path', async () => {

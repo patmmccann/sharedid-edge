@@ -63,9 +63,16 @@ export function middleware(handler: VercelHandler, basePath: string): VercelMidd
 
 const CORE_ROUTES: readonly string[] = Object.values(ROUTES);
 
+/** `path` without trailing `/`s. A loop, not a regular expression, so it stays linear on long runs of `/`. */
+function withoutTrailingSlashes(path: string): string {
+  let end = path.length;
+  while (end > 0 && path.charCodeAt(end - 1) === 47) end--;
+  return path.slice(0, end);
+}
+
 /** Whether a path belongs to the worker for `basePath`. */
 export function ownsPath(pathname: string, basePath: string): boolean {
-  if (basePath === '/') return CORE_ROUTES.includes(pathname.replace(/\/+$/, ''));
+  if (basePath === '/') return CORE_ROUTES.includes(withoutTrailingSlashes(pathname));
   return pathname === basePath || pathname.startsWith(`${basePath}/`);
 }
 
