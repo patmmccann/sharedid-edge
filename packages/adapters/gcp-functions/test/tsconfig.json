@@ -1,0 +1,12 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../../../.tsbuild/gcp-functions-test",
+    "emitDeclarationOnly": true,
+    "isolatedDeclarations": false,
+    "types": ["node"]
+  },
+  "include": ["."],
+  "references": [{ "path": ".." }, { "path": "../../../core" }]
+}

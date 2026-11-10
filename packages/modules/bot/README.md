@@ -18,7 +18,7 @@ The edge sees each request before any script runs, so it's well placed to say wh
 
 ## Turning it on
 
-The module is built into the Cloudflare Worker, the Node.js server, the AWS Lambda adapter and the Vercel adapter, and does nothing until you list it. It runs on `/_sid/v1` and `/_sid/sync`. Its two signals are each off until you turn them on:
+The module is built into the Cloudflare Worker, the Node.js server, the AWS Lambda adapter, the Vercel adapter, the Azure Functions app and the Google Cloud function, and does nothing until you list it. It runs on `/_sid/v1` and `/_sid/sync`. Its two signals are each off until you turn them on:
 
 ```jsonc
 // packages/adapters/cloudflare/wrangler.jsonc

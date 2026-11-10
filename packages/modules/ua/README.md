@@ -23,7 +23,7 @@ The worker sees the request headers before any script on the page runs. Prebid.j
 
 ## Turning it on
 
-The module is built into the Cloudflare Worker, the Node.js server, and the AWS Lambda, Vercel and Azure Functions adapters. It does nothing until you list it in `SID_MODULES`.
+The module is built into the Cloudflare Worker, the Node.js server, and the AWS Lambda, Vercel, Azure Functions and Google Cloud adapters. It does nothing until you list it in `SID_MODULES`.
 
 1. **Enable it** in `packages/adapters/cloudflare/wrangler.jsonc`:
 
@@ -293,9 +293,10 @@ The Node.js server isn't bundled, and always has Bowser.
    | AWS Lambda | `npm run bundle:bowser -w @sharedid-edge/aws-lambda` in place of `bundle`; it writes `deploy/lambda.mjs` as usual, so `sam deploy` is unchanged |
    | Vercel | `npm run bundle:bowser -w @sharedid-edge/vercel` in place of `bundle`; copy `deploy/sharedid-edge.mjs` into your site as usual |
    | Azure Functions | `npm run bundle:bowser -w @sharedid-edge/azure-functions` in place of `bundle`; the same `deploy/` function app |
+   | Google Cloud | `npm run bundle:bowser -w @sharedid-edge/gcp-functions` in place of `bundle`; the same `deploy/` function source |
    | Node.js server | Nothing: it always has Bowser |
 
-2. **Choose it** with the `parser` setting, wherever the adapter takes its settings (the Worker's `vars` in `wrangler.jsonc`, the Node.js server's environment, or the Lambda function's, Vercel project's or Function App's environment variables):
+2. **Choose it** with the `parser` setting, wherever the adapter takes its settings (the Worker's `vars` in `wrangler.jsonc`, the Node.js server's environment, or the Lambda function's, Vercel project's, Function App's or Cloud Run function's environment variables):
 
    ```jsonc
    "vars": {
