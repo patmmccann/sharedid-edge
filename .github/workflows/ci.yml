@@ -27,10 +27,11 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - name: Lint (typescript-eslint strict type-checked)
-        run: npm run lint
       - name: Build and type-check every project, including tests (TypeScript 6.0)
         run: npm run build
+      # Typed lint reads the built declarations of the workspace packages, so it runs after the build.
+      - name: Lint (typescript-eslint strict type-checked)
+        run: npm run lint
       - name: Type-check every project with TypeScript 7
         run: npm run typecheck:ts7
       - name: Type-check the Worker against the Workers runtime types
