@@ -83,7 +83,7 @@ Core's `locationInfo` validates the values the same way for every adapter, dropp
 
 ## Built-in modules
 
-The CLI builds in `ip`, `ec` and `geo`, the same as the Worker. They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../README.md#modules).
+The CLI builds in `ip`, `ec`, `geo` and `reflect`, the same as the Worker. They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../README.md#modules).
 
 ## Using it as a library
 

@@ -131,6 +131,8 @@ A module has:
 
 The context has the request, its URL and cookies, the platform information (see [Platform information](#platform-information)), the SharedID (when storage is allowed), whether the browser opted out, the consent signals, and the module's configuration and secrets.
 
+The context also has the worker's **storage decision** for the request, `storage`: `{ allowed: true }`, or `{ allowed: false, reason }` with the same reason as `X-SharedID-Status` (`opt-out`, `gpc`, `coppa` or `tcf: …`; see [Opt-out and consent](#opt-out-and-consent)). A module that stores or extends an identifier SHOULD do so only when `storage.allowed` is true.
+
 A module's `cookies` are set on the `/v1` response with `Path=/`, `SameSite=Lax`, `Secure` over https, the module's `Domain` (else `SID_COOKIE_DOMAIN`), `Max-Age` (0 deletes) and `HttpOnly` as given. A module MUST NOT set the worker's own cookie names; a malformed or reserved cookie makes the module an `error`, and none of its output is used. A module that returns only cookies reports `empty`.
 
 A module that sets cookies SHOULD also declare the deletions for opt-out. `{basePath}/optout` deletes the ones the browser sent along with the ID cookies, for every installed module (whether or not it's in `SID_MODULES`), so an opt-out takes effect at once and not only on the next `/v1` call.
@@ -218,6 +220,41 @@ It returns the platform's location as the OpenRTB 2.6 `ortb2.device.geo` object:
 - **Setting:** `SID_MODULE_CONFIG={"geo":{"precision":"coarse"}}` returns only the coarse fields; `"precise"` is the default. Any other value of `precision`, or any other key, is a configuration mistake: the module fails (status `error`) on every request rather than guess.
 - When there's no field to return, it returns nothing (status `empty`).
 - The location MUST NOT be stored, logged or used to derive an ID.
+
+### The `reflect` module
+
+Name `reflect`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`. It re-sets first-party cookies that other scripts on the page wrote, so they become server-set cookies with a new lifetime, as the worker does for the SharedID.
+
+- **Settings,** `SID_MODULE_CONFIG.reflect`: `{ "cookies": [ … ], "keeper": { … } }`. `cookies` has 1 to 10 entries, each:
+  - `name` (required): a cookie name (an RFC 6265 token, at most 64 characters). It MUST NOT be `_pubcid`, `_pubcid_sv`, `_pubcid_optout`, `ts-ec` or `euconsent-v2`, nor the worker's configured cookie names, and MUST NOT repeat;
+  - `maxAgeDays` (required): an integer from 1 to 400;
+  - `domain` (optional): a registrable domain without a leading dot, such as `example.com`; the cookie gets `Domain=.<domain>`. Without it, `SID_COOKIE_DOMAIN` applies, else the cookie is host-only;
+  - `httpOnly` (optional, default `false`);
+  - `deleteOnOptOut` (optional, default `false`);
+  - `restore` (optional, default `false`): save the cookie in the keeper cookie and restore it from there (below).
+
+  `keeper` (optional; its defaults apply when it's omitted) configures the keeper cookie:
+  - `cookie` (default `_sid_keep`): a cookie name, with the same rules as `name`, and MUST NOT be one of the configured `cookies`;
+  - `maxAgeDays` (default `400`): an integer from 1 to 400;
+  - `domain` (optional): as for a cookie. Without it, the first `restore` cookie's `domain` applies; without that, `SID_COOKIE_DOMAIN`, else host-only.
+
+  Any other key, a wrong type or an out-of-range value makes the module an `error` on every `/v1` call, with no details.
+- **Reflection:** for each configured cookie the request carries, in configuration order, the module sets `<name>=<value>; Max-Age=<maxAgeDays × 86400>; Expires=…; Path=/; [Domain=.<domain>;] SameSite=Lax; [Secure;] [HttpOnly]`. The value MUST be the request's value byte for byte: not decoded, re-encoded, trimmed beyond the `Cookie` header's own whitespace, or otherwise changed. When the name repeats in the `Cookie` header, the first is used.
+- A cookie is **not reflected** when its value is empty, longer than 1024 characters, quoted, or contains a character that isn't a cookie-octet (RFC 6265). The other cookies are still reflected.
+- **The keeper cookie** holds the last known value of each `restore` cookie. Its value is the base64url encoding (RFC 4648 section 5, without padding) of a JSON object mapping cookie names to values, with keys in configuration order. It's set `HttpOnly`, with the keeper's `maxAgeDays` and `Domain`, and with `Path=/`, `SameSite=Lax` and `Secure` (over https) like the others. Its name and value together MUST NOT exceed 4096 bytes: entries are added in configuration order, and one that would take it over is left out (that cookie is still reflected) while later ones are still tried.
+- **Reading the keeper:** its value is read byte for byte, like the other cookies. A value that isn't base64url without padding, isn't a JSON object, or is over 4096 characters counts as empty, and so does each entry whose value isn't a string that could be reflected. It's never an error.
+- **Restoring,** on each `/v1` request where storage is allowed, for each `restore` cookie in configuration order:
+  - the request carries it with a value that can be reflected: it's reflected, and that value is saved;
+  - the request doesn't carry it, and the keeper has a value for it: it's **restored**, set with that value and its own configured attributes as if reflected, and the value stays saved;
+  - the request carries it with a value that can't be reflected: it's left alone, and its saved value is dropped;
+  - otherwise nothing is saved for it.
+
+  The keeper is then set with the saved values on every such request, which refreshes its expiry. When nothing is left to save and the request carried a keeper, it's deleted. With no `restore` cookie configured, no keeper is set, and one the request carries is deleted.
+- **Output:** cookies only, so the status is `empty`. Nothing is added to `eids` or `ortb2`, and neither names nor values are reported.
+- **Consent:** the module reflects only when `storage.allowed` is true: not on opt-out, `Sec-GPC: 1`, `coppa=1`, a TC string that doesn't give the SharedID's consent, or GDPR applying without a TC string. It then reflects and restores nothing, and on `/v1` deletes none of the configured cookies, which belong to other scripts. It deletes the keeper cookie, this worker's own store of identifiers, when the request carries it.
+- **Opt-out:** `{basePath}/optout` deletes a configured cookie the browser sent only when its `deleteOnOptOut` is `true`, with the configured `Domain` and `HttpOnly`. It always deletes the keeper cookie the browser sent, whatever `deleteOnOptOut` says, and also when `reflect` isn't in `SID_MODULES` or no cookie has `restore` (then at the configured or default name).
+- **Attributes:** the worker can't see a cookie's original attributes. If they differ (for example the original is host-only and `domain` is set), the browser keeps two cookies of that name. Configuration SHOULD match the original's `Domain` and `HttpOnly`.
+- It runs on `/v1` only, so cookies are reflected and restored only when the page calls `/v1`.
 
 ## Versioning
 

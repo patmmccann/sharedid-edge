@@ -1,5 +1,5 @@
 import { isRecord, type SharedIdEdgeConfig } from './config.js';
-import type { ConsentContext } from './consent.js';
+import type { ConsentContext, StorageDecision } from './consent.js';
 import type { Eid, ModuleReport, PlatformInfo } from './types.js';
 
 /** What a module gets for one request. Modules see the request but must not modify it. */
@@ -14,6 +14,12 @@ export interface ModuleContext {
   readonly cookies: ReadonlyMap<string, string>;
   /** Whether the browser has opted out (the SharedID opt-out cookie is present). */
   readonly optedOut: boolean;
+  /**
+   * Whether the worker may store the SharedID for this request: `{ allowed: false, reason }` on opt-out, GPC, COPPA or
+   * denied TCF consent, with the reason `X-SharedID-Status` gives. Modules that store or extend an identifier should
+   * follow it.
+   */
+  readonly storage: StorageDecision;
   /** This module's entry from `SID_MODULE_CONFIG`, or `{}`. */
   readonly config: Readonly<Record<string, unknown>>;
   /**

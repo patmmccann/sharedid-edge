@@ -1,0 +1,99 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The reflect module (SID_MODULES=reflect): re-sets configured first-party cookies the request carries, with the same value byte for byte and a new Max-Age, only when SharedID storage is allowed. uid1 is configured with a domain (Domain=.example.com, 365 days, not HttpOnly); fpid without one (host-only, 30 days, HttpOnly, deleted on opt-out). The TC string CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA has no publisher TC segment, so it denies storage in publisher mode.",
+  "config": {
+    "SID_MODULES": "reflect",
+    "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,\"domain\":\"example.com\",\"httpOnly\":false},{\"name\":\"fpid\",\"maxAgeDays\":30,\"httpOnly\":true,\"deleteOnOptOut\":true}]}}"
+  },
+  "cases": [
+    {
+      "name": "reflects uid1 byte for byte with Domain=.example.com and a new Max-Age",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "uid1=AbC%2Fx+y/z==.v1" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "uid1", "value": "AbC%2Fx+y/z==.v1", "maxAge": 31536000, "domain": ".example.com", "httpOnly": false, "sameSite": "Lax", "path": "/" }
+        ],
+        "onlyListedCookies": true,
+        "jsonIncludes": { "ext": { "modules": { "reflect": { "status": "empty" } } } }
+      }
+    },
+    {
+      "name": "reflects fpid host-only and HttpOnly",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "fpid=7a1f-0c2e_93b4" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "fpid", "value": "7a1f-0c2e_93b4", "maxAge": 2592000, "domain": "", "httpOnly": true, "sameSite": "Lax", "path": "/" }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "reflects only configured cookies the request carries, with non-empty values",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "other=1; uid1=; fpid=abc; _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" },
+          { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" },
+          { "name": "fpid", "value": "abc" }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "doesn't reflect a quoted value",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "uid1=\"abc\"" } },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }], "onlyListedCookies": true }
+    },
+    {
+      "name": "doesn't reflect on /sync",
+      "request": { "path": "/_sid/sync", "headers": { "cookie": "uid1=abc" } },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }], "onlyListedCookies": true }
+    },
+    {
+      "name": "reflects nothing, and deletes nothing, with the opt-out cookie",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "_pubcid_optout=1; uid1=abc; fpid=def" } },
+      "expect": { "status": 200, "noCookies": true, "jsonIncludes": { "ext": { "modules": { "reflect": { "status": "empty" } } } } }
+    },
+    {
+      "name": "reflects nothing with Global Privacy Control",
+      "request": { "path": "/_sid/v1", "headers": { "sec-gpc": "1", "cookie": "uid1=abc; fpid=def" } },
+      "expect": { "status": 200, "noCookies": true }
+    },
+    {
+      "name": "reflects nothing for COPPA",
+      "request": { "path": "/_sid/v1?coppa=1", "headers": { "cookie": "uid1=abc; fpid=def" } },
+      "expect": { "status": 200, "noCookies": true }
+    },
+    {
+      "name": "reflects nothing when GDPR applies without a TC string",
+      "request": { "path": "/_sid/v1?gdpr=1", "headers": { "cookie": "uid1=abc; fpid=def" } },
+      "expect": { "status": 200, "noCookies": true }
+    },
+    {
+      "name": "reflects nothing for a TC string that denies storage",
+      "request": { "path": "/_sid/v1?gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "headers": { "cookie": "uid1=abc; fpid=def" } },
+      "expect": { "status": 200, "noCookies": true }
+    },
+    {
+      "name": "deletes only cookies with deleteOnOptOut on /optout",
+      "request": { "path": "/_sid/optout", "headers": { "cookie": "uid1=abc; fpid=def" } },
+      "expect": {
+        "status": 204,
+        "cookies": [
+          { "name": "_pubcid_optout", "value": "1" },
+          { "name": "_pubcid", "maxAge": 0 },
+          { "name": "_pubcid_sv", "maxAge": 0 },
+          { "name": "fpid", "value": "", "maxAge": 0, "domain": "", "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    }
+  ]
+}

@@ -91,7 +91,7 @@ Core's `locationInfo` validates every location value the same way for all adapte
 
 ## Built-in modules
 
-[`src/modules.ts`](src/modules.ts) builds in `ip`, `ec` and `geo`. They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../README.md#modules) and each module's README. To add a module, import it there, and in `packages/node/src/cli.ts` and any other adapter.
+[`src/modules.ts`](src/modules.ts) builds in `ip`, `ec`, `geo` and `reflect`. They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../README.md#modules) and each module's README. To add a module, import it there, and in `packages/node/src/cli.ts` and any other adapter.
 
 ## Verify
 

@@ -384,6 +384,7 @@ Built-in modules:
 | [`ip`](packages/module-ip/README.md) | `ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out | none |
 | [`ec`](packages/module-ec/README.md) | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**; see below | `domain`; secret `passphrase` |
 | [`geo`](packages/module-geo/README.md) | `ortb2.device.geo`: country, region, metro and UTC offset, plus city, postal code and coordinates when consent allows | `precision`: `precise` (default) or `coarse` |
+| [`reflect`](packages/module-reflect/README.md) | Nothing in the payload: re-sets first-party cookies other scripts wrote (such as `uid1` or `_ga`) with the same value and a new expiry, so Safari doesn't cap them, and with `restore`, sets them again from an `HttpOnly` keeper cookie after Safari deletes them | `cookies`, `keeper` |
 
 To build your own, see [Adding a module](#adding-a-module).
 
@@ -491,6 +492,53 @@ Cloudflare geolocates every request, and the Worker already has the result. The 
 
 Like the IP address, the location is only returned to the browser that sent the request, and is never stored or logged.
 
+### `reflect`: keep other first-party cookies durable
+
+Full documentation: [`packages/module-reflect/README.md`](packages/module-reflect/README.md).
+
+Scripts on your pages write other first-party cookies with `document.cookie`, such as an ID vendor's `uid1`, and Safari caps those at 7 days just like a script-written `_pubcid`. The `reflect` module sets the cookies you name again from the worker, with the **same value, byte for byte**, and a new expiry, so they become server-set cookies too. It's off until you enable it:
+
+```jsonc
+"vars": {
+  "SID_MODULES": "reflect",
+  "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,\"domain\":\"example.com\"}]}}"
+}
+```
+
+A `/_sid/v1` request carrying `uid1` then gets, alongside the SharedID cookies:
+
+```http
+Set-Cookie: uid1=<same value>; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure
+```
+
+The payload is unchanged apart from `"reflect": { "ms": 0, "status": "empty" }` in `ext.modules`: the module only sets cookies.
+
+- **Match the original's domain and `HttpOnly`.** The worker can't see how a cookie was first set. If the original is host-only and you set `domain` (or the other way round), the browser keeps two cookies of that name. `httpOnly` defaults to `false`, since the script that wrote the cookie usually reads it.
+- **Consent:** it reflects only when the worker would set the SharedID: not on opt-out, GPC, `coppa=1`, denied TCF consent, or GDPR without a TC string. It never deletes these cookies on `/_sid/v1`, and on `/_sid/optout` only those you mark `deleteOnOptOut`.
+- **Only on `/_sid/v1`.** Prebid.js's `pixelUrl` calls `/_sid/sync`, where modules don't run, so the page has to call `/_sid/v1` (for example with the `fetch` snippet under [`ip`](#ip-the-real-client-ip)).
+- Up to 10 cookies, 1 to 400 days each. The SharedID cookies, `ts-ec` and `euconsent-v2` can't be reflected.
+
+**Restoring deleted cookies.** A cookie marked `"restore": true` is also saved in one `HttpOnly` cookie the worker owns, the keeper (`_sid_keep`, base64url of a JSON object, at most 4096 bytes). When Safari has deleted the cookie, the next `/_sid/v1` call sets it again from the keeper, as `_pubcid_sv` does for `_pubcid`. For Google Analytics and Ads:
+
+```json
+{
+  "reflect": {
+    "cookies": [
+      { "name": "_ga", "maxAgeDays": 400, "domain": "example.com", "restore": true },
+      { "name": "_gcl_aw", "maxAgeDays": 90, "domain": "example.com", "restore": true },
+      { "name": "_gcl_au", "maxAgeDays": 90, "domain": "example.com", "restore": true }
+    ]
+  }
+}
+```
+
+```http
+Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0; Max-Age=34560000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
+```
+
+- **Call `/_sid/v1` before gtag.js loads,** or a deleted `_ga` is replaced by a new one before the worker can restore it. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/module-reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/module-reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
+- **Consent:** when storage isn't allowed the keeper is deleted (the original cookies are left alone), and `/_sid/optout` always deletes it.
+
 ## Self-host with Node.js
 
 Full reference: [`packages/node/README.md`](packages/node/README.md).
@@ -538,7 +586,7 @@ All settings are strings, set as Worker `vars` (Cloudflare) or environment varia
 | `SID_VENDOR_ID` | (empty: publisher mode) | Your TCF vendor ID, for vendor mode. |
 | `SID_ALLOWED_ORIGINS` | none | Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin. |
 | `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. |
-| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`, `ec`, `geo`. |
+| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`, `ec`, `geo`, `reflect`. |
 | `SID_MODULE_CONFIG` | `{}` | JSON settings per module, keyed by module name. |
 | `SID_MODULE_SECRETS` | `{}` | JSON secrets per module, e.g. the `ec` passphrase. Set it as a secret (`wrangler secret put SID_MODULE_SECRETS`), not in `vars`. |
 | `SID_MODULE_TIMEOUT_MS` | `50` | Time limit for each module. |
@@ -574,7 +622,7 @@ spec/                 the specification
 conformance/          HTTP cases every implementation must pass, and their runner
 packages/core/        the platform-neutral handler, consent, cookies and module interface
 packages/cloudflare/  the Cloudflare Worker
-packages/module-*/    the built-in modules: ip, ec, geo
+packages/module-*/    the built-in modules: ip, ec, geo, reflect
 packages/node/        the Node.js server (local development, self-hosting, conformance target)
 packages/aws-lambda/  the AWS Lambda adapter, its bundle and SAM template
 e2e/                  unmodified Prebid.js against the worker, in Chromium, Firefox and WebKit
@@ -623,7 +671,7 @@ Publish it as its own package like [`packages/module-ip`](packages/module-ip), r
 
 ## Roadmap
 
-1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, an AWS Lambda adapter, and the `ip`, `ec` and `geo` modules.
+1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, an AWS Lambda adapter, and the `ip`, `ec`, `geo` and `reflect` modules.
 2. **Next:** Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
 3. A Prebid.js RTD module that reads `/_sid/v1`, plus first-party modules for bot scores and device type, a Fastly adapter, and Lambda@Edge.
 4. Vendor modules, a Rust implementation, and inline mode.

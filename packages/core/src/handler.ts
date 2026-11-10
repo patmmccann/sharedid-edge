@@ -1,5 +1,5 @@
 import { DEFAULT_CONFIG, type SharedIdEdgeConfig } from './config.js';
-import { readConsent, storageDecision, type ConsentContext } from './consent.js';
+import { readConsent, storageDecision, type ConsentContext, type StorageDecision } from './consent.js';
 import { parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
 import { idFromSyncParam, isValidId, mintId } from './id.js';
 import { ModuleRegistry, optOutCookies, runModules, type EdgeModule, type ModuleCookie } from './modules.js';
@@ -78,7 +78,7 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
       case ROUTES.v1: {
         const consent = readConsent(url, request.headers, cookies, platform);
         const optedOut = cookies.has(config.optOutCookieName);
-        const decision = optedOut ? { allowed: false as const, reason: 'opt-out' } : storageDecision(config, consent);
+        const decision: StorageDecision = optedOut ? { allowed: false, reason: 'opt-out' } : storageDecision(config, consent);
 
         let state: IdState = { id: undefined, source: undefined };
         const setCookies: string[] = [];
@@ -91,7 +91,7 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
 
         const response = route === ROUTES.sync
           ? syncResponse(config, state, decision.allowed)
-          : await payloadResponse({ request, url, platform, consent, cookies, optedOut, state, registry, config, now, secure, date });
+          : await payloadResponse({ request, url, platform, consent, cookies, optedOut, storage: decision, state, registry, config, now, secure, date });
         if (!decision.allowed) response.headers.set('X-SharedID-Status', `denied: ${decision.reason}`);
         if (state.source !== undefined) response.headers.set('X-SharedID-Source', state.source);
         return withCookies(response, setCookies);
@@ -184,6 +184,7 @@ interface PayloadInputs {
   readonly consent: ConsentContext;
   readonly cookies: ReadonlyMap<string, string>;
   readonly optedOut: boolean;
+  readonly storage: StorageDecision;
   readonly state: IdState;
   readonly registry: ModuleRegistry;
   readonly config: SharedIdEdgeConfig;
@@ -193,8 +194,8 @@ interface PayloadInputs {
 }
 
 async function payloadResponse(inputs: PayloadInputs): Promise<Response> {
-  const { request, url, platform, consent, cookies, optedOut, state, registry, config, now, secure, date } = inputs;
-  const modules = await runModules(registry, config, { request, url, platform, sharedId: state.id, consent, cookies, optedOut }, () => now().getTime());
+  const { request, url, platform, consent, cookies, optedOut, storage, state, registry, config, now, secure, date } = inputs;
+  const modules = await runModules(registry, config, { request, url, platform, sharedId: state.id, consent, cookies, optedOut, storage }, () => now().getTime());
   const eids: Eid[] = state.id === undefined ? [] : [{ source: 'pubcid.org', uids: [{ id: state.id, atype: 1 }] }];
   eids.push(...modules.eids);
   const payload: PayloadV1 = {

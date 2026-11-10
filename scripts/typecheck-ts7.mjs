@@ -15,6 +15,8 @@ const projects = [
   'packages/module-ec/test',
   'packages/module-geo',
   'packages/module-geo/test',
+  'packages/module-reflect',
+  'packages/module-reflect/test',
   'packages/node',
   'packages/node/test',
   'packages/aws-lambda',

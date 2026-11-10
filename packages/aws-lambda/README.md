@@ -1,6 +1,6 @@
 # @sharedid-edge/aws-lambda
 
-[SharedID Edge](../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip` and `ec`, and it passes the same conformance suite.
+[SharedID Edge](../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `ec`, `geo` and `reflect`, and it passes the same conformance suite.
 
 The main README has a [quick start](../../README.md#deploy-on-aws-lambda-and-cloudfront). This is the full guide.
 

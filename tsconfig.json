@@ -12,6 +12,8 @@
     { "path": "packages/module-ec/test" },
     { "path": "packages/module-geo" },
     { "path": "packages/module-geo/test" },
+    { "path": "packages/module-reflect" },
+    { "path": "packages/module-reflect/test" },
     { "path": "packages/node" },
     { "path": "packages/node/test" },
     { "path": "packages/aws-lambda" },

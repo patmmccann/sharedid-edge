@@ -3,6 +3,7 @@ import { ConfigError, resolveConfig } from '@sharedid-edge/core';
 import { ecModule } from '@sharedid-edge/module-ec';
 import { geoModule } from '@sharedid-edge/module-geo';
 import { ipModule } from '@sharedid-edge/module-ip';
+import { reflectModule } from '@sharedid-edge/module-reflect';
 import { createNodeServer } from './index.js';
 
 // Configuration comes from the same SID_* environment variables as the edge workers (SID_MODULES picks which of the
@@ -15,7 +16,7 @@ try {
   const publicOrigin = process.env['SID_PUBLIC_ORIGIN'];
   const server = createNodeServer({
     config,
-    modules: [ipModule, ecModule, geoModule],
+    modules: [ipModule, ecModule, geoModule, reflectModule],
     trustProxy: /^(1|true|yes|on)$/i.test(process.env['SID_TRUST_PROXY'] ?? ''),
     ...(publicOrigin === undefined ? {} : { publicOrigin })
   });
