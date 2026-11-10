@@ -61,7 +61,7 @@ npm run build                                  # compiles core and the modules
 npm run bundle -w @sharedid-edge/aws-lambda    # bundles the function into packages/adapters/aws-lambda/deploy/lambda.mjs
 ```
 
-The bundle is a single ESM file with no dependencies (about 21 KB gzipped; CI fails it over 22 KB). There's no `sam build` step: the template's `CodeUri` is `dist/`, and `sam deploy` zips it as it is. Rebuild and bundle after updating the code.
+The bundle is a single ESM file with no dependencies (about 11 KB gzipped; minified; CI fails it over 32 KB). There's no `sam build` step: the template's `CodeUri` is `dist/`, and `sam deploy` zips it as it is. Rebuild and bundle after updating the code.
 
 ## Deploy
 

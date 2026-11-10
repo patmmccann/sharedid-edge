@@ -70,7 +70,7 @@ npm run build                               # compiles core and the modules
 npm run bundle -w @sharedid-edge/vercel     # packages/adapters/vercel/deploy/sharedid-edge.mjs and .d.mts
 ```
 
-The bundle is a single ESM file with no dependencies and no Node.js built-ins (about 21 KB gzipped; the bundle step fails it over 22 KB), with a declaration file next to it. Copy both into your site's repository, for example as `lib/sharedid-edge.mjs` and `lib/sharedid-edge.d.mts`, and commit them. To update, rebuild and copy them again.
+The bundle is a single ESM file with no dependencies and no Node.js built-ins (about 15 KB gzipped; minified; the bundle step fails it over 32 KB), with a declaration file next to it. Copy both into your site's repository, for example as `lib/sharedid-edge.mjs` and `lib/sharedid-edge.d.mts`, and commit them. To update, rebuild and copy them again.
 
 The packages aren't on npm yet. Once they are, `npm install @sharedid-edge/vercel` replaces the copy, with the same `handlerFromEnv` and `middlewareFromEnv`.
 
