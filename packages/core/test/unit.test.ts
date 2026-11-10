@@ -3,6 +3,7 @@ import {
   ConfigError,
   decodeTcf,
   deepMerge,
+  EU_COUNTRY_CODES,
   idFromSyncParam,
   isValidId,
   parseCookies,
@@ -272,5 +273,13 @@ describe('deepMerge', () => {
     const merged = deepMerge({ device: { geo: { country: 'USA' } } }, JSON.parse('{"device":{"geo":{"region":"NY"},"ip":"1.2.3.4"},"__proto__":{"polluted":true}}') as Record<string, unknown>);
     expect(merged).toEqual({ device: { geo: { country: 'USA', region: 'NY' }, ip: '1.2.3.4' } });
     expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+  });
+});
+
+describe('EU_COUNTRY_CODES', () => {
+  it('lists the 27 EU member states, not the wider EEA or the UK', () => {
+    expect(EU_COUNTRY_CODES.size).toBe(27);
+    for (const code of ['DE', 'FR', 'IE', 'HR', 'CY']) expect(EU_COUNTRY_CODES.has(code)).toBe(true);
+    for (const code of ['GB', 'NO', 'IS', 'LI', 'CH', 'US']) expect(EU_COUNTRY_CODES.has(code)).toBe(false);
   });
 });
