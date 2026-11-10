@@ -2,22 +2,26 @@
   // Solution file for `tsc -b`: every TypeScript project in the repo, sources and tests.
   // The Cloudflare package is checked separately (`npm run typecheck -w @sharedid-edge/cloudflare`)
   // because it compiles against the Workers runtime types rather than Node's.
+  // The references are derived from the workspace folders: `npm run check:projects` fails when one is missing, and
+  // `node scripts/check-projects.mjs --write` regenerates them.
   "files": [],
   "references": [
     { "path": "packages/core" },
     { "path": "packages/core/test" },
-    { "path": "packages/module-ip" },
-    { "path": "packages/module-ip/test" },
-    { "path": "packages/module-ec" },
-    { "path": "packages/module-ec/test" },
-    { "path": "packages/module-geo" },
-    { "path": "packages/module-geo/test" },
-    { "path": "packages/module-reflect" },
-    { "path": "packages/module-reflect/test" },
-    { "path": "packages/node" },
-    { "path": "packages/node/test" },
-    { "path": "packages/aws-lambda" },
-    { "path": "packages/aws-lambda/test" },
+    { "path": "packages/adapters/aws-lambda" },
+    { "path": "packages/adapters/aws-lambda/test" },
+    { "path": "packages/adapters/node" },
+    { "path": "packages/adapters/node/test" },
+    { "path": "packages/modules/all" },
+    { "path": "packages/modules/all/test" },
+    { "path": "packages/modules/ec" },
+    { "path": "packages/modules/ec/test" },
+    { "path": "packages/modules/geo" },
+    { "path": "packages/modules/geo/test" },
+    { "path": "packages/modules/ip" },
+    { "path": "packages/modules/ip/test" },
+    { "path": "packages/modules/reflect" },
+    { "path": "packages/modules/reflect/test" },
     { "path": "conformance" },
     { "path": "scripts" }
   ]

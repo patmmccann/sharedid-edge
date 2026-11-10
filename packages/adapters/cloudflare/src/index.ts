@@ -1,5 +1,5 @@
 import { ConfigError, createHandler, resolveConfig, type SharedIdEdgeHandler } from '@sharedid-edge/core';
-import { modules } from './modules.js';
+import { builtInModules as modules } from '@sharedid-edge/modules';
 import { platformInfo } from './platform.js';
 
 // One handler per environment object: Cloudflare reuses `env` across requests to the same isolate.

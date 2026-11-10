@@ -3,29 +3,11 @@
 // declarations of the packages they reference.
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
+import { projects as allProjects, root } from './projects.mjs';
 
-const root = join(import.meta.dirname, '..');
 const tsc = join(root, 'node_modules/typescript7/bin/tsc');
-const projects = [
-  'packages/core',
-  'packages/core/test',
-  'packages/module-ip',
-  'packages/module-ip/test',
-  'packages/module-ec',
-  'packages/module-ec/test',
-  'packages/module-geo',
-  'packages/module-geo/test',
-  'packages/module-reflect',
-  'packages/module-reflect/test',
-  'packages/node',
-  'packages/node/test',
-  'packages/aws-lambda',
-  'packages/aws-lambda/test',
-  'conformance',
-  'scripts',
-  'packages/cloudflare',
-  'packages/cloudflare/test'
-];
+// Every project, including the ones `tsc -b` skips (the Cloudflare Worker), from the workspace folders.
+const projects = allProjects().map(project => project.path);
 
 let failed = false;
 for (const project of projects) {

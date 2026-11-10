@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defineModule, resolveConfig } from '@sharedid-edge/core';
 import {
@@ -240,7 +241,8 @@ describe('handlerFromEnv', () => {
 describe('template.yaml', () => {
   it('passes every SID_* setting core reads to the function', () => {
     const root = join(import.meta.dirname, '..');
-    const core = readFileSync(join(root, '../core/dist/config.js'), 'utf8');
+    const coreDir = dirname(createRequire(import.meta.url).resolve('@sharedid-edge/core/package.json'));
+    const core = readFileSync(join(coreDir, 'dist/config.js'), 'utf8');
     const settings = new Set(Array.from(core.matchAll(/'(SID_[A-Z_]+)'/g), m => m[1]));
     const template = readFileSync(join(root, 'template.yaml'), 'utf8');
     const passed = new Set(Array.from(template.matchAll(/^ {10}(SID_[A-Z_]+): !Ref /gm), m => m[1]));

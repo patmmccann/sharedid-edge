@@ -1,6 +1,6 @@
 import { ConfigError, resolveConfig, type EdgeModule } from '@sharedid-edge/core';
 import { createLambdaHandler, internalError, type LambdaHandler } from './handler.js';
-import { builtInModules } from './modules.js';
+import { builtInModules } from '@sharedid-edge/modules';
 
 /**
  * Builds the handler from environment variables, once per cold start: the `SID_*` settings, plus

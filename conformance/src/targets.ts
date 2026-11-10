@@ -94,7 +94,7 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
   const baseUrl = `http://127.0.0.1:${String(port)}`;
   let child: ChildProcess;
   if (target === 'node') {
-    child = spawn(process.execPath, [join(ROOT, 'packages/node/dist/cli.js')], {
+    child = spawn(process.execPath, [join(ROOT, 'packages/adapters/node/dist/cli.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), HOST: '127.0.0.1', ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
@@ -110,7 +110,7 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
     const vars = Object.entries(config).flatMap(([key, value]) => ['--var', `${key}:${value}`]);
     const wrangler = join(ROOT, 'node_modules/wrangler/bin/wrangler.js');
     child = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'error', '--show-interactive-dev-session=false', ...vars], {
-      cwd: join(ROOT, 'packages/cloudflare'),
+      cwd: join(ROOT, 'packages/adapters/cloudflare'),
       env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
       stdio: ['ignore', 'ignore', 'inherit']
     });

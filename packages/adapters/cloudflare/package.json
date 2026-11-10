@@ -16,12 +16,10 @@
   },
   "dependencies": {
     "@sharedid-edge/core": "0.1.0",
-    "@sharedid-edge/module-ec": "0.1.0",
-    "@sharedid-edge/module-geo": "0.1.0",
-    "@sharedid-edge/module-ip": "0.1.0",
-    "@sharedid-edge/module-reflect": "0.1.0"
+    "@sharedid-edge/modules": "0.1.0"
   },
   "devDependencies": {
+    "@sharedid-edge/module-geo": "0.1.0",
     "wrangler": "^4.160.0",
     "@cloudflare/vitest-plugin": "^1.7.0"
   }

@@ -26,14 +26,11 @@
   },
   "dependencies": {
     "@sharedid-edge/core": "0.1.0",
-    "@sharedid-edge/module-ec": "0.1.0",
-    "@sharedid-edge/module-geo": "0.1.0",
-    "@sharedid-edge/module-ip": "0.1.0",
-    "@sharedid-edge/module-reflect": "0.1.0"
+    "@sharedid-edge/modules": "0.1.0"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/patmmccann/sharedid-edge.git",
-    "directory": "packages/node"
+    "directory": "packages/adapters/node"
   }
 }

@@ -8,5 +8,5 @@
   },
   "include": ["src"],
   // lambda-emulator.ts uses the Lambda adapter's event types.
-  "references": [{ "path": "../packages/aws-lambda" }]
+  "references": [{ "path": "../packages/adapters/aws-lambda" }]
 }

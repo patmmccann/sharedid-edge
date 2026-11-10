@@ -1,5 +1,5 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "../../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
@@ -9,10 +9,7 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../core" },
-    { "path": "../module-ip" },
-    { "path": "../module-ec" },
-    { "path": "../module-geo" },
-    { "path": "../module-reflect" }
+    { "path": "../../core" },
+    { "path": "../../modules/all" }
   ]
 }

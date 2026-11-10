@@ -1,7 +1,7 @@
 import { exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { utcOffsetMinutes } from '@sharedid-edge/module-geo';
-import { modules } from '../src/modules.js';
+import { builtInModules as modules } from '@sharedid-edge/modules';
 import { platformInfo } from '../src/platform.js';
 
 const UUID = 'c29cb2ae-769d-42f6-891a-f53cadee823d';

@@ -1,12 +1,12 @@
 {
-  "extends": "../../../tsconfig.base.json",
+  "extends": "../../../../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": ".",
-    "outDir": "../../../.tsbuild/module-ec-test",
+    "outDir": "../../../../.tsbuild/module-ec-test",
     "emitDeclarationOnly": true,
     "isolatedDeclarations": false,
     "lib": ["ES2023", "WebWorker"]
   },
   "include": ["."],
-  "references": [{ "path": ".." }, { "path": "../../core" }, { "path": "../../module-ip" }]
+  "references": [{ "path": ".." }, { "path": "../../../core" }, { "path": "../../ip" }]
 }
