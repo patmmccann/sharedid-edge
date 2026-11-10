@@ -13,7 +13,7 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | `packages/modules/` | Modules this project maintains: `ip/` (client IP), `ec/` (Trusted Server Edge Cookies, IP-derived, opt-in), `geo/` (`ortb2.device.geo`), `reflect/` (re-sets other first-party cookies), and `all/` (`@sharedid-edge/modules`, the built-in list) | Rules and how to write a module in [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). Published as `@sharedid-edge/module-<name>`; built into every adapter. |
 | `packages/vendor-modules/` | Modules contributed and maintained by vendors (none yet) | Extra rules in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md). Opt-in at build time; tested in their own CI job. |
 | `e2e/` | Unmodified Prebid.js against the worker in three browsers | Separate install. |
-| `scripts/` | Type-check helpers, the repo checks (`check-projects`, `check-links`) and `verify-deployment` | `projects.mjs` derives the project list from the workspace folders. |
+| `scripts/` | Type-check helpers, the repo checks (`check-projects`, `check-links`), the bundled adapters' build and size budget (`bundle-adapter.mjs`) and `verify-deployment` | `projects.mjs` derives the project list from the workspace folders. |
 
 ## TypeScript is strict, everywhere
 
@@ -39,6 +39,7 @@ npm run consumer-types                          # packed @sharedid-edge/core, st
 npm run attw                                    # published types resolve
 npm run check:projects                          # tsconfig.json references every workspace project
 npm run check:links                             # relative Markdown links and anchors resolve
+npm run check:duplication                       # no code copied between packages (jscpd)
 ```
 
 `npm run check` runs them in order. `npm run test:vendor-modules` runs vendor modules' tests, in their own CI job. `npm run conformance:wrangler` runs the conformance suite against `wrangler dev` (slower), `npm run conformance:lambda` and `npm run conformance:vercel` (both also in `check`) against the bundled Lambda handler and Vercel adapter, behind local stand-ins for their platforms, and `e2e/` has the browser tests. None of this needs a Cloudflare, AWS or Vercel account; never add steps that do to pull-request CI.
@@ -79,5 +80,20 @@ Behaviour that must not regress, each covered by tests:
 - ESM only, Node.js 24 or later. Platform-neutral code uses only web-standard APIs (`Request`, `Response`, `URL`, `crypto.randomUUID`).
 - Keep the worker small: no runtime dependencies in `@sharedid-edge/core`. Check `npm run build -w @sharedid-edge/cloudflare` (a dry-run bundle) for size when adding code.
 - Errors returned to clients never include request data.
+- **Don't copy code between packages;** factor it into core, a shared package or a conformance helper. If a copy is deliberate, mark it with a jscpd ignore comment and say why. See [Duplication](#duplication).
 - Commit messages: an imperative summary line, then why. Pull requests describe the motivation and the checks run.
 - This is a public repository: don't reference private repositories, internal tools or non-public deployments in code, comments, commits or PRs.
+
+## Duplication
+
+Copies drift: a fix, such as a security fix, lands in one and not the others. `npm run check:duplication` runs [jscpd](https://github.com/kucherenko/jscpd) with [`.jscpd.json`](.jscpd.json) over `packages/` (sources and build scripts), `conformance/src/` and `scripts/`, leaving out tests, generated files, the Vercel example and vendor modules (independent packages by design). It lists every clone of at least 5 lines and 40 tokens with its file and line pairs, writes a Markdown and HTML report to `.jscpd-report/` (uploaded by CI when the check fails), and fails when duplication is over `threshold`, a percentage of lines. The threshold is `0`: there are no clones today, so any new one fails.
+
+When it fails, factor the code into the right place:
+
+- platform-neutral helpers into core: internal, or exported when adapters or modules need them (adapter plumbing goes in `packages/core/src/adapter.ts`);
+- shared build steps into `scripts/` (the bundled adapters use `scripts/bundle-adapter.mjs`);
+- emulator plumbing into `conformance/src/emulator.ts`.
+
+If a copy is deliberate (a standalone file that mustn't import, or a module avoiding a dependency), wrap it in `// jscpd:ignore-start` and `// jscpd:ignore-end` with a one-line reason on the start comment.
+
+Don't raise `threshold`, `minTokens` or `minLines` to get a pull request through. Raise the threshold only when a clone is accepted on purpose and an ignore comment doesn't fit (it spans files a comment can't mark, say): set it just above the new measured value, say why in the pull request, and open an issue to remove the copy.

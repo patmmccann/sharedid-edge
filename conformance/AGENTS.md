@@ -19,6 +19,8 @@ The conformance suite is the contract between the specification and every implem
   | `cf-timezone` | `CloudFront-Viewer-Time-Zone` | `x-vercel-ip-timezone` |
   | `cf-ipcontinent` | none | `x-vercel-ip-continent` |
 
+  An emulator holds only its platform's header names and event or response shapes. The rest is shared in `src/emulator.ts`: loading the bundle (`loadBundleExport`), the case's client IP (`caseClientIp`), its location headers renamed by the emulator's table (`caseLocation`, which decodes the city back to UTF-8), the body, and the server that answers a failed invocation with a 502 (`serve`). A new emulator uses them rather than copying another.
+
 - **A field the platform doesn't report** is listed in the target's `unavailable` payload paths in `src/targets.ts` (Vercel: `ortb2.device.geo.metro`). The runner removes those paths from `json` and `jsonIncludes` and checks they're absent instead, so the target can't pass by inventing them. List only what the platform genuinely lacks, never to skip a failure, and say so in the adapter's README.
 - **Every behaviour in spec/SPEC.md should have a case.** Add cases with the spec change, before or with the implementation. Use fixed IDs (the suite uses `c29cb2ae-769d-42f6-891a-f53cadee823d` and `0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10`) and `valuePattern` only for minted IDs.
 - **`Secure`** is checked generically: present over https targets, absent over http. Don't assert it per case.

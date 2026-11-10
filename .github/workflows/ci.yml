@@ -31,6 +31,17 @@ jobs:
         run: npm run check:projects
       - name: Relative links in Markdown files resolve
         run: npm run check:links
+      # Lists each clone with its file and line pairs; the report is uploaded below when it fails.
+      - name: No code copied between packages (jscpd)
+        run: npm run check:duplication
+      - name: Upload the duplication report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: duplication-report
+          path: .jscpd-report
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Build and type-check every project, including tests (TypeScript 6.0)
         run: npm run build
       # Typed lint reads the built declarations of the workspace packages, so it runs after the build.
@@ -53,14 +64,7 @@ jobs:
       - name: Worker bundle and size budget
         run: |
           npm run build -w @sharedid-edge/cloudflare
-          node -e '
-            const { readFileSync } = require("node:fs");
-            const { gzipSync } = require("node:zlib");
-            const gz = gzipSync(readFileSync("packages/adapters/cloudflare/dist/index.js")).length;
-            const budget = 20 * 1024;
-            console.log(`Worker bundle: ${gz} bytes gzipped (budget ${budget})`);
-            if (gz > budget) { console.error("Over the bundle size budget"); process.exit(1); }
-          '
+          node scripts/bundle-adapter.mjs packages/adapters/cloudflare/dist/index.js "Worker bundle"
       - name: Lambda bundle, size budget, and conformance suite against it (local CloudFront stand-in)
         run: npm run conformance:lambda
       - name: Vercel bundle (no Node.js built-ins), size budget, and conformance suite against it (local Vercel proxy stand-in)
