@@ -33,6 +33,8 @@ Implementations read these settings, normally as environment variables. Defaults
 | `SID_MODULE_CONFIG` | [`{}`] | JSON object of per-module settings, keyed by module name. |
 | `SID_MODULE_SECRETS` | [`{}`] | JSON object of per-module secrets (strings), keyed by module name. Set as a platform secret; MUST NOT appear in responses, errors or logs. |
 | `SID_MODULE_TIMEOUT_MS` | [`50`] | Time limit for each module. |
+| `SID_SKIP_BOTS` | [off] | `verified`, `declared` or `likely`: set no SharedID for bots this sure or surer; see [Skipping bots](#skipping-bots). |
+| `SID_SKIP_BOTS_SCORE` | [off] | 1 to 99: set no SharedID when the traffic score is at or below it; see [Skipping bots](#skipping-bots). |
 
 The three cookie names (`SID_COOKIE_NAME`, `SID_RECOVERY_COOKIE`, `SID_OPTOUT_COOKIE`) MUST all differ. Invalid configuration MUST fail every request with a 5xx rather than set cookies.
 
@@ -96,7 +98,7 @@ When storage isn't allowed, existing ID cookies are deleted (see [Cookies](#cook
 - Implementations need only decode the core segment's version (must be 2), purpose consents (bits 152 to 175), purpose legitimate interests (176 to 199) and vendor consent section (from bit 213, bit field or range encoded), and the publisher TC segment's purpose consents (bits 3 to 26) and legitimate interests (27 to 50).
 - `us_privacy`, `gpp`, `gpp_sid` and `coppa` query parameters are read and passed to modules. Modules MUST treat `coppa=1` like GPC.
 
-A response where storage was denied SHOULD carry `X-SharedID-Status: denied: <reason>`. A response that set an ID SHOULD carry `X-SharedID-Source: cookie|recovery|param|minted`.
+A response where storage was denied SHOULD carry `X-SharedID-Status: denied: <reason>`, and one where [`SID_SKIP_BOTS`](#skipping-bots) ruled the ID out `X-SharedID-Status: skipped: bot`. A response that set an ID SHOULD carry `X-SharedID-Source: cookie|recovery|param|minted`.
 
 ## Payload v1
 
@@ -114,8 +116,51 @@ A response where storage was denied SHOULD carry `X-SharedID-Status: denied: <re
 
 - `sharedid` and its `pubcid.org` eid are present only when storage is allowed and an ID was chosen.
 - `eids` follows OpenRTB `user.ext.eids`. Module eids follow the SharedID's, in module order.
-- `ortb2` is the deep merge of the modules' OpenRTB fragments, in module order; absent when no module returned one.
+- `ortb2` is the deep merge of the modules' OpenRTB fragments, in module order, plus the [traffic signal](#traffic-signal) as `ortb2.device.ext.traffic`; absent when there's neither.
 - `ext.modules` reports each configured module: `status` is `ok`, `empty`, `skipped` (with a `reason`), `error` or `timeout`. Error details MUST NOT be returned, since they may contain request data.
+
+### Traffic signal
+
+`ortb2.device.ext.traffic` describes the traffic: whether it comes from a bot, through what kind of proxy, and whether it's the site's own staff. Several sources report to it: modules (the [`bot` module](#the-bot-module), and others such as user agent or IP intelligence modules) and the platform itself (its [traffic verdict](#platform-traffic-verdict)). The implementation merges their reports; no source writes the field directly.
+
+```json
+{ "bot": true, "botKind": "declared", "proxy": "datacenter", "score": 12, "internal": false, "sources": ["platform", "ua"] }
+```
+
+| Field | |
+| --- | --- |
+| `bot` | Boolean: the request comes from a bot. |
+| `botKind` | How sure: `verified` (a known good bot the platform verified, such as a search crawler), `declared` (a crawler that names itself in its user agent) or `likely` (a heuristic or a score). A report with a `botKind` is a bot. |
+| `proxy` | `datacenter` (a hosting address), `vpn`, `residential` (a residential proxy), `tor` (a Tor exit), or `relay`: a known service carrying people's traffic, such as iCloud Private Relay and other privacy relays, or a verified corporate proxy. |
+| `score` | Human-likelihood, an integer from 1 (almost certainly a bot) to 99 (almost certainly human), on Cloudflare Bot Management's scale. |
+| `internal` | Boolean: the visitor marked themselves as the site's own staff. |
+| `sources` | The sources that reported anything, in order: `platform` first, then module names in `SID_MODULES` order, each once. |
+
+**Merging.** Each source's report has any of the fields above except `sources`, which the implementation sets. Reports with no fields are ignored. The merge is most cautious first:
+
+- `bot` is `true` if any report says `true`, else `false` if any says `false`, else absent;
+- `botKind` keeps the strongest claim: `verified`, then `declared`, then `likely`;
+- `proxy` keeps the most specific value, in this order: `tor`, `residential`, `relay`, `vpn`, `datacenter`. A data centre is the least specific, since VPNs and relays also use hosting addresses; a source that knows the address is a relay wins over one that only sees a data centre;
+- `score` keeps the minimum;
+- `internal` is `true` if any report says `true`, else `false` if any says `false`, else absent;
+- `sources` is the ordered union.
+
+A relay MUST NOT make the request a bot: `proxy` never sets `bot`. Fields are written in the order of the table. The field is absent when no source reported anything.
+
+**Module reports.** A module reports with `traffic` in its result. A module's own `ortb2.device.ext.traffic` is not merged into the payload as is: it's read as that module's report, like `traffic`, so the merged value is always the implementation's. A report with a field of the wrong type or value (a `botKind`, `proxy` or `score` outside the lists above, or `bot: false` with a `botKind`) makes the module an `error`, and none of its output is used. A module whose only output is a traffic report with at least one field reports `ok`.
+
+**Consent.** The traffic signal describes the traffic, not the person, and helps pages and bidders avoid invalid traffic. It MUST be returned whatever the consent signals say: with GPC, COPPA, opt-out, a US privacy opt-out or denied TCF consent. It MUST NOT be stored or logged.
+
+### Skipping bots
+
+`SID_SKIP_BOTS` and `SID_SKIP_BOTS_SCORE` are off by default. When storage is allowed and the merged traffic signal qualifies, the response sets no ID cookie and returns no `sharedid` or `pubcid.org` eid, and carries `X-SharedID-Status: skipped: bot` (and no `X-SharedID-Source`). The signal qualifies when:
+
+- `SID_SKIP_BOTS` is set and `bot` is `true` with a `botKind` that sure or surer: `verified` skips verified bots only, `declared` verified and declared bots, `likely` every bot. A bot without a `botKind` counts as `likely`;
+- or `SID_SKIP_BOTS_SCORE` is set and `score` is at or below it.
+
+`internal` and `proxy` never qualify. Skipping MUST NOT delete existing ID cookies, so a misclassified visitor keeps their ID; they're neither refreshed nor restored either. Consent decides first: when storage isn't allowed, the response is as in [Opt-out and consent](#opt-out-and-consent), with its `denied` status. Other modules' output and cookies follow their own rules.
+
+The verdict is the merged signal of the platform and the modules that run on the route: on `/v1`, the platform and the modules in `SID_MODULES`; on `/sync`, where modules don't run, the platform alone. When the platform's verdict alone qualifies, modules get no SharedID in their context; when a module's report makes it qualify, modules have already run with it, but it's still neither set nor returned.
 
 ### CORS
 
@@ -127,7 +172,7 @@ A module has:
 
 - a `name` (`^[a-z][a-z0-9-]{0,63}$`), used in `SID_MODULES` and `SID_MODULE_CONFIG`;
 - optionally `purposes` (TCF purposes it needs publisher consent for when GDPR applies) and `gvlid` (its IAB vendor ID);
-- a `run(context)` function returning `{ eids?, ortb2?, cookies? }` or nothing.
+- a `run(context)` function returning `{ eids?, ortb2?, cookies?, traffic? }` or nothing (`traffic`: see [Traffic signal](#traffic-signal)).
 
 The context has the request, its URL and cookies, the platform information (see [Platform information](#platform-information)), the SharedID (when storage is allowed), whether the browser opted out, the consent signals, and the module's configuration and secrets.
 
@@ -194,6 +239,18 @@ What the platform knows about the request beyond the request itself: the client 
 
 An implementation behind Cloudflare that isn't a Worker (for example the Node.js server, with Cloudflare's "add visitor location headers" managed transform) reads the location from the headers in the last column **only** when configured to trust its proxy (`SID_TRUST_PROXY`), as it does for the client IP in `X-Forwarded-For`: otherwise the client can set them.
 
+### Platform traffic verdict
+
+The platform information MAY carry the platform's own traffic verdict, a report with the fields of the [traffic signal](#traffic-signal) (without `sources`). It's merged first, as source `platform`, on every route, whether or not any module runs, and so it's in the payload even with no modules; a verdict that isn't valid is ignored. Platforms add only what they themselves determined, never a guess:
+
+| Cloudflare `request.cf.botManagement` (Bot Management, an Enterprise add-on) | Report |
+| --- | --- |
+| `verifiedBot: true` | `bot: true`, `botKind: verified` |
+| `score`, an integer from 1 to 99 | `score` (other values, including 0, are left out) |
+| `corporateProxy: true` | `proxy: relay` |
+
+Without Bot Management the object is absent, or has no score and false flags, and the platform adds nothing. `request.cf.verifiedBotCategory` isn't in the Workers runtime types, so it isn't read. Other platforms add nothing.
+
 ### The `geo` module
 
 Name `geo`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`.
@@ -255,6 +312,21 @@ Name `reflect`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODU
 - **Opt-out:** `{basePath}/optout` deletes a configured cookie the browser sent only when its `deleteOnOptOut` is `true`, with the configured `Domain` and `HttpOnly`. It always deletes the keeper cookie the browser sent, whatever `deleteOnOptOut` says, and also when `reflect` isn't in `SID_MODULES` or no cookie has `restore` (then at the configured or default name).
 - **Attributes:** the worker can't see a cookie's original attributes. If they differ (for example the original is host-only and `domain` is set), the browser keeps two cookies of that name. Configuration SHOULD match the original's `Domain` and `HttpOnly`.
 - It runs on `/v1` only, so cookies are reflected and restored only when the page calls `/v1`.
+
+### The `bot` module
+
+Name `bot`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`, and reports to the [traffic signal](#traffic-signal) (status `ok` when it reports something, else `empty`). It doesn't repeat the [platform's verdict](#platform-traffic-verdict), which is merged on its own, and doesn't recognize crawlers by user agent.
+
+- **Settings,** `SID_MODULE_CONFIG.bot`, both optional:
+  - `missingHeaders` (boolean, default `false`): report `bot: true, botKind: likely` when the user agent claims to be a browser (it starts with `Mozilla/5.0 (`) and the request lacks headers browsers send:
+    - an `Accept-Language` header that's missing or empty; or
+    - all of `Sec-Fetch-Site`, `Sec-Fetch-Mode` and `Sec-Fetch-Dest`, when the request URL is https (or the host is `localhost`, `127.0.0.1` or `[::1]`) and the user agent is a version that sends them: `Chrome/` 80 or later; else `Firefox/` 90 or later, but not `FxiOS/`; else `Version/` 17 or later followed by `Safari/`, but not with `CriOS`, `FxiOS`, `EdgiOS` or `Android`.
+  - `internalCookie` (a cookie name): report `internal: true` when the request carries that cookie with a non-empty value.
+
+  Any other key, or a wrong type, makes the module an `error`.
+- **Secret,** `SID_MODULE_SECRETS.bot.internalToken` (optional, at least 16 characters): the internal cookie then counts only when its value is the token. Any other key, or a shorter token, makes the module an `error`.
+- **Consent:** as for every traffic report, it runs and reports whatever the consent signals say.
+- It MUST NOT store or log anything about the request.
 
 ## Versioning
 

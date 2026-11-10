@@ -1,6 +1,6 @@
 # packages/core
 
-The platform-neutral implementation: `createHandler` (routes, ID choice, cookies, responses), `resolveConfig`, consent (`consent.ts`, `tcf.ts`) and the module interface (`modules.ts`). Published as `@sharedid-edge/core`; adapters and modules depend on its public API in `src/index.ts`.
+The platform-neutral implementation: `createHandler` (routes, ID choice, cookies, responses), `resolveConfig`, consent (`consent.ts`, `tcf.ts`) the module interface (`modules.ts`) and the shared traffic signal (`traffic.ts`: report validation, the most-cautious-wins merge, and `SID_SKIP_BOTS`). Published as `@sharedid-edge/core`; adapters and modules depend on its public API in `src/index.ts`.
 
 - **No platform APIs.** The project compiles with `lib: ["ES2023", "WebWorker"]` and no Node or DOM types: only `Request`, `Response`, `Headers`, `URL`, `crypto.randomUUID`, `TextEncoder` and timers. Anything platform-specific (the client IP, `request.cf`) comes in through `PlatformInfo` from the adapter. Adapters validate location data with `locationInfo` (`location.ts`), so every platform drops the same bad values.
 - **No runtime dependencies.** It's bundled into every worker. A full TCF decoder is deliberately not used; `tcf.ts` reads only what's needed.

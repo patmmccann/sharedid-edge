@@ -1,8 +1,9 @@
 import { DEFAULT_CONFIG, type SharedIdEdgeConfig } from './config.js';
-import { readConsent, storageDecision, type ConsentContext, type StorageDecision } from './consent.js';
+import { readConsent, storageDecision, type StorageDecision } from './consent.js';
 import { parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
 import { idFromSyncParam, isValidId, mintId } from './id.js';
-import { ModuleRegistry, optOutCookies, runModules, type EdgeModule, type ModuleCookie } from './modules.js';
+import { deepMerge, ModuleRegistry, optOutCookies, runModules, type EdgeModule, type ModuleCookie, type ModuleRunOutput } from './modules.js';
+import { mergeTraffic, skipsBot, trafficReport, type TrafficEntry, type TrafficSignal } from './traffic.js';
 import type { Eid, PayloadV1, PlatformInfo } from './types.js';
 
 /** The 43-byte transparent GIF the WordPress and Drupal plugins return, so `pixelUrl` image requests load. */
@@ -36,6 +37,18 @@ type IdSource = 'cookie' | 'recovery' | 'param' | 'minted';
 interface IdState {
   readonly id: string | undefined;
   readonly source: IdSource | undefined;
+}
+
+const NO_ID: IdState = { id: undefined, source: undefined };
+
+/** The platform's traffic verdict, as source `platform`. One that isn't valid is ignored rather than failing the request. */
+function platformTrafficEntries(platform: PlatformInfo): TrafficEntry[] {
+  if (platform.traffic === undefined) return [];
+  try {
+    return [{ source: 'platform', report: trafficReport(platform.traffic) }];
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -80,19 +93,40 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
         const optedOut = cookies.has(config.optOutCookieName);
         const decision: StorageDecision = optedOut ? { allowed: false, reason: 'opt-out' } : storageDecision(config, consent);
 
-        let state: IdState = { id: undefined, source: undefined };
-        const setCookies: string[] = [];
-        if (decision.allowed) {
+        // The platform's verdict is known before anything runs: with SID_SKIP_BOTS it can rule the ID out up front.
+        const platformTraffic = platformTrafficEntries(platform);
+        let skipped = decision.allowed && skipsBot(config, mergeTraffic(platformTraffic));
+        let state: IdState = NO_ID;
+        if (decision.allowed && !skipped) {
           state = resolveId(config, cookies, route === ROUTES.sync ? idFromSyncParam(url.searchParams.get('id')) : undefined, newId);
-          if (state.id !== undefined) setCookies.push(...idCookies(config, state.id, secure, date));
-        } else if (cookies.has(config.cookieName) || (config.recoveryCookieName !== undefined && cookies.has(config.recoveryCookieName))) {
+        }
+
+        // Modules run on /v1 only. Their traffic reports join the platform's; on /sync the platform's verdict is all
+        // there is.
+        let modules: ModuleRunOutput | undefined;
+        if (route === ROUTES.v1) {
+          const base = { request, url, platform, sharedId: state.id, consent, cookies, optedOut, storage: decision };
+          modules = await runModules(registry, config, base, () => now().getTime());
+        }
+        const traffic = mergeTraffic([...platformTraffic, ...(modules?.traffic ?? [])]);
+        if (decision.allowed && !skipped && skipsBot(config, traffic)) {
+          // SID_SKIP_BOTS: set and return no ID, but delete nothing, so a misclassified visitor keeps theirs.
+          skipped = true;
+          state = NO_ID;
+        }
+
+        const setCookies: string[] = [];
+        if (state.id !== undefined) {
+          setCookies.push(...idCookies(config, state.id, secure, date));
+        } else if (!decision.allowed && (cookies.has(config.cookieName) || (config.recoveryCookieName !== undefined && cookies.has(config.recoveryCookieName)))) {
           setCookies.push(...expireIdCookies(config, secure, date));
         }
 
-        const response = route === ROUTES.sync
+        const response = modules === undefined
           ? syncResponse(config, state, decision.allowed)
-          : await payloadResponse({ request, url, platform, consent, cookies, optedOut, storage: decision, state, registry, config, now, secure, date });
+          : payloadResponse({ request, modules, traffic, state, config, secure, date });
         if (!decision.allowed) response.headers.set('X-SharedID-Status', `denied: ${decision.reason}`);
+        else if (skipped) response.headers.set('X-SharedID-Status', 'skipped: bot');
         if (state.source !== undefined) response.headers.set('X-SharedID-Source', state.source);
         return withCookies(response, setCookies);
       }
@@ -179,30 +213,26 @@ function syncResponse(config: SharedIdEdgeConfig, state: IdState, allowed: boole
 
 interface PayloadInputs {
   readonly request: Request;
-  readonly url: URL;
-  readonly platform: PlatformInfo;
-  readonly consent: ConsentContext;
-  readonly cookies: ReadonlyMap<string, string>;
-  readonly optedOut: boolean;
-  readonly storage: StorageDecision;
+  readonly modules: ModuleRunOutput;
+  /** The merged traffic signal: the platform's verdict and the modules' reports. */
+  readonly traffic: TrafficSignal | undefined;
   readonly state: IdState;
-  readonly registry: ModuleRegistry;
   readonly config: SharedIdEdgeConfig;
-  readonly now: () => Date;
   readonly secure: boolean;
   readonly date: Date;
 }
 
-async function payloadResponse(inputs: PayloadInputs): Promise<Response> {
-  const { request, url, platform, consent, cookies, optedOut, storage, state, registry, config, now, secure, date } = inputs;
-  const modules = await runModules(registry, config, { request, url, platform, sharedId: state.id, consent, cookies, optedOut, storage }, () => now().getTime());
+function payloadResponse(inputs: PayloadInputs): Response {
+  const { request, modules, traffic, state, config, secure, date } = inputs;
   const eids: Eid[] = state.id === undefined ? [] : [{ source: 'pubcid.org', uids: [{ id: state.id, atype: 1 }] }];
   eids.push(...modules.eids);
+  // Written by core from the merged signal, after the modules' fragments, so no module's output can replace it.
+  const ortb2 = traffic === undefined ? modules.ortb2 : deepMerge(modules.ortb2 ?? {}, { device: { ext: { traffic } } });
   const payload: PayloadV1 = {
     v: 1,
     ...(state.id === undefined ? {} : { sharedid: state.id }),
     eids,
-    ...(modules.ortb2 === undefined ? {} : { ortb2: modules.ortb2 }),
+    ...(ortb2 === undefined ? {} : { ortb2 }),
     ext: { modules: modules.reports }
   };
   const response = new Response(JSON.stringify(payload), {

@@ -18,7 +18,8 @@ const response = await handler(request, { clientIp: '192.0.2.1', country: 'DE', 
 
 - `resolveConfig(env)` reads the `SID_*` settings (the main README's [Configuration reference](../../README.md#configuration-reference)) and throws `ConfigError` on an invalid one.
 - `createHandler(options)` returns `(request, platform?) => Promise<Response>`. It answers the routes under `SID_BASE_PATH` and returns a 404 for any other path, so send it only that path and serve the rest of the site as before.
-- `PlatformInfo` carries what the platform knows about the visitor: `clientIp`, `isEU` and location fields. Fill location with `locationInfo`, which drops empty and invalid values the same way on every platform. Only use data the platform itself sets; see [`packages/adapters/AGENTS.md`](../adapters/AGENTS.md).
+- `PlatformInfo` carries what the platform knows about the visitor: `clientIp`, `isEU` and location fields. Fill location with `locationInfo`, which drops empty and invalid values the same way on every platform. Only use data the platform itself sets; see [`packages/adapters/AGENTS.md`](../adapters/AGENTS.md). Its optional `traffic` is the platform's own bot verdict (a `TrafficReport`, such as Cloudflare Bot Management's score), merged as source `platform`.
+- `TrafficReport`, `TrafficSignal`, `mergeTraffic` and `skipsBot` are the shared traffic signal (`ortb2.device.ext.traffic`): modules report with `traffic` in their result and core merges the reports, most cautious first. See the spec's [Traffic signal](../../spec/SPEC.md#traffic-signal).
 - `defineModule`, `EdgeModule` and `ModuleContext` are the module interface; see [Adding a module](../../README.md#adding-a-module) and [`packages/modules/AGENTS.md`](../modules/AGENTS.md).
 
 The exact behaviour (routes, cookies, consent, responses) is in [`spec/SPEC.md`](../../spec/SPEC.md), and the [conformance suite](../../conformance/AGENTS.md) checks it against every adapter.

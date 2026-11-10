@@ -1,0 +1,90 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The bot module (SID_MODULES=bot, with missingHeaders on and internalCookie its_me) and the shared traffic signal, ortb2.device.ext.traffic, which core writes from every source's report. A request whose user agent claims to be a browser but has an empty Accept-Language is a likely bot; the its_me cookie marks internal traffic. The signal describes the traffic, so it's returned with GPC, COPPA and opt-out too. Missing Sec-Fetch-* headers aren't tested here: the runner's HTTP client always sends Sec-Fetch-Mode. Platform verdicts (Cloudflare Bot Management) can't be produced on every target and are covered by unit tests.",
+  "config": {
+    "SID_MODULES": "bot",
+    "SID_MODULE_CONFIG": "{\"bot\":{\"missingHeaders\":true,\"internalCookie\":\"its_me\"}}"
+  },
+  "cases": [
+    {
+      "name": "a normal visitor: no traffic signal, and the SharedID as usual",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "en-US,en;q=0.9", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d", "ext": { "modules": { "bot": { "status": "empty" } } } },
+        "jsonAbsent": ["ortb2"],
+        "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }]
+      }
+    },
+    {
+      "name": "a browser user agent without Accept-Language is a likely bot",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "v": 1,
+          "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+          "eids": [{ "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }],
+          "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "likely", "sources": ["bot"] } } } },
+          "ext": { "modules": { "bot": { "status": "ok" } } }
+        },
+        "absentHeaders": ["x-sharedid-status"]
+      }
+    },
+    {
+      "name": "a client that doesn't claim to be a browser isn't judged",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "curl/8.5.0", "accept-language": "" } },
+      "expect": { "status": 200, "jsonIncludes": { "ext": { "modules": { "bot": { "status": "empty" } } } }, "jsonAbsent": ["ortb2"] }
+    },
+    {
+      "name": "the internal cookie marks the site's own staff",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "en", "cookie": "its_me=1; _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d", "ortb2": { "device": { "ext": { "traffic": { "internal": true, "sources": ["bot"] } } } } },
+        "jsonAbsent": ["ortb2.device.ext.traffic.bot"],
+        "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }]
+      }
+    },
+    {
+      "name": "both signals together",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "", "cookie": "its_me=1" } },
+      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "likely", "internal": true, "sources": ["bot"] } } } } } }
+    },
+    {
+      "name": "the signal is still returned with Global Privacy Control, which deletes the ID",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "", "sec-gpc": "1", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-status": "denied: gpc" },
+        "jsonIncludes": {
+          "v": 1,
+          "eids": [],
+          "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "likely", "sources": ["bot"] } } } },
+          "ext": { "modules": { "bot": { "status": "ok" } } }
+        },
+        "cookies": [{ "name": "_pubcid", "value": "", "maxAge": 0 }]
+      }
+    },
+    {
+      "name": "the signal is still returned for a COPPA request",
+      "request": { "path": "/_sid/v1?coppa=1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "en", "cookie": "its_me=1" } },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-status": "denied: coppa" },
+        "jsonIncludes": { "eids": [], "ortb2": { "device": { "ext": { "traffic": { "internal": true, "sources": ["bot"] } } } } },
+        "jsonAbsent": ["sharedid"]
+      }
+    },
+    {
+      "name": "the signal is still returned after opt-out",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "", "cookie": "_pubcid_optout=1" } },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-status": "denied: opt-out" },
+        "jsonIncludes": { "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "likely", "sources": ["bot"] } } } } },
+        "jsonAbsent": ["sharedid"]
+      }
+    }
+  ]
+}

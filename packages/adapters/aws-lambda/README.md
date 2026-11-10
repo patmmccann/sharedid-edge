@@ -222,6 +222,7 @@ The handler gets the client IP and location (`PlatformInfo`) from headers CloudF
 | `latitude`, `longitude` | `CloudFront-Viewer-Latitude`, `CloudFront-Viewer-Longitude` | For the `geo` module. Both are needed; out-of-range values are dropped. |
 | `timezone` | `CloudFront-Viewer-Time-Zone` | IANA name, for the `geo` module's `utcoffset`. |
 | `isEU` | from `country` | `true` for the 27 EU member states, `false` for other countries, unknown without a country. |
+| `traffic` | none | CloudFront adds no bot verdict, so there is none from the platform; the `bot` module and other modules still report to the traffic signal. |
 
 Core's `locationInfo` validates the location values the same way as on the other platforms (dropping empty values, `XX`, and out-of-range coordinates). CloudFront has no continent header, so `continent` is never set on Lambda. The template's origin request policy forwards all these headers. If you use your own policy, forward them too, or the `geo` module only gets what you forward.
 

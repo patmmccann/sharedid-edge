@@ -94,7 +94,9 @@ describe('resolveConfig', () => {
       SID_MODULES: 'ip, geo',
       SID_MODULE_CONFIG: '{"ip":{"field":"ipv6"}}',
       SID_MODULE_SECRETS: '{"ec":{"passphrase":"p"}}',
-      SID_MODULE_TIMEOUT_MS: '20'
+      SID_MODULE_TIMEOUT_MS: '20',
+      SID_SKIP_BOTS: 'Declared',
+      SID_SKIP_BOTS_SCORE: '10'
     });
     expect(config).toEqual({
       basePath: '/id',
@@ -110,7 +112,9 @@ describe('resolveConfig', () => {
       modules: ['ip', 'geo'],
       moduleConfig: { ip: { field: 'ipv6' } },
       moduleSecrets: { ec: { passphrase: 'p' } },
-      moduleTimeoutMs: 20
+      moduleTimeoutMs: 20,
+      skipBots: 'declared',
+      skipBotsScore: 10
     } satisfies SharedIdEdgeConfig);
   });
   it('never echoes SID_MODULE_SECRETS in errors', () => {
@@ -130,7 +134,12 @@ describe('resolveConfig', () => {
     ['SID_MODULE_SECRETS', '{"ec":{"passphrase":1}}'],
     ['SID_MODULE_SECRETS', 'not json'],
     ['SID_RECOVERY_COOKIE', '_pubcid'],
-    ['SID_RECOVERY_COOKIE', '_pubcid_optout']
+    ['SID_RECOVERY_COOKIE', '_pubcid_optout'],
+    ['SID_SKIP_BOTS', 'yes'],
+    ['SID_SKIP_BOTS', 'all'],
+    ['SID_SKIP_BOTS_SCORE', '0'],
+    ['SID_SKIP_BOTS_SCORE', '100'],
+    ['SID_SKIP_BOTS_SCORE', 'low']
   ])('rejects %s=%s', (key, value) => {
     expect(() => resolveConfig({ [key]: value })).toThrow(ConfigError);
   });

@@ -1,3 +1,5 @@
+import type { TrafficReport } from './traffic.js';
+
 /**
  * What the platform adapter knows about the request that isn't in the `Request` itself:
  * the connecting IP and the CDN's location data. Every field is optional; a platform that
@@ -26,6 +28,11 @@ export interface PlatformInfo {
   readonly timezone?: string;
   /** Continent code: `AF`, `AN`, `AS`, `EU`, `NA`, `OC` or `SA`. */
   readonly continent?: string;
+  /**
+   * The platform's own verdict on the traffic (on Cloudflare, Bot Management's score, verified bot flag and corporate
+   * proxy flag). Core merges it into the traffic signal as source `platform`.
+   */
+  readonly traffic?: TrafficReport;
 }
 
 /** An OpenRTB extended identifier, in the `user.ext.eids` format. */

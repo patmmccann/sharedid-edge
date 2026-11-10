@@ -298,12 +298,23 @@ With `SID_MODULES=ip,geo`, `geo` still returns the coarse location, without city
 }
 ```
 
+With the [`bot` module](#bot-bot-and-staff-traffic-signals) (`SID_MODULES=bot`), a request whose browser user agent comes without `Accept-Language` is a likely bot. The **traffic signal** is returned even with `Sec-GPC: 1`, which still rules out the ID:
+
+```json
+{
+  "v": 1,
+  "eids": [],
+  "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "likely", "sources": ["bot"] } } } },
+  "ext": { "modules": { "bot": { "ms": 0, "status": "ok" } } }
+}
+```
+
 | Field | |
 | --- | --- |
 | `v` | Payload version, `1`. |
-| `sharedid` | The SharedID. Absent when storage isn't allowed (opt-out, GPC, COPPA, consent). |
+| `sharedid` | The SharedID. Absent when storage isn't allowed (opt-out, GPC, COPPA, consent), or for a bot with `SID_SKIP_BOTS`. |
 | `eids` | OpenRTB `user.ext.eids`: the SharedID as `pubcid.org` (`atype` 1), then any IDs from modules. `[]` when there are none. |
-| `ortb2` | An OpenRTB 2.x first-party data fragment, merged from every module's output in `SID_MODULES` order. Absent when no module returned anything. Pass it to `pbjs.mergeConfig({ ortb2 })`. |
+| `ortb2` | An OpenRTB 2.x first-party data fragment, merged from every module's output in `SID_MODULES` order, plus the traffic signal in `device.ext.traffic` (which the worker writes from every module's report and, on Cloudflare with Bot Management, the platform's verdict). Absent when there's nothing to return. Pass it to `pbjs.mergeConfig({ ortb2 })`. |
 | `ext.modules` | One entry per module in `SID_MODULES`: `ms` (time taken) and `status`: `ok` (it returned data), `empty` (nothing to add, for example consent rules out the IP), `skipped` (with a `reason`, such as `not installed` for a name the worker doesn't have), `error` or `timeout`. Error details are never returned. |
 
 To read `/v1` from a page on another origin, list that origin in `SID_ALLOWED_ORIGINS` and fetch with `credentials: 'include'`. The response then carries `Access-Control-Allow-Origin: <origin>` and `Access-Control-Allow-Credentials: true`; it never carries `*`.
@@ -316,6 +327,7 @@ To read `/v1` from a page on another origin, list that origin in `SID_ALLOWED_OR
 
 - `X-SharedID-Source`: where the ID came from: `cookie`, `recovery` (restored from the `HttpOnly` copy), `param` (adopted from Prebid.js's `?id=`) or `minted`.
 - `X-SharedID-Status: denied: <reason>`: why no ID was set. The reason is `opt-out`, `gpc`, `coppa` or `tcf: …`.
+- `X-SharedID-Status: skipped: bot`: [`SID_SKIP_BOTS`](#no-sharedid-for-bots) ruled the ID out. Nothing was set, and nothing deleted.
 
 ## Migrate from the WordPress or Drupal plugin
 
@@ -385,6 +397,7 @@ Built-in modules:
 | [`ec`](packages/modules/ec/README.md) | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**; see below | `domain`; secret `passphrase` |
 | [`geo`](packages/modules/geo/README.md) | `ortb2.device.geo`: country, region, metro and UTC offset, plus city, postal code and coordinates when consent allows | `precision`: `precise` (default) or `coarse` |
 | [`reflect`](packages/modules/reflect/README.md) | Nothing in the payload: re-sets first-party cookies other scripts wrote (such as `uid1` or `_ga`) with the same value and a new expiry, so Safari doesn't cap them, and with `restore`, sets them again from an `HttpOnly` keeper cookie after Safari deletes them | `cookies`, `keeper` |
+| [`bot`](packages/modules/bot/README.md) | `ortb2.device.ext.traffic`: a likely bot when a browser lacks headers browsers send, and `internal` for your own staff, merged with other modules' reports and Cloudflare Bot Management. Sent whatever the consent | `missingHeaders`, `internalCookie`; secret `internalToken` |
 
 To build your own, see [Adding a module](#adding-a-module). Modules from vendors (in [`packages/vendor-modules/`](packages/vendor-modules/README.md); none yet) aren't built in: you add them to your build, and any that forwards data to another service says so at the top of its README and is marked "⚠ forwards data to `<host>`" here.
 
@@ -539,6 +552,41 @@ Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2
 - **Call `/_sid/v1` before gtag.js loads,** or a deleted `_ga` is replaced by a new one before the worker can restore it. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/modules/reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/modules/reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
 - **Consent:** when storage isn't allowed the keeper is deleted (the original cookies are left alone), and `/_sid/optout` always deletes it.
 
+### `bot`: bot and staff-traffic signals
+
+Full documentation: [`packages/modules/bot/README.md`](packages/modules/bot/README.md).
+
+The edge sees each request before any script runs, so it can tell the page whether the traffic looks automated, and the page can skip or flag the auction. Several sources report to one **traffic signal**, `ortb2.device.ext.traffic`, which the worker merges, most cautious first:
+
+- **the platform:** on Cloudflare with Bot Management (an Enterprise add-on), its verified-bot flag, score and corporate-proxy flag, as source `platform`. This needs no module;
+- **the `bot` module:** a `likely` bot when a "browser" lacks `Accept-Language` or the `Sec-Fetch-*` headers it always sends (`missingHeaders`), and `internal: true` for your own staff, marked by a cookie (`internalCookie`);
+- **other modules,** such as a user agent module reporting crawlers that name themselves (`declared`), or IP intelligence reporting VPNs and data centres.
+
+It's off until you enable it, and each of its signals is opt-in:
+
+```jsonc
+"vars": {
+  "SID_MODULES": "bot",
+  "SID_MODULE_CONFIG": "{\"bot\":{\"missingHeaders\":true,\"internalCookie\":\"its_me\"}}"
+}
+```
+
+A browser user agent without `Accept-Language` then gets:
+
+```json
+{ "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "likely", "sources": ["bot"] } } } } }
+```
+
+and Googlebot, on a zone with Bot Management, `{ "bot": true, "botKind": "verified", "score": 1, "sources": ["platform", "bot"] }`.
+
+- **Fields:** `bot`; `botKind` (`verified`, `declared` or `likely`, the strongest claim wins); `proxy` (`datacenter`, `vpn`, `residential`, `tor` or `relay`, the most specific wins; a privacy relay such as iCloud Private Relay is never a bot); `score` (1 bot to 99 human, the lowest wins); `internal`; and `sources`.
+- **Consent:** the signal describes the traffic, not the person, so it's returned with GPC, COPPA, opt-out and denied consent too, while the SharedID follows its usual rules. It's never stored or logged.
+- **Staff:** set the cookie from an internal page; the page can then skip auctions or mark them as tests. Set `SID_MODULE_SECRETS={"bot":{"internalToken":"…"}}` so only that value counts.
+
+#### No SharedID for bots
+
+`SID_SKIP_BOTS` (off by default) stops the worker setting or returning a SharedID for bots, which inflate ID counts and pollute frequency capping. `verified` skips verified bots, `declared` verified and declared ones, `likely` every bot; `SID_SKIP_BOTS_SCORE=10` also skips scores of 10 or less. A skipped request carries `X-SharedID-Status: skipped: bot`. **Existing IDs are never deleted,** so a misclassified visitor keeps theirs, and internal traffic is never skipped. On `/_sid/sync`, where modules don't run, only the platform's verdict counts.
+
 ## Self-host with Node.js
 
 Full reference: [`packages/adapters/node/README.md`](packages/adapters/node/README.md).
@@ -586,10 +634,12 @@ All settings are strings, set as Worker `vars` (Cloudflare) or environment varia
 | `SID_VENDOR_ID` | (empty: publisher mode) | Your TCF vendor ID, for vendor mode. |
 | `SID_ALLOWED_ORIGINS` | none | Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin. |
 | `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. |
-| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`, `ec`, `geo`, `reflect`. |
+| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`, `ec`, `geo`, `reflect`, `bot`. |
 | `SID_MODULE_CONFIG` | `{}` | JSON settings per module, keyed by module name. |
 | `SID_MODULE_SECRETS` | `{}` | JSON secrets per module, e.g. the `ec` passphrase. Set it as a secret (`wrangler secret put SID_MODULE_SECRETS`), not in `vars`. |
 | `SID_MODULE_TIMEOUT_MS` | `50` | Time limit for each module. |
+| `SID_SKIP_BOTS` | off | `verified`, `declared` or `likely`: set no SharedID for bots this sure or surer, from the [traffic signal](#bot-bot-and-staff-traffic-signals). Existing IDs are never deleted. |
+| `SID_SKIP_BOTS_SCORE` | off | 1 to 99: set no SharedID when the traffic score (Cloudflare Bot Management) is at or below it. |
 
 Routes, under `SID_BASE_PATH`:
 
@@ -627,7 +677,7 @@ packages/
     node/                      the Node.js server (local development, self-hosting, conformance target)
     aws-lambda/                the AWS Lambda adapter, its bundle and SAM template
   modules/                     modules maintained by this project, built into every adapter
-    ip/  ec/  geo/  reflect/   the built-in modules
+    ip/ ec/ geo/ reflect/ bot/ the built-in modules
     all/                       @sharedid-edge/modules: the built-in list the adapters import
   vendor-modules/              modules contributed and maintained by vendors, opt-in at build time
 e2e/                           unmodified Prebid.js against the worker, in Chromium, Firefox and WebKit
@@ -679,9 +729,9 @@ Publish it as its own package like [`packages/modules/ip`](packages/modules/ip),
 
 ## Roadmap
 
-1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, an AWS Lambda adapter, and the `ip`, `ec`, `geo` and `reflect` modules.
+1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, an AWS Lambda adapter, and the `ip`, `ec`, `geo`, `reflect` and `bot` modules, with a shared traffic signal any module can report bots to.
 2. **Next:** Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
-3. A Prebid.js RTD module that reads `/_sid/v1`, plus first-party modules for bot scores and device type, a Fastly adapter, and Lambda@Edge.
+3. A Prebid.js RTD module that reads `/_sid/v1`, plus a device type module (`ua`, which also reports declared crawlers to the traffic signal), IP intelligence modules, a Fastly adapter, and Lambda@Edge.
 4. Vendor modules, a Rust implementation, and inline mode.
 
 ## License
