@@ -77,3 +77,12 @@ export const EU_COUNTRY_CODES: ReadonlySet<string> = new Set([
   'AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'HU',
   'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK'
 ]);
+
+/**
+ * `locationInfo`, plus `isEU` from the country with `EU_COUNTRY_CODES`, for adapters whose platform reports a country
+ * but no EU flag. No country, no `isEU`.
+ */
+export function locationWithEU(source: LocationSource): PlatformLocation & Pick<PlatformInfo, 'isEU'> {
+  const location = locationInfo(source);
+  return location.country === undefined ? location : { ...location, isEU: EU_COUNTRY_CODES.has(location.country) };
+}

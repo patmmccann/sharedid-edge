@@ -966,6 +966,7 @@ TypeScript is strict from the start, and CI checks types several ways:
 - `npm run attw`: the published types resolve correctly.
 - `npm run lint`: `typescript-eslint`'s strict type-checked rules.
 - `npm run check:projects` and `npm run check:links`: the root `tsconfig.json` references every workspace project, and every relative link and heading anchor in the Markdown files resolves.
+- `npm run check:duplication`: no code copied between packages ([jscpd](https://github.com/kucherenko/jscpd)); it lists each clone with its file and line pairs, and writes a report to `.jscpd-report/`.
 
 Tests:
 

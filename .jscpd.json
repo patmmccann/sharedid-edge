@@ -1,0 +1,25 @@
+{
+  "path": ["packages", "conformance/src", "scripts"],
+  "format": ["typescript", "javascript"],
+  "formatsExts": { "typescript": ["ts", "mts"], "javascript": ["mjs", "js"] },
+  "minTokens": 40,
+  "minLines": 5,
+  "threshold": 0,
+  "ignore": [
+    "**/test/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/deploy/**",
+    "**/.tsbuild/**",
+    "**/worker-configuration.d.ts",
+    "**/vitest.config.ts",
+    "**/eslint.config.js",
+    "packages/adapters/vercel/example/**",
+    "packages/vendor-modules/**",
+    "e2e/**",
+    "**/package-lock.json"
+  ],
+  "reporters": ["console", "markdown", "html"],
+  "output": ".jscpd-report",
+  "noTips": true
+}

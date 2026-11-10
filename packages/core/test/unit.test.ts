@@ -1,15 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ConfigError,
   decodeTcf,
   deepMerge,
   EU_COUNTRY_CODES,
+  handlerOrMisconfigured,
+  headerValue,
+  isHeaderName,
   idFromSyncParam,
   isValidId,
+  locationWithEU,
+  logRequestFailure,
   parseCookies,
+  parseHeaderMap,
+  publicOriginFromEnv,
   readConsent,
   resolveConfig,
   serializeCookie,
+  splitHeaders,
   storageDecision,
   type SharedIdEdgeConfig,
   type StorageDecision
@@ -305,5 +313,80 @@ describe('EU_COUNTRY_CODES', () => {
     expect(EU_COUNTRY_CODES.size).toBe(27);
     for (const code of ['DE', 'FR', 'IE', 'HR', 'CY']) expect(EU_COUNTRY_CODES.has(code)).toBe(true);
     for (const code of ['GB', 'NO', 'IS', 'LI', 'CH', 'US']) expect(EU_COUNTRY_CODES.has(code)).toBe(false);
+  });
+});
+
+describe('adapter helpers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('splitHeaders keeps each Set-Cookie separate and the other headers by name', () => {
+    const headers = new Headers({ 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
+    headers.append('Set-Cookie', 'a=1; Path=/');
+    headers.append('Set-Cookie', 'b=2; Path=/; Expires=Thu, 01 Jan 2099 00:00:00 GMT');
+    expect(splitHeaders(headers)).toEqual({
+      headers: { 'content-type': 'text/plain', 'cache-control': 'no-store' },
+      cookies: ['a=1; Path=/', 'b=2; Path=/; Expires=Thu, 01 Jan 2099 00:00:00 GMT']
+    });
+    expect(splitHeaders(new Headers())).toEqual({ headers: {}, cookies: [] });
+  });
+
+  it('logRequestFailure logs the error type, never its message', () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    logRequestFailure(new TypeError('203.0.113.1 sent a bad cookie'));
+    logRequestFailure('a string');
+    expect(log.mock.calls).toEqual([
+      ['sharedid-edge: request failed', 'TypeError'],
+      ['sharedid-edge: request failed', 'unknown error']
+    ]);
+  });
+
+  it('handlerOrMisconfigured falls back on a ConfigError only, and logs its message', () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(handlerOrMisconfigured(() => 'built', () => 'fallback')).toBe('built');
+    expect(log).not.toHaveBeenCalled();
+    expect(handlerOrMisconfigured<unknown>(() => resolveConfig({ SID_MAX_AGE_DAYS: 'x' }), () => 'fallback')).toBe('fallback');
+    expect(log).toHaveBeenCalledOnce();
+    expect(String(log.mock.calls[0]?.[0])).toMatch(/^sharedid-edge: SID_MAX_AGE_DAYS/);
+    expect(() => handlerOrMisconfigured(() => { throw new RangeError('bug'); }, () => 'fallback')).toThrow(RangeError);
+  });
+});
+
+describe('more adapter helpers', () => {
+  it('headerValue trims, and treats a blank header as missing', () => {
+    const headers = new Headers({ 'x-a': '  DE ', 'x-b': '   ' });
+    expect(headerValue(headers, 'x-a')).toBe('DE');
+    expect(headerValue(headers, 'x-b')).toBeUndefined();
+    expect(headerValue(headers, 'x-c')).toBeUndefined();
+  });
+
+  it('publicOriginFromEnv leaves out an unset or empty SID_PUBLIC_ORIGIN', () => {
+    expect(publicOriginFromEnv({ SID_PUBLIC_ORIGIN: 'https://www.example.com' })).toEqual({ publicOrigin: 'https://www.example.com' });
+    expect(publicOriginFromEnv({ SID_PUBLIC_ORIGIN: '' })).toEqual({});
+    expect(publicOriginFromEnv({})).toEqual({});
+  });
+
+  it('locationWithEU adds isEU from a valid country only', () => {
+    expect(locationWithEU({ country: 'de', city: 'Berlin' })).toEqual({ country: 'DE', city: 'Berlin', isEU: true });
+    expect(locationWithEU({ country: 'GB' })).toEqual({ country: 'GB', isEU: false });
+    expect(locationWithEU({ country: 'XX', city: 'Nowhere' })).toEqual({ city: 'Nowhere' });
+  });
+});
+
+describe('parseHeaderMap', () => {
+  const fields = ['country', 'city'] as const;
+  it('maps known fields to lowercase header names', () => {
+    expect(parseHeaderMap('{"country":"X-Geo-Country"}', 'SID_LOCATION_HEADERS', fields, '{}')).toEqual({ country: 'x-geo-country' });
+    expect(parseHeaderMap(undefined, 'SID_LOCATION_HEADERS', fields, '{}')).toEqual({});
+    expect(parseHeaderMap('  ', 'SID_LOCATION_HEADERS', fields, '{}')).toEqual({});
+    expect(isHeaderName('x-geo-country')).toBe(true);
+    expect(isHeaderName('x geo')).toBe(false);
+  });
+
+  it('throws a ConfigError for anything else', () => {
+    for (const value of ['not json', '[]', '"x"', '{"region":"x-r"}', '{"city":"bad header"}', '{"city":1}']) {
+      expect(() => parseHeaderMap(value, 'SID_LOCATION_HEADERS', fields, '{"country":"x-c"}')).toThrow(ConfigError);
+    }
   });
 });

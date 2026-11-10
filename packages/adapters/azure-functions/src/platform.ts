@@ -1,4 +1,4 @@
-import { EU_COUNTRY_CODES, locationInfo, type LocationSource, type PlatformInfo } from '@sharedid-edge/core';
+import { headerValue as header, locationWithEU, type LocationSource, type PlatformInfo } from '@sharedid-edge/core';
 
 /** The location fields a header can carry, named as in core's `LocationSource`. */
 export type LocationField = keyof LocationSource;
@@ -27,11 +27,6 @@ export interface PlatformOptions {
 
 const ADDRESS = /^[0-9A-Fa-f:.]+$/;
 
-function header(headers: Headers, name: string): string | undefined {
-  const value = headers.get(name)?.trim();
-  return value === undefined || value === '' ? undefined : value;
-}
-
 /**
  * The client IP Front Door reports in `X-Azure-ClientIP`, which it sets itself. Undefined when it's missing or isn't
  * an IP address.
@@ -54,10 +49,8 @@ export function platformInfo(headers: Headers, options: PlatformOptions = {}): P
     const name = options.locationHeaders?.[field];
     if (name !== undefined) source[field] = header(headers, name);
   }
-  const location = locationInfo(source);
   return {
     ...(ip === undefined ? {} : { clientIp: ip }),
-    ...location,
-    ...(location.country === undefined ? {} : { isEU: EU_COUNTRY_CODES.has(location.country) })
+    ...locationWithEU(source)
   };
 }

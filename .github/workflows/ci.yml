@@ -32,6 +32,17 @@ jobs:
         run: npm run check:projects
       - name: Relative links in Markdown files resolve
         run: npm run check:links
+      # Lists each clone with its file and line pairs; the report is uploaded below when it fails.
+      - name: No code copied between packages (jscpd)
+        run: npm run check:duplication
+      - name: Upload the duplication report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: duplication-report
+          path: .jscpd-report
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Build and type-check every project, including tests (TypeScript 6.0)
         run: npm run build
       # Typed lint reads the built declarations of the workspace packages, so it runs after the build.
@@ -56,16 +67,8 @@ jobs:
         run: |
           npm run build -w @sharedid-edge/cloudflare
           npm run build:bowser -w @sharedid-edge/cloudflare
-          node -e '
-            const { readFileSync } = require("node:fs");
-            const { gzipSync } = require("node:zlib");
-            const budget = 32 * 1024;
-            for (const [name, file] of [["Worker bundle", "dist/index.js"], ["Worker bundle with Bowser", "dist-bowser/bowser.js"]]) {
-              const gz = gzipSync(readFileSync(`packages/adapters/cloudflare/${file}`)).length;
-              console.log(`${name}: ${gz} bytes gzipped (budget ${budget})`);
-              if (gz > budget) { console.error("Over the bundle size budget"); process.exitCode = 1; }
-            }
-          '
+          node scripts/bundle-adapter.mjs packages/adapters/cloudflare/dist/index.js "Worker bundle" \
+            packages/adapters/cloudflare/dist-bowser/bowser.js "Worker bundle with Bowser"
       - name: Lambda bundles (default and with Bowser), size budget, and conformance suite against them (local CloudFront stand-in)
         run: npm run conformance:lambda
       - name: Vercel bundles (default and with Bowser; no Node.js built-ins), size budget, and conformance suite against them (local Vercel proxy stand-in)

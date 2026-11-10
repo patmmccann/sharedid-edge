@@ -1,5 +1,5 @@
 import type { IncomingMessage } from 'node:http';
-import { EU_COUNTRY_CODES, locationInfo, type PlatformInfo } from '@sharedid-edge/core';
+import { locationWithEU, type PlatformInfo } from '@sharedid-edge/core';
 import { utf8 } from '@sharedid-edge/node';
 
 /**
@@ -85,7 +85,7 @@ export function platformInfo(req: IncomingMessage, options: PlatformOptions = {}
   const country = named('country');
   const city = named('city');
   const [latitude, longitude] = (named('latLong') ?? '').split(',').map(part => part.trim());
-  const location = locationInfo({
+  const location = locationWithEU({
     country,
     regionCode: subdivision(named('region'), country),
     // Node.js reads header bytes as Latin-1; the load balancer sends city names as UTF-8.
@@ -95,7 +95,6 @@ export function platformInfo(req: IncomingMessage, options: PlatformOptions = {}
   });
   return {
     ...(ip === undefined ? {} : { clientIp: ip }),
-    ...location,
-    ...(location.country === undefined ? {} : { isEU: EU_COUNTRY_CODES.has(location.country) })
+    ...location
   };
 }

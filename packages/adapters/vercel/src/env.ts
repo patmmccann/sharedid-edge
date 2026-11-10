@@ -1,4 +1,4 @@
-import { ConfigError, resolveConfig, type EdgeModule } from '@sharedid-edge/core';
+import { ConfigError, handlerOrMisconfigured, publicOriginFromEnv, resolveConfig, type EdgeModule } from '@sharedid-edge/core';
 import { builtInModules } from '@sharedid-edge/modules';
 import { createVercelHandler, internalError, middleware, type VercelHandler, type VercelMiddleware } from './handler.js';
 
@@ -12,21 +12,15 @@ export type Env = Readonly<Record<string, string | undefined>>;
  * one that sets wrong cookies.
  */
 export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtInModules): VercelHandler {
-  try {
-    const config = resolveConfig(env);
-    const publicOrigin = env['SID_PUBLIC_ORIGIN'];
-    return createVercelHandler({
-      config,
+  return handlerOrMisconfigured(
+    () => createVercelHandler({
+      config: resolveConfig(env),
       modules,
       behindVercel: !/^(0|false|no|off)$/i.test(env['SID_BEHIND_VERCEL'] ?? ''),
-      ...(publicOrigin === undefined || publicOrigin === '' ? {} : { publicOrigin })
-    });
-  } catch (error) {
-    if (!(error instanceof ConfigError)) throw error;
-    // A deployment mistake: log why (the message names the setting, not request data) and fail every request.
-    console.error(`sharedid-edge: ${error.message}`);
-    return () => Promise.resolve(internalError('SharedID Edge is misconfigured'));
-  }
+      ...publicOriginFromEnv(env)
+    }),
+    () => () => Promise.resolve(internalError('SharedID Edge is misconfigured'))
+  );
 }
 
 /**

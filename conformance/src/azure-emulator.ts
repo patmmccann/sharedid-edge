@@ -17,6 +17,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { AzureHandler } from '@sharedid-edge/azure-functions';
+import { caseClientIp, caseLocation, emulatorPort, readBody, trustProxyFromEnv, type CaseLocationHeader } from './emulator.js';
 
 // CONFORMANCE_AZURE_BUNDLE is the bundle's directory: deploy, or deploy-bowser for case files that need Bowser.
 const BUNDLE_DIR = process.env['CONFORMANCE_AZURE_BUNDLE'] === 'deploy-bowser' ? 'deploy-bowser' : 'deploy';
@@ -49,7 +50,7 @@ function routeMatches(route: string, pathname: string): boolean {
 }
 
 /** The cases' Cloudflare-style location headers, by the location field a Front Door rule set would carry. */
-const CASE_LOCATION_HEADERS: Readonly<Record<string, string>> = {
+const CASE_LOCATION_HEADERS: Readonly<Record<string, CaseLocationHeader>> = {
   country: 'cf-ipcountry',
   regionCode: 'cf-region-code',
   city: 'cf-ipcity',
@@ -61,16 +62,6 @@ const CASE_LOCATION_HEADERS: Readonly<Record<string, string>> = {
   continent: 'cf-ipcontinent'
 };
 
-function first(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-async function readBody(req: IncomingMessage): Promise<Buffer> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
-  return Buffer.concat(chunks);
-}
-
 async function toHttpRequest(req: IncomingMessage, origin: string, trustProxy: boolean, frontDoorId: string, locationHeaders: Readonly<Record<string, string>>): Promise<HttpRequest> {
   const dropped = new Set(Object.values(locationHeaders));
   const headers: Record<string, string> = {};
@@ -78,19 +69,17 @@ async function toHttpRequest(req: IncomingMessage, origin: string, trustProxy: b
     if (value === undefined || name.startsWith('x-azure-') || dropped.has(name)) continue;
     headers[name] = Array.isArray(value) ? value.join(name === 'cookie' ? '; ' : ', ') : value;
   }
-  const forwarded = first(req.headers['x-forwarded-for'])?.split(',')[0]?.trim();
-  const ip = trustProxy && forwarded !== undefined && forwarded !== '' ? forwarded : req.socket.remoteAddress;
+  const ip = caseClientIp(req, trustProxy);
   if (ip !== undefined) headers['x-azure-clientip'] = ip;
   headers['x-azure-socketip'] = req.socket.remoteAddress ?? '';
   headers['x-azure-fdid'] = frontDoorId;
-  if (trustProxy) {
-    for (const [field, name] of Object.entries(locationHeaders)) {
-      const from = CASE_LOCATION_HEADERS[field];
-      const value = from === undefined ? undefined : first(req.headers[from]);
-      // Node reads header bytes as Latin-1, and the cases send city names as UTF-8: pass the bytes on unchanged.
-      if (value !== undefined) headers[name] = from === 'cf-ipcity' ? Buffer.from(value, 'latin1').toString('utf8') : value;
-    }
+  // Each location field the rule set carries, under the header SID_LOCATION_HEADERS names for it.
+  const names: Partial<Record<CaseLocationHeader, string>> = {};
+  for (const [field, name] of Object.entries(locationHeaders)) {
+    const from = CASE_LOCATION_HEADERS[field];
+    if (from !== undefined) names[from] = name;
   }
+  for (const [name, value] of caseLocation(req, trustProxy, names)) headers[name] = value;
   const body = await readBody(req);
   return new HttpRequest({
     method: req.method ?? 'GET',
@@ -129,9 +118,9 @@ async function writeResponse(res: ServerResponse, init: HttpResponseInit, method
   res.end(method === 'HEAD' ? undefined : Buffer.from(await response.arrayBuffer()));
 }
 
-const port = Number(process.env['PORT'] ?? 8787);
+const port = emulatorPort();
 const origin = `http://127.0.0.1:${String(port)}`;
-const trustProxy = /^(1|true|yes|on)$/i.test(process.env['SID_TRUST_PROXY'] ?? '');
+const trustProxy = trustProxyFromEnv();
 const frontDoorId = process.env['AZURE_FRONT_DOOR_ID'] ?? '';
 const parsed: unknown = JSON.parse(process.env['SID_LOCATION_HEADERS'] ?? '{}');
 const locationHeaders: Record<string, string> = {};

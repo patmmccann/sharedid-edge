@@ -1,4 +1,4 @@
-import { createHandler, type HandlerOptions } from '@sharedid-edge/core';
+import { createHandler, logRequestFailure, splitHeaders, type HandlerOptions } from '@sharedid-edge/core';
 import { parseSetCookie, preservedByHost } from './cookies.js';
 import { platformInfo, type PlatformOptions } from './platform.js';
 import type { AzureCookie, AzureHttpRequest, AzureHttpResponseInit } from './types.js';
@@ -33,8 +33,7 @@ export function createAzureHandler(options: AzureHandlerOptions = {}): AzureHand
       const response = await handler(await toRequest(request, options.publicOrigin), platformInfo(request.headers, options));
       return await toResponseInit(response, request.method);
     } catch (error) {
-      // Don't echo or log the error's message: it may contain request data.
-      console.error('sharedid-edge: request failed', error instanceof Error ? error.name : 'unknown error');
+      logRequestFailure(error);
       return internalError('Internal error');
     }
   };
@@ -70,12 +69,9 @@ async function toRequest(request: AzureHttpRequest, publicOrigin: string | undef
  * keeps one value per header name, so cookies in `headers` would be lost or joined.
  */
 export async function toResponseInit(response: Response, method: string): Promise<AzureHttpResponseInit> {
-  const headers: Record<string, string> = {};
-  response.headers.forEach((value, name) => {
-    if (name !== 'set-cookie') headers[name] = value;
-  });
+  const { headers, cookies: setCookies } = splitHeaders(response.headers);
   const cookies: AzureCookie[] = [];
-  for (const header of response.headers.getSetCookie()) {
+  for (const header of setCookies) {
     const cookie = parseSetCookie(header);
     if (preservedByHost(cookie.value)) {
       cookies.push(cookie);

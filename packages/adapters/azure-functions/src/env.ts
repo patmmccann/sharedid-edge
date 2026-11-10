@@ -1,12 +1,10 @@
-import { ConfigError, DEFAULT_CONFIG, resolveConfig, ROUTES, type EdgeModule } from '@sharedid-edge/core';
+import { ConfigError, DEFAULT_CONFIG, handlerOrMisconfigured, parseHeaderMap, publicOriginFromEnv, resolveConfig, ROUTES, type EdgeModule } from '@sharedid-edge/core';
 import { builtInModules } from '@sharedid-edge/modules';
 import { createAzureHandler, internalError, type AzureHandler } from './handler.js';
-import { LOCATION_FIELDS, type LocationField, type LocationHeaders } from './platform.js';
+import { LOCATION_FIELDS, type LocationHeaders } from './platform.js';
 
 /** Environment variables (app settings), as `process.env` has them. */
 export type Env = Readonly<Record<string, string | undefined>>;
-
-const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/;
 
 /**
  * Parses `SID_LOCATION_HEADERS`: a JSON object from location field (`country`, `regionCode`, `city`, `postalCode`,
@@ -14,29 +12,7 @@ const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/;
  * Throws a `ConfigError` for anything else, so a typo can't silently turn location off.
  */
 export function parseLocationHeaders(value: string | undefined): LocationHeaders {
-  if (value === undefined || value.trim() === '') return {};
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    throw new ConfigError('SID_LOCATION_HEADERS must be a JSON object, like {"country":"x-sid-country"}');
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new ConfigError('SID_LOCATION_HEADERS must be a JSON object, like {"country":"x-sid-country"}');
-  }
-  const fields: readonly string[] = LOCATION_FIELDS;
-  const headers: Partial<Record<LocationField, string>> = {};
-  for (const [field, name] of Object.entries(parsed)) {
-    if (!fields.includes(field)) {
-      throw new ConfigError(`SID_LOCATION_HEADERS: unknown field "${field}"; use ${LOCATION_FIELDS.join(', ')}`);
-    }
-    if (typeof name !== 'string' || !HEADER_NAME.test(name)) {
-      throw new ConfigError(`SID_LOCATION_HEADERS: the header for "${field}" must be a header name`);
-    }
-    // Checked to be one of LOCATION_FIELDS above.
-    headers[field as LocationField] = name.toLowerCase();
-  }
-  return headers;
+  return parseHeaderMap(value, 'SID_LOCATION_HEADERS', LOCATION_FIELDS, '{"country":"x-sid-country"}');
 }
 
 /** `SID_FRONT_DOOR_ID`: comma-separated Front Door profile IDs, or none. */
@@ -55,24 +31,17 @@ export function parseFrontDoorIds(value: string | undefined): readonly string[] 
  * wrong cookies.
  */
 export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtInModules): AzureHandler {
-  try {
-    const config = resolveConfig(env);
-    const publicOrigin = env['SID_PUBLIC_ORIGIN'];
-    return createAzureHandler({
-      config,
+  return handlerOrMisconfigured(
+    () => createAzureHandler({
+      config: resolveConfig(env),
       modules,
       behindFrontDoor: !/^(0|false|no|off)$/i.test(env['SID_BEHIND_FRONT_DOOR'] ?? ''),
       frontDoorIds: parseFrontDoorIds(env['SID_FRONT_DOOR_ID']),
       locationHeaders: parseLocationHeaders(env['SID_LOCATION_HEADERS']),
-      ...(publicOrigin === undefined || publicOrigin === '' ? {} : { publicOrigin })
-    });
-  } catch (error) {
-    if (!(error instanceof ConfigError)) throw error;
-    // A deployment mistake: log why (the message names the setting, not request data) and fail every request.
-    console.error(`sharedid-edge: ${error.message}`);
-    const misconfigured = internalError('SharedID Edge is misconfigured');
-    return () => Promise.resolve(misconfigured);
-  }
+      ...publicOriginFromEnv(env)
+    }),
+    () => () => Promise.resolve(internalError('SharedID Edge is misconfigured'))
+  );
 }
 
 /**

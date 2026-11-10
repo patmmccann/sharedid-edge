@@ -4,11 +4,19 @@ import {
   createHandler,
   defineModule,
   EU_COUNTRY_CODES,
+  handlerOrMisconfigured,
+  headerValue,
+  isHeaderName,
   locationInfo,
+  locationWithEU,
+  logRequestFailure,
+  parseHeaderMap,
   mergeTraffic,
   preciseLocationDenial,
+  publicOriginFromEnv,
   resolveConfig,
   skipsBot,
+  splitHeaders,
   type BotKind,
   type EdgeModule,
   type LocationSource,
@@ -21,6 +29,7 @@ import {
   type PreciseLocationDenial,
   type SharedIdEdgeConfig,
   type SharedIdEdgeHandler,
+  type SplitHeaders,
   type StorageDecision,
   type TrafficReport,
   type TrafficSignal
@@ -82,3 +91,27 @@ sources.push('forged');
 
 // @ts-expect-error - the handler's platform info is read-only
 platform.country = 'US';
+
+// An adapter's plumbing: a handler that answers with a 500 on invalid settings, and a response for a platform that
+// keeps one value per header name.
+export const guarded: SharedIdEdgeHandler = handlerOrMisconfigured<SharedIdEdgeHandler>(
+  () => createHandler({ config: resolveConfig({}) }),
+  () => () => Promise.resolve(new Response('misconfigured', { status: 500 }))
+);
+export async function platformResponse(request: Request): Promise<{ status: number; headers: Record<string, string>; cookies: readonly string[] }> {
+  try {
+    const response = await guarded(request);
+    const split: SplitHeaders = splitHeaders(response.headers);
+    return { status: response.status, headers: split.headers, cookies: split.cookies };
+  } catch (error) {
+    logRequestFailure(error);
+    return { status: 500, headers: {}, cookies: [] };
+  }
+}
+export function platformFromHeaders(headers: Headers, env: Readonly<Record<string, string | undefined>>): PlatformInfo {
+  const origin: { readonly publicOrigin?: string } = publicOriginFromEnv(env);
+  const ip: string | undefined = headerValue(headers, 'x-client-ip');
+  return { ...(ip === undefined || origin.publicOrigin === '' ? {} : { clientIp: ip }), ...locationWithEU({ country: headerValue(headers, 'x-country') }) };
+}
+export const geoHeaders: Partial<Record<'country' | 'city', string>> = parseHeaderMap('{"country":"x-geo"}', 'SID_LOCATION_HEADERS', ['country', 'city'], '{"country":"x-geo"}');
+export const validName: boolean = isHeaderName('x-geo');

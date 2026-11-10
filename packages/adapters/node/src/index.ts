@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
-import { createHandler, locationInfo, type HandlerOptions, type LocationSource, type PlatformInfo, type SharedIdEdgeHandler } from '@sharedid-edge/core';
+import { createHandler, locationInfo, logRequestFailure, splitHeaders, type HandlerOptions, type LocationSource, type PlatformInfo, type SharedIdEdgeHandler } from '@sharedid-edge/core';
 
 export interface NodeServerOptions extends HandlerOptions {
   /**
@@ -18,8 +18,7 @@ export function createNodeServer(options: NodeServerOptions = {}): Server {
   const handler = createHandler(options);
   return createServer((req, res) => {
     handle(handler, options, req, res).catch((error: unknown) => {
-      // Don't echo the error: it may contain request data.
-      console.error('sharedid-edge: request failed', error instanceof Error ? error.name : 'unknown error');
+      logRequestFailure(error);
       if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end('Internal error');
     });
@@ -36,13 +35,8 @@ async function handle(handler: SharedIdEdgeHandler, options: NodeServerOptions, 
  * no body. Shared with adapters whose platform hands them Node.js requests, like Google Cloud's Functions Framework.
  */
 export async function sendWebResponse(res: ServerResponse, response: Response, method: string): Promise<void> {
-  const headers: Record<string, string | string[]> = {};
-  response.headers.forEach((value, key) => {
-    if (key !== 'set-cookie') headers[key] = value;
-  });
-  const cookies = response.headers.getSetCookie();
-  if (cookies.length > 0) headers['set-cookie'] = cookies;
-  res.writeHead(response.status, headers);
+  const { headers, cookies } = splitHeaders(response.headers);
+  res.writeHead(response.status, cookies.length > 0 ? { ...headers, 'set-cookie': cookies } : headers);
   if (method.toUpperCase() === 'HEAD' || response.body === null) {
     res.end();
     return;

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createHandler, type HandlerOptions } from '@sharedid-edge/core';
+import { createHandler, logRequestFailure, type HandlerOptions } from '@sharedid-edge/core';
 import { sendWebResponse, toWebRequest } from '@sharedid-edge/node';
 import { platformInfo, type PlatformOptions } from './platform.js';
 
@@ -27,8 +27,7 @@ export function createGcpHandler(options: GcpHandlerOptions = {}): GcpHandler {
       const response = await handler(toWebRequest(req, origin), platformInfo(req, options));
       await sendWebResponse(res, response, req.method ?? 'GET');
     } catch (error) {
-      // Don't echo or log the error's message: it may contain request data.
-      console.error('sharedid-edge: request failed', error instanceof Error ? error.name : 'unknown error');
+      logRequestFailure(error);
       sendInternalError(res, 'Internal error');
     }
   };

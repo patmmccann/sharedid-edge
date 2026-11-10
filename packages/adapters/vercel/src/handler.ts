@@ -1,4 +1,4 @@
-import { createHandler, DEFAULT_CONFIG, type HandlerOptions, ROUTES } from '@sharedid-edge/core';
+import { createHandler, DEFAULT_CONFIG, logRequestFailure, type HandlerOptions, ROUTES } from '@sharedid-edge/core';
 import { platformInfo, type PlatformOptions } from './platform.js';
 
 export interface VercelHandlerOptions extends HandlerOptions, PlatformOptions {
@@ -29,8 +29,7 @@ export function createVercelHandler(options: VercelHandlerOptions = {}): VercelH
     try {
       return await handler(await withOrigin(request, options.publicOrigin), platformInfo(request.headers, options));
     } catch (error) {
-      // Don't echo or log the error's message: it may contain request data.
-      console.error('sharedid-edge: request failed', error instanceof Error ? error.name : 'unknown error');
+      logRequestFailure(error);
       return internalError('Internal error');
     }
   };
