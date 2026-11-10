@@ -25,7 +25,8 @@
     "start": "node dist/cli.js"
   },
   "dependencies": {
-    "@sharedid-edge/core": "0.1.0"
+    "@sharedid-edge/core": "0.1.0",
+    "@sharedid-edge/module-ip": "0.1.0"
   },
   "repository": {
     "type": "git",

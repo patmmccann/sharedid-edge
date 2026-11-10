@@ -26,6 +26,8 @@ export interface Case {
     readonly absentHeaders?: readonly string[];
     readonly bodyLength?: number;
     readonly json?: unknown;
+    /** The JSON body contains these values: objects match on the listed keys only, recursively; arrays and scalars exactly. */
+    readonly jsonIncludes?: unknown;
     readonly cookies?: readonly ExpectedCookie[];
     /** No other cookies than those listed may be set. */
     readonly onlyListedCookies?: boolean;
@@ -82,6 +84,7 @@ const EXPECT_FIELDS: Readonly<Record<string, Check>> = {
   absentHeaders: isStringArray,
   bodyLength: isInteger,
   json: isAnything,
+  jsonIncludes: isAnything,
   cookies: v => Array.isArray(v),
   onlyListedCookies: isBoolean,
   noCookies: isBoolean

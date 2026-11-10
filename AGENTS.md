@@ -10,6 +10,7 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | `conformance/` | HTTP cases and their runner | The contract; every implementation must pass. |
 | `packages/core/` | Platform-neutral handler, consent, cookies, module interface | Published as `@sharedid-edge/core`. |
 | `packages/cloudflare/` | The Cloudflare Worker | |
+| `packages/module-ip/` | The `ip` module: client IP in `ortb2.device` | Published as `@sharedid-edge/module-ip`; the pattern for module packages. |
 | `packages/node/` | Node.js server | Local development, self-hosting, conformance target. |
 | `e2e/` | Unmodified Prebid.js against the worker in three browsers | Separate install. |
 | `scripts/` | Type-check helpers and `verify-deployment` | |

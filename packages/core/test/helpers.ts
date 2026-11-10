@@ -1,6 +1,8 @@
 const BASE64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 export interface TcStringOptions {
+  /** Special feature opt-ins in the core segment (1 is precise geolocation). */
+  readonly specialFeatures?: readonly number[];
   /** Purpose legitimate interests in the core segment. */
   readonly legitimateInterests?: readonly number[];
   /** Purpose consents in a publisher TC segment; no publisher segment when omitted. */
@@ -21,7 +23,8 @@ export interface TcStringOptions {
 export function tcString(purposes: readonly number[], options: TcStringOptions = {}): string {
   const bits: number[] = [];
   pushInt(bits, options.version ?? 2, 6);
-  while (bits.length < 152) bits.push(0);
+  while (bits.length < 140) bits.push(0);
+  for (let f = 1; f <= 12; f++) bits.push(options.specialFeatures?.includes(f) === true ? 1 : 0);
   pushPurposes(bits, purposes);
   pushPurposes(bits, options.legitimateInterests ?? []);
   while (bits.length < 213) bits.push(0);

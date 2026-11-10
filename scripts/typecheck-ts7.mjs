@@ -9,6 +9,8 @@ const tsc = join(root, 'node_modules/typescript7/bin/tsc');
 const projects = [
   'packages/core',
   'packages/core/test',
+  'packages/module-ip',
+  'packages/module-ip/test',
   'packages/node',
   'packages/node/test',
   'conformance',
