@@ -87,15 +87,21 @@ export function reflectModuleConfig(config: Readonly<Record<string, unknown>>): 
 /**
  * A cookie's value exactly as the `Cookie` header carries it, or undefined. Unlike `ModuleContext.cookies`, quotes
  * aren't removed, so a quoted value can be recognized and left alone. The first value wins when a name repeats, as in
- * core's `parseCookies`.
+ * core's `parseCookies`. Only HTTP whitespace (space and tab) around the pair is removed, not `trim()`'s wider set: a
+ * value with a leading non-breaking space stays as it is, so `isReflectable` rejects it instead of reflecting it
+ * changed.
  */
 export function rawCookieValue(header: string | null, name: string): string | undefined {
   if (header === null) return undefined;
   for (const part of header.split(';')) {
     const eq = part.indexOf('=');
-    if (eq > 0 && part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+    if (eq > 0 && trimHttpWhitespace(part.slice(0, eq)) === name) return trimHttpWhitespace(part.slice(eq + 1));
   }
   return undefined;
+}
+
+function trimHttpWhitespace(text: string): string {
+  return text.replace(/^[ \t]+|[ \t]+$/g, '');
 }
 
 /** Whether a value can be set again unchanged: non-empty, at most 1024 characters, and only cookie-octets. */

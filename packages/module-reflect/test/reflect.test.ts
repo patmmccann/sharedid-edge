@@ -64,6 +64,10 @@ describe('reading values', () => {
     expect(rawCookieValue('uid1="quoted"', 'uid1')).toBe('"quoted"');
     expect(rawCookieValue('xuid1=1', 'uid1')).toBeUndefined();
     expect(rawCookieValue(null, 'uid1')).toBeUndefined();
+    // only HTTP whitespace is trimmed: a non-breaking space stays, so the value is rejected rather than changed
+    expect(rawCookieValue(' \t uid1=abc \t; other=x', 'uid1')).toBe('abc');
+    expect(rawCookieValue('uid1=\u00a0abc; other=x', 'uid1')).toBe('\u00a0abc');
+    expect(isReflectable('\u00a0abc')).toBe(false);
   });
 
   it('reflects only non-empty cookie-octet values up to 1024 characters', () => {
@@ -142,6 +146,8 @@ describe('the reflect module in the handler', () => {
     expect((await call('/_sid/v1', { Cookie: 'other=1; uid1=; fpid=x' })).cookies.map(c => c.split(';')[0])).toEqual(['fpid=x']);
     expect((await call('/_sid/v1', { Cookie: 'uid1="abc"; fpid=a b' })).cookies).toEqual([]);
     expect((await call('/_sid/v1', { Cookie: `uid1=${'a'.repeat(1025)}; fpid=ok` })).cookies.map(c => c.split(';')[0])).toEqual(['fpid=ok']);
+    // a leading non-breaking space is part of the value, not whitespace: skipped, never reflected as "abc"
+    expect((await call('/_sid/v1', { Cookie: 'uid1= abc; fpid=ok' })).cookies.map(c => c.split(';')[0])).toEqual(['fpid=ok']);
     expect((await call('/_sid/v1')).body.ext.modules['reflect']?.status).toBe('empty');
   });
 
