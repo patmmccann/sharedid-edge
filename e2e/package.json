@@ -1,0 +1,16 @@
+{
+  "name": "sharedid-edge-e2e",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end: unmodified Prebid.js sharedIdSystem with pixelUrl against SharedID Edge, in Chromium, Firefox and WebKit",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^24.10.1",
+    "prebid.js": "11.48.0",
+    "typescript": "~6.0.3"
+  }
+}

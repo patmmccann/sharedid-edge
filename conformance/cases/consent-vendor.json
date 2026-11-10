@@ -1,0 +1,37 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "Consent in vendor mode (SID_VENDOR_ID=755): a TC string needs consent for that vendor, and, in the core segment, consent for Purpose 1 and consent or legitimate interest for at least one of Purposes 2-10. The publisher TC segment isn't used. TC strings: …F5gAAA…gAAAA has vendor 755 and purposes 1-2; …F5AAA…BAAAAA vendor 754 and purposes 1-2; the one starting CAAAAAAAAAAAAAAAAAAAAAAAAE has vendor 755 and purpose 2 only; the one starting CAAAAAAAAAAAAAAAAAAAAAAAAIAAAE has vendor 755, consent for purpose 1 and legitimate interest for purpose 2; CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA publisher consent for purposes 1-2 only.",
+  "config": { "SID_VENDOR_ID": "755" },
+  "cases": [
+    {
+      "name": "sets the cookie with consent for the vendor and vendor consent for purposes 1 and 2",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAF5gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAA" },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    },
+    {
+      "name": "accepts legitimate interest for purposes 2-10",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAIAAAEAAAAAAF5gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAA" },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    },
+    {
+      "name": "sets nothing without consent for the vendor",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAF5AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAA" },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "denied: tcf: no consent for vendor 755" }, "noCookies": true }
+    },
+    {
+      "name": "sets nothing without vendor consent for purpose 1",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAF5gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAA" },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "denied: tcf: no vendor consent for purpose 1" }, "noCookies": true }
+    },
+    {
+      "name": "doesn't count publisher consent in vendor mode",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA" },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "denied: tcf: no consent for vendor 755" }, "noCookies": true }
+    },
+    {
+      "name": "sets nothing when GDPR applies and there is no TC string",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1" },
+      "expect": { "status": 200, "noCookies": true }
+    }
+  ]
+}

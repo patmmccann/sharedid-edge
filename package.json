@@ -1,0 +1,44 @@
+{
+  "name": "sharedid-edge-workspace",
+  "private": true,
+  "type": "module",
+  "description": "SharedID Edge: a first-party edge worker that keeps the Prebid SharedID cookie durable",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/core",
+    "packages/node",
+    "packages/cloudflare",
+    "conformance"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck:ts7": "node scripts/typecheck-ts7.mjs",
+    "typecheck:cloudflare": "npm run typecheck -w @sharedid-edge/cloudflare",
+    "lint": "eslint .",
+    "test": "npm run test -ws --if-present",
+    "conformance": "npm run conformance -w @sharedid-edge/conformance",
+    "consumer-types": "node scripts/consumer-types.mjs",
+    "attw": "npm run attw -w @sharedid-edge/core",
+    "check": "npm run build && npm run lint && npm run typecheck:ts7 && npm run typecheck:cloudflare && npm run types:check -w @sharedid-edge/cloudflare && npm test && npm run conformance && npm run consumer-types && npm run attw",
+    "verify-deployment": "tsx scripts/verify-deployment.ts",
+    "conformance:wrangler": "npm run conformance:wrangler -w @sharedid-edge/conformance"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.2",
+    "@eslint/js": "^10.0.0",
+    "@types/node": "^24.10.1",
+    "eslint": "^10.14.0",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "typescript7": "npm:typescript@~7.0.2",
+    "vitest": "~4.1.12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patmmccann/sharedid-edge.git"
+  }
+}
