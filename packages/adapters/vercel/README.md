@@ -1,6 +1,6 @@
 # @sharedid-edge/vercel
 
-[SharedID Edge](../../../README.md) on Vercel: a `/_sid/*` route of the Vercel project that serves your site, as a Next.js route handler or as Routing Middleware. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server and the Lambda function, with built-in modules `ip`, `ec`, `geo` and `reflect`, and it passes the same conformance suite.
+[SharedID Edge](../../../README.md) on Vercel: a `/_sid/*` route of the Vercel project that serves your site, as a Next.js route handler or as Routing Middleware. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server and the Lambda function, with built-in modules `ip`, `ec`, `geo`, `reflect` and `bot`, and it passes the same conformance suite.
 
 The main README has a [quick start](../../../README.md#deploy-on-vercel). This is the full guide.
 
@@ -70,7 +70,7 @@ npm run build                               # compiles core and the modules
 npm run bundle -w @sharedid-edge/vercel     # packages/adapters/vercel/deploy/sharedid-edge.mjs and .d.mts
 ```
 
-The bundle is a single ESM file with no dependencies and no Node.js built-ins (about 15 KB gzipped; the bundle step fails it over 20 KB), with a declaration file next to it. Copy both into your site's repository, for example as `lib/sharedid-edge.mjs` and `lib/sharedid-edge.d.mts`, and commit them. To update, rebuild and copy them again.
+The bundle is a single ESM file with no dependencies and no Node.js built-ins (about 15 KB gzipped; minified; the bundle step fails it over 32 KB), with a declaration file next to it. Copy both into your site's repository, for example as `lib/sharedid-edge.mjs` and `lib/sharedid-edge.d.mts`, and commit them. To update, rebuild and copy them again.
 
 The packages aren't on npm yet. Once they are, `npm install @sharedid-edge/vercel` replaces the copy, with the same `handlerFromEnv` and `middlewareFromEnv`.
 
@@ -195,6 +195,7 @@ The handler gets the client IP and location (`PlatformInfo`) from headers Vercel
 | `continent` | `x-vercel-ip-continent` | `AF`, `AN`, `AS`, `EU`, `NA`, `OC` or `SA`. |
 | `metroCode` | none | Vercel has no metro (DMA) code, so the `geo` module never sends `metro` on Vercel. |
 | `isEU` | from `country` | `true` for the 27 EU member states (core's `EU_COUNTRY_CODES`, the meaning of Cloudflare's `isEUCountry`), `false` for other countries, unknown without a country. |
+| `traffic` | none | Vercel passes no bot verdict to functions or middleware (its firewall's bot rules and BotID don't add a request header), so there is none from the platform; the `bot` module and other modules still report to the traffic signal. |
 
 Core's `locationInfo` validates the location values the same way as on the other platforms (dropping empty values, `XX`, and out-of-range coordinates).
 

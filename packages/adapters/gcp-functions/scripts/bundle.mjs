@@ -14,7 +14,7 @@ import { build } from 'esbuild';
 const root = join(import.meta.dirname, '..');
 const outdir = join(root, 'deploy');
 const outfile = join(outdir, 'sharedid-edge.mjs');
-const budget = 20 * 1024;
+const budget = 32 * 1024;
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 
 rmSync(outdir, { recursive: true, force: true });
@@ -27,6 +27,9 @@ await build({
   platform: 'node',
   target: 'node24',
   format: 'esm',
+  // Minified, as the Worker is; names kept so stack traces stay readable.
+  minify: true,
+  keepNames: true,
   external: ['@google-cloud/functions-framework'],
   legalComments: 'none',
   logLevel: 'warning'

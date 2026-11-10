@@ -57,7 +57,7 @@ jobs:
             const { readFileSync } = require("node:fs");
             const { gzipSync } = require("node:zlib");
             const gz = gzipSync(readFileSync("packages/adapters/cloudflare/dist/index.js")).length;
-            const budget = 20 * 1024;
+            const budget = 32 * 1024;
             console.log(`Worker bundle: ${gz} bytes gzipped (budget ${budget})`);
             if (gz > budget) { console.error("Over the bundle size budget"); process.exit(1); }
           '

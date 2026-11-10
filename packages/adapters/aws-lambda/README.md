@@ -1,6 +1,6 @@
 # @sharedid-edge/aws-lambda
 
-[SharedID Edge](../../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `ec`, `geo` and `reflect`, and it passes the same conformance suite.
+[SharedID Edge](../../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `ec`, `geo`, `reflect` and `bot`, and it passes the same conformance suite.
 
 The main README has a [quick start](../../../README.md#deploy-on-aws-lambda-and-cloudfront). This is the full guide.
 
@@ -61,7 +61,7 @@ npm run build                                  # compiles core and the modules
 npm run bundle -w @sharedid-edge/aws-lambda    # bundles the function into packages/adapters/aws-lambda/deploy/lambda.mjs
 ```
 
-The bundle is a single ESM file with no dependencies (about 11 KB gzipped; CI fails it over 20 KB). There's no `sam build` step: the template's `CodeUri` is `dist/`, and `sam deploy` zips it as it is. Rebuild and bundle after updating the code.
+The bundle is a single ESM file with no dependencies (about 11 KB gzipped; minified; CI fails it over 32 KB). There's no `sam build` step: the template's `CodeUri` is `dist/`, and `sam deploy` zips it as it is. Rebuild and bundle after updating the code.
 
 ## Deploy
 
@@ -226,6 +226,7 @@ The handler gets the client IP and location (`PlatformInfo`) from headers CloudF
 | `latitude`, `longitude` | `CloudFront-Viewer-Latitude`, `CloudFront-Viewer-Longitude` | For the `geo` module. Both are needed; out-of-range values are dropped. |
 | `timezone` | `CloudFront-Viewer-Time-Zone` | IANA name, for the `geo` module's `utcoffset`. |
 | `isEU` | from `country` | `true` for the 27 EU member states, `false` for other countries, unknown without a country. |
+| `traffic` | none | CloudFront adds no bot verdict, so there is none from the platform; the `bot` module and other modules still report to the traffic signal. |
 
 Core's `locationInfo` validates the location values the same way as on the other platforms (dropping empty values, `XX`, and out-of-range coordinates). CloudFront has no continent header, so `continent` is never set on Lambda. The template's origin request policy forwards all these headers. If you use your own policy, forward them too, or the `geo` module only gets what you forward.
 

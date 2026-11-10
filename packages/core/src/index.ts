@@ -32,4 +32,17 @@ export {
   type ModuleRoute,
   type ModuleRunOutput
 } from './modules.js';
+export {
+  BOT_KINDS,
+  mergeTraffic,
+  PROXY_KINDS,
+  skipsBot,
+  trafficReport,
+  type BotKind,
+  type ProxyKind,
+  type SkipBotsSettings,
+  type TrafficEntry,
+  type TrafficReport,
+  type TrafficSignal
+} from './traffic.js';
 export type { Eid, ModuleReport, PayloadV1, PlatformInfo } from './types.js';

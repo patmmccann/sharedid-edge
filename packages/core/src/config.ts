@@ -1,3 +1,4 @@
+import { BOT_KINDS, type BotKind } from './traffic.js';
 import { trimEnd } from './text.js';
 
 /** The resolved configuration. See {@link resolveConfig} for the environment variables. */
@@ -38,6 +39,13 @@ export interface SharedIdEdgeConfig {
   readonly moduleSecrets: Readonly<Record<string, Readonly<Record<string, string>>>>;
   /** Time limit for each module, in milliseconds. */
   readonly moduleTimeoutMs: number;
+  /**
+   * Set no SharedID for bots this sure or surer (`verified`, `declared` or `likely`), from the merged traffic signal;
+   * undefined to never skip. Existing IDs are never deleted.
+   */
+  readonly skipBots: BotKind | undefined;
+  /** Set no SharedID when the traffic signal's score is at or below this (1 to 99); undefined to never skip. */
+  readonly skipBotsScore: number | undefined;
 }
 
 export const MAX_COOKIE_AGE_DAYS = 400;
@@ -56,7 +64,9 @@ export const DEFAULT_CONFIG: SharedIdEdgeConfig = Object.freeze({
   modules: Object.freeze([]),
   moduleConfig: Object.freeze({}),
   moduleSecrets: Object.freeze({}),
-  moduleTimeoutMs: 50
+  moduleTimeoutMs: 50,
+  skipBots: undefined,
+  skipBotsScore: undefined
 });
 
 export class ConfigError extends Error {
@@ -128,6 +138,8 @@ function list(env: Env, key: string): string[] {
  * | `SID_MODULE_CONFIG` | `{}` | JSON object keyed by module name |
  * | `SID_MODULE_SECRETS` | `{}` | JSON object of string secrets keyed by module name; set as a platform secret |
  * | `SID_MODULE_TIMEOUT_MS` | `50` | |
+ * | `SID_SKIP_BOTS` | (off) | `verified`, `declared` or `likely`: no SharedID for bots this sure or surer |
+ * | `SID_SKIP_BOTS_SCORE` | (off) | 1 to 99: no SharedID when the traffic score is at or below it |
  *
  * @throws ConfigError when a value is invalid, so a misconfigured deployment fails loudly instead of setting bad cookies.
  */
@@ -187,6 +199,12 @@ export function resolveConfig(env: Env): SharedIdEdgeConfig {
     moduleSecrets = parsed as Record<string, Readonly<Record<string, string>>>;
   }
 
+  const skipBotsText = str(env, 'SID_SKIP_BOTS')?.toLowerCase();
+  const skipBots = BOT_KINDS.find(kind => kind === skipBotsText);
+  if (skipBotsText !== undefined && skipBots === undefined) {
+    throw new ConfigError(`SID_SKIP_BOTS must be verified, declared or likely, not "${skipBotsText}"`);
+  }
+
   const cookie = cookieName(env, 'SID_COOKIE_NAME', DEFAULT_CONFIG.cookieName) ?? DEFAULT_CONFIG.cookieName;
   const optOut = cookieName(env, 'SID_OPTOUT_COOKIE', DEFAULT_CONFIG.optOutCookieName) ?? DEFAULT_CONFIG.optOutCookieName;
   if (recoveryCookieName === cookie || optOut === cookie) {
@@ -224,7 +242,9 @@ export function resolveConfig(env: Env): SharedIdEdgeConfig {
     ...(syncModules === undefined ? {} : { syncModules: Object.freeze(syncModules) }),
     moduleConfig: Object.freeze(moduleConfig),
     moduleSecrets: Object.freeze(moduleSecrets),
-    moduleTimeoutMs: int(env, 'SID_MODULE_TIMEOUT_MS', DEFAULT_CONFIG.moduleTimeoutMs, 1, 10_000)
+    moduleTimeoutMs: int(env, 'SID_MODULE_TIMEOUT_MS', DEFAULT_CONFIG.moduleTimeoutMs, 1, 10_000),
+    skipBots,
+    skipBotsScore: str(env, 'SID_SKIP_BOTS_SCORE') === undefined ? undefined : int(env, 'SID_SKIP_BOTS_SCORE', 0, 1, 99)
   });
 }
 

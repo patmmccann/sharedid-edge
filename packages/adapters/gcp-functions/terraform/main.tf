@@ -102,6 +102,8 @@ resource "google_cloudfunctions2_function" "sharedid_edge" {
       SID_MODULE_CONFIG      = var.sid_module_config
       SID_MODULE_TIMEOUT_MS  = var.sid_module_timeout_ms
       SID_SYNC_MODULES       = var.sid_sync_modules
+      SID_SKIP_BOTS          = var.sid_skip_bots
+      SID_SKIP_BOTS_SCORE    = var.sid_skip_bots_score
       SID_TRUSTED_HOPS       = var.sid_trusted_hops
       SID_LOCATION_HEADERS   = var.location_headers ? jsonencode(local.location_headers) : ""
     }

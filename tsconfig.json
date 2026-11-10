@@ -18,6 +18,8 @@
     { "path": "packages/adapters/vercel/test" },
     { "path": "packages/modules/all" },
     { "path": "packages/modules/all/test" },
+    { "path": "packages/modules/bot" },
+    { "path": "packages/modules/bot/test" },
     { "path": "packages/modules/ec" },
     { "path": "packages/modules/ec/test" },
     { "path": "packages/modules/geo" },

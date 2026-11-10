@@ -144,3 +144,15 @@ variable "sid_sync_modules" {
   type        = string
   default     = ""
 }
+
+variable "sid_skip_bots" {
+  description = "SID_SKIP_BOTS (empty: off)"
+  type        = string
+  default     = ""
+}
+
+variable "sid_skip_bots_score" {
+  description = "SID_SKIP_BOTS_SCORE (empty: off)"
+  type        = string
+  default     = ""
+}

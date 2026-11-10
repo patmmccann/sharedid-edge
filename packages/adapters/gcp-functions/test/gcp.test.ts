@@ -275,6 +275,18 @@ describe('terraform', () => {
     expect(secret).toEqual(['SID_MODULE_SECRETS']);
   });
 
+  it('lists every setting in env.example.yaml, for gcloud --env-vars-file, with SID_MODULE_SECRETS left to Secret Manager', () => {
+    const coreDir = dirname(createRequire(import.meta.url).resolve('@sharedid-edge/core/package.json'));
+    const core = readFileSync(join(coreDir, 'dist/config.js'), 'utf8');
+    const settings = new Set(Array.from(core.matchAll(/'(SID_[A-Z_]+)'/g), m => m[1]));
+    settings.delete('SID_MODULE_SECRETS');
+    for (const own of ['SID_TRUSTED_HOPS', 'SID_LOCATION_HEADERS']) settings.add(own);
+    const yaml = readFileSync(join(root, 'env.example.yaml'), 'utf8');
+    const listed = Array.from(yaml.matchAll(/^(SID_[A-Z_]+): /gm), m => m[1]);
+    expect(listed.sort()).toEqual([...settings].sort());
+    expect(yaml).toMatch(/^SID_LOCATION_HEADERS: '{"country":"x-client-region",/m);
+  });
+
   it('keeps the function behind the load balancer, uncached, with the location headers', () => {
     expect(tf).toMatch(/ingress_settings += *"ALLOW_INTERNAL_AND_GCLB"/);
     expect(tf).toMatch(/enable_cdn += *false/);

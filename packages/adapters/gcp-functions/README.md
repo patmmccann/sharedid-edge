@@ -152,11 +152,14 @@ If your host rule has no path matcher yet, add one whose `defaultService` is you
 
 ## Deploy with gcloud instead
 
+Put the settings in a YAML file first: copy [`env.example.yaml`](env.example.yaml), which lists every setting, and fill in what you need. `--set-env-vars` splits its value on commas, which breaks the JSON in `SID_LOCATION_HEADERS` and `SID_MODULE_CONFIG` and lists like `SID_MODULES=ip,geo`. A file doesn't.
+
 ```sh
+cp packages/adapters/gcp-functions/env.example.yaml env.yaml     # then edit env.yaml
 gcloud functions deploy sharedid-edge --gen2 --region=us-central1 --runtime=nodejs24 \
   --source=packages/adapters/gcp-functions/deploy --entry-point=sharedidEdge --trigger-http \
   --ingress-settings=internal-and-gclb --allow-unauthenticated \
-  --set-env-vars='SID_TRUSTED_HOPS=1,SID_LOCATION_HEADERS={"country":"x-client-region","region":"x-client-region-subdivision","city":"x-client-city","latLong":"x-client-city-lat-long"}'
+  --env-vars-file=env.yaml
 gcloud compute network-endpoint-groups create sharedid-edge --region=us-central1 \
   --network-endpoint-type=serverless --cloud-run-service=sharedid-edge
 gcloud compute backend-services create sharedid-edge --global --load-balancing-scheme=EXTERNAL_MANAGED \
@@ -168,7 +171,7 @@ gcloud compute backend-services add-backend sharedid-edge --global \
   --network-endpoint-group=sharedid-edge --network-endpoint-group-region=us-central1
 ```
 
-Cloud CDN is off unless you turn it on (`--enable-cdn`); keep it off. Then [add the path rule](#add-the-path-rule-to-your-url-map). Settings with commas, like `SID_MODULES=ip,geo`, need gcloud's [alternative delimiter](https://cloud.google.com/sdk/gcloud/reference/topic/escaping) (`--set-env-vars='^;^SID_MODULES=ip,geo;SID_TRUSTED_HOPS=1'`), or an `--env-vars-file`.
+Cloud CDN is off unless you turn it on (`--enable-cdn`); keep it off. Then [add the path rule](#add-the-path-rule-to-your-url-map). To change one setting later, use `--update-env-vars` with gcloud's [alternative delimiter](https://cloud.google.com/sdk/gcloud/reference/topic/escaping) whenever the value has a comma: `--update-env-vars='^;^SID_MODULES=ip,geo'` (the `^;^` makes `;` the separator instead of `,`). Add `--set-secrets=SID_MODULE_SECRETS=sid-module-secrets:latest` for [secrets](#secrets).
 
 ## Configuration
 
@@ -223,6 +226,7 @@ Then [turn it on in Prebid.js](../../../README.md#configure-prebidjs).
 | `city` | `x-client-city` (`{client_city}`) | For the `geo` module. |
 | `latitude`, `longitude` | `x-client-city-lat-long` (`{client_city_lat_long}`) | `37.386051,-122.083851`; both are needed, and out-of-range values are dropped. |
 | `isEU` | from `country` | `true` for the 27 EU member states (core's `EU_COUNTRY_CODES`, the meaning of Cloudflare's `isEUCountry`), `false` for other countries, unknown without a country. |
+| `traffic` | none | The load balancer passes no bot verdict to the function, so there is none from the platform. (Cloud Armor rules can add request headers, but the adapter reads none.) The `bot` module and other modules still report to the traffic signal, and `SID_SKIP_BOTS` acts on theirs. |
 | `postalCode`, `metroCode`, `timezone`, `continent` | none | The load balancer has no variables for them. The `geo` module therefore never sends `zip`, `metro` or `utcoffset` on Google Cloud. |
 
 Core's `locationInfo` validates every value the same way as on the other platforms; an empty header (the load balancer doesn't know the location) means unknown.

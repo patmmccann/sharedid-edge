@@ -15,7 +15,8 @@
   "files": [
     "dist",
     "!dist/**/*.tsbuildinfo",
-    "terraform/*.tf"
+    "terraform/*.tf",
+    "env.example.yaml"
   ],
   "engines": {
     "node": ">=24"
