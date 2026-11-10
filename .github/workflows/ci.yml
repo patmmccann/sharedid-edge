@@ -1,6 +1,6 @@
 name: CI
 
-# Every job runs without secrets or a Cloudflare account, so pull requests from forks get the full checks.
+# Every job runs without secrets or a Cloudflare or AWS account, so pull requests from forks get the full checks.
 on:
   pull_request:
   push:
@@ -57,6 +57,19 @@ jobs:
             console.log(`Worker bundle: ${gz} bytes gzipped (budget ${budget})`);
             if (gz > budget) { console.error("Over the bundle size budget"); process.exit(1); }
           '
+      - name: Lambda bundle, size budget, and conformance suite against it (local CloudFront stand-in)
+        run: npm run conformance:lambda
+
+  aws-template:
+    name: SAM template (cfn-lint, no AWS account)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Lint packages/aws-lambda/template.yaml
+        run: pipx run --spec 'cfn-lint>=1,<2' cfn-lint packages/aws-lambda/template.yaml
 
   conformance-workerd:
     name: Conformance (Workers runtime, wrangler dev)

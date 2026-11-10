@@ -21,7 +21,7 @@ It sets the `ts-ec` cookie on the publisher's domain and returns the Edge Cookie
 
 ## Turning it on
 
-The module is built into the Cloudflare Worker and the Node.js server. It does nothing until you list it in `SID_MODULES` and give it a passphrase.
+The module is built into the Cloudflare Worker, the Node.js server and the AWS Lambda adapter. It does nothing until you list it in `SID_MODULES` and give it a passphrase.
 
 1. **Create a passphrase** of at least 32 bytes, and keep it secret. For example:
 
@@ -38,7 +38,7 @@ The module is built into the Cloudflare Worker and the Node.js server. It does n
    # paste: {"ec":{"passphrase":"<your passphrase>"}}
    ```
 
-   For local development, put the same line in `packages/cloudflare/.dev.vars` (which git ignores) as `SID_MODULE_SECRETS={"ec":{"passphrase":"…"}}`. With the Node.js server, set the `SID_MODULE_SECRETS` environment variable.
+   For local development, put the same line in `packages/cloudflare/.dev.vars` (which git ignores) as `SID_MODULE_SECRETS={"ec":{"passphrase":"…"}}`. With the Node.js server, set the `SID_MODULE_SECRETS` environment variable. On AWS Lambda, pass it as the SAM template's `SidModuleSecrets` parameter (see [the Lambda adapter's README](../aws-lambda/README.md#secrets)).
 
 3. **Enable the module, and set your domain**, in `packages/cloudflare/wrangler.jsonc`:
 

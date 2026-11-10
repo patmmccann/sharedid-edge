@@ -17,7 +17,7 @@ Cloudflare geolocates every request, on every plan. With this module the page ca
 
 ## Turning it on
 
-The module is built into the Cloudflare Worker and the Node.js server. It does nothing until you list it in `SID_MODULES`.
+The module is built into the Cloudflare Worker, the Node.js server and the AWS Lambda adapter. It does nothing until you list it in `SID_MODULES`.
 
 1. **Enable it** in `packages/cloudflare/wrangler.jsonc`:
 
@@ -137,6 +137,10 @@ The module has no TCF `purposes`, like `ip`: it runs under GDPR too, and the rul
 | `SID_MODULE_CONFIG` | `geo.precision` | optional | `"precise"` (the default): precise fields when consent allows. `"coarse"`: never send precise fields. |
 
 Anything else in `geo`'s settings, including a misspelt key (`{"geo":{"precison":"coarse"}}`) or another value (`"city"`), makes the module fail with status `error` on every request, rather than guess and send precise data you meant to turn off.
+
+## On AWS Lambda behind CloudFront
+
+The Lambda adapter reads CloudFront’s geolocation headers (`CloudFront-Viewer-Country`, `-Country-Region`, `-City`, `-Postal-Code`, `-Metro-Code`, `-Latitude`, `-Longitude`, `-Time-Zone`). The SAM template’s origin request policy forwards them. CloudFront has no continent header. See [`packages/aws-lambda/README.md`](../aws-lambda/README.md#platform-information).
 
 ## With the Node.js server
 

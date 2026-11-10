@@ -1,6 +1,6 @@
 {
   "$schema": "../case-file.schema.json",
-  "description": "The ec module (SID_MODULES=ec): IAB Tech Lab Trusted Server Edge Cookies. The ts-ec cookie is HMAC-SHA256(passphrase, normalized client IP) as 64 hex, a dot, and 6 random alphanumerics; HttpOnly, one year, Domain=.{domain}. HMAC-SHA256('conformance-passphrase-0123456789abcdef', '192.0.2.77') = 7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc, and for 2001:db8:85a3:0:8a2e:370:7334:1234 (normalized to its /64, 20010db885a30000) = 53535a5d73a52082fa6be4418fff1ca1f0b3986ac180be1ffbfce280a0db284b. Requests carry the client IP as X-Forwarded-For (Node.js, SID_TRUST_PROXY) and CF-Connecting-IP (Workers).",
+  "description": "The ec module (SID_MODULES=ec): IAB Tech Lab Trusted Server Edge Cookies. The ts-ec cookie is HMAC-SHA256(passphrase, normalized client IP) as 64 hex, a dot, and 6 random alphanumerics; HttpOnly, one year, Domain=.{domain}. HMAC-SHA256('conformance-passphrase-0123456789abcdef', '192.0.2.77') = 7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc, and for 2001:db8:85a3:0:8a2e:370:7334:1234 (normalized to its /64, 20010db885a30000) = 53535a5d73a52082fa6be4418fff1ca1f0b3986ac180be1ffbfce280a0db284b. Requests carry the client IP as X-Forwarded-For (Node.js, and the Lambda target's CloudFront stand-in, with SID_TRUST_PROXY) and CF-Connecting-IP (Workers).",
   "config": {
     "SID_MODULES": "ec",
     "SID_MODULE_CONFIG": "{\"ec\":{\"domain\":\"example.com\"}}",

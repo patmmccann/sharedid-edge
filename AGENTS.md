@@ -15,6 +15,7 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | `packages/module-geo/` | The `geo` module: the CDN's location in `ortb2.device.geo` | Published as `@sharedid-edge/module-geo`; precise fields only with consent. |
 | `packages/module-reflect/` | The `reflect` module: re-sets other first-party cookies (such as `uid1`) as server-set cookies | Opt-in; follows the SharedID's storage decision, never alters values. |
 | `packages/node/` | Node.js server | Local development, self-hosting, conformance target. |
+| `packages/aws-lambda/` | AWS Lambda adapter behind CloudFront, its bundle and SAM template | Published as `@sharedid-edge/aws-lambda`; conformance target via a local CloudFront stand-in. |
 | `e2e/` | Unmodified Prebid.js against the worker in three browsers | Separate install. |
 | `scripts/` | Type-check helpers and `verify-deployment` | |
 
@@ -42,7 +43,7 @@ npm run consumer-types                          # packed @sharedid-edge/core, st
 npm run attw                                    # published types resolve
 ```
 
-`npm run check` runs them in order. `npm run conformance:wrangler` runs the conformance suite against `wrangler dev` (slower), and `e2e/` has the browser tests. None of this needs a Cloudflare account; never add steps that do to pull-request CI.
+`npm run check` runs them in order. `npm run conformance:wrangler` runs the conformance suite against `wrangler dev` (slower), `npm run conformance:lambda` (also in `check`) against the bundled Lambda handler, and `e2e/` has the browser tests. None of this needs a Cloudflare or AWS account; never add steps that do to pull-request CI.
 
 TypeScript 6.0 is the main compiler because `typescript-eslint` doesn't support 7 yet; `typecheck:ts7` keeps the code working on 7. Call TypeScript 7 as `node node_modules/typescript7/bin/tsc`, since both packages install a `tsc` command.
 
