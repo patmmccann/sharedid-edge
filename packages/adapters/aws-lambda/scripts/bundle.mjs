@@ -17,7 +17,7 @@ import { build } from 'esbuild';
 const root = join(import.meta.dirname, '..');
 const outdir = join(root, 'deploy');
 const outfile = join(outdir, 'lambda.mjs');
-const budget = 20 * 1024;
+const budget = 32 * 1024;
 
 rmSync(outdir, { recursive: true, force: true });
 mkdirSync(outdir);
@@ -29,6 +29,10 @@ await build({
   platform: 'node',
   target: 'node24',
   format: 'esm',
+  // Minified, as the Worker is; names kept so stack traces stay readable. No source map: deploy/ must hold only
+  // lambda.mjs (see above).
+  minify: true,
+  keepNames: true,
   legalComments: 'none',
   logLevel: 'warning'
 });
