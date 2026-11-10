@@ -72,7 +72,8 @@ function link(fromFile, toPath) {
   return relative(dirname(join(root, fromFile)), join(root, toPath)).split(sep).join('/');
 }
 
-const cell = text => text.replace(/\|/g, '\\|');
+/** Text for a Markdown table cell: backslashes and pipes escaped, so neither ends the cell nor escapes the next character. */
+const cell = text => text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
 const codeList = items => items.map(item => `\`${item}\``).join(', ');
 
 function platformTable(file, adapters) {
