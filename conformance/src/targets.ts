@@ -4,6 +4,12 @@ import { join } from 'node:path';
 
 export interface RunningTarget {
   readonly baseUrl: string;
+  /**
+   * Rewrites a case's request headers for this target. Cases describe the visitor's location with Cloudflare's
+   * visitor location headers, which the Node.js target reads (with SID_TRUST_PROXY); for workerd they become
+   * `request.cf`.
+   */
+  readonly requestHeaders: (headers: Readonly<Record<string, string>>) => Record<string, string>;
   stop(): Promise<void>;
 }
 
@@ -52,6 +58,36 @@ function stopper(child: ChildProcess): () => Promise<void> {
   });
 }
 
+/** Cloudflare's visitor location headers and the `request.cf` fields they come from. */
+const LOCATION_HEADERS: Readonly<Record<string, string>> = {
+  'cf-ipcountry': 'country',
+  'cf-region-code': 'regionCode',
+  'cf-ipcity': 'city',
+  'cf-postal-code': 'postalCode',
+  'cf-metro-code': 'metroCode',
+  'cf-iplatitude': 'latitude',
+  'cf-iplongitude': 'longitude',
+  'cf-timezone': 'timezone',
+  'cf-ipcontinent': 'continent'
+};
+
+/**
+ * For `wrangler dev`: when a case sends visitor location headers, passes the same values to the worker as
+ * `request.cf`. Locally, workerd fills `request.cf` from Cloudflare's view of the machine running the suite, and the
+ * only way to replace it per request is Miniflare's `MF-CF-Blob` header (the JSON `cf` object Miniflare itself sends
+ * with `dispatchFetch`). `clientAcceptEncoding` is kept empty, as in Miniflare's default, so responses aren't
+ * compressed.
+ */
+function asRequestCf(headers: Readonly<Record<string, string>>): Record<string, string> {
+  const cf: Record<string, string> = {};
+  for (const [name, value] of Object.entries(headers)) {
+    const field = LOCATION_HEADERS[name.toLowerCase()];
+    if (field !== undefined) cf[field] = value;
+  }
+  if (Object.keys(cf).length === 0) return { ...headers };
+  return { ...headers, 'MF-CF-Blob': JSON.stringify({ ...cf, clientAcceptEncoding: '' }) };
+}
+
 /** Starts a target configured with `config` (SID_* environment variables). */
 export async function startTarget(target: TargetName, config: Readonly<Record<string, string>>): Promise<RunningTarget> {
   const port = await freePort();
@@ -79,5 +115,5 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
     await stop();
     throw error;
   }
-  return { baseUrl, stop };
+  return { baseUrl, stop, requestHeaders: target === 'wrangler' ? asRequestCf : headers => ({ ...headers }) };
 }

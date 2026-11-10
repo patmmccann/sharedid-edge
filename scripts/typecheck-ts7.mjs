@@ -13,6 +13,8 @@ const projects = [
   'packages/module-ip/test',
   'packages/module-ec',
   'packages/module-ec/test',
+  'packages/module-geo',
+  'packages/module-geo/test',
   'packages/node',
   'packages/node/test',
   'conformance',

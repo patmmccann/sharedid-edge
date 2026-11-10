@@ -1,5 +1,7 @@
 import { exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
+import { utcOffsetMinutes } from '@sharedid-edge/module-geo';
+import { modules } from '../src/modules.js';
 import { platformInfo } from '../src/platform.js';
 
 const UUID = 'c29cb2ae-769d-42f6-891a-f53cadee823d';
@@ -48,5 +50,33 @@ describe('platformInfo', () => {
   it('treats a missing isEUCountry as outside the EU, and missing cf as unknown', () => {
     expect(platformInfo({ headers: new Headers(), cf: { country: 'US' } })).toEqual({ country: 'US', isEU: false });
     expect(platformInfo({ headers: new Headers() })).toEqual({});
+  });
+  it('reads every location field of request.cf, with coordinates as numbers', () => {
+    // As request.cf has it, with fields the adapter doesn't read.
+    const cf: Readonly<Record<string, unknown>> = {
+      country: 'US', continent: 'NA', region: 'Texas', regionCode: 'TX', city: 'Austin', postalCode: '78701',
+      metroCode: '635', latitude: '30.27130', longitude: '-97.74260', timezone: 'America/Chicago', colo: 'DFW', asn: 395747
+    };
+    expect(platformInfo({ headers: new Headers({ 'CF-Connecting-IP': '203.0.113.7' }), cf })).toEqual({
+      clientIp: '203.0.113.7', country: 'US', region: 'TX', city: 'Austin', postalCode: '78701', metroCode: '635',
+      latitude: 30.2713, longitude: -97.7426, timezone: 'America/Chicago', continent: 'NA', isEU: false
+    });
+  });
+  it('ignores Tor and unknown countries, empty values and invalid coordinates', () => {
+    expect(platformInfo({ headers: new Headers(), cf: { country: 'T1', city: '', latitude: 'NaN', longitude: '1' } })).toEqual({ isEU: false });
+    expect(platformInfo({ headers: new Headers(), cf: { country: 'XX', regionCode: '', postalCode: ' ', timezone: '' } })).toEqual({ isEU: false });
+  });
+});
+
+describe('geo module in workerd', () => {
+  it('computes UTC offsets with the runtime time zone data', () => {
+    expect(utcOffsetMinutes('America/New_York', new Date('2026-01-15T12:00:00Z'))).toBe(-300);
+    expect(utcOffsetMinutes('America/New_York', new Date('2026-07-15T12:00:00Z'))).toBe(-240);
+    expect(utcOffsetMinutes('Asia/Kolkata', new Date('2026-07-15T12:00:00Z'))).toBe(330);
+    expect(utcOffsetMinutes('Mars/Olympus_Mons', new Date())).toBeUndefined();
+  });
+  it('is built into the worker, and off until listed in SID_MODULES', async () => {
+    expect(modules.map(m => m.name)).toContain('geo');
+    expect(await (await fetchWorker('/_sid/v1')).json()).toMatchObject({ ext: { modules: {} } });
   });
 });
