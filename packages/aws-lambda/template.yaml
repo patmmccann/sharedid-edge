@@ -110,8 +110,9 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Description: SharedID Edge (answers /_sid/* behind CloudFront)
-      # The single-file bundle in dist/ (npm run bundle); its handler is lambda.handler.
-      CodeUri: dist/
+      # The single-file bundle in deploy/ (npm run bundle), alone in its directory: dist/ also holds TypeScript's
+      # unbundled lambda.js, which Lambda would load before lambda.mjs. Its handler is lambda.handler.
+      CodeUri: deploy/
       Handler: lambda.handler
       Runtime: nodejs22.x
       Architectures: [arm64]

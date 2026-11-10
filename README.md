@@ -153,7 +153,7 @@ git clone https://github.com/patmmccann/sharedid-edge.git
 cd sharedid-edge
 npm ci
 npm run build
-npm run bundle -w @sharedid-edge/aws-lambda    # one file: packages/aws-lambda/dist/lambda.mjs
+npm run bundle -w @sharedid-edge/aws-lambda    # one file: packages/aws-lambda/deploy/lambda.mjs
 ```
 
 ### 2. Deploy the function

@@ -1,5 +1,5 @@
 // A local stand-in for CloudFront and a Lambda function URL, for running the conformance suite against the bundled
-// Lambda handler (packages/aws-lambda/dist/lambda.mjs) without an AWS account. Each HTTP request becomes a payload
+// Lambda handler (packages/aws-lambda/deploy/lambda.mjs) without an AWS account. Each HTTP request becomes a payload
 // format 2.0 event, as a function URL would send it, with the CloudFront-Viewer-Address header CloudFront adds; the
 // handler's result is written back the way the function URL would.
 //
@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { LambdaEventV2, LambdaHandler } from '@sharedid-edge/aws-lambda';
 
-const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/aws-lambda/dist/lambda.mjs');
+const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/aws-lambda/deploy/lambda.mjs');
 
 async function loadHandler(): Promise<LambdaHandler> {
   const loaded: unknown = await import(pathToFileURL(BUNDLE).href);

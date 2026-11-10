@@ -37,7 +37,7 @@ CloudFront: your site's distribution (www.example.com)
                      │
                      ▼
 Lambda function URL (AuthType AWS_IAM: only your distribution may invoke it)
-   └─ Node.js 22 function, handler lambda.handler (dist/lambda.mjs)
+   └─ Node.js 22 function, handler lambda.handler (deploy/lambda.mjs)
         event (payload format 2.0) → Request → SharedID Edge handler → Response → result with cookies[]
 ```
 
@@ -58,7 +58,7 @@ From the repository root:
 ```sh
 npm ci
 npm run build                                  # compiles core and the modules
-npm run bundle -w @sharedid-edge/aws-lambda    # bundles the function into packages/aws-lambda/dist/lambda.mjs
+npm run bundle -w @sharedid-edge/aws-lambda    # bundles the function into packages/aws-lambda/deploy/lambda.mjs
 ```
 
 The bundle is a single ESM file with no dependencies (about 11 KB gzipped; CI fails it over 20 KB). There's no `sam build` step: the template's `CodeUri` is `dist/`, and `sam deploy` zips it as it is. Rebuild and bundle after updating the code.
@@ -248,7 +248,7 @@ export const handler = createLambdaHandler({
 Nothing here needs an account:
 
 - `npm test -w @sharedid-edge/aws-lambda`: unit tests with recorded-style function URL events (`test/events.ts`).
-- `npm run conformance:lambda`: bundles the function, then runs the whole conformance suite against `dist/lambda.mjs` behind a local stand-in for CloudFront and the function URL (`conformance/src/lambda-emulator.ts`). It turns each HTTP request into a payload 2.0 event, moves cookies into `cookies[]`, drops any `CloudFront-Viewer-*` headers the client sent, and adds `CloudFront-Viewer-Address` from the connection (or, as the conformance cases need, from `X-Forwarded-For` when the case sets `SID_TRUST_PROXY`), then writes the result back.
+- `npm run conformance:lambda`: bundles the function, then runs the whole conformance suite against `deploy/lambda.mjs` behind a local stand-in for CloudFront and the function URL (`conformance/src/lambda-emulator.ts`). It turns each HTTP request into a payload 2.0 event, moves cookies into `cookies[]`, drops any `CloudFront-Viewer-*` headers the client sent, and adds `CloudFront-Viewer-Address` from the connection (or, as the conformance cases need, from `X-Forwarded-For` when the case sets `SID_TRUST_PROXY`), then writes the result back.
 - CI also runs `cfn-lint` on `template.yaml`.
 - Against a real deployment: `node conformance/dist/run.js --base-url https://www.example.com` runs the default-configuration cases.
 

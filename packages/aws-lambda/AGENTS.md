@@ -7,7 +7,7 @@ The AWS Lambda adapter (`@sharedid-edge/aws-lambda`), for a function URL behind 
 - `src/platform.ts`: `PlatformInfo` from the `CloudFront-Viewer-*` headers, and `EU_COUNTRY_CODES` (the 27 member states, matching Cloudflare's `isEUCountry`; update it if EU membership changes, with the Worker in mind).
 - `src/env.ts`, `src/lambda.ts`: the deployed entry point; configuration from `process.env` once per cold start, a `ConfigError` gives a 500 handler.
 - `src/modules.ts`: the built-in modules, the same list as `packages/cloudflare/src/modules.ts`. Add new modules to both.
-- `scripts/bundle.mjs`: esbuild bundle to `dist/lambda.mjs`, with its size budget. `template.yaml`: the SAM template.
+- `scripts/bundle.mjs`: esbuild bundle to `deploy/lambda.mjs`, alone in `deploy/` (the template uploads that directory; `dist/` also has the unbundled `lambda.js`, which Lambda would load first), with its size budget. `template.yaml`: the SAM template.
 
 Rules:
 

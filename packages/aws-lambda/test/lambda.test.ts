@@ -223,4 +223,10 @@ describe('template.yaml', () => {
     expect(settings.size).toBeGreaterThan(10);
     expect([...passed].sort()).toEqual([...settings].sort());
   });
+  it('uploads only the bundle directory, never dist/ with its unbundled lambda.js', () => {
+    // Lambda's loader tries lambda.js before lambda.mjs, so uploading dist/ would load the unbundled entry.
+    const template = readFileSync(join(import.meta.dirname, '..', 'template.yaml'), 'utf8');
+    expect(template).toMatch(/^ {6}CodeUri: deploy\/$/m);
+    expect(template).toMatch(/^ {6}Handler: lambda\.handler$/m);
+  });
 });
