@@ -69,6 +69,43 @@ export const DEFAULT_CONFIG: SharedIdEdgeConfig = Object.freeze({
   skipBotsScore: undefined
 });
 
+/** One `SID_*` setting {@link resolveConfig} reads, for documentation. */
+export interface ConfigSetting {
+  /** The environment variable, e.g. `SID_BASE_PATH`. */
+  readonly name: string;
+  /** The default, as Markdown, e.g. `` `/_sid` `` or `host-only`. */
+  readonly default: string;
+  /** What it does, as one line of Markdown. */
+  readonly description: string;
+}
+
+/**
+ * Every setting {@link resolveConfig} reads, in documentation order, with its default and description. The
+ * configuration reference (`docs/configuration.md`) is generated from this list by `scripts/docs.mjs`, and a unit test
+ * checks it names exactly the variables `resolveConfig` reads. It describes the settings; it doesn't drive parsing.
+ *
+ * A plain array literal rather than a frozen one, so bundlers drop it from workers that don't use it.
+ */
+export const SETTINGS: readonly ConfigSetting[] = [
+  { name: 'SID_BASE_PATH', default: '`/_sid`', description: 'Path prefix the worker answers under. Must match your route.' },
+  { name: 'SID_COOKIE_NAME', default: '`_pubcid`', description: 'The SharedID cookie; must match `storage.name` in Prebid.js.' },
+  { name: 'SID_COOKIE_DOMAIN', default: 'host-only', description: '`Domain` for the cookies, e.g. `.example.com` to share across subdomains.' },
+  { name: 'SID_MAX_AGE_DAYS', default: '`365`', description: 'Cookie lifetime in days, 1 to 400 (browsers cap at 400).' },
+  { name: 'SID_CREATE', default: '`true`', description: 'Mint an ID when the request has none. With Prebid.js it always sends one, so this rarely matters.' },
+  { name: 'SID_RECOVERY_COOKIE', default: '`_pubcid_sv`', description: 'Name of the `HttpOnly` recovery copy; `none` to disable it.' },
+  { name: 'SID_OPTOUT_COOKIE', default: '`_pubcid_optout`', description: 'The opt-out cookie; Prebid.js reads `_pubcid_optout`.' },
+  { name: 'SID_VENDOR_ID', default: '(empty: publisher mode)', description: 'Your TCF vendor ID (1 to 65535), for vendor mode.' },
+  { name: 'SID_ALLOWED_ORIGINS', default: 'none', description: 'Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin.' },
+  { name: 'SID_SYNC_CACHE_SECONDS', default: '`86400`', description: 'How long a browser may reuse a sync response (privately). `0` re-syncs on every call. Also limits how often modules run on `/_sid/sync`.' },
+  { name: 'SID_MODULES', default: 'none', description: 'Comma-separated modules to run, in order.' },
+  { name: 'SID_SYNC_MODULES', default: 'the modules in `SID_MODULES` that run on `/_sid/sync`', description: 'Comma-separated modules to run on `/_sid/sync`, each also in `SID_MODULES`, or `none`.' },
+  { name: 'SID_MODULE_CONFIG', default: '`{}`', description: 'JSON settings per module, keyed by module name.' },
+  { name: 'SID_MODULE_SECRETS', default: '`{}`', description: 'JSON secrets (strings) per module, keyed by module name, e.g. the `ec` passphrase. Set it as a platform secret (`wrangler secret put SID_MODULE_SECRETS`), not in plain settings.' },
+  { name: 'SID_MODULE_TIMEOUT_MS', default: '`50`', description: 'Time limit for each module, 1 to 10000.' },
+  { name: 'SID_SKIP_BOTS', default: 'off', description: '`verified`, `declared` or `likely`: set no SharedID for bots this sure or surer, from the traffic signal. Existing IDs are never deleted.' },
+  { name: 'SID_SKIP_BOTS_SCORE', default: 'off', description: '1 to 99: set no SharedID when the traffic score (Cloudflare Bot Management) is at or below it.' }
+];
+
 export class ConfigError extends Error {
   override readonly name = 'ConfigError';
 }
@@ -119,27 +156,9 @@ function list(env: Env, key: string): string[] {
 }
 
 /**
- * Resolve configuration from environment variables (strings, as platforms provide them):
- *
- * | Variable | Default | |
- * | --- | --- | --- |
- * | `SID_BASE_PATH` | `/_sid` | path prefix |
- * | `SID_COOKIE_NAME` | `_pubcid` | |
- * | `SID_COOKIE_DOMAIN` | (host-only) | e.g. `.example.com` |
- * | `SID_MAX_AGE_DAYS` | `365` | at most 400 |
- * | `SID_CREATE` | `true` | mint an ID when the request has none |
- * | `SID_RECOVERY_COOKIE` | `_pubcid_sv` | `none` to disable |
- * | `SID_OPTOUT_COOKIE` | `_pubcid_optout` | |
- * | `SID_VENDOR_ID` | (publisher mode) | TCF vendor ID, for vendor mode |
- * | `SID_ALLOWED_ORIGINS` | (none) | comma-separated |
- * | `SID_SYNC_CACHE_SECONDS` | `86400` | |
- * | `SID_MODULES` | (none) | comma-separated module names |
- * | `SID_SYNC_MODULES` | (modules in `SID_MODULES` that run on `/sync`) | comma-separated names from `SID_MODULES`, or `none` |
- * | `SID_MODULE_CONFIG` | `{}` | JSON object keyed by module name |
- * | `SID_MODULE_SECRETS` | `{}` | JSON object of string secrets keyed by module name; set as a platform secret |
- * | `SID_MODULE_TIMEOUT_MS` | `50` | |
- * | `SID_SKIP_BOTS` | (off) | `verified`, `declared` or `likely`: no SharedID for bots this sure or surer |
- * | `SID_SKIP_BOTS_SCORE` | (off) | 1 to 99: no SharedID when the traffic score is at or below it |
+ * Resolve configuration from environment variables (strings, as platforms provide them). The variables, with their
+ * defaults and descriptions, are listed in {@link SETTINGS} (and, generated from it, in `docs/configuration.md`). An
+ * empty value means the default.
  *
  * @throws ConfigError when a value is invalid, so a misconfigured deployment fails loudly instead of setting bad cookies.
  */

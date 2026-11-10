@@ -37,5 +37,10 @@
     "type": "git",
     "url": "git+https://github.com/patmmccann/sharedid-edge.git",
     "directory": "packages/adapters/aws-lambda"
+  },
+  "sharedidEdge": {
+    "kind": "adapter",
+    "platform": "AWS (Lambda and CloudFront)",
+    "summary": "A Lambda function behind a `/_sid/*` behaviour of your site's CloudFront distribution."
   }
 }

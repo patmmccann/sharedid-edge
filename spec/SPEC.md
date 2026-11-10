@@ -237,6 +237,12 @@ Without Bot Management the object is absent, or has no score and false flags, an
 Each module's behaviour is specified in its own file under [`modules/`](modules), named after the module:
 
 <!-- generated:spec-modules:start -->
+- [The `bot` module](modules/bot.md)
+- [The `ec` module](modules/ec.md)
+- [The `geo` module](modules/geo.md)
+- [The `ip` module](modules/ip.md)
+- [The `reflect` module](modules/reflect.md)
+- [The `ua` module](modules/ua.md)
 <!-- generated:spec-modules:end -->
 
 ## Versioning

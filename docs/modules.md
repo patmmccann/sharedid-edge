@@ -38,6 +38,14 @@ Prebid.js calls `/_sid/sync` (its `pixelUrl`) on page views with `extend: true`,
 Generated from each module's `package.json` (its `sharedidEdge` block) by `node scripts/docs.mjs --write`. Each module's README has its settings, responses, consent rules and troubleshooting; its specification is in [`spec/modules/`](../spec/modules).
 
 <!-- generated:module-index:start -->
+| Name | Adds | Settings | On `/_sid/sync` | Specification |
+| --- | --- | --- | --- | --- |
+| [`bot`](../packages/modules/bot/README.md) | `ortb2.device.ext.traffic`: a likely bot when a browser lacks headers browsers send, and `internal` for your own staff, merged with other modules' reports and Cloudflare Bot Management. Sent whatever the consent | `missingHeaders`, `internalCookie`; secret `internalToken` | yes | [spec](../spec/modules/bot.md) |
+| [`ec`](../packages/modules/ec/README.md) | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**, so off unless you turn it on | `domain`; secret `passphrase` | yes | [spec](../spec/modules/ec.md) |
+| [`geo`](../packages/modules/geo/README.md) | `ortb2.device.geo`: country, region, metro and UTC offset, plus city, postal code and coordinates when consent allows | `precision`: `precise` (default) or `coarse` | no | [spec](../spec/modules/geo.md) |
+| [`ip`](../packages/modules/ip/README.md) | `ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out | none | no | [spec](../spec/modules/ip.md) |
+| [`reflect`](../packages/modules/reflect/README.md) | Nothing in the payload: re-sets first-party cookies other scripts wrote (such as `uid1` or `_ga`) with the same value and a new expiry, so Safari doesn't cap them, and with `restore`, sets them again from an `HttpOnly` keeper cookie after Safari deletes them | `cookies`, `keeper` | yes | [spec](../spec/modules/reflect.md) |
+| [`ua`](../packages/modules/ua/README.md) | `ortb2.device` from User-Agent Client Hints (`sua`, `devicetype`, `os`, `osv`, `model`), and `device.ext.traffic` with `bot: true` for crawlers that identify themselves | `ua`: also send `device.ua`; `parser`: `bowser`, in a build with Bowser, parses the `User-Agent` too | no | [spec](../spec/modules/ua.md) |
 <!-- generated:module-index:end -->
 
 To build your own, see [Adding a module](development.md#adding-a-module). Modules from vendors (in [`packages/vendor-modules/`](../packages/vendor-modules/README.md); none yet) aren't built in: you add them to your build, and any that forwards data to another service says so at the top of its README and is marked "⚠ forwards data to `<host>`" in the index.

@@ -17,6 +17,7 @@ import {
   readConsent,
   resolveConfig,
   serializeCookie,
+  SETTINGS,
   splitHeaders,
   storageDecision,
   type SharedIdEdgeConfig,
@@ -84,6 +85,18 @@ describe('serializeCookie', () => {
 });
 
 describe('resolveConfig', () => {
+  it('reads exactly the variables SETTINGS documents', () => {
+    const read = new Set<string>();
+    const env = new Proxy<Record<string, unknown>>({}, {
+      get(_target, key) {
+        if (typeof key === 'string') read.add(key);
+        return undefined;
+      }
+    });
+    resolveConfig(env);
+    expect([...read].sort()).toEqual(SETTINGS.map(setting => setting.name).sort());
+    expect(new Set(SETTINGS.map(setting => setting.name)).size).toBe(SETTINGS.length);
+  });
   it('uses the defaults for an empty environment', () => {
     const config = resolveConfig({});
     expect(config).toMatchObject({ basePath: '/_sid', cookieName: '_pubcid', maxAgeDays: 365, create: true, recoveryCookieName: '_pubcid_sv' });

@@ -6,14 +6,23 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 
 | Folder | What | Notes |
 | --- | --- | --- |
-| `spec/` | The specification | Behaviour changes start here. |
+| `spec/` | The specification: `SPEC.md`, and `modules/<name>.md` per module | Behaviour changes start here. |
+| `docs/` | Topic docs for publishers (Prebid.js, responses, configuration, consent, modules, migrating, troubleshooting, development) | Linked from [README.md](README.md). |
 | `conformance/` | HTTP cases and their runner | The contract; every implementation must pass. |
 | `packages/core/` | Platform-neutral handler, consent, cookies, module interface | Published as `@sharedid-edge/core`. Depends on no module. |
-| `packages/adapters/` | Deployable platform packages: `cloudflare/` (the Worker), `node/` (Node.js server), `aws-lambda/` (Lambda behind CloudFront, its bundle and SAM template), `vercel/` (a Next.js route handler or Routing Middleware on the site's Vercel project, its bundle and a Next.js example), `azure-functions/` (Azure Functions behind Front Door, its bundle and Bicep templates), `gcp-functions/` (a Cloud Run function behind Google Cloud's external Application Load Balancer, its bundle and Terraform) | Rules for every adapter in [`packages/adapters/AGENTS.md`](packages/adapters/AGENTS.md). Each is a conformance target. |
-| `packages/modules/` | Modules this project maintains: `ip/` (client IP), `ec/` (Trusted Server Edge Cookies, IP-derived, opt-in), `geo/` (`ortb2.device.geo`), `reflect/` (re-sets other first-party cookies), `bot/` (bot and staff-traffic signals), `ua/` (User-Agent and Client Hints as `ortb2.device`, with optional full User-Agent parsing by Bowser in an opt-in build, and the bot flag), and `all/` (`@sharedid-edge/modules`, the built-in list) | Rules and how to write a module in [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). Published as `@sharedid-edge/module-<name>`; built into every adapter. |
-| `packages/vendor-modules/` | Modules contributed and maintained by vendors (none yet) | Extra rules in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md). Opt-in at build time; tested in their own CI job. |
+| `packages/adapters/` | Deployable platform packages, one folder per platform (listed below) | Rules for every adapter in [`packages/adapters/AGENTS.md`](packages/adapters/AGENTS.md). Each is a conformance target. |
+| `packages/modules/` | Modules this project maintains, one folder per module (listed below), and `all/` (`@sharedid-edge/modules`, the built-in list) | Rules and how to write a module in [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). Published as `@sharedid-edge/module-<name>`; built into every adapter. |
+| `packages/vendor-modules/` | Modules contributed and maintained by vendors (listed below) | Extra rules in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md). Opt-in at build time; tested in their own CI job. |
 | `e2e/` | Unmodified Prebid.js against the worker in three browsers | Separate install. |
-| `scripts/` | Type-check helpers, the repo checks (`check-projects`, `check-links`), the bundled adapters' build and size budget (`bundle-adapter.mjs`) and `verify-deployment` | `projects.mjs` derives the project list from the workspace folders. |
+| `scripts/` | Type-check helpers, the repo checks (`check-projects`, `check-links`), the docs generator (`docs.mjs`), the bundled adapters' build and size budget (`bundle-adapter.mjs`) and `verify-deployment` | `projects.mjs` derives the project list from the workspace folders. |
+
+The packages, generated from their `package.json` by `node scripts/docs.mjs --write`:
+
+<!-- generated:packages:start -->
+- **Adapters** (`packages/adapters/`): [`aws-lambda/`](packages/adapters/aws-lambda/README.md): AWS (Lambda and CloudFront); [`azure-functions/`](packages/adapters/azure-functions/README.md): Azure (Functions and Front Door); [`cloudflare/`](packages/adapters/cloudflare/README.md): Cloudflare Workers; [`gcp-functions/`](packages/adapters/gcp-functions/README.md): Google Cloud (Cloud Run functions and Load Balancing); [`node/`](packages/adapters/node/README.md): Node.js (self-hosted); [`vercel/`](packages/adapters/vercel/README.md): Vercel.
+- **Modules** (`packages/modules/`): [`bot/`](packages/modules/bot/README.md): bot and staff-traffic signals; [`ec/`](packages/modules/ec/README.md): Trusted Server Edge Cookies; [`geo/`](packages/modules/geo/README.md): the visitor's location as `device.geo`; [`ip/`](packages/modules/ip/README.md): the real client IP; [`reflect/`](packages/modules/reflect/README.md): keep other first-party cookies durable; [`ua/`](packages/modules/ua/README.md): device data and the bot flag; and [`all/`](packages/modules/all/README.md): the built-in list.
+- **Vendor modules** (`packages/vendor-modules/`): none yet.
+<!-- generated:packages:end -->
 
 ## TypeScript is strict, everywhere
 
@@ -39,6 +48,7 @@ npm run consumer-types                          # packed @sharedid-edge/core, st
 npm run attw                                    # published types resolve
 npm run check:projects                          # tsconfig.json references every workspace project
 npm run check:links                             # relative Markdown links and anchors resolve
+npm run check:docs                              # generated doc sections are up to date (node scripts/docs.mjs --write)
 npm run check:duplication                       # no code copied between packages (jscpd)
 ```
 

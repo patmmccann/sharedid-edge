@@ -30,6 +30,14 @@ The worker never replaces an existing ID: when you turn it on, it adopts the IDs
 Deploy on the platform that serves your site. Each guide works on its own, from prerequisites to verifying the deployment.
 
 <!-- generated:platforms:start -->
+| Platform | How it runs |
+| --- | --- |
+| [AWS (Lambda and CloudFront)](packages/adapters/aws-lambda/README.md) | A Lambda function behind a `/_sid/*` behaviour of your site's CloudFront distribution. |
+| [Azure (Functions and Front Door)](packages/adapters/azure-functions/README.md) | An Azure Functions app behind a `/_sid/*` route of your site's Front Door profile. |
+| [Cloudflare Workers](packages/adapters/cloudflare/README.md) | A Worker on a route of your proxied Cloudflare zone (`www.example.com/_sid/*`). |
+| [Google Cloud (Cloud Run functions and Load Balancing)](packages/adapters/gcp-functions/README.md) | A Cloud Run function behind a `/_sid/*` path rule of your site's external Application Load Balancer. |
+| [Node.js (self-hosted)](packages/adapters/node/README.md) | A Node.js server behind the web server or load balancer that serves your site. |
+| [Vercel](packages/adapters/vercel/README.md) | A Next.js route handler, or Routing Middleware, in your site's Vercel project. |
 <!-- generated:platforms:end -->
 
 ## Turn it on in Prebid.js
@@ -55,6 +63,7 @@ pbjs.setConfig({
 Modules are built in, and none runs until you list it in `SID_MODULES`. See [Modules](docs/modules.md).
 
 <!-- generated:modules:start -->
+[`bot`](packages/modules/bot/README.md): bot and staff-traffic signals; [`ec`](packages/modules/ec/README.md): Trusted Server Edge Cookies; [`geo`](packages/modules/geo/README.md): the visitor's location as `device.geo`; [`ip`](packages/modules/ip/README.md): the real client IP; [`reflect`](packages/modules/reflect/README.md): keep other first-party cookies durable; [`ua`](packages/modules/ua/README.md): device data and the bot flag.
 <!-- generated:modules:end -->
 
 ## Documentation

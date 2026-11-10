@@ -30,5 +30,15 @@
     "type": "git",
     "url": "git+https://github.com/patmmccann/sharedid-edge.git",
     "directory": "packages/modules/ip"
+  },
+  "sharedidEdge": {
+    "kind": "module",
+    "name": "ip",
+    "title": "the real client IP",
+    "summary": "`ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out",
+    "settings": "none",
+    "routes": [
+      "v1"
+    ]
   }
 }

@@ -25,5 +25,10 @@
     "@sharedid-edge/module-geo": "0.1.0",
     "wrangler": "^4.160.0",
     "@cloudflare/vitest-plugin": "^1.7.0"
+  },
+  "sharedidEdge": {
+    "kind": "adapter",
+    "platform": "Cloudflare Workers",
+    "summary": "A Worker on a route of your proxied Cloudflare zone (`www.example.com/_sid/*`)."
   }
 }
