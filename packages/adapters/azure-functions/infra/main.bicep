@@ -11,6 +11,8 @@
 
 targetScope = 'resourceGroup'
 
+import { normalizeBasePath } from 'basepath.bicep'
+
 @description('Region for the function app and its storage.')
 param location string = resourceGroup().location
 
@@ -39,7 +41,7 @@ param nodeVersion string = '24'
 @minValue(40)
 param maximumInstanceCount int = 100
 
-@description('SID_BASE_PATH: the path the endpoint answers under. The Front Door route follows it.')
+@description('SID_BASE_PATH: the path the endpoint answers under, like /_sid, or / for /sync, /v1, /optout and /optin at the root. The function route and the Front Door route follow it, normalized as core does (/identity/ is /identity); an invalid value fails the deployment.')
 param sidBasePath string = '/_sid'
 @description('SID_COOKIE_NAME (empty: _pubcid)')
 param sidCookieName string = ''
@@ -61,6 +63,8 @@ param sidAllowedOrigins string = ''
 param sidSyncCacheSeconds string = ''
 @description('SID_MODULES, e.g. ip,geo (empty: none)')
 param sidModules string = ''
+@description('SID_SYNC_MODULES: the modules in SID_MODULES that also run on /sync, e.g. reflect, or none (empty: those whose routes include sync)')
+param sidSyncModules string = ''
 @description('SID_MODULE_CONFIG (JSON; empty: {})')
 param sidModuleConfig string = ''
 @description('SID_MODULE_TIMEOUT_MS (empty: 50)')
@@ -70,6 +74,8 @@ param sidModuleTimeoutMs string = ''
 param sidModuleSecrets string = ''
 
 var countryHeader = 'x-sid-country'
+// Checked and normalized as core does: the function's route and the Front Door patterns both come from it.
+var basePath = normalizeBasePath(sidBasePath)
 var deploymentContainer = 'deployments'
 // Storage Blob Data Owner: the function app reads its package and keeps its host state in the storage account.
 var storageBlobDataOwner = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
@@ -143,7 +149,7 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'AzureWebJobsStorage__accountName', value: storage.name }
         { name: 'SID_FRONT_DOOR_ID', value: frontDoor.properties.frontDoorId }
         { name: 'SID_LOCATION_HEADERS', value: addCountryHeader ? '{"country":"${countryHeader}"}' : '' }
-        { name: 'SID_BASE_PATH', value: sidBasePath }
+        { name: 'SID_BASE_PATH', value: basePath }
         { name: 'SID_COOKIE_NAME', value: sidCookieName }
         { name: 'SID_COOKIE_DOMAIN', value: sidCookieDomain }
         { name: 'SID_MAX_AGE_DAYS', value: sidMaxAgeDays }
@@ -154,6 +160,7 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'SID_ALLOWED_ORIGINS', value: sidAllowedOrigins }
         { name: 'SID_SYNC_CACHE_SECONDS', value: sidSyncCacheSeconds }
         { name: 'SID_MODULES', value: sidModules }
+        { name: 'SID_SYNC_MODULES', value: sidSyncModules }
         { name: 'SID_MODULE_CONFIG', value: sidModuleConfig }
         { name: 'SID_MODULE_TIMEOUT_MS', value: sidModuleTimeoutMs }
         { name: 'SID_MODULE_SECRETS', value: sidModuleSecrets }
@@ -195,7 +202,7 @@ module route 'frontdoor.bicep' = {
     endpointName: frontDoorEndpointName
     customDomainNames: customDomainNames
     originHostName: app.properties.defaultHostName
-    basePath: sidBasePath
+    basePath: basePath
     countryHeader: addCountryHeader ? countryHeader : ''
     namePrefix: 'sharedid-edge'
   }

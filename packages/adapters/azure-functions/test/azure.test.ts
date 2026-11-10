@@ -1,12 +1,14 @@
 import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { defineModule, resolveConfig } from '@sharedid-edge/core';
+import { defineModule, resolveConfig, ROUTES } from '@sharedid-edge/core';
 import {
   builtInModules,
   clientIp,
   createAzureHandler,
+  frontDoorPatterns,
   handlerFromEnv,
   parseFrontDoorIds,
   parseLocationHeaders,
@@ -244,6 +246,28 @@ describe('settings', () => {
     expect(routeFromEnv({ SID_BASE_PATH: 'no-slash' })).toBe('_sid/{*path}');
   });
 
+  it('trims long runs of slashes in linear time (no backtracking regular expression)', () => {
+    const slashes = '/'.repeat(200_000);
+    const start = performance.now();
+    expect(routeFor(`${slashes}identity${slashes}`)).toBe('identity/{*path}');
+    expect(routeFor(slashes)).toBe('{*path}');
+    expect(routeFor(`${slashes}x`)).toBe('x/{*path}');
+    expect(performance.now() - start).toBeLessThan(250);
+  });
+
+  it('builds the Front Door patterns from the base path as core normalizes it, matching the function route', () => {
+    expect(frontDoorPatterns('/_sid')).toEqual(['/_sid', '/_sid/*']);
+    expect(frontDoorPatterns('/identity/')).toEqual(['/identity', '/identity/*']);
+    expect(frontDoorPatterns('/identity')).toEqual(['/identity', '/identity/*']);
+    // The root path: only core's routes, so the rest of the site stays on its origin.
+    expect(frontDoorPatterns('/')).toEqual(['/sync', '/sync/', '/v1', '/v1/', '/optout', '/optout/', '/optin', '/optin/']);
+    for (const basePath of ['/_sid', '/identity/', '/identity']) {
+      // The function's route is the first pattern without its leading slash, plus the catch-all.
+      expect(routeFromEnv({ SID_BASE_PATH: basePath })).toBe(`${frontDoorPatterns(basePath)[0]?.slice(1) ?? ''}/{*path}`);
+    }
+    for (const bad of ['identity', '/identity//', '/a b']) expect(() => frontDoorPatterns(bad)).toThrow(/SID_BASE_PATH/);
+  });
+
   it.each([['/identity', '/identity/sync'], ['/', '/sync']])('answers under SID_BASE_PATH=%s', async (basePath, path) => {
     const handler = handlerFromEnv({ SID_BASE_PATH: basePath });
     expect((await handler(frontDoorRequest({ path, query: `id=pubcid%3A${UUID}` }))).cookies[0]).toMatchObject({ name: '_pubcid', value: UUID });
@@ -305,6 +329,97 @@ describe('infrastructure', () => {
     const passed = new Set(Array.from(bicep.matchAll(/name: '(SID_[A-Z_]+)'/g), m => m[1]));
     expect(settings.size).toBeGreaterThan(10);
     expect([...passed].sort()).toEqual([...settings].sort());
+  });
+
+  it('lists every SID_* setting core reads, and the adapter\'s own, in local.settings.example.json', () => {
+    const coreDir = dirname(createRequire(import.meta.url).resolve('@sharedid-edge/core/package.json'));
+    const core = readFileSync(join(coreDir, 'dist/config.js'), 'utf8');
+    const settings = new Set(Array.from(core.matchAll(/'(SID_[A-Z_]+)'/g), m => m[1]));
+    for (const own of ['SID_FRONT_DOOR_ID', 'SID_LOCATION_HEADERS', 'SID_PUBLIC_ORIGIN', 'SID_BEHIND_FRONT_DOOR']) settings.add(own);
+    const example = JSON.parse(readFileSync(join(root, 'local.settings.example.json'), 'utf8')) as { Values: Record<string, string> };
+    expect(Object.keys(example.Values).filter(name => name.startsWith('SID_')).sort()).toEqual([...settings].sort());
+    // Locally there's no Front Door: its headers aren't trusted, and http cookies aren't Secure.
+    expect(example.Values).toMatchObject({ SID_BEHIND_FRONT_DOOR: 'false', SID_PUBLIC_ORIGIN: 'http://localhost:7071' });
+    // Every value is empty (the default) or valid: the example must not give a misconfigured handler.
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    handlerFromEnv(example.Values);
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  describe('base path (infra/basepath.bicep)', () => {
+    const basepath = readFileSync(join(root, 'infra/basepath.bicep'), 'utf8');
+    const frontdoor = readFileSync(join(root, 'infra/frontdoor.bicep'), 'utf8');
+
+    /**
+     * Evaluates one of basepath.bicep's one-line functions in JavaScript. The Bicep expressions use only functions
+     * with JavaScript equivalents below, and lambdas, operators and ternaries with the same syntax; string
+     * interpolation ('${p}/') becomes a template literal. int() of a non-number fails, as it does in ARM.
+     */
+    function bicepFunction(name: string): (argument: unknown) => unknown {
+      const match = new RegExp(`^func ${name}\\((\\w+) \\w+\\) \\w+ => (.+)$`, 'm').exec(basepath.replace(/\r\n/g, '\n'));
+      if (match?.[1] === undefined || match[2] === undefined) throw new Error(`no one-line func ${name} in basepath.bicep`);
+      const parameter = match[1];
+      const body = match[2].replace(/'([^']*\$\{[^']*)'/g, '`$1`');
+      return argument => runInNewContext(body, {
+        [parameter]: argument,
+        startsWith: (s: string, prefix: string) => s.startsWith(prefix),
+        endsWith: (s: string, suffix: string) => s.endsWith(suffix),
+        contains: (s: string, part: string) => s.includes(part),
+        length: (s: string) => s.length,
+        substring: (s: string, start: number, count: number) => s.substring(start, start + count),
+        empty: (array: readonly unknown[]) => array.length === 0,
+        range: (start: number, count: number) => Array.from({ length: count }, (_, i) => start + i),
+        filter: (array: readonly unknown[], test: (item: unknown) => boolean) => array.filter(test),
+        map: (array: readonly unknown[], fn: (item: unknown) => unknown) => array.map(fn),
+        flatten: (array: readonly (readonly unknown[])[]) => array.flat(),
+        string: (value: unknown) => String(value),
+        int: (value: string) => {
+          if (!/^-?\d{1,18}$/.test(value)) throw new Error(value);
+          return Number(value);
+        }
+      }) as unknown;
+    }
+    const normalizeBasePath = bicepFunction('normalizeBasePath');
+    const patternsFor = bicepFunction('frontDoorPatterns');
+
+    it.each(['/_sid', '/identity/', '/identity', '/', '/a/b.c_d~e-f'])('renders the same Front Door patterns as frontDoorPatterns for %s', basePath => {
+      const normalized = normalizeBasePath(basePath);
+      expect(normalized).toBe(resolveConfig({ SID_BASE_PATH: basePath }).basePath);
+      expect(patternsFor(normalized)).toEqual(frontDoorPatterns(basePath));
+    });
+
+    it('fails the deployment for every base path core rejects', () => {
+      for (const bad of ['identity', '/identity//', '//', '/a b', '/a?b', '/%5Fsid', '/é']) {
+        expect(() => resolveConfig({ SID_BASE_PATH: bad })).toThrow(/SID_BASE_PATH/);
+        expect(() => normalizeBasePath(bad)).toThrow(/^Invalid sidBasePath/);
+      }
+      // Every printable ASCII character: allowed in the template exactly when core allows it.
+      const accepts = (check: (path: string) => unknown): string[] => {
+        const accepted: string[] = [];
+        for (let code = 0x21; code < 0x7f; code++) {
+          const char = String.fromCharCode(code);
+          try {
+            check(`/a${char}b`);
+            accepted.push(char);
+          } catch {
+            // rejected
+          }
+        }
+        return accepted;
+      };
+      expect(accepts(normalizeBasePath)).toEqual(accepts(path => resolveConfig({ SID_BASE_PATH: path })));
+    });
+
+    it('builds the route from the normalized path, and gives the function app the same value', () => {
+      expect(frontdoor).toContain('var normalizedBasePath = normalizeBasePath(basePath)');
+      expect(frontdoor).toContain('var patterns = frontDoorPatterns(normalizedBasePath)');
+      expect(frontdoor).toMatch(/patternsToMatch: patterns$/m);
+      expect(bicep).toContain('var basePath = normalizeBasePath(sidBasePath)');
+      expect(bicep).toContain("{ name: 'SID_BASE_PATH', value: basePath }");
+      expect(bicep).toMatch(/^ {4}basePath: basePath$/m);
+      // The root path's routes are core's.
+      expect(basepath).toContain(`[${Object.values(ROUTES).map(route => `'${route}'`).join(', ')}]`);
+    });
   });
 
   it('keeps the module secrets parameter secure, and the route uncached and locked to Front Door', () => {

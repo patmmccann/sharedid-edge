@@ -1,4 +1,4 @@
-import { ConfigError, DEFAULT_CONFIG, resolveConfig, type EdgeModule } from '@sharedid-edge/core';
+import { ConfigError, DEFAULT_CONFIG, resolveConfig, ROUTES, type EdgeModule } from '@sharedid-edge/core';
 import { builtInModules } from '@sharedid-edge/modules';
 import { createAzureHandler, internalError, type AzureHandler } from './handler.js';
 import { LOCATION_FIELDS, type LocationField, type LocationHeaders } from './platform.js';
@@ -87,6 +87,18 @@ export function routeFor(basePath: string): string {
   while (end > start && basePath[end - 1] === '/') end--;
   const trimmed = basePath.slice(start, end);
   return trimmed === '' ? '{*path}' : `${trimmed}/{*path}`;
+}
+
+/**
+ * The Front Door route patterns for `SID_BASE_PATH`, as `infra/basepath.bicep` builds them: the base path as core
+ * normalizes it (`/identity/` is `/identity`) and everything under it, or for the root path `/` only core's own routes
+ * (`/sync`, `/v1`, `/optout`, `/optin`, each with and without a trailing slash), so the rest of the site stays on its
+ * origin. For your own infrastructure templates. Throws a `ConfigError` for a base path core rejects.
+ */
+export function frontDoorPatterns(basePath: string): readonly string[] {
+  const normalized = resolveConfig({ SID_BASE_PATH: basePath }).basePath;
+  if (normalized === '/') return Object.values(ROUTES).flatMap(route => [route, `${route}/`]);
+  return [normalized, `${normalized}/*`];
 }
 
 /** The route template for `SID_BASE_PATH`; the default's when it's invalid (the handler then answers with a 500). */

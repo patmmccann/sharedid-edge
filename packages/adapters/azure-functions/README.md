@@ -1,6 +1,6 @@
 # @sharedid-edge/azure-functions
 
-[SharedID Edge](../../../README.md) on Azure: an Azure Functions app (Node.js v4 programming model) behind a `/_sid/*` route of **the Azure Front Door profile that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server and the Lambda function, with built-in modules `ip`, `ec`, `geo` and `reflect`. It passes the same conformance suite, except for one documented limitation of Azure Functions: [cookie values](#cookie-values).
+[SharedID Edge](../../../README.md) on Azure: an Azure Functions app (Node.js v4 programming model) behind a `/_sid/*` route of **the Azure Front Door profile that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server, the Lambda function and the Vercel adapter, with built-in modules `ip`, `ec`, `geo` and `reflect`. It passes the same conformance suite, except for one documented limitation of Azure Functions: [cookie values](#cookie-values).
 
 The main README has a [quick start](../../../README.md#deploy-on-azure-functions-and-front-door). This is the full guide.
 
@@ -12,6 +12,7 @@ The main README has a [quick start](../../../README.md#deploy-on-azure-functions
 - [Build](#build)
 - [Deploy the infrastructure](#deploy-the-infrastructure)
 - [Publish the code](#publish-the-code)
+- [Run it locally](#run-it-locally)
 - [Origin lock: only your Front Door](#origin-lock-only-your-front-door)
 - [Configuration](#configuration)
 - [Secrets](#secrets)
@@ -56,7 +57,7 @@ Function app (Flex Consumption, Node.js 24)
 
 ## Hosting plan and Node.js version
 
-The template uses the **Flex Consumption** plan with **Node.js 24**: it scales to zero, supports Node.js 24 and inbound access restrictions, and can keep instances always ready. Azure Functions supports Node.js 24 for the v4 programming model. The **Linux Consumption** plan stops at Node.js 22, so it can't run this adapter (it requires Node.js 24); use Flex Consumption, Premium or a Dedicated (App Service) plan. If your region doesn't offer Node.js 24 on Flex Consumption yet, deployment fails with a runtime error. The template's `nodeVersion` parameter is there for when a later version is available, not to go below 24.
+The template uses the **Flex Consumption** plan with **Node.js 24**: it scales to zero, supports Node.js 24 and inbound access restrictions, and can keep instances always ready. Node.js 24 is generally available on Azure Functions (Microsoft lists its end of support as April 30, 2028; see [supported languages](https://learn.microsoft.com/azure/azure-functions/supported-languages)). The **Linux Consumption** plan stops at Node.js 22, so it can't run this adapter (it requires Node.js 24); use Flex Consumption, Premium or a Dedicated (App Service) plan. If your region doesn't offer Node.js 24 on Flex Consumption yet, deployment fails with a runtime error. The template's `nodeVersion` parameter is there for when a later version is available, not to go below 24.
 
 **Cold starts.** A cold start delays the sync pixel, not the page, and Prebid.js reads the cookie when the pixel loads. If cold starts matter, configure always-ready instances on the Flex Consumption plan (`alwaysReady` in `functionAppConfig.scaleAndConcurrency`), which costs a baseline, or use a Premium plan.
 
@@ -95,6 +96,16 @@ and, on your existing Front Door profile (possibly in another resource group, th
 - a rule set that sets `x-sid-country` to Front Door's `{geo_country}` (`addCountryHeader`, on by default);
 - a route for `/_sid` and `/_sid/*` (from `sidBasePath`) on your custom domains, HTTPS only, with caching off.
 
+The template checks `sidBasePath` and normalizes it as SharedID Edge does ([`infra/basepath.bicep`](infra/basepath.bicep)), so the function's route and the Front Door route always agree:
+
+| `sidBasePath` | `SID_BASE_PATH` on the function app | Function route | Front Door patterns |
+| --- | --- | --- | --- |
+| `/_sid` (the default) | `/_sid` | `_sid/{*path}` | `/_sid`, `/_sid/*` |
+| `/identity` or `/identity/` | `/identity` | `identity/{*path}` | `/identity`, `/identity/*` |
+| `/` | `/` | `{*path}` | `/sync`, `/sync/`, `/v1`, `/v1/`, `/optout`, `/optout/`, `/optin`, `/optin/` |
+
+With `/`, the route takes only SharedID Edge's own four paths, not the whole site: Front Door matches the most specific pattern, so the rest of the site stays on your existing `/*` route. Anything else (no leading `/`, `//`, or characters other than letters, digits, `.`, `_`, `~`, `-` and `/`) fails the deployment with `Invalid sidBasePath`, before the function app is created or changed.
+
 ```sh
 az deployment group create \
   --resource-group sharedid-edge \
@@ -109,7 +120,7 @@ az deployment group create \
 | `frontDoorProfileName`, `frontDoorResourceGroup`, `frontDoorEndpointName` | Your existing profile and endpoint. |
 | `customDomainNames` | The names of the profile's custom domain resources that serve your pages (Front Door → Domains). Empty: only the endpoint's `*.azurefd.net` domain, for trying it out; cookies set there don't belong to your site. |
 | `appName` | The function app's name; defaults to a unique one. |
-| `sidBasePath` | `SID_BASE_PATH`; the Front Door route and the function's route follow it. `/` serves `/sync`, `/v1`, `/optout` and `/optin` at the root. |
+| `sidBasePath` | `SID_BASE_PATH`; the Front Door route and the function's route follow it, normalized as in the table above. `/` serves `/sync`, `/v1`, `/optout` and `/optin` at the root. |
 | `sid*` | The other [settings](#configuration), empty for the default. `sidModuleSecrets` is a secure parameter; see [Secrets](#secrets). |
 | `addCountryHeader` | `true`: the country rule set (see [Platform information](#platform-information)). |
 | `nodeVersion`, `maximumInstanceCount` | The Flex Consumption runtime version (`24`) and scale limit. |
@@ -131,6 +142,19 @@ az functionapp deployment source config-zip --resource-group sharedid-edge --nam
 ```
 
 The function registers itself as `sharedid-edge`, with the route `_sid/{*path}` (from `SID_BASE_PATH`) and anonymous access.
+
+## Run it locally
+
+To try the function app on your machine with [Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local), after [building](#build) `deploy/`:
+
+```sh
+cd packages/adapters/azure-functions
+cp local.settings.example.json deploy/local.settings.json
+cd deploy && func start
+curl -sI 'http://localhost:7071/_sid/sync?id=pubcid:test-id'
+```
+
+[`local.settings.example.json`](local.settings.example.json) lists every setting, empty for the default, with `SID_BEHIND_FRONT_DOOR=false` (no Front Door headers to trust locally) and `SID_PUBLIC_ORIGIN=http://localhost:7071` (so cookies aren't `Secure` over http). Core Tools doesn't publish `local.settings.json`. This is for trying it out only: without Front Door the endpoint isn't on your site's IP addresses.
 
 ## Origin lock: only your Front Door
 
@@ -208,7 +232,7 @@ Core's `locationInfo` validates every value the same way as on the other platfor
 
 The Functions host writes `cookies[]` with ASP.NET Core's `Response.Cookies.Append`, which **percent-encodes cookie values**: anything other than letters, digits, `-`, `.`, `_` and `~` is changed (`a+b/c=` becomes `a%2Bb%2Fc%3D`). Every `Set-Cookie` has to go through `cookies[]`, because the host keeps one value per response header, so two `Set-Cookie` headers would lose one.
 
-SharedID Edge's own cookies (`_pubcid`, `_pubcid_sv`, `_pubcid_optout`, the `ec` module's `ts-ec` and the `reflect` keeper) only use characters the host leaves alone. The **`reflect` module** re-sets other first-party cookies byte for byte, and their values may contain other characters (a `+`, `/`, `=` or `%`). The host would change such a value and break the cookie for whatever reads it. So the adapter **leaves such a cookie out** and logs its name (not its value). The cookie stays as it was in the browser, not refreshed. Cookies with plain values, like `_ga`'s `GA1.1.1234567890.1700000000`, are reflected as usual. This is the one place the adapter differs from the other platforms: the two conformance cases that reflect such a value are reported as known platform limitations.
+SharedID Edge's own cookies (`_pubcid`, `_pubcid_sv`, `_pubcid_optout`, the `ec` module's `ts-ec` and the `reflect` keeper) only use characters the host leaves alone. The **`reflect` module** re-sets other first-party cookies byte for byte, and their values may contain other characters (a `+`, `/`, `=` or `%`). The host would change such a value and break the cookie for whatever reads it. So the adapter **leaves such a cookie out** and logs its name (not its value). The cookie stays as it was in the browser, not refreshed. Cookies with plain values, like `_ga`'s `GA1.1.1234567890.1700000000`, are reflected as usual. This is the one place the adapter differs from the other platforms: the three conformance cases that reflect such a value are reported as known platform limitations.
 
 ## Logging
 
@@ -234,15 +258,15 @@ app.http('sharedid-edge', {
 
 - `createAzureHandler(options)`: the handler; options are core's `HandlerOptions` plus `publicOrigin`, `behindFrontDoor`, `frontDoorIds` and `locationHeaders`.
 - `handlerFromEnv(env, modules?)` and `routeFromEnv(env)`: what the bundled entry point (`src/functions.ts`) uses.
-- `routeFor(basePath)`, `platformInfo(headers, options?)`, `clientIp(headers)`, `parseSetCookie(header)`, `preservedByHost(value)`, `parseLocationHeaders(json)`, `parseFrontDoorIds(list)`, `EU_COUNTRY_CODES`.
+- `routeFor(basePath)` and `frontDoorPatterns(basePath)`: the function's route template and the Front Door route patterns for a base path, as the templates build them (for your own infrastructure code); `platformInfo(headers, options?)`, `clientIp(headers)`, `parseSetCookie(header)`, `preservedByHost(value)`, `parseLocationHeaders(json)`, `parseFrontDoorIds(list)`, `EU_COUNTRY_CODES`.
 - `AzureHttpRequest`, `AzureHttpResponseInit`, `AzureCookie`: minimal structural types; `@azure/functions`' `HttpRequest` is assignable, and the package doesn't depend on it at run time (it's an optional peer dependency for `src/functions.ts`).
 
 ## Testing without an Azure account
 
 Nothing here needs an account:
 
-- `npm test -w @sharedid-edge/azure-functions`: unit tests with requests built by `@azure/functions`' own `HttpRequest` (in its test mode), shaped as Front Door delivers them (`test/requests.ts`), and checks on the Bicep template (every `SID_*` setting passed, the secure parameter, the access restriction).
-- `npm run conformance:azure`: bundles the function app, then runs the whole conformance suite against `deploy/sharedid-edge.mjs` behind a local stand-in for Front Door and the Functions host (`conformance/src/azure-emulator.ts`). It imports the bundle (where `@azure/functions` runs in test mode, so the bundle's registration is skipped) and calls the exported handler with `HttpRequest`s. It drops any `X-Azure-*` and location headers the client sent, sets `X-Azure-ClientIP` from the connection (or, as the cases need, from `X-Forwarded-For` when the case sets `SID_TRUST_PROXY`), `X-Azure-FDID` to the ID the handler is configured with, and the cases' Cloudflare-style location headers as rule-set headers named in `SID_LOCATION_HEADERS`. It sends only paths the function's route template matches (others get the host's 404), and writes `cookies[]` the way the host does, percent-encoding values. 114 of the 116 cases pass. The other two re-set a cookie value with `%`, `+`, `/` and `=`, which the adapter leaves out ([Cookie values](#cookie-values)); the runner reports them as known platform limitations.
+- `npm test -w @sharedid-edge/azure-functions`: unit tests with requests built by `@azure/functions`' own `HttpRequest` (in its test mode), shaped as Front Door delivers them (`test/requests.ts`), and checks on the Bicep templates and `local.settings.example.json` (every `SID_*` setting passed, the base path normalized as core does with the Front Door patterns built from it, the secure parameter, the access restriction).
+- `npm run conformance:azure`: bundles the function app, then runs the whole conformance suite against `deploy/sharedid-edge.mjs` behind a local stand-in for Front Door and the Functions host (`conformance/src/azure-emulator.ts`). It imports the bundle (where `@azure/functions` runs in test mode, so the bundle's registration is skipped) and calls the exported handler with `HttpRequest`s. It drops any `X-Azure-*` and location headers the client sent, sets `X-Azure-ClientIP` from the connection (or, as the cases need, from `X-Forwarded-For` when the case sets `SID_TRUST_PROXY`), `X-Azure-FDID` to the ID the handler is configured with, and the cases' Cloudflare-style location headers as rule-set headers named in `SID_LOCATION_HEADERS`. It sends only paths the function's route template matches (others get the host's 404), and writes `cookies[]` the way the host does, percent-encoding values. 122 of the 125 cases pass. The other three re-set a cookie value with `%`, `+`, `/` and `=`, which the adapter leaves out ([Cookie values](#cookie-values)); the runner reports them as known platform limitations.
 - CI builds the Bicep templates with `az bicep build`, which needs no login.
 - Against a real deployment: `node conformance/dist/run.js --base-url https://www.example.com` runs the default-configuration cases.
 

@@ -39,7 +39,10 @@ async function loadApp(): Promise<FunctionApp> {
 /** Whether the route template (`_sid/{*path}` or `{*path}`) matches the path, as ASP.NET Core routing does. */
 function routeMatches(route: string, pathname: string): boolean {
   const prefix = route.replace(/\/?\{\*path\}$/, '').toLowerCase();
-  const path = pathname.replace(/^\/+/, '').toLowerCase();
+  // Leading slashes off with a loop: the path is request data.
+  let start = 0;
+  while (start < pathname.length && pathname[start] === '/') start++;
+  const path = pathname.slice(start).toLowerCase();
   return prefix === '' || path === prefix || path.startsWith(`${prefix}/`);
 }
 
