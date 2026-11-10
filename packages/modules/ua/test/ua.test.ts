@@ -143,6 +143,12 @@ describe('uaSettings', () => {
     expect(uaSettings({})).toEqual({ ua: false });
     expect(uaSettings({ ua: true })).toEqual({ ua: true });
   });
+  it('reads the parser', () => {
+    expect(uaSettings({})).toEqual({ ua: false });
+    expect(uaSettings({ parser: 'bowser' })).toEqual({ ua: false, parser: 'bowser' });
+    expect(uaSettings({ parser: 'isbot', ua: true })).toEqual({ ua: true, parser: 'isbot' });
+    for (const parser of ['Bowser', 'ua-parser-js', true, '']) expect(() => uaSettings({ parser })).toThrow(TypeError);
+  });
   it('rejects unknown keys and wrong types', () => {
     for (const config of [{ ua: 'true' }, { ua: 1 }, { ua: null }, { acceptCh: true }, { UA: true }]) expect(() => uaSettings(config)).toThrow(TypeError);
   });
@@ -181,6 +187,9 @@ describe('bowserParser on real User-Agents', () => {
     ['samsungTizenTv', { browser: { name: 'Tizen' }, os: { name: 'Tizen', version: '6.5' }, type: 'tv', bot: false }],
     ['lgWebOsTv', { browser: { name: 'WebOS Browser' }, os: { name: 'WebOS' }, type: 'tv', bot: false }],
     ['rokuTv', { browser: { name: 'Roku', version: 'DVP-12.5' }, os: { name: 'Roku', version: '12.5' }, type: 'tv', bot: false }],
+    // Bowser reports a Fire TV as an Android phone and knows nothing of an Apple TV: both are set-top boxes.
+    ['fireTvStick', { browser: { name: 'Chrome', version: '119.0.6045.193' }, os: { name: 'Android', version: '9' }, type: 'set-top-box', vendor: 'Amazon', model: 'AFTKA', bot: false }],
+    ['appleTv', { browser: { name: 'AppleCoreMedia', version: '1.0.0.21J354' }, type: 'set-top-box', vendor: 'Apple', model: 'Apple TV', bot: false }],
     ['googlebot', { browser: { name: 'Googlebot', version: '2.1' }, bot: true }],
     ['bingbot', { browser: { name: 'BingCrawler', version: '2.0' }, bot: true }],
     ['slackbot', { browser: { name: 'SlackBot', version: '1.0' }, bot: true }],
@@ -209,6 +218,7 @@ describe('deviceType', () => {
     expect(deviceType({}, { ...none, type: 'mobile' })).toBe(4);
     expect(deviceType({}, { ...none, type: 'tablet' })).toBe(5);
     expect(deviceType({}, { ...none, type: 'tv' })).toBe(3);
+    expect(deviceType({}, { ...none, type: 'set-top-box' })).toBe(7);
     expect(deviceType({}, { ...none, type: 'desktop' })).toBe(2);
     expect(deviceType({}, none)).toBeUndefined();
   });
@@ -357,9 +367,23 @@ describe('the ua module in the handler', () => {
     expect(body.ortb2).toBeUndefined();
     expect(body.ext.modules['ua']?.status).toBe('empty');
   });
-  it('parses the User-Agent with uaModuleWithBowser', async () => {
-    const body = await payload({ SID_MODULES: 'ua' }, '/_sid/v1', { 'User-Agent': UA.safariIphone }, uaModuleWithBowser);
+  it('parses the User-Agent with Bowser when built in and the parser setting asks for it', async () => {
+    const bowser = { SID_MODULES: 'ua', SID_MODULE_CONFIG: '{"ua":{"parser":"bowser"}}' };
+    const body = await payload(bowser, '/_sid/v1', { 'User-Agent': UA.safariIphone }, uaModuleWithBowser);
     expect(body.ortb2).toMatchObject({ device: { devicetype: 4, os: 'iOS', osv: '18.1', make: 'Apple', model: 'iPhone', sua: { source: 3 } } });
+    expect(body.ext.modules['ua']?.status).toBe('ok');
+  });
+  it('keeps the built-in parser in a build with Bowser until the setting asks for it', async () => {
+    for (const config of ['{}', '{"ua":{"parser":"isbot"}}']) {
+      const body = await payload({ SID_MODULES: 'ua', SID_MODULE_CONFIG: config }, '/_sid/v1', { 'User-Agent': UA.safariIphone }, uaModuleWithBowser);
+      expect(body.ortb2, config).toBeUndefined();
+      expect(body.ext.modules['ua']?.status, config).toBe('empty');
+    }
+  });
+  it('reports an error when the setting asks for Bowser and the build doesn\'t have it', async () => {
+    const body = await payload({ SID_MODULES: 'ua', SID_MODULE_CONFIG: '{"ua":{"parser":"bowser"}}' }, '/_sid/v1', { 'User-Agent': UA.googlebot });
+    expect(body.ortb2).toBeUndefined();
+    expect(body.ext.modules['ua']?.status).toBe('error');
   });
   it('accepts any parser', async () => {
     const module = createUaModule({ parser: () => ({ bot: false, type: 'tv', os: { name: 'Roku' } }) });
@@ -412,5 +436,99 @@ describe('the ua module in the handler', () => {
       {}
     );
     expect(((await response.json()) as PayloadV1).ortb2).toEqual({ device: { ip: '192.0.2.77', ext: { traffic: { bot: true, botKind: 'declared', sources: ['ua'] } } } });
+  });
+});
+
+describe('the Bowser option (parser "bowser")', () => {
+  const env = { SID_MODULES: 'ua', SID_MODULE_CONFIG: '{"ua":{"parser":"bowser","ua":true}}' };
+  const device = async (headers: Record<string, string>, path = '/_sid/v1'): Promise<unknown> => {
+    const response = await createHandler({ config: resolveConfig(env), modules: [uaModuleWithBowser] })(new Request(`https://www.example.com${path}`, { headers }), {});
+    return ((await response.json()) as PayloadV1).ortb2?.['device'];
+  };
+  const browser = (brand: string, ...version: string[]): { brand: string; version: string[] } => ({ brand, version });
+
+  it.each<[UaName, Record<string, unknown>]>([
+    ['safariIphone', {
+      sua: { browsers: [browser('Safari', '18', '1')], platform: browser('iOS', '18', '1'), mobile: 1, source: 3 },
+      devicetype: 4, make: 'Apple', model: 'iPhone', os: 'iOS', osv: '18.1'
+    }],
+    ['safariIpad', {
+      sua: { browsers: [browser('Safari', '17', '6')], platform: browser('iOS', '17', '6'), mobile: 0, source: 3 },
+      devicetype: 5, make: 'Apple', model: 'iPad', os: 'iOS', osv: '17.6'
+    }],
+    ['firefoxAndroid', {
+      sua: { browsers: [browser('Firefox', '133', '0')], platform: browser('Android', '14'), mobile: 1, source: 3 },
+      devicetype: 4, os: 'Android', osv: '14'
+    }],
+    ['samsungTizenTv', {
+      sua: { browsers: [{ brand: 'Tizen' }], platform: browser('Tizen', '6', '5'), mobile: 0, source: 3 },
+      devicetype: 3, os: 'Tizen', osv: '6.5'
+    }],
+    ['fireTvStick', {
+      sua: { browsers: [browser('Chrome', '119', '0', '6045', '193')], platform: browser('Android', '9'), mobile: 0, source: 3 },
+      devicetype: 7, make: 'Amazon', model: 'AFTKA', os: 'Android', osv: '9'
+    }],
+    // macOS is frozen at 10.15.7 in the User-Agent, so there's no osv.
+    ['safariMac', {
+      sua: { browsers: [browser('Safari', '18', '1')], platform: { brand: 'macOS' }, mobile: 0, source: 3 },
+      devicetype: 2, make: 'Apple', os: 'macOS'
+    }],
+    // Chrome without hints (a request that didn't carry them): the reduced version is only the major one, and
+    // Windows NT 10.0 is either 10 or 11.
+    ['chromeWindows', {
+      sua: { browsers: [browser('Chrome', '131')], platform: { brand: 'Windows' }, mobile: 0, source: 3 },
+      devicetype: 2, os: 'Windows'
+    }],
+    ['chromeMac', {
+      sua: { browsers: [browser('Chrome', '131')], platform: { brand: 'macOS' }, mobile: 0, source: 3 },
+      devicetype: 2, make: 'Apple', os: 'macOS'
+    }]
+  ])('%s: every field Bowser can give', async (name, expected) => {
+    expect(await device({ 'User-Agent': UA[name] })).toEqual({ ua: UA[name], ...expected });
+  });
+
+  it('prefers Client Hints: sua, os and osv from the hints, make from the User-Agent', async () => {
+    expect(await device({ 'User-Agent': UA.chromeMac, 'Sec-CH-UA': '"Google Chrome";v="131", "Chromium";v="131"', 'Sec-CH-UA-Mobile': '?0', 'Sec-CH-UA-Platform': '"macOS"', 'Sec-CH-UA-Platform-Version': '"15.1.0"' })).toEqual({
+      ua: UA.chromeMac,
+      sua: { browsers: [browser('Google Chrome', '131'), browser('Chromium', '131')], platform: browser('macOS', '15', '1', '0'), mobile: 0, source: 2 },
+      devicetype: 2,
+      make: 'Apple',
+      os: 'macOS',
+      osv: '15.1.0'
+    });
+  });
+  it('prefers the model hint, and keeps a tablet the User-Agent reports under the mobile hint', async () => {
+    expect(await device({ 'User-Agent': UA.samsungTablet, 'Sec-CH-UA-Mobile': '?1', 'Sec-CH-UA-Platform': '"Android"', 'Sec-CH-UA-Model': '"SM-X710"' })).toMatchObject({
+      sua: { platform: { brand: 'Android' }, mobile: 1, model: 'SM-X710', source: 2 },
+      devicetype: 5,
+      model: 'SM-X710',
+      os: 'Android',
+      osv: '13'
+    });
+  });
+  it('sends only low-entropy fields when consent limits them: no model, osv, full versions or ua', async () => {
+    for (const [path, headers] of [['/_sid/v1', { 'Sec-GPC': '1' }], ['/_sid/v1?coppa=1', {}], ['/_sid/v1?us_privacy=1YYN', {}], ['/_sid/v1?gdpr=1', {}], ['/_sid/v1?gdpr_consent=invalid', {}]] as const) {
+      expect(await device({ 'User-Agent': UA.safariIpad, ...headers }, path), path).toEqual({
+        sua: { browsers: [browser('Safari', '17')], platform: { brand: 'iOS' }, mobile: 0, source: 3 },
+        devicetype: 5,
+        make: 'Apple',
+        os: 'iOS'
+      });
+    }
+    expect(await device({ 'User-Agent': UA.fireTvStick, 'Sec-GPC': '1' })).toEqual({
+      sua: { browsers: [browser('Chrome', '119')], platform: { brand: 'Android' }, mobile: 0, source: 3 },
+      devicetype: 7,
+      make: 'Amazon',
+      os: 'Android'
+    });
+  });
+  it('keeps the traffic signal for crawlers, whatever the consent', async () => {
+    expect(await device({ 'User-Agent': UA.googlebot, 'Sec-GPC': '1' })).toEqual({
+      sua: { browsers: [browser('Googlebot', '2')], source: 3 },
+      ext: { traffic: { bot: true, botKind: 'declared', sources: ['ua'] } }
+    });
+  });
+  it('gives each User-Agent in the corpus a device without throwing', async () => {
+    for (const [name, ua] of Object.entries(UA)) expect(await device({ 'User-Agent': ua }), name).toBeDefined();
   });
 });

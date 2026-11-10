@@ -16,6 +16,7 @@ export {
   type SuaBrandVersion,
   type TrafficSignal,
   type UaDevice,
+  type UaParserName,
   type UaSettings
 } from './module.js';
 export { botParser, MAX_UA_LENGTH, type ParsedUserAgent, type UserAgentParser } from './parse.js';

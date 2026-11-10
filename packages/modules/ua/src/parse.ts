@@ -4,8 +4,8 @@ import { isbot } from 'isbot';
 export interface ParsedUserAgent {
   readonly browser?: { readonly name: string; readonly version?: string };
   readonly os?: { readonly name: string; readonly version?: string };
-  /** The device class. */
-  readonly type?: 'mobile' | 'tablet' | 'desktop' | 'tv';
+  /** The device class. A set-top box (Apple TV, Fire TV) plugs into a TV; `tv` is a smart TV, or a device Bowser can't tell apart from one. */
+  readonly type?: 'mobile' | 'tablet' | 'desktop' | 'tv' | 'set-top-box';
   readonly vendor?: string;
   readonly model?: string;
   /** The client identifies itself as a crawler, bot or other automated client. */

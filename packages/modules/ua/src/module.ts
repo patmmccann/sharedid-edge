@@ -23,9 +23,9 @@ export interface StructuredUserAgent {
 
 /**
  * OpenRTB 2.6 `device.devicetype` (AdCOM device types) this module sends: 2 personal computer, 3 connected TV,
- * 4 phone, 5 tablet.
+ * 4 phone, 5 tablet, 7 set-top box.
  */
-export type DeviceType = 2 | 3 | 4 | 5;
+export type DeviceType = 2 | 3 | 4 | 5 | 7;
 
 /**
  * The shared traffic signal, `device.ext.traffic` (sharedid-edge#5). This module reports only self-identified
@@ -49,10 +49,15 @@ export interface UaDevice {
   readonly ext?: { readonly traffic: TrafficSignal };
 }
 
+/** The `parser` setting: `isbot` only checks the User-Agent for bots; `bowser` parses it fully. */
+export type UaParserName = 'isbot' | 'bowser';
+
 /** The module's settings, from `SID_MODULE_CONFIG.ua`. */
 export interface UaSettings {
   /** Also send the raw User-Agent as `device.ua`. Off by default: Prebid.js sends it already. */
   readonly ua: boolean;
+  /** How to parse the User-Agent; undefined uses the module's own parser (`isbot` for the built-in module). */
+  readonly parser?: UaParserName;
 }
 
 /**
@@ -61,11 +66,13 @@ export interface UaSettings {
  */
 export function uaSettings(config: Readonly<Record<string, unknown>>): UaSettings {
   for (const key of Object.keys(config)) {
-    if (key !== 'ua') throw new TypeError(`ua: unknown setting "${key}"`);
+    if (key !== 'ua' && key !== 'parser') throw new TypeError(`ua: unknown setting "${key}"`);
   }
   const ua = config['ua'];
   if (ua !== undefined && typeof ua !== 'boolean') throw new TypeError('ua: "ua" must be true or false');
-  return { ua: ua ?? false };
+  const parser = config['parser'];
+  if (parser !== undefined && parser !== 'isbot' && parser !== 'bowser') throw new TypeError('ua: "parser" must be "isbot" or "bowser"');
+  return { ua: ua ?? false, ...(parser === undefined ? {} : { parser }) };
 }
 
 /** Why only low-entropy fields are sent; see `highEntropyDenial`. */
@@ -117,7 +124,8 @@ const DESKTOP_PLATFORMS: ReadonlySet<string> = new Set(['windows', 'macos', 'lin
 
 /**
  * The OpenRTB device type. The `Sec-CH-UA-Mobile` hint comes first (a phone, or a tablet when the User-Agent says
- * so); then the parsed User-Agent; then a desktop OS means a personal computer.
+ * so); then the parsed User-Agent's device class (phone 4, tablet 5, smart TV 3, set-top box 7, desktop 2); then a
+ * desktop OS means a personal computer.
  */
 export function deviceType(hints: ClientHints, parsed: ParsedUserAgent): DeviceType | undefined {
   if (hints.mobile === true) return parsed.type === 'tablet' ? 5 : 4;
@@ -126,6 +134,7 @@ export function deviceType(hints: ClientHints, parsed: ParsedUserAgent): DeviceT
     case 'mobile': return 4;
     case 'tablet': return 5;
     case 'tv': return 3;
+    case 'set-top-box': return 7;
     case 'desktop': return 2;
     case undefined: break;
   }
@@ -238,11 +247,21 @@ function visitorUserAgent(headers: Headers): string | undefined {
  * Builds the `ua` module: the request's User-Agent Client Hints and User-Agent as the `/v1` payload's OpenRTB 2.6
  * `ortb2.device` (`sua`, `devicetype`, `os`, `osv`, `make`, `model`, and `ua` when enabled), plus the shared traffic
  * signal `device.ext.traffic` for self-identified crawlers. High-entropy fields are left out under
- * `highEntropyDenial`; the traffic signal is always sent. `parser` reads the User-Agent: `botParser` (the default)
- * only detects bots; `bowserParser` from `@sharedid-edge/module-ua/bowser` also reads the browser, OS and device.
+ * `highEntropyDenial`; the traffic signal is always sent.
+ *
+ * `parser` reads the User-Agent unless the `parser` setting picks another: `botParser` (the default, setting
+ * `"isbot"`) only detects bots. `bowser` is the parser for the setting `"bowser"`: pass `bowserParser` from
+ * `@sharedid-edge/module-ua/bowser` (as `uaModuleWithBowser` does) to make it available. Without it, that setting
+ * makes the module an `error`, so a deployment that asks for Bowser without building it in notices.
  */
-export function createUaModule(options: { readonly parser?: UserAgentParser } = {}): EdgeModule {
-  const parser = options.parser ?? botParser;
+export function createUaModule(options: { readonly parser?: UserAgentParser; readonly bowser?: UserAgentParser } = {}): EdgeModule {
+  const { parser = botParser, bowser } = options;
+  const parserFor = (name: UaParserName | undefined): UserAgentParser => {
+    if (name === undefined) return parser;
+    if (name === 'isbot') return botParser;
+    if (bowser === undefined) throw new Error('ua: "parser": "bowser" needs a build with Bowser');
+    return bowser;
+  };
   return defineModule({
     name: 'ua',
     run({ request, consent, config }: ModuleContext): ModuleResult | undefined {
@@ -250,7 +269,7 @@ export function createUaModule(options: { readonly parser?: UserAgentParser } = 
       const device = uaDevice(readClientHints(request.headers), visitorUserAgent(request.headers), {
         highEntropy: highEntropyDenial(consent) === undefined,
         includeUa: settings.ua,
-        parser
+        parser: parserFor(settings.parser)
       });
       return device === undefined ? undefined : { ortb2: { device } };
     }
