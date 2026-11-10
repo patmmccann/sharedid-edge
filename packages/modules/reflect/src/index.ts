@@ -203,8 +203,16 @@ export function rawCookieValue(header: string | null, name: string): string | un
   return undefined;
 }
 
+/**
+ * `text` without leading or trailing HTTP whitespace (space and tab). A loop rather than `/^[ \t]+|[ \t]+$/`, which
+ * backtracks polynomially on a long run of whitespace in a hostile Cookie header.
+ */
 function trimHttpWhitespace(text: string): string {
-  return text.replace(/^[ \t]+|[ \t]+$/g, '');
+  let start = 0;
+  let end = text.length;
+  while (start < end && (text.charCodeAt(start) === 0x20 || text.charCodeAt(start) === 0x09)) start++;
+  while (end > start && (text.charCodeAt(end - 1) === 0x20 || text.charCodeAt(end - 1) === 0x09)) end--;
+  return text.slice(start, end);
 }
 
 /** Whether a value can be set again unchanged: non-empty, at most 1024 characters, and only cookie-octets. */
@@ -332,6 +340,8 @@ function run({ request, storage, config }: ModuleContext): ModuleResult | undefi
  */
 export const reflectModule: EdgeModule = defineModule({
   name: 'reflect',
+  // Also on /sync, so Prebid.js's pixelUrl call refreshes and restores cookies on page views without a /v1 call.
+  routes: ['v1', 'sync'],
   run,
   // Only cookies the publisher marked: by default, opting out of the SharedID leaves other parties' cookies alone. The
   // keeper is this worker's own, so it's always deleted (core deletes only cookies the browser sent).

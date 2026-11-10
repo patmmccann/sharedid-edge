@@ -93,6 +93,7 @@ describe('resolveConfig', () => {
       SID_ALLOWED_ORIGINS: 'https://example.com, https://www.example.com',
       SID_SYNC_CACHE_SECONDS: '0',
       SID_MODULES: 'ip, geo',
+      SID_SYNC_MODULES: 'geo',
       SID_MODULE_CONFIG: '{"ip":{"field":"ipv6"}}',
       SID_MODULE_SECRETS: '{"ec":{"passphrase":"p"}}',
       SID_MODULE_TIMEOUT_MS: '20'
@@ -109,10 +110,24 @@ describe('resolveConfig', () => {
       allowedOrigins: ['https://example.com', 'https://www.example.com'],
       syncCacheSeconds: 0,
       modules: ['ip', 'geo'],
+      syncModules: ['geo'],
       moduleConfig: { ip: { field: 'ipv6' } },
       moduleSecrets: { ec: { passphrase: 'p' } },
       moduleTimeoutMs: 20
     } satisfies SharedIdEdgeConfig);
+  });
+  it('reads SID_SYNC_MODULES: omitted by default, none for an empty list, names from SID_MODULES', () => {
+    expect(resolveConfig({ SID_MODULES: 'reflect' })).not.toHaveProperty('syncModules');
+    expect(resolveConfig({ SID_MODULES: 'reflect', SID_SYNC_MODULES: '' })).not.toHaveProperty('syncModules');
+    expect(resolveConfig({ SID_MODULES: 'reflect', SID_SYNC_MODULES: 'none' }).syncModules).toEqual([]);
+    expect(resolveConfig({ SID_MODULES: 'ec, reflect', SID_SYNC_MODULES: 'reflect,ec' }).syncModules).toEqual(['reflect', 'ec']);
+  });
+  it.each([
+    ['a name not in SID_MODULES', 'reflect', 'reflect,ec'],
+    ['a name with SID_MODULES unset', '', 'reflect'],
+    ['none with other names', 'reflect', 'none,reflect']
+  ])('rejects SID_SYNC_MODULES with %s', (_, modules, sync) => {
+    expect(() => resolveConfig({ SID_MODULES: modules, SID_SYNC_MODULES: sync })).toThrow(ConfigError);
   });
   it('never echoes SID_MODULE_SECRETS in errors', () => {
     expect(() => resolveConfig({ SID_MODULE_SECRETS: 'hunter2-not-json' })).toThrow(/^(?!.*hunter2)/);

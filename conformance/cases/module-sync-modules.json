@@ -1,0 +1,42 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "SID_SYNC_MODULES chooses the modules that run on /sync, from SID_MODULES. Here SID_MODULES=ip,reflect,geo and SID_SYNC_MODULES=geo,reflect: reflect runs on /sync (uid1 configured with domain example.com, 365 days); geo is listed but runs on /v1 only, so it is reported skipped.",
+  "config": {
+    "SID_MODULES": "ip,reflect,geo",
+    "SID_SYNC_MODULES": "geo,reflect",
+    "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,\"domain\":\"example.com\"}]}}"
+  },
+  "cases": [
+    {
+      "name": "runs reflect on /sync and reports geo, which runs on /v1 only, as skipped, in SID_MODULES order",
+      "request": {
+        "path": "/_sid/sync",
+        "headers": {
+          "cookie": "uid1=abc"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "content-type": "image/gif",
+          "x-sharedid-modules": "reflect=empty, geo=skipped"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid"
+          },
+          {
+            "name": "_pubcid_sv"
+          },
+          {
+            "name": "uid1",
+            "value": "abc",
+            "maxAge": 31536000,
+            "domain": ".example.com"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    }
+  ]
+}

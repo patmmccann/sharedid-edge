@@ -2,6 +2,8 @@
 
 The `geo` module for [SharedID Edge](../../../README.md): the visitor's location, as your CDN sees it, in the `/_sid/v1` payload as OpenRTB 2.6 `ortb2.device.geo`.
 
+It runs on `/_sid/v1` only: `/_sid/sync` returns an image, so there's nowhere to put the location.
+
 Cloudflare geolocates every request, on every plan. With this module the page can give bidders that location without a geolocation script or a call to a geo service: merge the payload's `ortb2` into Prebid.js and the auction gets `device.geo`. Coarse fields (country, region, metro, UTC offset) are always sent; precise ones (city, postal code, coordinates) only when consent allows, and never rounded.
 
 ## Contents
@@ -141,6 +143,10 @@ Anything else in `geo`'s settings, including a misspelt key (`{"geo":{"precison"
 ## On AWS Lambda behind CloudFront
 
 The Lambda adapter reads CloudFront’s geolocation headers (`CloudFront-Viewer-Country`, `-Country-Region`, `-City`, `-Postal-Code`, `-Metro-Code`, `-Latitude`, `-Longitude`, `-Time-Zone`). The SAM template’s origin request policy forwards them. CloudFront has no continent header. See [`packages/adapters/aws-lambda/README.md`](../../adapters/aws-lambda/README.md#platform-information).
+
+## On Vercel
+
+The Vercel adapter reads Vercel's geolocation headers (`x-vercel-ip-country`, `-country-region`, `-city`, `-postal-code`, `-latitude`, `-longitude`, `-timezone`, `-continent`), which Vercel's proxy sets on every request. Vercel has no metro code, so `metro` is never sent there. See [`packages/adapters/vercel/README.md`](../../adapters/vercel/README.md#platform-information).
 
 ## On Azure Functions behind Front Door
 

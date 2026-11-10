@@ -21,9 +21,19 @@ function parseSetCookie(header: string): SetCookie {
 /** Rewrites a case's request headers for a target; see `RunningTarget.requestHeaders`. */
 export type HeaderAdapter = (headers: Readonly<Record<string, string>>) => Record<string, string>;
 
-/** Sends a case's request to `baseUrl` and returns the failures (empty when it passes). */
-export async function runCase(baseUrl: string, testCase: Case, adaptHeaders: HeaderAdapter = headers => ({ ...headers })): Promise<string[]> {
-  const { request, expect } = testCase;
+/**
+ * Sends a case's request to `baseUrl` and returns the failures (empty when it passes). `unavailable` lists payload
+ * paths (`ortb2.device.geo.metro`) the target's platform has no data for (see `RunningTarget.unavailable`): they're
+ * removed from the expected JSON, and checked to be absent instead, so a platform can't pass by making them up.
+ */
+export async function runCase(
+  baseUrl: string,
+  testCase: Case,
+  adaptHeaders: HeaderAdapter = headers => ({ ...headers }),
+  unavailable: readonly string[] = []
+): Promise<string[]> {
+  const { request } = testCase;
+  const expect = withoutUnavailable(testCase.expect, unavailable);
   const method = request.method ?? 'GET';
   const response = await fetch(new URL(request.path, baseUrl), { method, headers: adaptHeaders(request.headers ?? {}), redirect: 'manual' });
   const failures: string[] = [];
@@ -93,6 +103,28 @@ export async function runCase(baseUrl: string, testCase: Case, adaptHeaders: Hea
 }
 
 /** Whether `actual` contains `expected`: objects match on `expected`'s keys, recursively; anything else exactly. */
+/** The expectations with the `unavailable` paths moved from `json` and `jsonIncludes` to `jsonAbsent`. */
+function withoutUnavailable(expect: Case['expect'], unavailable: readonly string[]): Case['expect'] {
+  if (unavailable.length === 0 || (expect.json === undefined && expect.jsonIncludes === undefined)) return expect;
+  const paths = unavailable.map(path => path.split('.'));
+  return {
+    ...expect,
+    ...(expect.json === undefined ? {} : { json: paths.reduce(withoutPath, expect.json) }),
+    ...(expect.jsonIncludes === undefined ? {} : { jsonIncludes: paths.reduce(withoutPath, expect.jsonIncludes) }),
+    jsonAbsent: [...expect.jsonAbsent ?? [], ...unavailable]
+  };
+}
+
+/** A copy of `value` without the nested object key at `path`. */
+function withoutPath(value: unknown, path: readonly string[]): unknown {
+  const [key, ...rest] = path;
+  if (key === undefined || !isPlainObject(value) || !Object.hasOwn(value, key)) return value;
+  const copy: Record<string, unknown> = { ...value };
+  if (rest.length === 0) Reflect.deleteProperty(copy, key);
+  else copy[key] = withoutPath(value[key], rest);
+  return copy;
+}
+
 function includes(actual: unknown, expected: unknown): boolean {
   if (isPlainObject(expected)) {
     if (!isPlainObject(actual)) return false;

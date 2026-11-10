@@ -2,7 +2,8 @@ import { DEFAULT_CONFIG, type SharedIdEdgeConfig } from './config.js';
 import { readConsent, storageDecision, type ConsentContext, type StorageDecision } from './consent.js';
 import { parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
 import { idFromSyncParam, isValidId, mintId } from './id.js';
-import { ModuleRegistry, optOutCookies, runModules, type EdgeModule, type ModuleCookie } from './modules.js';
+import { ModuleRegistry, optOutCookies, runModules, type EdgeModule, type ModuleContext, type ModuleCookie } from './modules.js';
+import { trimEnd } from './text.js';
 import type { Eid, PayloadV1, PlatformInfo } from './types.js';
 
 /** The 43-byte transparent GIF the WordPress and Drupal plugins return, so `pixelUrl` image requests load. */
@@ -89,8 +90,9 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
           setCookies.push(...expireIdCookies(config, secure, date));
         }
 
+        const context = { request, url, platform, sharedId: state.id, consent, cookies, optedOut, storage: decision };
         const response = route === ROUTES.sync
-          ? syncResponse(config, state, decision.allowed)
+          ? await syncResponse(config, state, decision.allowed, registry, context, now, secure, date)
           : await payloadResponse({ request, url, platform, consent, cookies, optedOut, storage: decision, state, registry, config, now, secure, date });
         if (!decision.allowed) response.headers.set('X-SharedID-Status', `denied: ${decision.reason}`);
         if (state.source !== undefined) response.headers.set('X-SharedID-Source', state.source);
@@ -105,7 +107,7 @@ const ROUTE_LIST: readonly Route[] = Object.values(ROUTES);
 function routeOf(pathname: string, basePath: string): Route | undefined {
   const prefix = basePath === '/' ? '' : basePath;
   if (!pathname.startsWith(prefix + '/')) return undefined;
-  const rest = pathname.slice(prefix.length).replace(/\/+$/, '');
+  const rest = trimEnd(pathname.slice(prefix.length), '/');
   return ROUTE_LIST.find(route => route === rest);
 }
 
@@ -162,11 +164,23 @@ const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 
 /**
  * The `pixelUrl` response: a 1x1 GIF, like the WordPress and Drupal plugins. When an ID was set, the browser may cache
- * it privately for `syncCacheSeconds`, which limits how often it re-syncs; otherwise it isn't cached.
+ * it privately for `syncCacheSeconds`, which limits how often it re-syncs (and so how often modules run here);
+ * otherwise it isn't cached. Modules that run on `/sync` add only their cookies, and `X-SharedID-Modules` gives each
+ * one's name and status, never cookie names, values or reasons.
  */
-function syncResponse(config: SharedIdEdgeConfig, state: IdState, allowed: boolean): Response {
+async function syncResponse(
+  config: SharedIdEdgeConfig,
+  state: IdState,
+  allowed: boolean,
+  registry: ModuleRegistry,
+  context: Omit<ModuleContext, 'config' | 'secrets'>,
+  now: () => Date,
+  secure: boolean,
+  date: Date
+): Promise<Response> {
+  const modules = await runModules(registry, config, context, () => now().getTime(), 'sync');
   const cacheable = allowed && state.id !== undefined && config.syncCacheSeconds > 0;
-  return new Response(PIXEL, {
+  const response = new Response(PIXEL, {
     status: 200,
     headers: {
       'Content-Type': 'image/gif',
@@ -175,6 +189,11 @@ function syncResponse(config: SharedIdEdgeConfig, state: IdState, allowed: boole
       'X-Robots-Tag': 'noindex'
     }
   });
+  const statuses = Object.entries(modules.reports).map(([name, report]) => `${name}=${report.status}`);
+  if (statuses.length > 0) response.headers.set('X-SharedID-Modules', statuses.join(', '));
+  // Cookies only: there's no payload for eids or ortb2.
+  for (const cookie of modules.cookies) response.headers.append('Set-Cookie', serializeModuleCookie(cookie, config, secure, date));
+  return response;
 }
 
 interface PayloadInputs {

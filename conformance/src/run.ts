@@ -4,8 +4,8 @@ import { runCase, type HeaderAdapter } from './check.js';
 import { startTarget, type TargetName } from './targets.js';
 
 const USAGE = `Usage:
-  conformance --target node|wrangler|lambda|azure  start each configuration locally and run every case
-  conformance --base-url https://...                run the default-configuration cases against a deployment`;
+  conformance --target node|wrangler|lambda|vercel|azure  start each configuration locally and run every case
+  conformance --base-url https://...                       run the default-configuration cases against a deployment`;
 
 interface FileResult {
   readonly failed: number;
@@ -13,18 +13,26 @@ interface FileResult {
   readonly limited: number;
 }
 
+/** What a target can't do: payload paths it has no data for, and cases it can't pass (see `RunningTarget`). */
+interface TargetGaps {
+  readonly unavailable: readonly string[];
+  readonly limitations: Readonly<Record<string, string>>;
+}
+
+const NO_GAPS: TargetGaps = { unavailable: [], limitations: {} };
+
 /**
  * Runs a file's cases. A case in `limitations` (the target's known platform limitations, by `file#case name`) is
  * reported as TAP `# TODO` and doesn't count as a failure when it fails; when it passes, it does count, so the list
  * can't go stale.
  */
-async function runFile(baseUrl: string, file: CaseFile, adaptHeaders?: HeaderAdapter, limitations: Readonly<Record<string, string>> = {}): Promise<FileResult> {
+async function runFile(baseUrl: string, file: CaseFile, adaptHeaders?: HeaderAdapter, gaps: TargetGaps = NO_GAPS): Promise<FileResult> {
   let failed = 0;
   let limited = 0;
   console.log(`# ${file.file}: ${file.description}`);
   for (const testCase of file.cases) {
-    const failures = await runCase(baseUrl, testCase, adaptHeaders);
-    const limitation = limitations[`${file.file}#${testCase.name}`];
+    const failures = await runCase(baseUrl, testCase, adaptHeaders, gaps.unavailable);
+    const limitation = gaps.limitations[`${file.file}#${testCase.name}`];
     if (failures.length === 0 && limitation === undefined) {
       console.log(`ok - ${testCase.name}`);
     } else if (failures.length === 0) {
@@ -57,13 +65,13 @@ async function main(): Promise<number> {
       total += file.cases.length;
       failed += (await runFile(values['base-url'], file)).failed;
     }
-  } else if (values.target === 'node' || values.target === 'wrangler' || values.target === 'lambda' || values.target === 'azure') {
+  } else if (values.target === 'node' || values.target === 'wrangler' || values.target === 'lambda' || values.target === 'vercel' || values.target === 'azure') {
     const target: TargetName = values.target;
     for (const file of files) {
       const running = await startTarget(target, file.config);
       try {
         total += file.cases.length;
-        const result = await runFile(running.baseUrl, file, running.requestHeaders, running.limitations);
+        const result = await runFile(running.baseUrl, file, running.requestHeaders, running);
         failed += result.failed;
         limited += result.limited;
       } finally {

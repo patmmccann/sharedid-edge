@@ -2,9 +2,9 @@
 
 The `reflect` module for [SharedID Edge](../../../README.md): it keeps other first-party cookies on your site durable, the way SharedID Edge keeps `_pubcid` durable.
 
-Scripts on your pages write first-party cookies with `document.cookie`, such as an ID vendor's `uid1` or Google's `_ga`. Safari caps cookies written by script at 7 days. The worker already sees those cookies on every request to `/_sid/*` on your site. With this module, each `/_sid/v1` call sets them again in a `Set-Cookie` header with the **same value** and a **new expiry**. They become server-set cookies, which Safari doesn't cap the same way, and their lifetime is refreshed on each visit.
+Scripts on your pages write first-party cookies with `document.cookie`, such as an ID vendor's `uid1` or Google's `_ga`. Safari caps cookies written by script at 7 days. The worker already sees those cookies on every request to `/_sid/*` on your site. With this module, each call to `/_sid/sync` (which Prebid.js makes on page views, with no extra page code) or `/_sid/v1` sets them again in a `Set-Cookie` header with the **same value** and a **new expiry**. They become server-set cookies, which Safari doesn't cap the same way, and their lifetime is refreshed on each visit.
 
-Cookies you mark `restore` are also saved in one `HttpOnly` cookie the worker owns, the **keeper**. When Safari has deleted one of them (a visitor who didn't come back for 7 days), the next `/_sid/v1` call sets it again from the keeper. It's what the worker's `_pubcid_sv` recovery copy does for `_pubcid`. If the page's script has already written a new value by then, [`prefer`](#which-value-wins-prefer) decides whether the new value or the saved one is kept.
+Cookies you mark `restore` are also saved in one `HttpOnly` cookie the worker owns, the **keeper**. When Safari has deleted one of them (a visitor who didn't come back for 7 days), the next call sets it again from the keeper. It's what the worker's `_pubcid_sv` recovery copy does for `_pubcid`. If the page's script has already written a new value by then, [`prefer`](#which-value-wins-prefer) decides whether the new value or the saved one is kept.
 
 The module never changes, returns or logs the values. It only sets cookies, and only when the worker would be allowed to store the SharedID itself.
 
@@ -20,7 +20,7 @@ The module never changes, returns or logs the values. It only sets cookies, and 
 - [Response](#response)
 - [Consent and opt-out](#consent-and-opt-out)
 - [Settings](#settings)
-- [Only on `/_sid/v1`](#only-on-_sidv1)
+- [When it runs: `/_sid/sync` and `/_sid/v1`](#when-it-runs-_sidsync-and-_sidv1)
 - [Using it in code](#using-it-in-code)
 - [Troubleshooting](#troubleshooting)
 
@@ -60,13 +60,16 @@ The module is built into the Cloudflare Worker, the Node.js server and the AWS L
    # set-cookie: uid1=AbC%2Fx+y/z==; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure
    curl -s https://www.example.com/_sid/v1 | jq .ext.modules.reflect
    # { "ms": 0, "status": "empty" }
+   curl -si https://www.example.com/_sid/sync -H 'Cookie: uid1=AbC%2Fx+y/z==' | grep -i '^x-sharedid-modules\|^set-cookie: uid1'
+   # x-sharedid-modules: reflect=empty
+   # set-cookie: uid1=AbC%2Fx+y/z==; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure
    ```
 
-4. **On the page,** call `/_sid/v1` once per page view, after the scripts that write the cookies have run. See [Only on `/_sid/v1`](#only-on-_sidv1).
+4. **On the page,** nothing more, if Prebid.js already calls `/_sid/sync` (its `pixelUrl`, with `extend: true`): that call runs the module. Without it, call `/_sid/v1` once per page view, after the scripts that write the cookies have run. See [When it runs](#when-it-runs-_sidsync-and-_sidv1).
 
 ## What it does
 
-On each `/_sid/v1` request, for each configured cookie, in the order listed:
+On each `/_sid/sync` or `/_sid/v1` request, for each configured cookie, in the order listed:
 
 | Situation | Cookie |
 | --- | --- |
@@ -85,7 +88,7 @@ The cookie it sets:
 Set-Cookie: uid1=<same value>; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure
 ```
 
-- **`Max-Age`:** `maxAgeDays` × 86400, refreshed on every `/_sid/v1` call.
+- **`Max-Age`:** `maxAgeDays` × 86400, refreshed on every call.
 - **`Domain`:** `.{domain}` from the cookie's `domain` setting. Without it, `SID_COOKIE_DOMAIN`; without that too, host-only.
 - **`HttpOnly`:** only with `"httpOnly": true`. The default is `false`, because the script that wrote the cookie usually needs to read it.
 - **`Path=/`** and **`SameSite=Lax`:** always. Cookies set at another path, or with `SameSite=None` or `Strict`, aren't a good fit for this module.
@@ -106,7 +109,7 @@ So, for each cookie:
 - **HttpOnly:** leave it `false` for cookies a script wrote (scripts can't write `HttpOnly` cookies). Set it to `true` only if the script never needs to read the cookie again, which is rare.
 - **Path:** the module always sets `Path=/`. A cookie written with another path ends up duplicated, so don't reflect it.
 
-You can check in the browser's developer tools after a `/_sid/v1` call: there should be one cookie of each name, with the new expiry.
+You can check in the browser's developer tools after a `/_sid/sync` or `/_sid/v1` call: there should be one cookie of each name, with the new expiry.
 
 ## Make `uid1` sticky and server-set
 
@@ -140,12 +143,12 @@ You can check in the browser's developer tools after a `/_sid/v1` call: there sh
    }
    ```
 
-   - `maxAgeDays: 365` gives a one-year expiry, refreshed on every `/_sid/v1` call.
+   - `maxAgeDays: 365` gives a one-year expiry, refreshed on every call.
    - `domain` and `httpOnly` match the original, so the browser keeps one `uid1`, not two.
    - `restore: true` is optional. It saves `uid1` in the [keeper](#the-keeper-cookie), so if Safari has already deleted `uid1` when the visitor comes back, the worker sets the old value again instead of letting the vendor mint a new one. Leave it out if the vendor's own deletion of `uid1` means something (for example, its opt-out).
-   - `"prefer": "backup"` (optional, with `restore`) also puts the saved `uid1` back when the vendor's script already wrote a new one before `/_sid/v1` ran. Add it only if the vendor never changes `uid1` on purpose; see [Which value wins](#which-value-wins-prefer).
+   - `"prefer": "backup"` (optional, with `restore`) also puts the saved `uid1` back when the vendor's script already wrote a new one before the worker was called. Add it only if the vendor never changes `uid1` on purpose; see [Which value wins](#which-value-wins-prefer).
 
-3. **Call `/_sid/v1` from the page,** after the vendor's script has written `uid1`, so the request carries it:
+3. **Let Prebid.js's pixel call carry it.** With `pixelUrl: '/_sid/sync'` and `extend: true` (see the main README), Prebid.js calls the worker on page views, and that call reflects `uid1` when the browser has it. If the vendor's script writes `uid1` after Prebid.js's call, the next call picks it up. Without Prebid.js's pixel call, call `/_sid/v1` from the page, after the vendor's script has written `uid1`:
 
    ```js
    fetch('/_sid/v1', { credentials: 'include' }).catch(() => {});
@@ -154,7 +157,7 @@ You can check in the browser's developer tools after a `/_sid/v1` call: there sh
    If you already call it for the payload (the snippet in the main README that merges `ortb2` into Prebid.js), that call is enough. With `restore`, a call early in the page also restores `uid1` before the vendor's script reads it; see [the timing caveat](#timing-gtagjs-reads-_ga-when-it-loads) below, which applies to any script.
 
 4. **Verify.** Load a page, then in the developer tools:
-   - **Network:** select the `/_sid/v1` request. Its response headers include `Set-Cookie: uid1=…; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure`, with the same value the request's `Cookie` header carried. With `restore`, there's also `Set-Cookie: _sid_keep=…; …; HttpOnly`.
+   - **Network:** select the `/_sid/sync` (or `/_sid/v1`) request; if it says "(disk cache)", disable the cache and reload. Its response headers include `Set-Cookie: uid1=…; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure`, with the same value the request's `Cookie` header carried. With `restore`, there's also `Set-Cookie: _sid_keep=…; …; HttpOnly`.
    - **Application (Storage in Safari), Cookies:** there's one `uid1`, its **Expires** is a year from now (not 7 days), and its value hasn't changed. `_sid_keep` is there too, with **HttpOnly** ticked.
    - In Safari, check again after more than 7 days, or delete `uid1` by hand and reload: `uid1` comes back with the same value.
 
@@ -193,18 +196,18 @@ As a variable:
 }
 ```
 
-- **`prefer: "older"`** on `_ga` and `_gcl_au` (recommended): if gtag.js loaded before `/_sid/v1` and minted a new `_ga` or `_gcl_au` because Safari had deleted the old one, the worker sees that the new value was created after the saved one and puts the saved one back. See [Which value wins](#which-value-wins-prefer). It only replaces a value with an older one, so a visitor's established client ID is kept, and the cookie is fixed from the **next** page view (the current page's hits were already sent with the new ID).
+- **`prefer: "older"`** on `_ga` and `_gcl_au` (recommended): if gtag.js loaded before the worker was called and minted a new `_ga` or `_gcl_au` because Safari had deleted the old one, the worker sees that the new value was created after the saved one and puts the saved one back. See [Which value wins](#which-value-wins-prefer). It only replaces a value with an older one, so a visitor's established client ID is kept, and the cookie is fixed from the **next** page view (the current page's hits were already sent with the new ID).
 - **`_gcl_aw` keeps the default, `prefer: "browser"`.** gtag writes `_gcl_aw` only when the visitor lands from an ad click, and its time is that click's. A newer `_gcl_aw` means a newer click, which should replace the old one, so `older` would undo it.
 
-- **`maxAgeDays`:** Google gives `_ga` about 2 years, but browsers cap cookies at 400 days, so 400 is the most you can set. Google gives `_gcl_aw` and `_gcl_au` 90 days by default; keep your tag's setting. The expiry is refreshed on every `/_sid/v1` call, so it counts from the visitor's latest visit, not from when Google first set the cookie.
+- **`maxAgeDays`:** Google gives `_ga` about 2 years, but browsers cap cookies at 400 days, so 400 is the most you can set. Google gives `_gcl_aw` and `_gcl_au` 90 days by default; keep your tag's setting. The expiry is refreshed on every call, so it counts from the visitor's latest visit, not from when Google first set the cookie.
 - **`httpOnly`:** left out (`false`). gtag has to read these cookies.
 - **`keeper`:** these are the defaults, so you can leave it out. Its domain defaults to the first `restore` cookie's, `example.com` here.
 
 ### Timing: gtag.js reads `_ga` when it loads
 
-The worker only answers `/_sid/*`; it doesn't run before your page's scripts. gtag.js reads `_ga` when it loads. If Safari deleted `_ga` and gtag loads first, it mints a new client ID and writes it: by the time `/_sid/v1` runs, the request carries the new `_ga`, which is present, so it wins and replaces the saved one.
+The worker only answers `/_sid/*`; it doesn't run before your page's scripts. gtag.js reads `_ga` when it loads. If Safari deleted `_ga` and gtag loads first, it mints a new client ID and writes it: by the time the worker is called, the request carries the new `_ga`, which is present, so it wins and replaces the saved one.
 
-So call `/_sid/v1` **before gtag.js loads**, and load gtag when the call is done (or after a short timeout, so a slow call never holds analytics back):
+Prebid.js's pixel call (`/_sid/sync`) usually comes after gtag.js has loaded, so on its own it restores `_ga` too late. It still keeps the cookies refreshed on every visit, and restores `_gcl_aw` (see below). To keep the `_ga` client ID through a deletion, call `/_sid/v1` **before gtag.js loads**, and load gtag when the call is done (or after a short timeout, so a slow call never holds analytics back):
 
 ```html
 <script>
@@ -228,7 +231,9 @@ So call `/_sid/v1` **before gtag.js loads**, and load gtag when the call is done
 
 The restored cookies are set by the `/_sid/v1` response, so gtag.js finds them when it loads. With Google Tag Manager, load the container the same way.
 
-If you'd rather not change how gtag loads, call `/_sid/v1` anywhere on the page. Cookies the browser still has are refreshed as usual. Cookies Safari deleted are restored on that call, but that page view has already run without them: **the restore takes effect from the next page view**. gtag writes a new `_ga` on load when it finds none (and the conversion linker does the same for `_gcl_au`). With `"prefer": "older"`, as in the configuration above, the worker replaces those new values with the older saved ones, so the visitor keeps their client ID from the next page view on; with the default, `"prefer": "browser"`, the new value wins and replaces the saved one. `_gcl_aw`, which is written only when the visitor lands from an ad click, is restored either way. Calling `/_sid/v1` before gtag.js is still the only option that keeps the client ID on the current page view too.
+If you'd rather not change how gtag loads, rely on Prebid.js's pixel call, or call `/_sid/v1` anywhere on the page. Cookies the browser still has are refreshed as usual. Cookies Safari deleted are restored on that call, but that page view has already run without them: **the restore takes effect from the next page view**. gtag writes a new `_ga` on load when it finds none (and the conversion linker does the same for `_gcl_au`). With `"prefer": "older"`, as in the configuration above, the worker replaces those new values with the older saved ones, so the visitor keeps their client ID from the next page view on; with the default, `"prefer": "browser"`, the new value wins and replaces the saved one. `_gcl_aw`, which is written only when the visitor lands from an ad click, is restored either way. Calling `/_sid/v1` before gtag.js is still the only option that keeps the client ID on the current page view too.
+
+A visitor whose cookies Safari deleted hasn't been back for 7 days, so the browser's cached `/_sid/sync` response (one day by default) has expired by then, and the first pixel call on their return reaches the worker.
 
 If you pass consent to the worker (`gdpr`, `gdpr_consent`), add the same query parameters to that early call.
 
@@ -237,14 +242,14 @@ If you pass consent to the worker (`gdpr`, `gdpr_consent`), add the same query p
 - The keeper reflects and restores only when the worker would store the SharedID: not on opt-out, Global Privacy Control, `coppa=1`, a TC string that doesn't give the SharedID's consent, or GDPR without a TC string. See [Consent and opt-out](#consent-and-opt-out).
 - When storage isn't allowed, the worker **deletes the keeper** (it's the worker's own store of these values) but leaves `_ga`, `_gcl_aw` and `_gcl_au` alone: they're Google's tag's cookies, and they expire on their own schedule.
 - **`/_sid/optout`** always deletes the keeper. It deletes the Google cookies only if you set `"deleteOnOptOut": true` on them.
-- The keeper follows the worker's storage decision, not Google consent mode or your CMP's analytics and advertising choices. If your consent setup can refuse analytics or ads storage while allowing the SharedID, either leave `restore` off, or call `/_sid/v1` only when those are allowed too.
-- If a script deletes one of these cookies on purpose, the keeper restores it on the next `/_sid/v1` call while storage is allowed. Use `restore` only for cookies whose owner doesn't delete them as a signal. Likewise, with `prefer: "older"` a deliberately reset `_ga` (one written with a new client ID) is replaced by the saved one; with `prefer: "backup"`, any new value is.
+- The keeper follows the worker's storage decision, not Google consent mode or your CMP's analytics and advertising choices. If your consent setup can refuse analytics or ads storage while allowing the SharedID, either leave `restore` off, or keep `reflect` off `/_sid/sync` (set `SID_SYNC_MODULES` without it, or to `none`) and call `/_sid/v1` only when those are allowed too: Prebid.js's pixel call doesn't know about them.
+- If a script deletes one of these cookies on purpose, the keeper restores it on the next call while storage is allowed. Use `restore` only for cookies whose owner doesn't delete them as a signal. Likewise, with `prefer: "older"` a deliberately reset `_ga` (one written with a new client ID) is replaced by the saved one; with `prefer: "backup"`, any new value is.
 
 ### Compared with Stape's Cookie Keeper
 
 This is similar to Stape's Cookie Keeper power-up, which stores a first-party master cookie through HTTP headers and restores those cookies when Safari deletes them. The two aren't the same product, and this module doesn't aim for exact parity. Here:
 - it runs on your own edge worker (or Node.js server), on your domain;
-- it runs only when the page calls `/_sid/v1`, not on every request to your site;
+- it runs when Prebid.js calls `/_sid/sync` (at most once per `SID_SYNC_CACHE_SECONDS` in each browser, a day by default) or the page calls `/_sid/v1`, not on every request to your site;
 - it follows the worker's consent rules, and opting out deletes the keeper;
 - you choose the cookies, their lifetimes and domains, up to 10 per worker.
 
@@ -256,12 +261,12 @@ This is similar to Stape's Cookie Keeper power-up, which stores a first-party ma
 - **Malformed values** (edited by hand, or from an older version) count as empty: they're overwritten on the next call, or deleted if there's nothing to save. They never cause an error.
 - **Size:** a cookie's name and value can't be more than 4096 bytes together. The cookies are added in the order you list them; one that doesn't fit is left out of the keeper (it's still reflected, just not restorable), and later ones that fit are still saved. Three Google cookies take about 200 bytes. It takes several cookies near the 1024-character value limit to reach it.
 - **Attributes:** `HttpOnly`, `Path=/`, `SameSite=Lax`, `Secure` over https, `Max-Age` from `keeper.maxAgeDays` (default 400 days), and `Domain` from `keeper.domain`; without it, the **first `restore` cookie's `domain`**, so the keeper reaches the same hosts as the cookies it restores; without that, `SID_COOKIE_DOMAIN`, else host-only.
-- **Refreshed on every call:** the worker sets it on every `/_sid/v1` call where it has something to keep, so its expiry moves forward with each visit, like the cookies it keeps.
+- **Refreshed on every call:** the worker sets it on every `/_sid/sync` or `/_sid/v1` call where it has something to keep, so its expiry moves forward with each visit, like the cookies it keeps.
 - With no `restore` cookie configured, no keeper is set, and a left-over one is deleted.
 
 ## Which value wins: `prefer`
 
-A `restore` cookie can be in the request **and** in the keeper with a different value. That happens when Safari deleted the cookie and the page's script minted a new one before `/_sid/v1` ran: gtag.js does it with `_ga` when it loads first. Each `restore` cookie's `prefer` setting says which value is kept:
+A `restore` cookie can be in the request **and** in the keeper with a different value. That happens when Safari deleted the cookie and the page's script minted a new one before the worker was called: gtag.js does it with `_ga` when it loads first. Each `restore` cookie's `prefer` setting says which value is kept:
 
 | `prefer` | The request carries the cookie and the keeper has another value | Use it for |
 | --- | --- | --- |
@@ -288,7 +293,7 @@ With `"prefer": "browser"`, the same request gets `_ga=GA1.1.555555555.175000000
 
 **Caveats:**
 - **It fixes later page views, not the current one.** By the time the page calls `/_sid/v1`, a script that minted a new value has already used it: gtag.js has sent the page view's hits with the new client ID. The restored cookie is what gtag reads from the next page view on. To keep the ID on the current page view too, call `/_sid/v1` before the script loads ([timing](#timing-gtagjs-reads-_ga-when-it-loads)).
-- **`backup` overrides the cookie's owner.** If the script resets its cookie on purpose (a new client ID after the user asked for one, or its own opt-out marker), `backup` puts the old value back on the next `/_sid/v1` call, for as long as the keeper has it. That's why it isn't the default. `older` does the same for a deliberate reset that writes a newer value.
+- **`backup` overrides the cookie's owner.** If the script resets its cookie on purpose (a new client ID after the user asked for one, or its own opt-out marker), `backup` puts the old value back on the next call (Prebid.js's pixel or `/_sid/v1`), for as long as the keeper has it. That's why it isn't the default. `older` does the same for a deliberate reset that writes a newer value.
 - **The creation time comes from the visitor's clock.** gtag writes it with the browser's time. A value more than a day in the future (by the worker's clock) doesn't count as parsed, so the browser's value wins. A clock that's behind can make a new value look older than the saved one; then the new value wins, as it would by default.
 
 **Formats `older` reads.** Each value must match its format exactly, and the creation time must be 10 digits of Unix seconds:
@@ -343,6 +348,23 @@ Set-Cookie: _sid_keep=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/
 - `empty`: the normal status. Check the `Set-Cookie` headers to see what was reflected or restored.
 - `error`: the settings are invalid, or name a cookie the worker reserves. Nothing is reflected, and no details are given.
 
+On `/_sid/sync`, the same cookies come with Prebid.js's pixel, and `X-SharedID-Modules` gives the status instead of the payload. With the configuration in [Turning it on](#turning-it-on) plus `_ga` with `restore`, and `SID_COOKIE_DOMAIN=.example.com`:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: image/gif
+Content-Length: 43
+Cache-Control: private, max-age=86400
+X-Robots-Tag: noindex
+X-SharedID-Modules: reflect=empty
+X-SharedID-Source: cookie
+Set-Cookie: uid1=AbC123xyz; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure
+Set-Cookie: _ga=GA1.1.1234567890.1700000000; Max-Age=34560000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure
+Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAifQ; Max-Age=34560000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
+Set-Cookie: _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure
+Set-Cookie: _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
+```
+
 The payload doesn't say which cookies were reflected or restored. The payload's `ortb2` goes to bidders, and a list of your cookie names doesn't belong there; the `Set-Cookie` headers already show it.
 
 ## Consent and opt-out
@@ -356,9 +378,9 @@ Reflecting or restoring a cookie extends how long an identifier is stored on the
 
 The response's `X-SharedID-Status: denied: <reason>` header shows which.
 
-**The configured cookies are never deleted on `/_sid/v1`.** They belong to other scripts, which have their own consent handling and sometimes store their own opt-out state in them. When consent is missing, the module just stops extending them, and they expire on their original schedule.
+**The configured cookies are never deleted on `/_sid/sync` or `/_sid/v1`.** They belong to other scripts, which have their own consent handling and sometimes store their own opt-out state in them. When consent is missing, the module just stops extending them, and they expire on their original schedule.
 
-**The keeper is deleted on `/_sid/v1` when consent is missing,** if the browser has one. It's the worker's own store of identifiers, so it follows the rule that denied consent deletes the worker's ID cookies, as it does for `_pubcid` and `_pubcid_sv`. Nothing is restored afterwards, even when consent comes back, until the cookies are saved again.
+**The keeper is deleted on `/_sid/sync` and `/_sid/v1` when consent is missing,** if the browser has one. It's the worker's own store of identifiers, so it follows the rule that denied consent deletes the worker's ID cookies, as it does for `_pubcid` and `_pubcid_sv`. Nothing is restored afterwards, even when consent comes back, until the cookies are saved again.
 
 **On `/_sid/optout`,** a configured cookie is deleted only if you set `"deleteOnOptOut": true` for it. It's deleted with the configured `Domain` and `HttpOnly`, and only if the browser sent it. The keeper is always deleted (if the browser sent it). This works whether or not `reflect` is in `SID_MODULES`, as long as its settings are still in `SID_MODULE_CONFIG`. Leave `deleteOnOptOut` `false` (the default) unless you're sure the cookie's owner expects it: deleting a cookie that holds an opt-out marker would undo that opt-out.
 
@@ -386,15 +408,17 @@ These names can't be reflected: `_pubcid`, `_pubcid_sv` and `_pubcid_optout` (th
 
 There are no secrets.
 
-## Only on `/_sid/v1`
+## When it runs: `/_sid/sync` and `/_sid/v1`
 
-Modules run on `/_sid/v1` only. Prebid.js's `sharedIdSystem` calls `/_sid/sync` (its `pixelUrl`), not `/_sid/v1`, so **cookies are reflected and restored only on pages that call `/_sid/v1`**, for example with the `fetch` snippet in the main README that merges the payload's `ortb2`.
+The module runs on both routes, with the same rules:
 
-- To reflect a cookie, call it after the script that writes the cookie has run, so the request carries it. On a visitor's first page view the cookie may not exist yet; it's picked up on the next call.
-- To restore a cookie before its script reads it, call it before that script loads; see [the timing caveat](#timing-gtagjs-reads-_ga-when-it-loads). One early call does both: a cookie the browser still has is refreshed, one it lost is restored.
-- Once a day or so is enough to keep a cookie from expiring; calling it on every page view is fine too.
+- **`/_sid/sync`**, Prebid.js's `pixelUrl`. With `extend: true`, Prebid.js calls it on page views, so cookies are refreshed, saved and restored **with no code on your page**. The response is still the 1×1 GIF; only the cookies and an `X-SharedID-Modules: reflect=…` header are added.
+- **`/_sid/v1`**, when your page calls it: for the payload (the `fetch` snippet in the main README), or early in the page to restore a cookie before its script reads it ([the timing caveat](#timing-gtagjs-reads-_ga-when-it-loads)).
 
-Running cookie-only modules on `/_sid/sync` as well, which Prebid.js calls on every page with `extend: true`, is an open question for a later version.
+**The sync response is cached.** A browser keeps a successful `/_sid/sync` response for `SID_SYNC_CACHE_SECONDS` (default `86400`, a day) and doesn't call the worker again until it expires, so from Prebid.js's pixel the module runs about once a day per browser. That's enough to keep a cookie from expiring, and a cookie Safari deleted after 7 days without a visit is restored on the visitor's first page view back, since the cached response has expired by then. A cookie deleted some other way is restored when the cache next expires, or on the next `/_sid/v1` call. To run it more often, lower `SID_SYNC_CACHE_SECONDS` (`3600` for hourly; `0` for every page view, at the cost of a worker request on every page view).
+
+- To reflect a cookie, the request has to carry it: a call made before the script that writes the cookie has run picks it up on the next call. On a visitor's first page view the cookie may not exist yet.
+- To keep `reflect` off `/_sid/sync`, set `SID_SYNC_MODULES` to the modules you do want there, or `none`.
 
 ## Using it in code
 
@@ -420,13 +444,14 @@ Other exports:
 | --- | --- |
 | `ext.modules.reflect` is missing | `reflect` isn't in `SID_MODULES`. |
 | `ext.modules.reflect.status` is `error` | The settings are invalid: check the JSON, that each entry has `name` and `maxAgeDays` (1 to 400), that `domain` has no leading dot, that no name is reserved or listed twice, and that `keeper` has only `cookie`, `maxAgeDays` and `domain`, with a name that isn't also in `cookies`. `prefer` other than `"browser"` needs `"restore": true`; `"older"` needs a cookie named `_ga`, `_gcl_au` or `_gcl_aw`, or a `format`; `format` is only for `"older"`. |
-| No `Set-Cookie` for the cookie | The request didn't carry it (check the page calls `/_sid/v1` after the cookie is written, and that `/_sid/*` is on a host the cookie's domain covers); or its value is quoted, too long or has characters that can't be copied; or storage isn't allowed: see `X-SharedID-Status`. |
+| No `Set-Cookie` on `/_sid/sync` | The response came from the browser's cache ("(disk cache)" in the Network panel): the module runs again when it expires (`SID_SYNC_CACHE_SECONDS`). Or `X-SharedID-Modules` is missing or doesn't list `reflect`: it isn't in `SID_MODULES`, or `SID_SYNC_MODULES` leaves it out. |
+| No `Set-Cookie` for the cookie | The request didn't carry it (check the cookie is written before Prebid.js's pixel call or your `/_sid/v1` call, and that `/_sid/*` is on a host the cookie's domain covers); or its value is quoted, too long or has characters that can't be copied; or storage isn't allowed: see `X-SharedID-Status`. |
 | Two cookies of the same name in the browser | The configured `domain` doesn't match the original's. See [Match the original cookie's attributes](#match-the-original-cookies-attributes). Delete the stray copy once (developer tools), then fix the setting. |
 | The page's script can't read the cookie any more | `httpOnly` is `true`. Set it to `false`. |
-| The cookie still expires after 7 days in Safari | Run `verify-deployment` (see the main README): the endpoint's IP addresses probably don't match the site's, so Safari still caps it. Or the page doesn't call `/_sid/v1`. |
+| The cookie still expires after 7 days in Safari | Run `verify-deployment` (see the main README): the endpoint's IP addresses probably don't match the site's, so Safari still caps it. Or neither Prebid.js's pixel call (`pixelUrl` with `extend: true`) nor a `/_sid/v1` call reaches the worker. |
 | No `_sid_keep` cookie | No cookie has `"restore": true`; or none of them was in the request yet; or storage isn't allowed (the keeper is then deleted). |
-| A deleted cookie isn't restored | The keeper didn't have it: it was never in a `/_sid/v1` request with storage allowed, or it didn't fit in 4096 bytes, or the keeper was deleted by an opt-out or missing consent (or expired). Or the page's script wrote a new value before `/_sid/v1` ran: with the default `"prefer": "browser"`, a present value wins. See [Which value wins](#which-value-wins-prefer). |
-| A new `_ga` in Safari after a week, even with `restore` | gtag.js loaded before `/_sid/v1` and minted a new one. Set `"prefer": "older"` on `_ga` to restore the old one from the next page view, and call `/_sid/v1` before gtag.js to keep it on the first one too; see [the timing caveat](#timing-gtagjs-reads-_ga-when-it-loads). |
+| A deleted cookie isn't restored | The keeper didn't have it: it was never in a `/_sid/sync` or `/_sid/v1` request with storage allowed, or it didn't fit in 4096 bytes, or the keeper was deleted by an opt-out or missing consent (or expired). Or the page's script wrote a new value before the worker was called: with the default `"prefer": "browser"`, a present value wins. See [Which value wins](#which-value-wins-prefer). |
+| A new `_ga` in Safari after a week, even with `restore` | gtag.js loaded before the worker was called (Prebid.js's pixel call usually comes after gtag.js) and minted a new one. Set `"prefer": "older"` on `_ga` to restore the old one from the next page view, and call `/_sid/v1` before gtag.js to keep it on the first one too; see [the timing caveat](#timing-gtagjs-reads-_ga-when-it-loads). |
 | `"prefer": "older"` keeps the new `_ga` | The values don't both match the [`ga` format](#which-value-wins-prefer) (a renamed cookie needs `"format"`), the new value's time is more than a day ahead of the worker's clock, or the visitor's clock was behind when gtag minted it. The browser's value wins then. |
 | A cookie's owner reset it, and the old value came back | `"prefer": "backup"` (or `"older"`, for a newer value) restores the saved value over any new one. Use `"browser"` for cookies their owner changes on purpose. |
 | No `Set-Cookie` for a cookie on Azure Functions, and the log says it would be percent-encoded | The Functions host percent-encodes cookie values, so a value with characters other than letters, digits, `-`, `.`, `_` and `~` is left out rather than changed. See [the Azure adapter](../../adapters/azure-functions/README.md#cookie-values). |

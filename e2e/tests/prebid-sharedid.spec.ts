@@ -85,6 +85,34 @@ test('a capped or cleared script cookie is restored from the server-only copy', 
   await expect.poll(() => pubcidInPrebid(page)).toBe(first);
 });
 
+test('Prebid.js\'s own pixel call, with no /v1 fetch, refreshes a reflected cookie', async ({ page, context }) => {
+  // A script-written uid1 that would expire in a day, as Safari caps script cookies.
+  const soon = Math.round(Date.now() / 1000) + DAY;
+  await context.addCookies([{ name: 'uid1', value: 'AbC%2Fx+y/z==.v1', domain: '127.0.0.1', path: '/', expires: soon }]);
+  await visit(page);
+
+  const log = await syncLog(page);
+  expect(log.map(r => new URL(r.path, 'http://x').pathname)).toEqual(['/_sid/sync']);
+  expect(log[0]?.cookie).toContain('uid1=AbC%2Fx+y/z==.v1');
+  const uid1 = await cookie(context, 'uid1');
+  expect(uid1?.value).toBe('AbC%2Fx+y/z==.v1');
+  expect((uid1?.expires ?? 0) - Date.now() / 1000).toBeGreaterThan(360 * DAY);
+});
+
+test('Prebid.js\'s pixel call restores a deleted cookie from the keeper', async ({ page, context }) => {
+  await context.addCookies([{ name: '_ga', value: 'GA1.1.1234567890.1700000000', domain: '127.0.0.1', path: '/', expires: Math.round(Date.now() / 1000) + DAY }]);
+  await visit(page);
+  expect((await cookie(context, '_sid_keep'))?.httpOnly).toBe(true);
+
+  // Simulate Safari deleting the script-written _ga; the HttpOnly keeper survives.
+  await context.clearCookies({ name: '_ga' });
+  await page.request.get('/__reset');
+  await visit(page);
+  const [sync] = await syncLog(page);
+  expect(sync?.cookie).not.toContain('_ga=');
+  expect((await cookie(context, '_ga'))?.value).toBe('GA1.1.1234567890.1700000000');
+});
+
 test('an opted-out user gets no id cookies from the endpoint', async ({ page, context }) => {
   const optout = await page.request.get('/_sid/optout');
   expect(optout.status()).toBe(204);

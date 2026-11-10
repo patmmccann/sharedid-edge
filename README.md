@@ -9,6 +9,7 @@ It also has a **module** interface for IDs and signals that are best computed at
 - [How it works](#how-it-works)
 - [Deploy on Cloudflare](#deploy-on-cloudflare)
 - [Deploy on AWS (Lambda and CloudFront)](#deploy-on-aws-lambda-and-cloudfront)
+- [Deploy on Vercel](#deploy-on-vercel)
 - [Deploy on Azure (Functions and Front Door)](#deploy-on-azure-functions-and-front-door)
 - [Configure Prebid.js](#configure-prebidjs)
 - [Migrate from the WordPress or Drupal plugin](#migrate-from-the-wordpress-or-drupal-plugin)
@@ -193,6 +194,59 @@ It checks that `/_sid/*` shares the site's IP addresses, sets the cookies correc
 
 Lambda@Edge (running in CloudFront's edge locations, without a separate origin) is possible future work; see the [package README](packages/adapters/aws-lambda/README.md#lambdaedge).
 
+## Deploy on Vercel
+
+If your site is deployed on Vercel, serve SharedID Edge from a `/_sid/*` route of **the same Vercel project**, as a Next.js route handler (or, for other frameworks, Routing Middleware). Full guide (architecture, middleware, configuration, the platform headers, troubleshooting): [`packages/adapters/vercel/README.md`](packages/adapters/vercel/README.md).
+
+**Why the same project:** since Safari 16.4, cookies set by a server whose IP address doesn't match the website's are capped at 7 days. A route of the project that serves `www.example.com` answers from the same addresses; a separate project on another hostname (`sid.example.com`, `*.vercel.app`) doesn't.
+
+### Prerequisites
+
+- A Next.js (App Router) site deployed on Vercel on your own domain, over https. For other frameworks, see [middleware](packages/adapters/vercel/README.md#deploy-with-middleware).
+- Node.js 24 or later and npm.
+
+### 1. Build the bundle
+
+```sh
+git clone https://github.com/patmmccann/sharedid-edge.git
+cd sharedid-edge
+npm ci
+npm run build
+npm run bundle -w @sharedid-edge/vercel    # packages/adapters/vercel/deploy/sharedid-edge.mjs and .d.mts
+```
+
+Copy `sharedid-edge.mjs` and `sharedid-edge.d.mts` into your site's repository, for example into `lib/`.
+
+### 2. Add the route
+
+Create `app/%5Fsid/[...path]/route.ts` in your site. The folder is `%5Fsid`, the URL-encoded `_sid`: Next.js doesn't route folders whose names start with `_`.
+
+```ts
+import { handlerFromEnv } from '../../../lib/sharedid-edge.mjs';
+
+export const runtime = 'nodejs';
+
+const handler = handlerFromEnv(process.env);
+
+export const GET = handler;
+export const HEAD = handler;
+export const OPTIONS = handler;
+```
+
+Use Node.js 24 for the project (`"engines": { "node": ">=24" }` in `package.json`).
+
+### 3. Configure and deploy
+
+Settings are the project's environment variables (the [Configuration reference](#configuration-reference)), for example `vercel env add SID_MODULES production`. Add `SID_MODULE_SECRETS` as a **Sensitive** variable (`vercel env add SID_MODULE_SECRETS production --sensitive`). Then deploy as usual (`git push` or `vercel deploy --prod`); environment variable changes need a new deployment. Invalid settings make `/_sid/*` return a 500; the reason is in the function's logs.
+
+### 4. Verify
+
+```sh
+npm run verify-deployment -- --site https://www.example.com
+```
+
+It checks that `/_sid/*` shares the site's IP addresses, sets the cookies correctly, isn't cached, and returns the JSON payload. Then [turn it on in Prebid.js](#configure-prebidjs). The client IP and location come from headers Vercel's proxy sets (`x-real-ip`, `x-vercel-ip-country` and the rest); see [Platform information](packages/adapters/vercel/README.md#platform-information).
+
 ## Deploy on Azure (Functions and Front Door)
 
 If your site is served through Azure Front Door (Standard or Premium), run SharedID Edge as an Azure Functions app behind a `/_sid/*` route of **your site's own Front Door endpoint and custom domain**. Full guide (architecture, the template's parameters, the origin lock, configuration, troubleshooting): [`packages/adapters/azure-functions/README.md`](packages/adapters/azure-functions/README.md).
@@ -273,7 +327,7 @@ pbjs.setConfig({
 });
 ```
 
-- **`extend: true`** makes Prebid.js call `pixelUrl` on later visits too, which refreshes the cookie's lifetime. The response is cached privately by the browser for a day (`SID_SYNC_CACHE_SECONDS`), so a frequent visitor triggers at most about one request a day.
+- **`extend: true`** makes Prebid.js call `pixelUrl` on later visits too, which refreshes the cookie's lifetime. The response is cached privately by the browser for a day (`SID_SYNC_CACHE_SECONDS`), so a frequent visitor triggers at most about one request a day. Cookie-only modules such as `reflect` and `ec` also run on these calls; see [Modules on `/_sid/sync`](#modules-on-_sidsync).
 - **`storage.type` must be `cookie`**, so the page and the worker share the ID. `html5` (localStorage) won't pick up the server's cookie.
 - If Prebid.js runs on a different subdomain than the route, set `pixelUrl` to an absolute URL on a host that shares the cookie's domain, and set `SID_COOKIE_DOMAIN`.
 
@@ -296,7 +350,22 @@ Set-Cookie: _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; E
 X-SharedID-Source: param
 ```
 
-Modules don't run on `/sync`.
+Modules that only set cookies (`reflect`, `ec`) also run here, and add their cookies and an `X-SharedID-Modules` header with each one's status; anything else they return is ignored. With `SID_COOKIE_DOMAIN=.example.com`, `SID_MODULES=reflect` configured for `uid1` and for `_ga` with `restore`, and a request carrying `_pubcid`, `uid1` and `_ga`:
+
+```http
+HTTP/1.1 200 OK
+Cache-Control: private, max-age=86400
+Content-Length: 43
+Content-Type: image/gif
+X-Robots-Tag: noindex
+X-SharedID-Modules: reflect=empty
+X-SharedID-Source: cookie
+Set-Cookie: uid1=AbC123xyz; Max-Age=31536000; Expires=Wed, 10 Nov 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure
+Set-Cookie: _ga=GA1.1.1234567890.1700000000; Max-Age=34560000; Expires=Wed, 15 Dec 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure
+Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAifQ; Max-Age=34560000; Expires=Wed, 15 Dec 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
+Set-Cookie: _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=Wed, 10 Nov 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure
+Set-Cookie: _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=Wed, 10 Nov 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
+```
 
 ### `GET /_sid/v1`: the ID and the modules' output
 
@@ -374,6 +443,7 @@ To read `/v1` from a page on another origin, list that origin in `SID_ALLOWED_OR
 
 - `X-SharedID-Source`: where the ID came from: `cookie`, `recovery` (restored from the `HttpOnly` copy), `param` (adopted from Prebid.js's `?id=`) or `minted`.
 - `X-SharedID-Status: denied: <reason>`: why no ID was set. The reason is `opt-out`, `gpc`, `coppa` or `tcf: …`.
+- `X-SharedID-Modules` (on `/sync` only): each module that ran there, with its status, as in `ext.modules`: `reflect=empty, ec=ok`. Never cookie names, values or error details. `empty` is the normal status for a module that only sets cookies.
 
 ## Migrate from the WordPress or Drupal plugin
 
@@ -400,7 +470,7 @@ Existing visitors keep their IDs: the worker adopts the cookie the plugin set. T
 - **Publisher mode** (the default). SharedID is your own first-party ID, so the worker reads the **publisher** consents (the TC string's publisher TC segment): it needs consent for Purpose 1 (store and access information on a device), and consent or legitimate interest for at least one of Purposes 2 to 10. Configure your CMP to ask for publisher consent for these purposes, or it won't include a publisher TC segment and no one gets a server cookie.
 - **Vendor mode.** If your company is registered as a TCF vendor, set `SID_VENDOR_ID` to your vendor ID. The worker then needs consent for that vendor, consent for Purpose 1, and consent or legitimate interest for at least one of Purposes 2 to 10, all from the vendor part of the TC string instead of the publisher segment.
 
-When GDPR applies and there's no TC string, that counts as no consent: the worker sets nothing and deletes the ID cookies. GDPR applies when Cloudflare places the request in the EU (`request.cf.isEUCountry`; behind CloudFront, `CloudFront-Viewer-Country` is one of the 27 EU member states; behind Azure Front Door, the country its rule passes on is), or when the request says so with `gdpr=1`.
+When GDPR applies and there's no TC string, that counts as no consent: the worker sets nothing and deletes the ID cookies. GDPR applies when Cloudflare places the request in the EU (`request.cf.isEUCountry`; behind CloudFront, `CloudFront-Viewer-Country` is one of the 27 EU member states; on Vercel, `x-vercel-ip-country` is; behind Azure Front Door, the country its rule passes on is), or when the request says so with `gdpr=1`.
 
 The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` parameter. Prebid.js doesn't add consent parameters to `pixelUrl`, so for the sync route **your CMP must store the TC string in the `euconsent-v2` cookie** (check yours: some keep it only in local storage). Without it, EU visitors get no server cookie, which is the safe failure. Sending the consent strings from Prebid.js to the worker is planned.
 
@@ -410,7 +480,7 @@ The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` pa
 
 ## Modules
 
-Modules add IDs and signals to `/_sid/v1`. They're built into the worker but **none runs until you list it**.
+Modules add IDs and signals to `/_sid/v1`, and some maintain cookies on `/_sid/sync` too. They're built into the worker but **none runs until you list it**.
 
 ### Choosing modules
 
@@ -434,6 +504,20 @@ curl -s https://www.example.com/_sid/v1 | jq .ext.modules
 - **Unknown names** are reported as `skipped` with reason `not installed`: check the spelling, or that your build includes the module.
 - **Failures are contained:** a module that errors or exceeds `SID_MODULE_TIMEOUT_MS` is reported and left out, and the rest of the response is unaffected.
 - **Removing a module** from `SID_MODULES` turns it off.
+
+### Modules on `/_sid/sync`
+
+Prebid.js calls `/_sid/sync` (its `pixelUrl`) on page views with `extend: true`, with no code of yours. Modules that only maintain cookies run there too, so they work without the page calling `/_sid/v1`:
+
+| Module | On `/_sid/sync` |
+| --- | --- |
+| `reflect` | yes: refreshes the cookies you name, and restores them from the keeper |
+| `ec` | yes: sets `ts-ec` (or deletes it when consent is withdrawn), as Trusted Server does on page loads |
+| `ip`, `geo` | no: they return data, and `/_sid/sync` returns an image |
+
+- **Same rules as `/_sid/v1`:** the same consent, opt-out, time limit and failure handling. Only the modules' cookies are used; the GIF, status and other headers Prebid.js gets are unchanged, apart from `X-SharedID-Modules` (see [Debugging headers](#debugging-headers)).
+- **Choosing:** by default, every module in `SID_MODULES` that supports it runs on `/_sid/sync`. `SID_SYNC_MODULES` overrides that with a list (`"SID_SYNC_MODULES": "reflect"`), or `none`. Each name must also be in `SID_MODULES`, or every request fails with a 500 (a configuration error), so a typo can't go unnoticed; a listed module that doesn't run on `/_sid/sync`, such as `ip`, is reported `skipped`.
+- **Daily by default:** the browser caches a successful sync response for `SID_SYNC_CACHE_SECONDS` (`86400`, a day), so these modules run there about once a day per browser. That keeps cookies from expiring, and a visitor whose cookies Safari deleted after 7 days away gets them back on the first page view, since the cache has expired by then. Lower `SID_SYNC_CACHE_SECONDS` to run them more often (`0`: every page view), at the cost of a worker request each time.
 
 Built-in modules:
 
@@ -476,7 +560,7 @@ fetch('/_sid/v1', { credentials: 'include' })
 - a TCF TC string doesn't opt in to Special Feature 1 (precise geolocation);
 - GDPR applies and there's no TC string.
 
-**Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. Behind CloudFront it's the address in `CloudFront-Viewer-Address`, which CloudFront sets itself. Behind Azure Front Door it's `X-Azure-ClientIP`, which Front Door sets itself. With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
+**Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. Behind CloudFront it's the address in `CloudFront-Viewer-Address`, which CloudFront sets itself. On Vercel it's `x-real-ip`, which Vercel's proxy sets itself. Behind Azure Front Door it's `X-Azure-ClientIP`, which Front Door sets itself. With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
 
 The address is only returned to the browser that sent the request. The worker doesn't store or log it, and SharedIDs are never derived from it. `/_sid/v1` responses are `Cache-Control: no-store`.
 
@@ -484,7 +568,7 @@ The address is only returned to the browser that sent the request. The worker do
 
 Full documentation: [`packages/modules/ec/README.md`](packages/modules/ec/README.md).
 
-The `ec` module implements IAB Tech Lab [Trusted Server](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html) Edge Cookies, for publishers who use Trusted Server or want its identifier. It sets the `ts-ec` cookie and returns the EC as `ortb2.user.id` in `/_sid/v1`.
+The `ec` module implements IAB Tech Lab [Trusted Server](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html) Edge Cookies, for publishers who use Trusted Server or want its identifier. It sets the `ts-ec` cookie, on Prebid.js's `/_sid/sync` calls as well as on `/_sid/v1`, and returns the EC as `ortb2.user.id` in `/_sid/v1`.
 
 > **This ID is derived from the visitor's IP address.** An EC is `HMAC-SHA256(passphrase, IP)` as 64 hex characters, a dot, and 6 random characters. Everyone behind the same IPv4 address, or the same IPv6 /64, gets the same 64-character prefix, and anyone with the passphrase can test which address an EC came from. That's how Trusted Server defines it, and it's why the module is off unless you turn it on. The SharedID itself stays random.
 
@@ -515,7 +599,7 @@ npm exec -w @sharedid-edge/cloudflare -- wrangler secret put SID_MODULE_SECRETS
 - Changing the passphrase changes the prefix for new ECs only.
 
 **Differences from Trusted Server.**
-- The EC is set only when the page calls `/_sid/v1`, not on page loads.
+- The EC is set on Prebid.js's `/_sid/sync` calls (about once a day per browser, with the default `SID_SYNC_CACHE_SECONDS`) and on `/_sid/v1`, not on every page load.
 - There's no server-side identity graph, partner sync or `/identify` API.
 - Consent uses this worker's signals (`gdpr`, the TC string, GPC, `us_privacy`, `coppa`), not Trusted Server's per-country and per-state jurisdiction lists, and GPP isn't decoded yet.
 
@@ -573,10 +657,10 @@ The payload is unchanged apart from `"reflect": { "ms": 0, "status": "empty" }` 
 
 - **Match the original's domain and `HttpOnly`.** The worker can't see how a cookie was first set. If the original is host-only and you set `domain` (or the other way round), the browser keeps two cookies of that name. `httpOnly` defaults to `false`, since the script that wrote the cookie usually reads it.
 - **Consent:** it reflects only when the worker would set the SharedID: not on opt-out, GPC, `coppa=1`, denied TCF consent, or GDPR without a TC string. It never deletes these cookies on `/_sid/v1`, and on `/_sid/optout` only those you mark `deleteOnOptOut`.
-- **Only on `/_sid/v1`.** Prebid.js's `pixelUrl` calls `/_sid/sync`, where modules don't run, so the page has to call `/_sid/v1` (for example with the `fetch` snippet under [`ip`](#ip-the-real-client-ip)).
+- **On Prebid.js's pixel call too.** It runs on `/_sid/sync`, so with `pixelUrl` and `extend: true` cookies are refreshed and restored on page views with no page code, about once a day per browser (see [Modules on `/_sid/sync`](#modules-on-_sidsync)). Calling `/_sid/v1` works as well.
 - Up to 10 cookies, 1 to 400 days each. The SharedID cookies, `ts-ec` and `euconsent-v2` can't be reflected.
 
-**Restoring deleted cookies.** A cookie marked `"restore": true` is also saved in one `HttpOnly` cookie the worker owns, the keeper (`_sid_keep`, base64url of a JSON object, at most 4096 bytes). When Safari has deleted the cookie, the next `/_sid/v1` call sets it again from the keeper, as `_pubcid_sv` does for `_pubcid`. For Google Analytics and Ads:
+**Restoring deleted cookies.** A cookie marked `"restore": true` is also saved in one `HttpOnly` cookie the worker owns, the keeper (`_sid_keep`, base64url of a JSON object, at most 4096 bytes). When Safari has deleted the cookie, the next call (Prebid.js's `/_sid/sync`, or `/_sid/v1`) sets it again from the keeper, as `_pubcid_sv` does for `_pubcid`. For Google Analytics and Ads:
 
 ```json
 {
@@ -594,8 +678,8 @@ The payload is unchanged apart from `"reflect": { "ms": 0, "status": "empty" }` 
 Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0; Max-Age=34560000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
 ```
 
-- **`prefer`** decides which value wins when the page already wrote a new one: `"browser"` (default), `"backup"` (the saved value, always) or `"older"` (the one created first, read from `_ga`'s and `_gcl_au`'s timestamps). With `"older"`, a `_ga` that gtag.js re-minted before `/_sid/v1` ran is replaced by the saved one from the next page view. See [Which value wins](packages/modules/reflect/README.md#which-value-wins-prefer).
-- **Call `/_sid/v1` before gtag.js loads** to keep the client ID on the current page view too; otherwise a deleted `_ga` is replaced by a new one before the worker can restore it. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/modules/reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/modules/reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
+- **`prefer`** decides which value wins when the page already wrote a new one: `"browser"` (default), `"backup"` (the saved value, always) or `"older"` (the one created first, read from `_ga`'s and `_gcl_au`'s timestamps). With `"older"`, a `_ga` that gtag.js re-minted before the worker was called is replaced by the saved one from the next page view. See [Which value wins](packages/modules/reflect/README.md#which-value-wins-prefer).
+- **Call `/_sid/v1` before gtag.js loads** to keep the client ID on the current page view too; otherwise a deleted `_ga` is replaced by a new one before the worker can restore it. Prebid.js's pixel call usually comes after gtag.js: it keeps everything refreshed and restores `_gcl_aw`, and with `"older"` it brings a re-minted `_ga` back from the next page view, but it's too late for the current one. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/modules/reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/modules/reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
 - **Consent:** when storage isn't allowed the keeper is deleted (the original cookies are left alone), and `/_sid/optout` always deletes it.
 
 ## Self-host with Node.js
@@ -631,7 +715,7 @@ Make sure no cache in front of it (a CDN or nginx's `proxy_cache`) stores `/_sid
 
 ## Configuration reference
 
-All settings are strings, set as Worker `vars` (Cloudflare), environment variables (Node.js, AWS Lambda) or app settings (Azure Functions). Empty means the default. Invalid values make every request fail with a 500 and log the reason, rather than set wrong cookies.
+All settings are strings, set as Worker `vars` (Cloudflare), environment variables (Node.js, AWS Lambda, Vercel) or app settings (Azure Functions). Empty means the default. Invalid values make every request fail with a 500 and log the reason, rather than set wrong cookies.
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -644,8 +728,9 @@ All settings are strings, set as Worker `vars` (Cloudflare), environment variabl
 | `SID_OPTOUT_COOKIE` | `_pubcid_optout` | The opt-out cookie; Prebid.js reads `_pubcid_optout`. |
 | `SID_VENDOR_ID` | (empty: publisher mode) | Your TCF vendor ID, for vendor mode. |
 | `SID_ALLOWED_ORIGINS` | none | Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin. |
-| `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. |
-| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`, `ec`, `geo`, `reflect`. |
+| `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. Also limits how often modules run on `/_sid/sync`. |
+| `SID_MODULES` | none | Comma-separated modules to run, in order. Built in: `ip`, `ec`, `geo`, `reflect`. |
+| `SID_SYNC_MODULES` | the modules in `SID_MODULES` that run on `/_sid/sync` (`reflect`, `ec`) | Comma-separated modules to run on `/_sid/sync`, each also in `SID_MODULES`, or `none`. See [Modules on `/_sid/sync`](#modules-on-_sidsync). |
 | `SID_MODULE_CONFIG` | `{}` | JSON settings per module, keyed by module name. |
 | `SID_MODULE_SECRETS` | `{}` | JSON secrets per module, e.g. the `ec` passphrase. Set it as a secret (`wrangler secret put SID_MODULE_SECRETS`), not in `vars`. |
 | `SID_MODULE_TIMEOUT_MS` | `50` | Time limit for each module. |
@@ -654,7 +739,7 @@ Routes, under `SID_BASE_PATH`:
 
 | Route | |
 | --- | --- |
-| `GET /_sid/sync?id=pubcid:<id>` | The `pixelUrl` endpoint: a 1×1 GIF with the cookies. |
+| `GET /_sid/sync?id=pubcid:<id>` | The `pixelUrl` endpoint: a 1×1 GIF with the cookies, including those of modules that run there. |
 | `GET /_sid/v1` | JSON: the SharedID, its eid, and the modules' output. |
 | `GET /_sid/optout`, `GET /_sid/optin` | Set or clear the opt-out cookie. |
 
@@ -671,7 +756,7 @@ Responses carry two debug headers: `X-SharedID-Source` (`cookie`, `recovery`, `p
 | No `set-cookie` in the response | See `X-SharedID-Status`. In `tcf` mode, check the `euconsent-v2` cookie exists. |
 | Cookie set but gone after a week in Safari | Run `verify-deployment`: the endpoint's IP addresses probably don't match the site's. |
 | Cookie not readable by Prebid.js | The cookie name or domain doesn't match Prebid.js's `storage` config, or the page and the route are on hosts the cookie's domain doesn't cover. |
-| A 500 with "misconfigured" | A setting is invalid: `npm exec -w @sharedid-edge/cloudflare -- wrangler tail` shows the reason (on AWS, the function's CloudWatch logs; on Azure, the function app's logs). |
+| A 500 with "misconfigured" | A setting is invalid: `npm exec -w @sharedid-edge/cloudflare -- wrangler tail` shows the reason (on AWS, the function's CloudWatch logs; on Vercel, the project's logs; on Azure, the function app's logs). |
 | `getUserIdsAsync()` never resolves | The known Prebid.js issue under [Configure Prebid.js](#configure-prebidjs). |
 
 ## Development
@@ -685,6 +770,7 @@ packages/
     cloudflare/                the Cloudflare Worker
     node/                      the Node.js server (local development, self-hosting, conformance target)
     aws-lambda/                the AWS Lambda adapter, its bundle and SAM template
+    vercel/                    the Vercel adapter (Next.js route handler or middleware), its bundle and an example
     azure-functions/           the Azure Functions adapter (behind Front Door), its bundle and Bicep templates
   modules/                     modules maintained by this project, built into every adapter
     ip/  ec/  geo/  reflect/   the built-in modules
@@ -714,10 +800,10 @@ TypeScript is strict from the start, and CI checks types several ways:
 Tests:
 
 - `npm test`: unit tests, including the Worker's tests inside workerd, the Workers runtime. Vendor modules' tests run separately, with `npm run test:vendor-modules`.
-- `npm run conformance`: the conformance suite against the Node.js server; `npm run conformance:wrangler` runs it against the Worker under `wrangler dev`, `npm run conformance:lambda` against the bundled Lambda handler behind a local stand-in for CloudFront, and `npm run conformance:azure` against the bundled Azure Functions app behind a local stand-in for Front Door and the Functions host.
+- `npm run conformance`: the conformance suite against the Node.js server; `npm run conformance:wrangler` runs it against the Worker under `wrangler dev`, `npm run conformance:lambda` against the bundled Lambda handler behind a local stand-in for CloudFront, `npm run conformance:vercel` against the bundled Vercel adapter behind a local stand-in for Vercel's proxy, and `npm run conformance:azure` against the bundled Azure Functions app behind a local stand-in for Front Door and the Functions host.
 - In `e2e/`: `npm ci && npx playwright install && npm test` runs unmodified Prebid.js against the worker in three browsers.
 
-None of this needs a Cloudflare, AWS or Azure account.
+None of this needs a Cloudflare, AWS, Vercel or Azure account.
 
 ### Adding a module
 
@@ -735,11 +821,11 @@ export const continent = defineModule({
 });
 ```
 
-Publish it as its own package like [`packages/modules/ip`](packages/modules/ip), add it to `builtInModules` in [`packages/modules/all`](packages/modules/all/README.md) (every adapter imports that list), and enable it with `SID_MODULES=continent`. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). A module from a vendor goes in [`packages/vendor-modules/`](packages/vendor-modules/README.md) instead, and isn't built in.
+Publish it as its own package like [`packages/modules/ip`](packages/modules/ip), add it to `builtInModules` in [`packages/modules/all`](packages/modules/all/README.md) (every adapter imports that list), and enable it with `SID_MODULES=continent`. A module that only maintains cookies can also run on `/_sid/sync` with `routes: ['v1', 'sync']`; there only its cookies are used. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). A module from a vendor goes in [`packages/vendor-modules/`](packages/vendor-modules/README.md) instead, and isn't built in.
 
 ## Roadmap
 
-1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, AWS Lambda and Azure Functions adapters, and the `ip`, `ec`, `geo` and `reflect` modules.
+1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, AWS Lambda, Vercel and Azure Functions adapters, and the `ip`, `ec`, `geo` and `reflect` modules.
 2. **Next:** Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
 3. A Prebid.js RTD module that reads `/_sid/v1`, plus first-party modules for bot scores and device type, a Fastly adapter, and Lambda@Edge.
 4. Vendor modules, a Rust implementation, and inline mode.

@@ -7,6 +7,11 @@
     "types": ["node"]
   },
   "include": ["src"],
-  // The emulators use their adapter's types: lambda-emulator.ts the Lambda events, azure-emulator.ts the handler.
-  "references": [{ "path": "../packages/adapters/aws-lambda" }, { "path": "../packages/adapters/azure-functions" }]
+  // The emulators use their adapter's types: lambda-emulator.ts the Lambda events, vercel-emulator.ts and
+  // azure-emulator.ts the handlers.
+  "references": [
+    { "path": "../packages/adapters/aws-lambda" },
+    { "path": "../packages/adapters/vercel" },
+    { "path": "../packages/adapters/azure-functions" }
+  ]
 }

@@ -11,6 +11,12 @@ export interface RunningTarget {
    */
   readonly requestHeaders: (headers: Readonly<Record<string, string>>) => Record<string, string>;
   /**
+   * Payload paths the platform has no data for, such as `ortb2.device.geo.metro` where the platform reports no metro
+   * code. The runner checks they're absent instead of their expected values (see `runCase`). Keep this to what the
+   * platform genuinely doesn't provide, and document it in the adapter's README.
+   */
+  readonly unavailable: readonly string[];
+  /**
    * Cases the platform can't pass, by `file#case name`, with the reason. The runner reports them as TODO instead of
    * failures, and fails if one passes. Only for a documented limitation of the platform itself, never to skip a
    * failure of the adapter; the adapter's README says what it means for publishers.
@@ -19,7 +25,7 @@ export interface RunningTarget {
   stop(): Promise<void>;
 }
 
-export type TargetName = 'node' | 'wrangler' | 'lambda' | 'azure';
+export type TargetName = 'node' | 'wrangler' | 'lambda' | 'vercel' | 'azure';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -94,6 +100,18 @@ function asRequestCf(headers: Readonly<Record<string, string>>): Record<string, 
   return { ...headers, 'MF-CF-Blob': JSON.stringify({ ...cf, clientAcceptEncoding: '' }) };
 }
 
+/** What each target's platform doesn't report; see `RunningTarget.unavailable`. */
+const UNAVAILABLE: Readonly<Record<TargetName, readonly string[]>> = {
+  node: [],
+  wrangler: [],
+  lambda: [],
+  // Vercel's geolocation headers have no metro (DMA) code.
+  vercel: ['ortb2.device.geo.metro'],
+  // The stand-in's rule set passes every location field, so nothing is missing here; the real Front Door template
+  // passes only the country (see the adapter's README).
+  azure: []
+};
+
 /** The Front Door profile ID the Azure stand-in sends as X-Azure-FDID, and the function app accepts. */
 const AZURE_FRONT_DOOR_ID = '0f1e2d3c-4b5a-4978-8a7b-6c5d4e3f2a1b';
 
@@ -118,6 +136,7 @@ const PERCENT_ENCODED = 'the Functions host percent-encodes cookie values, so th
  */
 const AZURE_LIMITATIONS: Readonly<Record<string, string>> = {
   'module-reflect.json#reflects uid1 byte for byte with Domain=.example.com and a new Max-Age': PERCENT_ENCODED,
+  "module-reflect.json#reflects on /sync (Prebid.js's pixelUrl call), with the pixel response otherwise unchanged": PERCENT_ENCODED,
   'module-reflect-prefer.json#backup: restores the saved uid1 byte for byte over the present one, restores the missing _ga, and keeps {_ga, uid1}': PERCENT_ENCODED
 };
 
@@ -135,6 +154,13 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
     // The bundled Lambda handler behind a local CloudFront and function URL stand-in (lambda-emulator.ts). The
     // public origin is the emulator's own http URL, so cookies aren't Secure, as for the other local targets.
     child = spawn(process.execPath, [join(ROOT, 'conformance/dist/lambda-emulator.js')], {
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
+      stdio: ['ignore', 'ignore', 'inherit']
+    });
+  } else if (target === 'vercel') {
+    // The bundled Vercel adapter behind a local stand-in for Vercel's proxy (vercel-emulator.ts), which sets the
+    // x-real-ip and x-vercel-ip-* headers. Plain http, so cookies aren't Secure, as for the other local targets.
+    child = spawn(process.execPath, [join(ROOT, 'conformance/dist/vercel-emulator.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
@@ -175,6 +201,7 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
     baseUrl,
     stop,
     requestHeaders: target === 'wrangler' ? asRequestCf : headers => ({ ...headers }),
+    unavailable: UNAVAILABLE[target],
     limitations: target === 'azure' ? AZURE_LIMITATIONS : {}
   };
 }

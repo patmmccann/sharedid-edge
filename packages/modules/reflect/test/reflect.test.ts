@@ -128,6 +128,10 @@ describe('reading values', () => {
     expect(rawCookieValue(' \t uid1=abc \t; other=x', 'uid1')).toBe('abc');
     expect(rawCookieValue('uid1=\u00a0abc; other=x', 'uid1')).toBe('\u00a0abc');
     expect(isReflectable('\u00a0abc')).toBe(false);
+    // stays fast on a long run of whitespace in a hostile Cookie header
+    const started = Date.now();
+    expect(rawCookieValue(`uid1=${' '.repeat(100_000)}x${' \t'.repeat(50_000)}`, 'uid1')).toBe('x');
+    expect(Date.now() - started).toBeLessThan(500);
   });
 
   it('reflects only non-empty cookie-octet values up to 1024 characters', () => {
@@ -371,9 +375,28 @@ describe('the reflect module in the handler', () => {
     }
   });
 
-  it('doesn\'t run on /sync', async () => {
-    const response = await handler()(new Request('https://www.example.com/_sid/sync', { headers: { Cookie: 'uid1=abc' } }));
+  it('runs on /sync too: Prebid.js\'s pixel call reflects with the same attributes, and the pixel stays a cached GIF', async () => {
+    const sync = await handler()(new Request('https://www.example.com/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d', { headers: { Cookie: 'uid1=AbC%2Fx+y/z==; fpid=f' } }));
+    const v1 = await call('/_sid/v1', { Cookie: 'uid1=AbC%2Fx+y/z==; fpid=f' });
+    const strip = (c: string): string => c.replace(/; Expires=[^;]+/, '');
+    expect(sync.headers.getSetCookie().filter(c => !c.startsWith('_pubcid')).map(strip)).toEqual(v1.cookies.map(strip));
+    expect(sync.headers.getSetCookie().find(c => c.startsWith('uid1='))).toMatch(/^uid1=AbC%2Fx\+y\/z==; Max-Age=31536000; /);
+    expect(sync.headers.get('Content-Type')).toBe('image/gif');
+    expect(sync.headers.get('Cache-Control')).toBe('private, max-age=86400');
+    expect(sync.headers.get('X-SharedID-Modules')).toBe('reflect=empty');
+    expect((await sync.arrayBuffer()).byteLength).toBe(43);
+  });
+
+  it('doesn\'t run on /sync with SID_SYNC_MODULES=none', async () => {
+    const response = await handler({ SID_SYNC_MODULES: 'none' })(new Request('https://www.example.com/_sid/sync', { headers: { Cookie: 'uid1=abc' } }));
     expect(response.headers.getSetCookie().some(c => c.startsWith('uid1='))).toBe(false);
+    expect(response.headers.has('X-SharedID-Modules')).toBe(false);
+  });
+
+  it('reports an error on /sync for invalid settings, and sets nothing', async () => {
+    const response = await handler({ SID_MODULE_CONFIG: '{"reflect":{"cookies":[]}}' })(new Request('https://www.example.com/_sid/sync', { headers: { Cookie: 'uid1=abc' } }));
+    expect(response.headers.get('X-SharedID-Modules')).toBe('reflect=error');
+    expect(response.headers.getSetCookie().filter(c => !c.startsWith('_pubcid'))).toEqual([]);
   });
 });
 
@@ -499,9 +522,26 @@ describe('the keeper in the handler', () => {
     expect(cookies.filter(c => !c.startsWith('myid='))).toEqual([]);
   });
 
-  it('doesn\'t restore on /sync', async () => {
-    const response = await handler()(new Request('https://www.example.com/_sid/sync', { headers: { Cookie: `_sid_keep=${saved({ _ga: ga })}` } }));
-    expect(response.headers.getSetCookie().some(c => c.startsWith('_ga=') || c.startsWith('_sid_keep='))).toBe(false);
+  const sync = async (headers: Record<string, string>, moduleConfig?: unknown): Promise<string[]> => {
+    const response = await handler(moduleConfig)(new Request('https://www.example.com/_sid/sync', { headers }));
+    expect(response.headers.get('Content-Type')).toBe('image/gif');
+    return response.headers.getSetCookie().filter(c => !c.startsWith('_pubcid'));
+  };
+
+  it('saves and restores on /sync, as on /v1', async () => {
+    const saving = await sync({ Cookie: `_gcl_au=${au}; _ga=${ga}` });
+    expect(pairs(saving)).toEqual([`_ga=${ga}`, `_gcl_au=${au}`, `_sid_keep=${saved({ _ga: ga, _gcl_au: au })}`]);
+    const restoring = await sync({ Cookie: `_sid_keep=${saved({ _ga: ga, _gcl_aw: aw })}` });
+    expect(pairs(restoring)).toEqual([`_ga=${ga}`, `_gcl_aw=${aw}`, `_sid_keep=${saved({ _ga: ga, _gcl_aw: aw })}`]);
+    expect(restoring.find(c => c.startsWith('_ga='))).toMatch(/; Max-Age=34560000; Expires=[^;]+; Path=\/; Domain=\.example\.com; SameSite=Lax; Secure$/);
+  });
+
+  it('on /sync with storage denied, deletes the keeper only', async () => {
+    for (const headers of [{ 'Sec-GPC': '1' }, { Cookie: '_pubcid_optout=1' }]) {
+      const cookie = `_ga=${ga}; _sid_keep=${saved({ _ga: ga })}`;
+      const cookies = await sync({ ...headers, Cookie: 'Cookie' in headers ? `${headers.Cookie}; ${cookie}` : cookie });
+      expect(cookies).toEqual([DELETED_KEEPER]);
+    }
   });
 
   describe('prefer', () => {
