@@ -22,7 +22,7 @@
   },
   "scripts": {
     "test": "vitest run",
-    "attw": "attw --pack . --profile esm-only",
+    "attw": "attw --pack . --profile esm-only --quiet || attw --pack . --profile esm-only",
     "bundle": "node scripts/bundle.mjs",
     "bundle:bowser": "node scripts/bundle.mjs --bowser"
   },
