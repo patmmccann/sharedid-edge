@@ -1,6 +1,6 @@
 # @sharedid-edge/azure-functions
 
-[SharedID Edge](../../../README.md) on Azure: an Azure Functions app (Node.js v4 programming model) behind a `/_sid/*` route of **the Azure Front Door profile that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server, the Lambda function and the Vercel adapter, with built-in modules `ip`, `ec`, `geo` and `reflect`. It passes the same conformance suite, except for one documented limitation of Azure Functions: [cookie values](#cookie-values).
+[SharedID Edge](../../../README.md) on Azure: an Azure Functions app (Node.js v4 programming model) behind a `/_sid/*` route of **the Azure Front Door profile that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server, the Lambda function and the Vercel adapter, with built-in modules `ip`, `ec`, `geo`, `reflect` and `bot`. It passes the same conformance suite, except for one documented limitation of Azure Functions: [cookie values](#cookie-values).
 
 The main README has a [quick start](../../../README.md#deploy-on-azure-functions-and-front-door). This is the full guide.
 
@@ -221,6 +221,7 @@ Then [turn it on in Prebid.js](../../../README.md#configure-prebidjs).
 | `country` | the `country` header in `SID_LOCATION_HEADERS` (`x-sid-country` with the template) | Front Door's `{geo_country}`, which the rule set writes on every request. Empty when Front Door doesn't know it. |
 | `isEU` | from `country` | `true` for the 27 EU member states (core's `EU_COUNTRY_CODES`, the meaning of Cloudflare's `isEUCountry`), `false` for other countries, unknown without a country. |
 | `region`, `city`, `postalCode`, `metroCode`, `latitude`, `longitude`, `timezone`, `continent` | headers in `SID_LOCATION_HEADERS`, if any | Front Door has no server variables for these, so with the template they're unknown, and the `geo` module sends only the country. They're there for a proxy in front of Front Door that adds them. |
+| `traffic` | none | Front Door adds no bot verdict to the requests it forwards (its WAF bot rules can block or log, but pass nothing on), so the adapter adds nothing to the traffic signal; the `bot` module and other modules still report to it, and `SID_SKIP_BOTS` works from their reports. |
 
 Core's `locationInfo` validates every value the same way as on the other platforms.
 

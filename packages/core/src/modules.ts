@@ -1,5 +1,6 @@
 import { isRecord, type SharedIdEdgeConfig } from './config.js';
 import type { ConsentContext, StorageDecision } from './consent.js';
+import { trafficReport, type TrafficEntry, type TrafficReport } from './traffic.js';
 import type { Eid, ModuleReport, PlatformInfo } from './types.js';
 
 /** What a module gets for one request. Modules see the request but must not modify it. */
@@ -59,6 +60,12 @@ export interface ModuleResult {
   readonly ortb2?: Readonly<Record<string, unknown>>;
   /** Cookies to set (or delete) on the response. */
   readonly cookies?: readonly ModuleCookie[];
+  /**
+   * What the module found about the traffic: bot, proxy, score or internal traffic. Core merges every module's report,
+   * and the platform's, into `ortb2.device.ext.traffic` (most cautious wins) and sets `sources` itself. A module
+   * shouldn't write `ortb2.device.ext.traffic` directly; if it does, that's read as its report, never merged as is.
+   */
+  readonly traffic?: TrafficReport;
 }
 
 /**
@@ -177,6 +184,8 @@ export interface ModuleRunOutput {
   readonly eids: Eid[];
   readonly cookies: ModuleCookie[];
   readonly ortb2: Record<string, unknown> | undefined;
+  /** Each module's traffic report, checked, in module order, for core to merge with the platform's. */
+  readonly traffic: TrafficEntry[];
   readonly reports: Record<string, ModuleReport>;
 }
 
@@ -195,6 +204,7 @@ export async function runModules(
   const eids: Eid[] = [];
   const cookies: ModuleCookie[] = [];
   let ortb2: Record<string, unknown> | undefined;
+  const traffic: TrafficEntry[] = [];
   const reports: Record<string, ModuleReport> = {};
 
   for (const name of moduleNamesFor(registry, config, route)) {
@@ -223,22 +233,41 @@ export async function runModules(
         reports[name] = { ms, status: 'timeout' };
         continue;
       }
-      if (result === undefined || (result.eids === undefined && result.ortb2 === undefined && result.cookies === undefined)) {
+      if (result === undefined || (result.eids === undefined && result.ortb2 === undefined && result.cookies === undefined && result.traffic === undefined)) {
         reports[name] = { ms, status: 'empty' };
         continue;
       }
       // Checked before anything from this module is used, so a bad cookie leaves the whole result out.
       for (const cookie of result.cookies ?? []) checkModuleCookie(cookie, config);
+      const split = result.ortb2 === undefined ? { rest: undefined, traffic: undefined } : takeTraffic(result.ortb2);
+      const reported = [result.traffic, split.traffic].flatMap(value => (value === undefined ? [] : [{ source: name, report: trafficReport(value) }]));
       if (result.cookies !== undefined) cookies.push(...result.cookies);
       if (result.eids !== undefined) eids.push(...result.eids);
-      if (result.ortb2 !== undefined) ortb2 = deepMerge(ortb2 ?? {}, result.ortb2);
-      reports[name] = { ms, status: result.eids === undefined && result.ortb2 === undefined ? 'empty' : 'ok' };
+      if (split.rest !== undefined) ortb2 = deepMerge(ortb2 ?? {}, split.rest);
+      traffic.push(...reported);
+      const added = result.eids !== undefined || split.rest !== undefined || reported.some(entry => Object.keys(entry.report).length > 0);
+      reports[name] = { ms, status: added ? 'ok' : 'empty' };
     } catch {
       // The error isn't reported to the page: it may contain request data.
       reports[name] = { ms: Math.round(now() - start), status: 'error' };
     }
   }
-  return { eids, cookies, ortb2, reports };
+  return { eids, cookies, ortb2, traffic, reports };
+}
+
+/**
+ * Splits `device.ext.traffic` out of a module's OpenRTB fragment: core writes that field from the merged signal, so a
+ * module's own value is read as its report instead of being merged as is. Objects left empty are dropped.
+ */
+function takeTraffic(fragment: Readonly<Record<string, unknown>>): { rest: Record<string, unknown> | undefined; traffic: unknown } {
+  const { device, ...others } = fragment;
+  if (!isRecord(device)) return { rest: { ...fragment }, traffic: undefined };
+  const { ext, ...deviceOthers } = device;
+  if (!isRecord(ext) || !('traffic' in ext)) return { rest: { ...fragment }, traffic: undefined };
+  const { traffic, ...extOthers } = ext;
+  const newDevice: Record<string, unknown> = Object.keys(extOthers).length === 0 ? deviceOthers : { ...deviceOthers, ext: extOthers };
+  const rest: Record<string, unknown> = Object.keys(newDevice).length === 0 ? others : { ...others, device: newDevice };
+  return { rest: Object.keys(rest).length === 0 ? undefined : rest, traffic };
 }
 
 const MODULE_COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,64}$/;

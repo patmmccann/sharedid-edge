@@ -1,0 +1,78 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "SID_SKIP_BOTS=likely, with the bot module (missingHeaders on, internalCookie its_me) supplying the verdict: a browser user agent with an empty Accept-Language is a likely bot. A qualifying request gets no ID cookie and no SharedID, with X-SharedID-Status: skipped: bot, and an existing ID is neither deleted nor refreshed. Internal traffic isn't skipped. Consent denial still takes precedence and deletes the ID. On /sync (Prebid.js's pixelUrl) the bot module runs too, and its report joins the platform's verdict (not available on every target; see the unit tests): a likely bot gets no ID there either, and the response isn't cached.",
+  "config": {
+    "SID_MODULES": "bot",
+    "SID_MODULE_CONFIG": "{\"bot\":{\"missingHeaders\":true,\"internalCookie\":\"its_me\"}}",
+    "SID_SKIP_BOTS": "likely"
+  },
+  "cases": [
+    {
+      "name": "a likely bot gets no ID",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "" } },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-status": "skipped: bot" },
+        "absentHeaders": ["x-sharedid-source"],
+        "jsonIncludes": {
+          "v": 1,
+          "eids": [],
+          "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "likely", "sources": ["bot"] } } } },
+          "ext": { "modules": { "bot": { "status": "ok" } } }
+        },
+        "jsonAbsent": ["sharedid", "ortb2.device.ext.traffic.internal", "ortb2.device.ext.traffic.score"],
+        "noCookies": true
+      }
+    },
+    {
+      "name": "a likely bot's existing ID is neither returned, refreshed nor deleted",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "skipped: bot" }, "jsonIncludes": { "eids": [] }, "jsonAbsent": ["sharedid"], "noCookies": true }
+    },
+    {
+      "name": "a normal visitor gets an ID as usual",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "en" } },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-source": "minted" },
+        "absentHeaders": ["x-sharedid-status"],
+        "cookies": [{ "name": "_pubcid", "valuePattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" }]
+      }
+    },
+    {
+      "name": "internal traffic isn't skipped",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "en", "cookie": "its_me=1; _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "absentHeaders": ["x-sharedid-status"],
+        "jsonIncludes": { "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d", "ortb2": { "device": { "ext": { "traffic": { "internal": true, "sources": ["bot"] } } } } },
+        "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }]
+      }
+    },
+    {
+      "name": "consent denial takes precedence: a likely bot with GPC has its ID deleted",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "", "sec-gpc": "1", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "denied: gpc" }, "jsonAbsent": ["sharedid"], "cookies": [{ "name": "_pubcid", "value": "", "maxAge": 0 }] }
+    },
+    {
+      "name": "on /sync, a likely bot gets no ID from the id parameter",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "" } },
+      "expect": { "status": 200, "headers": { "content-type": "image/gif", "cache-control": "no-store", "x-sharedid-status": "skipped: bot", "x-sharedid-modules": "bot=ok" }, "absentHeaders": ["x-sharedid-source"], "noCookies": true }
+    },
+    {
+      "name": "on /sync, a likely bot's existing ID is neither refreshed nor deleted",
+      "request": { "path": "/_sid/sync", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "skipped: bot", "x-sharedid-modules": "bot=ok" }, "absentHeaders": ["x-sharedid-source"], "noCookies": true }
+    },
+    {
+      "name": "on /sync, a normal visitor gets the ID as usual",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "en" } },
+      "expect": { "status": 200, "headers": { "x-sharedid-source": "param", "x-sharedid-modules": "bot=empty", "cache-control": "private, max-age=86400" }, "absentHeaders": ["x-sharedid-status"], "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }, { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }], "onlyListedCookies": true }
+    },
+    {
+      "name": "on /sync, internal traffic isn't skipped",
+      "request": { "path": "/_sid/sync", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "en", "cookie": "its_me=1; _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": { "status": 200, "headers": { "x-sharedid-source": "cookie", "x-sharedid-modules": "bot=ok" }, "absentHeaders": ["x-sharedid-status"], "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    }
+  ]
+}

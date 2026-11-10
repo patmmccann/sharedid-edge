@@ -26,6 +26,8 @@
     "SID_MODULES": "",
     "SID_SYNC_MODULES": "",
     "SID_MODULE_CONFIG": "{}",
-    "SID_MODULE_TIMEOUT_MS": "50"
+    "SID_MODULE_TIMEOUT_MS": "50",
+    "SID_SKIP_BOTS": "",
+    "SID_SKIP_BOTS_SCORE": ""
   }
 }

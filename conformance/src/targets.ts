@@ -84,11 +84,12 @@ const LOCATION_HEADERS: Readonly<Record<string, string>> = {
 };
 
 /**
- * For `wrangler dev`: when a case sends visitor location headers, passes the same values to the worker as
- * `request.cf`. Locally, workerd fills `request.cf` from Cloudflare's view of the machine running the suite, and the
- * only way to replace it per request is Miniflare's `MF-CF-Blob` header (the JSON `cf` object Miniflare itself sends
- * with `dispatchFetch`). `clientAcceptEncoding` is kept empty, as in Miniflare's default, so responses aren't
- * compressed.
+ * For `wrangler dev`: passes the case's visitor location headers to the worker as `request.cf`, and nothing else.
+ * Locally, workerd fills `request.cf` from Cloudflare's view of the machine running the suite (or, offline,
+ * Miniflare's placeholder, which includes a Bot Management score), and the only way to replace it per request is
+ * Miniflare's `MF-CF-Blob` header (the JSON `cf` object Miniflare itself sends with `dispatchFetch`). It's sent on
+ * every request, so results don't depend on where the suite runs. `clientAcceptEncoding` is kept empty, as in
+ * Miniflare's default, so responses aren't compressed.
  */
 function asRequestCf(headers: Readonly<Record<string, string>>): Record<string, string> {
   const cf: Record<string, string> = {};
@@ -96,7 +97,6 @@ function asRequestCf(headers: Readonly<Record<string, string>>): Record<string, 
     const field = LOCATION_HEADERS[name.toLowerCase()];
     if (field !== undefined) cf[field] = value;
   }
-  if (Object.keys(cf).length === 0) return { ...headers };
   return { ...headers, 'MF-CF-Blob': JSON.stringify({ ...cf, clientAcceptEncoding: '' }) };
 }
 

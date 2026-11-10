@@ -13,6 +13,7 @@
     { "path": "../ip" },
     { "path": "../ec" },
     { "path": "../geo" },
-    { "path": "../reflect" }
+    { "path": "../reflect" },
+    { "path": "../bot" }
   ]
 }

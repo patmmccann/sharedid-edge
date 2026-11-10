@@ -65,6 +65,10 @@ param sidSyncCacheSeconds string = ''
 param sidModules string = ''
 @description('SID_SYNC_MODULES: the modules in SID_MODULES that also run on /sync, e.g. reflect, or none (empty: those whose routes include sync)')
 param sidSyncModules string = ''
+@description('SID_SKIP_BOTS: verified, declared or likely, for no SharedID for bots that sure or surer (empty: off)')
+param sidSkipBots string = ''
+@description('SID_SKIP_BOTS_SCORE: 1 to 99, for no SharedID when the traffic score is at or below it (empty: off)')
+param sidSkipBotsScore string = ''
 @description('SID_MODULE_CONFIG (JSON; empty: {})')
 param sidModuleConfig string = ''
 @description('SID_MODULE_TIMEOUT_MS (empty: 50)')
@@ -161,6 +165,8 @@ resource app 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'SID_SYNC_CACHE_SECONDS', value: sidSyncCacheSeconds }
         { name: 'SID_MODULES', value: sidModules }
         { name: 'SID_SYNC_MODULES', value: sidSyncModules }
+        { name: 'SID_SKIP_BOTS', value: sidSkipBots }
+        { name: 'SID_SKIP_BOTS_SCORE', value: sidSkipBotsScore }
         { name: 'SID_MODULE_CONFIG', value: sidModuleConfig }
         { name: 'SID_MODULE_TIMEOUT_MS', value: sidModuleTimeoutMs }
         { name: 'SID_MODULE_SECRETS', value: sidModuleSecrets }
