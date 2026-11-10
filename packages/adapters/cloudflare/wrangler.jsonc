@@ -21,6 +21,7 @@
     "SID_ALLOWED_ORIGINS": "",
     "SID_SYNC_CACHE_SECONDS": "86400",
     "SID_MODULES": "",
+    "SID_SYNC_MODULES": "",
     "SID_MODULE_CONFIG": "{}",
     "SID_MODULE_TIMEOUT_MS": "50"
   }

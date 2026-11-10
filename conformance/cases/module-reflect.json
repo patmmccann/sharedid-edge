@@ -52,9 +52,25 @@
       "expect": { "status": 200, "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }], "onlyListedCookies": true }
     },
     {
-      "name": "doesn't reflect on /sync",
-      "request": { "path": "/_sid/sync", "headers": { "cookie": "uid1=abc" } },
-      "expect": { "status": 200, "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }], "onlyListedCookies": true }
+      "name": "reflects on /sync (Prebid.js's pixelUrl call), with the pixel response otherwise unchanged",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "cookie": "uid1=AbC%2Fx+y/z==.v1; fpid=7a1f-0c2e_93b4" } },
+      "expect": {
+        "status": 200,
+        "headers": { "content-type": "image/gif", "cache-control": "private, max-age=86400", "x-sharedid-modules": "reflect=empty" },
+        "bodyLength": 43,
+        "cookies": [
+          { "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" },
+          { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" },
+          { "name": "uid1", "value": "AbC%2Fx+y/z==.v1", "maxAge": 31536000, "domain": ".example.com", "httpOnly": false, "sameSite": "Lax", "path": "/" },
+          { "name": "fpid", "value": "7a1f-0c2e_93b4", "maxAge": 2592000, "domain": "", "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "reflects nothing on /sync with Global Privacy Control",
+      "request": { "path": "/_sid/sync", "headers": { "sec-gpc": "1", "cookie": "uid1=abc; fpid=def" } },
+      "expect": { "status": 200, "headers": { "cache-control": "no-store", "x-sharedid-modules": "reflect=empty" }, "noCookies": true }
     },
     {
       "name": "reflects nothing, and deletes nothing, with the opt-out cookie",

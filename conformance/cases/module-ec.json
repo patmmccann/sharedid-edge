@@ -36,6 +36,31 @@
       }
     },
     {
+      "name": "mints ts-ec on /sync (Prebid.js's pixelUrl call), with the pixel response otherwise unchanged",
+      "request": { "path": "/_sid/sync", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
+      "expect": {
+        "status": 200,
+        "headers": { "content-type": "image/gif", "cache-control": "private, max-age=86400", "x-sharedid-modules": "ec=ok" },
+        "bodyLength": 43,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "ts-ec", "valuePattern": "^7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc\\.[A-Za-z0-9]{6}$", "maxAge": 31536000, "domain": ".example.com", "httpOnly": true, "sameSite": "Lax", "path": "/" }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "keeps an existing ts-ec on /sync without refreshing it",
+      "request": { "path": "/_sid/sync", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }], "onlyListedCookies": true }
+    },
+    {
+      "name": "deletes ts-ec on /sync with Global Privacy Control",
+      "request": { "path": "/_sid/sync", "headers": { "sec-gpc": "1", "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
+      "expect": { "status": 200, "headers": { "cache-control": "no-store" }, "cookies": [{ "name": "ts-ec", "value": "", "maxAge": 0, "domain": ".example.com", "httpOnly": true }], "onlyListedCookies": true }
+    },
+    {
       "name": "deletes ts-ec on opt-out",
       "request": { "path": "/_sid/optout", "headers": { "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
       "expect": {

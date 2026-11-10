@@ -23,8 +23,13 @@ export interface SharedIdEdgeConfig {
   readonly allowedOrigins: readonly string[];
   /** `Cache-Control: private, max-age` for a successful sync response, in seconds; limits how often a browser re-syncs. */
   readonly syncCacheSeconds: number;
-  /** Names of the modules to run for the JSON endpoint, in order. */
+  /** Names of the modules to run, in order. */
   readonly modules: readonly string[];
+  /**
+   * Names of the modules to run on `/sync` (`SID_SYNC_MODULES`), each also in `modules`; they run in `modules` order.
+   * Omitted means every module in `modules` whose `routes` include `sync`.
+   */
+  readonly syncModules?: readonly string[];
   /** Per-module configuration, keyed by module name. */
   readonly moduleConfig: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
   /** Per-module secrets (strings), keyed by module name; from a platform secret. Never logged or returned. */
@@ -117,6 +122,7 @@ function list(env: Env, key: string): string[] {
  * | `SID_ALLOWED_ORIGINS` | (none) | comma-separated |
  * | `SID_SYNC_CACHE_SECONDS` | `86400` | |
  * | `SID_MODULES` | (none) | comma-separated module names |
+ * | `SID_SYNC_MODULES` | (modules in `SID_MODULES` that run on `/sync`) | comma-separated names from `SID_MODULES`, or `none` |
  * | `SID_MODULE_CONFIG` | `{}` | JSON object keyed by module name |
  * | `SID_MODULE_SECRETS` | `{}` | JSON object of string secrets keyed by module name; set as a platform secret |
  * | `SID_MODULE_TIMEOUT_MS` | `50` | |
@@ -189,6 +195,18 @@ export function resolveConfig(env: Env): SharedIdEdgeConfig {
     throw new ConfigError('SID_RECOVERY_COOKIE must differ from SID_OPTOUT_COOKIE');
   }
 
+  const modules = list(env, 'SID_MODULES');
+  let syncModules: string[] | undefined;
+  if (str(env, 'SID_SYNC_MODULES') === 'none') {
+    syncModules = [];
+  } else if (str(env, 'SID_SYNC_MODULES') !== undefined) {
+    syncModules = list(env, 'SID_SYNC_MODULES');
+    for (const name of syncModules) {
+      // Running a module on /sync that's off for /v1 would be surprising, and a typo would silently run nothing.
+      if (!modules.includes(name)) throw new ConfigError(`SID_SYNC_MODULES lists "${name}", which isn't in SID_MODULES`);
+    }
+  }
+
   return Object.freeze({
     basePath: trimTrailingSlashes(basePath),
     cookieName: cookie,
@@ -200,7 +218,8 @@ export function resolveConfig(env: Env): SharedIdEdgeConfig {
     vendorId: str(env, 'SID_VENDOR_ID') === undefined ? undefined : int(env, 'SID_VENDOR_ID', 0, 1, 65_535),
     allowedOrigins: Object.freeze(allowedOrigins),
     syncCacheSeconds: int(env, 'SID_SYNC_CACHE_SECONDS', DEFAULT_CONFIG.syncCacheSeconds, 0, 31_536_000),
-    modules: Object.freeze(list(env, 'SID_MODULES')),
+    modules: Object.freeze(modules),
+    ...(syncModules === undefined ? {} : { syncModules: Object.freeze(syncModules) }),
     moduleConfig: Object.freeze(moduleConfig),
     moduleSecrets: Object.freeze(moduleSecrets),
     moduleTimeoutMs: int(env, 'SID_MODULE_TIMEOUT_MS', DEFAULT_CONFIG.moduleTimeoutMs, 1, 10_000)

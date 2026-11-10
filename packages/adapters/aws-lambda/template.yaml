@@ -80,7 +80,13 @@ Parameters:
   SidModules:
     Type: String
     Default: ''
-    Description: SID_MODULES, comma-separated modules to run for /v1 (built in, ip and ec).
+    Description: SID_MODULES, comma-separated modules to run (built in, ip, ec, geo and reflect).
+  SidSyncModules:
+    Type: String
+    Default: ''
+    Description: >-
+      SID_SYNC_MODULES, comma-separated modules from SidModules to run on /sync, or none (default every module in
+      SidModules that runs on /sync, reflect and ec).
   SidModuleConfig:
     Type: String
     Default: ''
@@ -135,6 +141,7 @@ Resources:
           SID_ALLOWED_ORIGINS: !Ref SidAllowedOrigins
           SID_SYNC_CACHE_SECONDS: !Ref SidSyncCacheSeconds
           SID_MODULES: !Ref SidModules
+          SID_SYNC_MODULES: !Ref SidSyncModules
           SID_MODULE_CONFIG: !Ref SidModuleConfig
           SID_MODULE_SECRETS: !Ref SidModuleSecrets
           SID_MODULE_TIMEOUT_MS: !Ref SidModuleTimeoutMs
