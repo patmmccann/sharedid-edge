@@ -1,6 +1,6 @@
 {
   "$schema": "../case-file.schema.json",
-  "description": "The ua module's Bowser option (SID_MODULE_CONFIG={\"ua\":{\"parser\":\"bowser\"}}), on a target built with Bowser (\"build\": [\"bowser\"]: the Worker's, Lambda's and Vercel's Bowser builds; the Node.js server always has it). Without Client Hints the User-Agent fills every device field Bowser can give: sua with source 3, devicetype, make, model, os and osv. Values browsers freeze (macOS 10.15.7, the .0.0.0 of reduced Chromium versions) are left out. Client Hints still win where both give a value. With GPC only low-entropy fields are sent (no model, osv, sua.platform.version or full versions); devicetype, make, os and major versions stay.",
+  "description": "The ua module's Bowser option (SID_MODULE_CONFIG={\"ua\":{\"parser\":\"bowser\"}}), on a target built with Bowser (\"build\": [\"bowser\"]: the Bowser builds of the Worker, Lambda, Vercel and Azure Functions; the Node.js server always has it). Without Client Hints the User-Agent fills every device field Bowser can give: sua with source 3, devicetype, make, model, os and osv. Values browsers freeze (macOS 10.15.7, the .0.0.0 of reduced Chromium versions) are left out. Client Hints still win where both give a value. With GPC only low-entropy fields are sent (no model, osv, sua.platform.version or full versions); devicetype, make, os and major versions stay.",
   "config": { "SID_MODULES": "ua", "SID_MODULE_CONFIG": "{\"ua\":{\"parser\":\"bowser\"}}" },
   "build": ["bowser"],
   "cases": [

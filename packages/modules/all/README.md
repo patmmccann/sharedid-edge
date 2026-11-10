@@ -26,4 +26,4 @@ Vendor modules (in [`packages/vendor-modules/`](../../vendor-modules/README.md))
 
 ## With Bowser
 
-`@sharedid-edge/modules/bowser` exports the same `builtInModules`, with `uaModuleWithBowser` in place of `uaModule`, so `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` can parse User-Agents fully. It's what the adapters' Bowser builds alias in (`deploy:bowser`, `bundle:bowser`) and what the Node.js server uses. It adds about 8.5 KB gzipped to a bundle; see [Full parsing with Bowser](../ua/README.md#full-parsing-with-bowser).
+`@sharedid-edge/modules/bowser` exports the same `builtInModules`, with `uaModuleWithBowser` in place of `uaModule`, so `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` can parse User-Agents fully. It's what the adapters' Bowser builds alias in (`deploy:bowser`, `bundle:bowser`) and what the Node.js server uses. It adds about 8 to 8.7 KB gzipped to a bundle; see [Full parsing with Bowser](../ua/README.md#full-parsing-with-bowser).
