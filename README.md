@@ -44,7 +44,7 @@ Full reference: [`packages/adapters/cloudflare/README.md`](packages/adapters/clo
 
 - Your site's DNS is on Cloudflare, and the hostname you serve pages from (for example `www.example.com`) is **proxied** (orange cloud). Workers routes only run on proxied hostnames.
 - A Cloudflare account with permission to deploy Workers and edit routes on the zone. Each sync is one Worker request; the free plan has a daily request limit, so check expected volume against your plan.
-- Node.js 22 or later and npm.
+- Node.js 24 or later and npm.
 - The site is served over https (the cookies are `Secure`).
 
 ### 1. Get the code and build it
@@ -146,7 +146,7 @@ If your site is served through Amazon CloudFront, run SharedID Edge as a Lambda 
 
 - An existing CloudFront distribution serving your site over https, and its ID (like `E2ABCDEFGHIJKL`).
 - The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html), with credentials that can create Lambda, IAM, CloudWatch Logs and CloudFront resources (`aws configure`).
-- Node.js 22 or later and npm.
+- Node.js 24 or later and npm.
 
 ### 1. Build
 
@@ -167,7 +167,7 @@ sam deploy --guided
 
 Answer the prompts: a stack name (like `sharedid-edge`), your region, `DistributionId` = your distribution's ID, and the `Sid*` settings you need (empty means the default; `SidCookieDomain` = `.example.com` to share the cookie across subdomains). Let SAM save the answers to `samconfig.toml`; later deploys are `sam deploy`.
 
-This creates a Node.js 22 function with a function URL that accepts only requests signed by your distribution (`AWS_IAM` auth and an origin access control), and an origin request policy. The stack's outputs list what step 3 needs.
+This creates a Node.js 24 function with a function URL that accepts only requests signed by your distribution (`AWS_IAM` auth and an origin access control), and an origin request policy. The stack's outputs list what step 3 needs.
 
 ### 3. Add the `/_sid/*` behaviour to your distribution
 

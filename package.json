@@ -5,7 +5,7 @@
   "description": "SharedID Edge: a first-party edge worker that keeps the Prebid SharedID cookie durable",
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "workspaces": [
     "packages/core",

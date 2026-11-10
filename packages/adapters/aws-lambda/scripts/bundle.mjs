@@ -27,7 +27,7 @@ await build({
   outfile,
   bundle: true,
   platform: 'node',
-  target: 'node22',
+  target: 'node24',
   format: 'esm',
   legalComments: 'none',
   logLevel: 'warning'
