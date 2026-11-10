@@ -10,6 +10,7 @@ It also has a **module** interface for IDs and signals that are best computed at
 - [Deploy on Cloudflare](#deploy-on-cloudflare)
 - [Deploy on AWS (Lambda and CloudFront)](#deploy-on-aws-lambda-and-cloudfront)
 - [Deploy on Vercel](#deploy-on-vercel)
+- [Deploy on Azure (Functions and Front Door)](#deploy-on-azure-functions-and-front-door)
 - [Deploy on Google Cloud (Cloud Run functions and Load Balancing)](#deploy-on-google-cloud-cloud-run-functions-and-load-balancing)
 - [Configure Prebid.js](#configure-prebidjs)
 - [Migrate from the WordPress or Drupal plugin](#migrate-from-the-wordpress-or-drupal-plugin)
@@ -247,6 +248,63 @@ npm run verify-deployment -- --site https://www.example.com
 
 It checks that `/_sid/*` shares the site's IP addresses, sets the cookies correctly, isn't cached, and returns the JSON payload. Then [turn it on in Prebid.js](#configure-prebidjs). The client IP and location come from headers Vercel's proxy sets (`x-real-ip`, `x-vercel-ip-country` and the rest); see [Platform information](packages/adapters/vercel/README.md#platform-information).
 
+## Deploy on Azure (Functions and Front Door)
+
+If your site is served through Azure Front Door (Standard or Premium), run SharedID Edge as an Azure Functions app behind a `/_sid/*` route of **your site's own Front Door endpoint and custom domain**. Full guide (architecture, the template's parameters, the origin lock, configuration, troubleshooting): [`packages/adapters/azure-functions/README.md`](packages/adapters/azure-functions/README.md).
+
+**Why your own Front Door domain:** since Safari 16.4, cookies set by a server whose IP address doesn't match the website's are capped at 7 days. A route on the domain that serves `www.example.com` shares its IP addresses; the function app's own `*.azurewebsites.net` host name, or another Front Door domain, doesn't.
+
+### Prerequisites
+
+- Your site on Azure Front Door Standard or Premium, on your own custom domain, over https.
+- The [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az login`) and [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local) 4.x.
+- Node.js 24 or later and npm.
+
+### 1. Build
+
+```sh
+git clone https://github.com/patmmccann/sharedid-edge.git
+cd sharedid-edge
+npm ci
+npm run build
+npm run bundle -w @sharedid-edge/azure-functions          # the function app, in packages/adapters/azure-functions/deploy/
+(cd packages/adapters/azure-functions/deploy && npm install --omit=dev)
+```
+
+### 2. Create the function app and the Front Door route
+
+```sh
+az deployment group create --resource-group sharedid-edge \
+  --template-file packages/adapters/azure-functions/infra/main.bicep \
+  --parameters frontDoorProfileName=my-front-door frontDoorResourceGroup=my-site-rg \
+               frontDoorEndpointName=my-endpoint 'customDomainNames=["www-example-com"]'
+```
+
+This creates a Flex Consumption function app (Node.js 24) that accepts traffic only from your Front Door profile (an access restriction on the `AzureFrontDoor.Backend` service tag with your `X-Azure-FDID`, which the function checks too), and adds to your profile an origin for it, a route for `/_sid` and `/_sid/*` on your custom domains with caching off, and a rule that passes the visitor's country (`{geo_country}`) to the function.
+
+### 3. Publish the code
+
+```sh
+cd packages/adapters/azure-functions/deploy
+func azure functionapp publish <functionAppName>      # the template's functionAppName output
+```
+
+### 4. Configure
+
+Settings are the function app's `SID_*` app settings (the [Configuration reference](#configuration-reference)), set through the template's parameters (`sidModules=ip,geo`, `sidCookieDomain=.example.com`). `SID_MODULE_SECRETS` goes in the secure `sidModuleSecrets` parameter, or as a Key Vault reference (see the [package README](packages/adapters/azure-functions/README.md#secrets)). Invalid settings make every request return a 500; the reason is in the function app's logs.
+
+**Location and GDPR:** Front Door gives only the visitor's country (through the template's rule), not the region or city, so the `geo` module sends the country alone. Without that rule, GDPR applies only when the page sends `gdpr=1`.
+
+**Cookie values:** Azure Functions percent-encodes cookie values, so the `reflect` module leaves out a cookie whose value has characters other than letters, digits, `-`, `.`, `_` and `~` rather than corrupt it (see the [package README](packages/adapters/azure-functions/README.md#cookie-values)). SharedID Edge's own cookies aren't affected.
+
+### 5. Verify
+
+```sh
+npm run verify-deployment -- --site https://www.example.com
+```
+
+It checks that `/_sid/*` shares the site's IP addresses, sets the cookies correctly, isn't cached, and returns the JSON payload. Then [turn it on in Prebid.js](#configure-prebidjs).
+
 ## Deploy on Google Cloud (Cloud Run functions and Load Balancing)
 
 If your site is served through Google Cloud's external Application Load Balancer, run SharedID Edge as a Cloud Run function behind a `/_sid/*` path rule of **your site's own URL map**. Full guide (architecture, functions or services, Firebase Hosting, the Terraform, configuration, troubleshooting): [`packages/adapters/gcp-functions/README.md`](packages/adapters/gcp-functions/README.md).
@@ -473,7 +531,7 @@ Existing visitors keep their IDs: the worker adopts the cookie the plugin set. T
 - **Publisher mode** (the default). SharedID is your own first-party ID, so the worker reads the **publisher** consents (the TC string's publisher TC segment): it needs consent for Purpose 1 (store and access information on a device), and consent or legitimate interest for at least one of Purposes 2 to 10. Configure your CMP to ask for publisher consent for these purposes, or it won't include a publisher TC segment and no one gets a server cookie.
 - **Vendor mode.** If your company is registered as a TCF vendor, set `SID_VENDOR_ID` to your vendor ID. The worker then needs consent for that vendor, consent for Purpose 1, and consent or legitimate interest for at least one of Purposes 2 to 10, all from the vendor part of the TC string instead of the publisher segment.
 
-When GDPR applies and there's no TC string, that counts as no consent: the worker sets nothing and deletes the ID cookies. GDPR applies when Cloudflare places the request in the EU (`request.cf.isEUCountry`; behind CloudFront, `CloudFront-Viewer-Country` is one of the 27 EU member states; on Vercel, `x-vercel-ip-country` is; behind Google Cloud's load balancer, `{client_region}` is), or when the request says so with `gdpr=1`.
+When GDPR applies and there's no TC string, that counts as no consent: the worker sets nothing and deletes the ID cookies. GDPR applies when Cloudflare places the request in the EU (`request.cf.isEUCountry`; behind CloudFront, `CloudFront-Viewer-Country` is one of the 27 EU member states; on Vercel, `x-vercel-ip-country` is; behind Azure Front Door, the country its rule passes on is; behind Google Cloud's load balancer, `{client_region}` is), or when the request says so with `gdpr=1`.
 
 The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` parameter. Prebid.js doesn't add consent parameters to `pixelUrl`, so for the sync route **your CMP must store the TC string in the `euconsent-v2` cookie** (check yours: some keep it only in local storage). Without it, EU visitors get no server cookie, which is the safe failure. Sending the consent strings from Prebid.js to the worker is planned.
 
@@ -565,7 +623,7 @@ fetch('/_sid/v1', { credentials: 'include' })
 - a TCF TC string doesn't opt in to Special Feature 1 (precise geolocation);
 - GDPR applies and there's no TC string.
 
-**Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. Behind CloudFront it's the address in `CloudFront-Viewer-Address`, which CloudFront sets itself. On Vercel it's `x-real-ip`, which Vercel's proxy sets itself. Behind Google Cloud's load balancer it's the second-to-last `X-Forwarded-For` entry, which the load balancer writes (the first is the visitor's own). With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
+**Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. Behind CloudFront it's the address in `CloudFront-Viewer-Address`, which CloudFront sets itself. On Vercel it's `x-real-ip`, which Vercel's proxy sets itself. Behind Azure Front Door it's `X-Azure-ClientIP`, which Front Door sets itself. Behind Google Cloud's load balancer it's the second-to-last `X-Forwarded-For` entry, which the load balancer writes (the first is the visitor's own). With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
 
 The address is only returned to the browser that sent the request. The worker doesn't store or log it, and SharedIDs are never derived from it. `/_sid/v1` responses are `Cache-Control: no-store`.
 
@@ -755,7 +813,7 @@ Make sure no cache in front of it (a CDN or nginx's `proxy_cache`) stores `/_sid
 
 ## Configuration reference
 
-All settings are strings, set as Worker `vars` (Cloudflare) or environment variables (Node.js, AWS Lambda, Vercel, Google Cloud). Empty means the default. Invalid values make every request fail with a 500 and log the reason, rather than set wrong cookies.
+All settings are strings, set as Worker `vars` (Cloudflare), environment variables (Node.js, AWS Lambda, Vercel, Google Cloud) or app settings (Azure Functions). Empty means the default. Invalid values make every request fail with a 500 and log the reason, rather than set wrong cookies.
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -798,7 +856,7 @@ Responses carry two debug headers: `X-SharedID-Source` (`cookie`, `recovery`, `p
 | No `set-cookie` in the response | See `X-SharedID-Status`. In `tcf` mode, check the `euconsent-v2` cookie exists. |
 | Cookie set but gone after a week in Safari | Run `verify-deployment`: the endpoint's IP addresses probably don't match the site's. |
 | Cookie not readable by Prebid.js | The cookie name or domain doesn't match Prebid.js's `storage` config, or the page and the route are on hosts the cookie's domain doesn't cover. |
-| A 500 with "misconfigured" | A setting is invalid: `npm exec -w @sharedid-edge/cloudflare -- wrangler tail` shows the reason (on AWS, the function's CloudWatch logs; on Vercel, the project's logs; on Google Cloud, the function's logs in Cloud Logging). |
+| A 500 with "misconfigured" | A setting is invalid: `npm exec -w @sharedid-edge/cloudflare -- wrangler tail` shows the reason (on AWS, the function's CloudWatch logs; on Vercel, the project's logs; on Azure, the function app's logs; on Google Cloud, the function's logs in Cloud Logging). |
 | `getUserIdsAsync()` never resolves | The known Prebid.js issue under [Configure Prebid.js](#configure-prebidjs). |
 
 ## Development
@@ -814,6 +872,7 @@ packages/
     aws-lambda/                the AWS Lambda adapter, its bundle and SAM template
     gcp-functions/             the Google Cloud adapter (Cloud Run functions behind Load Balancing) and its Terraform
     vercel/                    the Vercel adapter (Next.js route handler or middleware), its bundle and an example
+    azure-functions/           the Azure Functions adapter (behind Front Door), its bundle and Bicep templates
   modules/                     modules maintained by this project, built into every adapter
     ip/ ec/ geo/ reflect/ bot/ the built-in modules
     all/                       @sharedid-edge/modules: the built-in list the adapters import
@@ -842,10 +901,10 @@ TypeScript is strict from the start, and CI checks types several ways:
 Tests:
 
 - `npm test`: unit tests, including the Worker's tests inside workerd, the Workers runtime. Vendor modules' tests run separately, with `npm run test:vendor-modules`.
-- `npm run conformance`: the conformance suite against the Node.js server; `npm run conformance:wrangler` runs it against the Worker under `wrangler dev`, `npm run conformance:lambda` against the bundled Lambda handler behind a local stand-in for CloudFront, `npm run conformance:vercel` against the bundled Vercel adapter behind a local stand-in for Vercel's proxy, and `npm run conformance:gcp` against the real Functions Framework serving the bundled Cloud Run function, behind a local stand-in for the load balancer.
+- `npm run conformance`: the conformance suite against the Node.js server; `npm run conformance:wrangler` runs it against the Worker under `wrangler dev`, `npm run conformance:lambda` against the bundled Lambda handler behind a local stand-in for CloudFront, `npm run conformance:vercel` against the bundled Vercel adapter behind a local stand-in for Vercel's proxy, `npm run conformance:azure` against the bundled Azure Functions app behind a local stand-in for Front Door and the Functions host, and `npm run conformance:gcp` against the real Functions Framework serving the bundled Cloud Run function, behind a local stand-in for Google Cloud's load balancer.
 - In `e2e/`: `npm ci && npx playwright install && npm test` runs unmodified Prebid.js against the worker in three browsers.
 
-None of this needs a Cloudflare, AWS, Vercel or Google Cloud account.
+None of this needs a Cloudflare, AWS, Vercel, Azure or Google Cloud account.
 
 ### Adding a module
 
@@ -867,7 +926,7 @@ Publish it as its own package like [`packages/modules/ip`](packages/modules/ip),
 
 ## Roadmap
 
-1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, AWS Lambda, Vercel and Google Cloud adapters, and the `ip`, `ec`, `geo`, `reflect` and `bot` modules, with a shared traffic signal any module can report bots to.
+1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, AWS Lambda, Vercel, Azure Functions and Google Cloud adapters, and the `ip`, `ec`, `geo`, `reflect` and `bot` modules, with a shared traffic signal any module can report bots to.
 2. **Next:** Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
 3. A Prebid.js RTD module that reads `/_sid/v1`, plus a device type module (`ua`, which also reports declared crawlers to the traffic signal), IP intelligence modules, a Fastly adapter, and Lambda@Edge.
 4. Vendor modules, a Rust implementation, and inline mode.

@@ -148,6 +148,10 @@ The Lambda adapter reads CloudFront’s geolocation headers (`CloudFront-Viewer-
 
 The Vercel adapter reads Vercel's geolocation headers (`x-vercel-ip-country`, `-country-region`, `-city`, `-postal-code`, `-latitude`, `-longitude`, `-timezone`, `-continent`), which Vercel's proxy sets on every request. Vercel has no metro code, so `metro` is never sent there. See [`packages/adapters/vercel/README.md`](../../adapters/vercel/README.md#platform-information).
 
+## On Azure Functions behind Front Door
+
+Front Door has no location headers of its own, and its rules can only pass on the visitor's country (`{geo_country}`). The Azure template adds a rule that does, so the module sends `country` alone: no region, metro, city or coordinates, and `utcoffset` is unknown. See [`packages/adapters/azure-functions/README.md`](../../adapters/azure-functions/README.md#platform-information).
+
 ## On Google Cloud behind the load balancer
 
 The Google Cloud adapter reads the load balancer's location variables, passed as custom request headers by the Terraform's backend service: `{client_region}`, `{client_region_subdivision}`, `{client_city}` and `{client_city_lat_long}`. There's no metro code, postal code or time zone, so `metro`, `zip` and `utcoffset` are never sent there. See [`packages/adapters/gcp-functions/README.md`](../../adapters/gcp-functions/README.md#platform-information).

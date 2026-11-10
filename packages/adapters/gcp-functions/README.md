@@ -87,7 +87,7 @@ npm run bundle -w @sharedid-edge/gcp-functions    # packages/adapters/gcp-functi
 
 | File | |
 | --- | --- |
-| `sharedid-edge.mjs` | The function: `src/function.ts` with core, `@sharedid-edge/node`'s conversion and the built-in modules, in one ESM file (about 17 KB gzipped; the bundle step fails it over 20 KB). It registers the HTTP function `sharedidEdge`. |
+| `sharedid-edge.mjs` | The function: `src/function.ts` with core, `@sharedid-edge/node`'s conversion and the built-in modules, in one minified ESM file (about 16 KB gzipped; the bundle step fails it over 32 KB). It registers the HTTP function `sharedidEdge`. |
 | `package.json` | `main` is the bundle; its one dependency is `@google-cloud/functions-framework`, which Cloud Build installs and which runs the function. |
 
 Rebuild and bundle after updating the code.

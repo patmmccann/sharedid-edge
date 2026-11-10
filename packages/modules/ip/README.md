@@ -94,6 +94,7 @@ Otherwise it sends the full address.
 | Cloudflare Worker | `CF-Connecting-IP`, set by Cloudflare | No: Cloudflare overwrites it. |
 | AWS Lambda behind CloudFront | `CloudFront-Viewer-Address`, set by CloudFront (forwarded by the template's origin request policy) | No, as long as only CloudFront can call the function URL (origin access control). |
 | Vercel | `x-real-ip` (else the first `x-forwarded-for` entry), set by Vercel's proxy | No on Vercel: Vercel overwrites both. Off Vercel, set `SID_BEHIND_VERCEL=false`, which ignores them. |
+| Azure Functions behind Front Door | `X-Azure-ClientIP`, set by Front Door | No, as long as only your Front Door profile can reach the function app (the template's access restriction and `SID_FRONT_DOOR_ID`). |
 | Google Cloud Run functions behind the external Application Load Balancer | The second-to-last `X-Forwarded-For` entry, written by the load balancer (`SID_TRUSTED_HOPS`) | No, as long as only the load balancer can reach the function (ingress). The first entry is the visitor's and is never used. |
 | Node.js server | The socket's remote address | No. Behind a proxy, though, it's the proxy's address. |
 | Node.js server with `SID_TRUST_PROXY=true` | The first `X-Forwarded-For` entry | Only safe behind a proxy that overwrites the header. Otherwise visitors can set it. |
