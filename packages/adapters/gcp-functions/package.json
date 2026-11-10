@@ -1,0 +1,50 @@
+{
+  "name": "@sharedid-edge/gcp-functions",
+  "version": "0.1.0",
+  "description": "Run SharedID Edge on Google Cloud Run functions behind the external Application Load Balancer",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.tsbuildinfo",
+    "terraform/*.tf"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "attw": "attw --pack . --profile esm-only",
+    "bundle": "node scripts/bundle.mjs"
+  },
+  "dependencies": {
+    "@sharedid-edge/core": "0.1.0",
+    "@sharedid-edge/modules": "0.1.0",
+    "@sharedid-edge/node": "0.1.0"
+  },
+  "peerDependencies": {
+    "@google-cloud/functions-framework": "^5.0.5"
+  },
+  "peerDependenciesMeta": {
+    "@google-cloud/functions-framework": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@google-cloud/functions-framework": "^5.0.5",
+    "esbuild": "^0.28.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patmmccann/sharedid-edge.git",
+    "directory": "packages/adapters/gcp-functions"
+  }
+}

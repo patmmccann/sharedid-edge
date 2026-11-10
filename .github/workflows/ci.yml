@@ -1,6 +1,6 @@
 name: CI
 
-# Every job runs without secrets or a Cloudflare, AWS or Vercel account, so pull requests from forks get the full checks.
+# Every job runs without secrets or a Cloudflare, AWS, Vercel or Google Cloud account, so pull requests from forks get the full checks.
 on:
   pull_request:
   push:
@@ -65,6 +65,8 @@ jobs:
         run: npm run conformance:lambda
       - name: Vercel bundle (no Node.js built-ins), size budget, and conformance suite against it (local Vercel proxy stand-in)
         run: npm run conformance:vercel
+      - name: Cloud Run function bundle, size budget, and conformance suite against it (the Functions Framework behind a local load balancer stand-in)
+        run: npm run conformance:gcp
 
   # Vendor modules (packages/vendor-modules/*) are tested in their own job, so one vendor's failing tests don't block
   # changes elsewhere; branch protection can leave this job not required. Their types and lint are still checked in
@@ -96,6 +98,24 @@ jobs:
           persist-credentials: false
       - name: Lint packages/adapters/aws-lambda/template.yaml
         run: pipx run --spec 'cfn-lint>=1,<2' cfn-lint packages/adapters/aws-lambda/template.yaml
+
+  gcp-terraform:
+    name: Terraform (terraform validate, no Google Cloud account)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      # init downloads the providers without a backend or credentials; validate checks the configuration offline.
+      - name: Validate packages/adapters/gcp-functions/terraform
+        working-directory: packages/adapters/gcp-functions/terraform
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
 
   conformance-workerd:
     name: Conformance (Workers runtime, wrangler dev)

@@ -19,7 +19,7 @@ export interface RunningTarget {
   stop(): Promise<void>;
 }
 
-export type TargetName = 'node' | 'wrangler' | 'lambda' | 'vercel';
+export type TargetName = 'node' | 'wrangler' | 'lambda' | 'vercel' | 'gcp';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -100,7 +100,18 @@ const UNAVAILABLE: Readonly<Record<TargetName, readonly string[]>> = {
   wrangler: [],
   lambda: [],
   // Vercel's geolocation headers have no metro (DMA) code.
-  vercel: ['ortb2.device.geo.metro']
+  vercel: ['ortb2.device.geo.metro'],
+  // The load balancer's location variables are the country, subdivision, city and coordinates: no metro code, postal
+  // code or time zone (so no utcoffset).
+  gcp: ['ortb2.device.geo.metro', 'ortb2.device.geo.zip', 'ortb2.device.geo.utcoffset']
+};
+
+/** The custom request headers the Google Cloud stand-in's load balancer adds, by location field. */
+const GCP_LOCATION_HEADERS: Readonly<Record<string, string>> = {
+  country: 'x-client-region',
+  region: 'x-client-region-subdivision',
+  city: 'x-client-city',
+  latLong: 'x-client-city-lat-long'
 };
 
 /** Starts a target configured with `config` (SID_* environment variables). */
@@ -108,6 +119,8 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${String(port)}`;
   let child: ChildProcess;
+  // A process the target needs besides `child`, stopped with it.
+  let upstream: { readonly child: ChildProcess; readonly url: string } | undefined;
   if (target === 'node') {
     child = spawn(process.execPath, [join(ROOT, 'packages/adapters/node/dist/cli.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), HOST: '127.0.0.1', ...config },
@@ -127,6 +140,24 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
+  } else if (target === 'gcp') {
+    // The real Functions Framework running the bundled function from its deploy/ directory, as Cloud Run functions
+    // does, behind a local stand-in for the external Application Load Balancer (gcp-emulator.ts) that appends to
+    // X-Forwarded-For and adds the location as custom request headers. Plain http, so cookies aren't Secure.
+    const functionPort = await freePort();
+    const location = JSON.stringify(GCP_LOCATION_HEADERS);
+    const framework = join(ROOT, 'node_modules/@google-cloud/functions-framework/build/src/main.js');
+    upstream = {
+      url: `http://127.0.0.1:${String(functionPort)}`,
+      child: spawn(process.execPath, [framework, '--target=sharedidEdge', `--source=${join(ROOT, 'packages/adapters/gcp-functions/deploy')}`, `--port=${String(functionPort)}`], {
+        env: { PATH: process.env['PATH'] ?? '', SID_PUBLIC_ORIGIN: baseUrl, SID_LOCATION_HEADERS: location, ...config },
+        stdio: ['ignore', 'ignore', 'inherit']
+      })
+    };
+    child = spawn(process.execPath, [join(ROOT, 'conformance/dist/gcp-emulator.js')], {
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), UPSTREAM_PORT: String(functionPort), SID_LOCATION_HEADERS: location, ...config },
+      stdio: ['ignore', 'ignore', 'inherit']
+    });
   } else {
     // `wrangler dev` runs the worker in workerd, the Workers runtime, locally; no Cloudflare account needed.
     const vars = Object.entries(config).flatMap(([key, value]) => ['--var', `${key}:${value}`]);
@@ -137,8 +168,13 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
       stdio: ['ignore', 'ignore', 'inherit']
     });
   }
-  const stop = stopper(child);
+  const stopChild = stopper(child);
+  const stopUpstream = upstream === undefined ? () => Promise.resolve() : stopper(upstream.child);
+  const stop = async (): Promise<void> => {
+    await Promise.all([stopChild(), stopUpstream()]);
+  };
   try {
+    if (upstream !== undefined) await waitUntilUp(upstream.url, upstream.child, 15_000);
     await waitUntilUp(baseUrl, child, target === 'wrangler' ? 60_000 : 15_000);
   } catch (error) {
     await stop();

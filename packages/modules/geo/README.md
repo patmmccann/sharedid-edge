@@ -148,6 +148,10 @@ The Lambda adapter reads CloudFront’s geolocation headers (`CloudFront-Viewer-
 
 The Vercel adapter reads Vercel's geolocation headers (`x-vercel-ip-country`, `-country-region`, `-city`, `-postal-code`, `-latitude`, `-longitude`, `-timezone`, `-continent`), which Vercel's proxy sets on every request. Vercel has no metro code, so `metro` is never sent there. See [`packages/adapters/vercel/README.md`](../../adapters/vercel/README.md#platform-information).
 
+## On Google Cloud behind the load balancer
+
+The Google Cloud adapter reads the load balancer's location variables, passed as custom request headers by the Terraform's backend service: `{client_region}`, `{client_region_subdivision}`, `{client_city}` and `{client_city_lat_long}`. There's no metro code, postal code or time zone, so `metro`, `zip` and `utcoffset` are never sent there. See [`packages/adapters/gcp-functions/README.md`](../../adapters/gcp-functions/README.md#platform-information).
+
 ## With the Node.js server
 
 The Node.js server has no geolocation of its own. Behind Cloudflare, it can use Cloudflare's **visitor location headers**: turn on the **Add visitor location headers** managed transform (in the Cloudflare dashboard, under Rules, Managed Transforms). Cloudflare then adds these headers to requests it forwards to your server:

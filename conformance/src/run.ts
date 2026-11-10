@@ -4,8 +4,8 @@ import { runCase, type HeaderAdapter } from './check.js';
 import { startTarget, type TargetName } from './targets.js';
 
 const USAGE = `Usage:
-  conformance --target node|wrangler|lambda|vercel  start each configuration locally and run every case
-  conformance --base-url https://...                 run the default-configuration cases against a deployment`;
+  conformance --target node|wrangler|lambda|vercel|gcp  start each configuration locally and run every case
+  conformance --base-url https://...                     run the default-configuration cases against a deployment`;
 
 async function runFile(baseUrl: string, file: CaseFile, adaptHeaders?: HeaderAdapter, unavailable: readonly string[] = []): Promise<number> {
   let failed = 0;
@@ -35,7 +35,7 @@ async function main(): Promise<number> {
       total += file.cases.length;
       failed += await runFile(values['base-url'], file);
     }
-  } else if (values.target === 'node' || values.target === 'wrangler' || values.target === 'lambda' || values.target === 'vercel') {
+  } else if (values.target === 'node' || values.target === 'wrangler' || values.target === 'lambda' || values.target === 'vercel' || values.target === 'gcp') {
     const target: TargetName = values.target;
     for (const file of files) {
       const running = await startTarget(target, file.config);
