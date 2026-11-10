@@ -162,6 +162,72 @@ pbjs.setConfig({
 
 **Known Prebid.js issue:** with `extend: true` and `pixelUrl`, `pbjs.getUserIdsAsync()` doesn't resolve on visits after the first, because `sharedIdSystem`'s extend callback never signals completion. Cookies aren't affected, but code that awaits `getUserIdsAsync()` hangs, and with `auctionDelay` above 0 every auction waits the full delay. Until the fix ([prebid/Prebid.js#16135](https://github.com/prebid/Prebid.js/pull/16135)) is released, keep `auctionDelay` at 0 with `extend: true` and `pixelUrl`.
 
+## Responses
+
+Every route is under `SID_BASE_PATH` (`/_sid` by default). None of them reaches your origin.
+
+### `GET /_sid/sync`: the `pixelUrl` endpoint
+
+A 1×1 GIF (`200`, `Content-Type: image/gif`), plus the cookies:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: image/gif
+Cache-Control: private, max-age=86400        (no-store when no ID was set)
+Set-Cookie: _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=…; Path=/; SameSite=Lax; Secure
+Set-Cookie: _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=…; Path=/; SameSite=Lax; Secure; HttpOnly
+X-SharedID-Source: param
+```
+
+Modules don't run on `/sync`.
+
+### `GET /_sid/v1`: the ID and the modules' output
+
+JSON (`Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store`), with the same cookies as `/sync`. With `SID_MODULES=ip` and an IPv4 visitor:
+
+```json
+{
+  "v": 1,
+  "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+  "eids": [
+    { "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }
+  ],
+  "ortb2": { "device": { "ip": "192.0.2.77" } },
+  "ext": { "modules": { "ip": { "ms": 0, "status": "ok" } } }
+}
+```
+
+An IPv6 visitor gets `"ortb2": { "device": { "ipv6": "2001:db8::7" } }` instead.
+
+The same request with `Sec-GPC: 1` gets no ID, deletes the ID cookies, and returns no IP:
+
+```json
+{
+  "v": 1,
+  "eids": [],
+  "ext": { "modules": { "ip": { "ms": 0, "status": "empty" } } }
+}
+```
+
+| Field | |
+| --- | --- |
+| `v` | Payload version, `1`. |
+| `sharedid` | The SharedID. Absent when storage isn't allowed (opt-out, GPC, COPPA, consent). |
+| `eids` | OpenRTB `user.ext.eids`: the SharedID as `pubcid.org` (`atype` 1), then any IDs from modules. `[]` when there are none. |
+| `ortb2` | An OpenRTB 2.x first-party data fragment, merged from every module's output in `SID_MODULES` order. Absent when no module returned anything. Pass it to `pbjs.mergeConfig({ ortb2 })`. |
+| `ext.modules` | One entry per module in `SID_MODULES`: `ms` (time taken) and `status`: `ok` (it returned data), `empty` (nothing to add, for example consent rules out the IP), `skipped` (with a `reason`, such as `not installed` for a name the worker doesn't have), `error` or `timeout`. Error details are never returned. |
+
+To read `/v1` from a page on another origin, list that origin in `SID_ALLOWED_ORIGINS` and fetch with `credentials: 'include'`. The response then carries `Access-Control-Allow-Origin: <origin>` and `Access-Control-Allow-Credentials: true`; it never carries `*`.
+
+### `GET /_sid/optout` and `GET /_sid/optin`
+
+`204 No Content`. `/optout` sets `_pubcid_optout=1` and deletes the ID cookies; `/optin` deletes `_pubcid_optout`.
+
+### Debugging headers
+
+- `X-SharedID-Source`: where the ID came from: `cookie`, `recovery` (restored from the `HttpOnly` copy), `param` (adopted from Prebid.js's `?id=`) or `minted`.
+- `X-SharedID-Status: denied: <reason>`: why no ID was set. The reason is `opt-out`, `gpc`, `coppa` or `tcf: …`.
+
 ## Migrate from the WordPress or Drupal plugin
 
 The plugins and SharedID Edge implement the same contract, so switching is a configuration change:
@@ -195,7 +261,42 @@ The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` pa
 
 **What's stored and logged.** IDs are random UUIDs, never derived from the IP address or other request data. The worker stores nothing server-side and logs nothing about requests (Workers observability is off in the default config).
 
-## Send the real client IP (`ip` module)
+## Modules
+
+Modules add IDs and signals to `/_sid/v1`. They're built into the worker but **none runs until you list it**.
+
+### Choosing modules
+
+Set `SID_MODULES` to a comma-separated list of module names, in the order their output should merge. Pass any settings in `SID_MODULE_CONFIG`, as JSON keyed by module name:
+
+```jsonc
+"vars": {
+  "SID_MODULES": "ip",                  // e.g. "ip,geo" once more modules exist
+  "SID_MODULE_CONFIG": "{}",            // e.g. "{\"geo\":{\"precision\":\"coarse\"}}"
+  "SID_MODULE_TIMEOUT_MS": "50"         // each module's time limit
+}
+```
+
+Then deploy, and check `ext.modules` in the `/_sid/v1` response:
+
+```sh
+curl -s https://www.example.com/_sid/v1 | jq .ext.modules
+# { "ip": { "ms": 0, "status": "ok" } }
+```
+
+- **Unknown names** are reported as `skipped` with reason `not installed`: check the spelling, or that your build includes the module.
+- **Failures are contained:** a module that errors or exceeds `SID_MODULE_TIMEOUT_MS` is reported and left out, and the rest of the response is unaffected.
+- **Removing a module** from `SID_MODULES` turns it off.
+
+Built-in modules:
+
+| Name | Adds | Settings |
+| --- | --- | --- |
+| `ip` | `ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out | none |
+
+To build your own, see [Adding a module](#adding-a-module).
+
+### `ip`: the real client IP
 
 Bid requests made from the page, or relayed by Prebid Server, don't always carry the user's own IP address. The `ip` module returns the address the worker sees, so you can add it to the auction's first-party data. It's built into the worker but **off until you enable it**:
 
@@ -206,7 +307,7 @@ Bid requests made from the page, or relayed by Prebid Server, don't always carry
 }
 ```
 
-`/_sid/v1` then includes `"ortb2": {"device": {"ip": "192.0.2.77"}}` (or `"ipv6"`). On the page, merge it into Prebid.js's first-party data before the auction:
+`/_sid/v1` then includes `"ortb2": {"device": {"ip": "192.0.2.77"}}` (or `"ipv6"`; see [Responses](#get-_sidv1-the-id-and-the-modules-output) for the whole payload). On the page, merge it into Prebid.js's first-party data before the auction:
 
 ```js
 fetch('/_sid/v1', { credentials: 'include' })
