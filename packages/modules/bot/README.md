@@ -140,7 +140,7 @@ A likely bot with Global Privacy Control (`Sec-GPC: 1`): no ID, the ID cookies a
 - it has no `Accept-Language`, or an empty one. Every browser sends it, with `fetch()` too; or
 - it has none of `Sec-Fetch-Site`, `Sec-Fetch-Mode` and `Sec-Fetch-Dest`, and the user agent is a version that always sends them over https: Chrome, Edge, Opera and other Chromium browsers from version 80, Firefox from 90, Safari from 17. Older browsers, and other iOS browsers, aren't expected to send them.
 
-This is a weak signal: a browser extension or a privacy proxy can strip headers, and a careful bot can send them all. The policy is deliberately conservative, so treat `likely` as a hint, not proof. It doesn't use a crawler list: crawlers that name themselves are the [`ua` module](../../../README.md#modules)'s job, reported as `declared`.
+This is a weak signal: a browser extension or a privacy proxy can strip headers, and a careful bot can send them all. The policy is deliberately conservative, so treat `likely` as a hint, not proof. It doesn't use a crawler list: crawlers that name themselves are the [`ua` module](../../../docs/modules.md)'s job, reported as `declared`.
 
 **Internal traffic** (`internalCookie`). Your staff set a cookie, and their visits are marked `internal: true`, so the page can, for example, skip ad auctions for them or set OpenRTB `test: 1` so QA traffic isn't billed. That's the page's decision; the worker only reports it, and `SID_SKIP_BOTS` doesn't skip internal traffic (staff see what visitors see). Set the cookie from an internal page:
 
@@ -166,7 +166,7 @@ A core setting, off by default, that uses the merged traffic signal from every s
 
 A skipped request gets no ID cookie, no `sharedid` and no `pubcid.org` eid, and carries `X-SharedID-Status: skipped: bot`. An existing ID is **never deleted**, so a misclassified visitor keeps theirs (it's just not refreshed on that request). Consent comes first: with GPC, COPPA, opt-out or denied consent, the ID is deleted as usual and the status is `denied: …`.
 
-The module also runs on `/_sid/sync`, which Prebid.js's `pixelUrl` calls on page views, so its signals skip there too, merged with the platform's verdict: a likely bot doesn't get from the pixel call an ID it wouldn't get from `/_sid/v1`. There the signal isn't returned (the response is a GIF); `X-SharedID-Modules: bot=ok` shows the module reported something. To keep it off `/_sid/sync`, list the other modules in `SID_SYNC_MODULES` (or set it to `none`); see [Modules on `/_sid/sync`](../../../README.md#modules-on-_sidsync).
+The module also runs on `/_sid/sync`, which Prebid.js's `pixelUrl` calls on page views, so its signals skip there too, merged with the platform's verdict: a likely bot doesn't get from the pixel call an ID it wouldn't get from `/_sid/v1`. There the signal isn't returned (the response is a GIF); `X-SharedID-Modules: bot=ok` shows the module reported something. To keep it off `/_sid/sync`, list the other modules in `SID_SYNC_MODULES` (or set it to `none`); see [Modules on `/_sid/sync`](../../../docs/modules.md#modules-on-_sidsync).
 
 ## Using it in Prebid.js
 

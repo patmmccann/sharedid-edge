@@ -2,7 +2,7 @@
 
 User documentation is in [README.md](README.md) (also the npm package page); keep it in step with behaviour changes. The rules for every module are in [`../AGENTS.md`](../AGENTS.md).
 
-The `ec` module (`@sharedid-edge/module-ec`): IAB Tech Lab Trusted Server Edge Cookies (`ts-ec`). See the [spec section](../../../spec/SPEC.md#the-ec-module) and the [Trusted Server guide](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html).
+The `ec` module (`@sharedid-edge/module-ec`): IAB Tech Lab Trusted Server Edge Cookies (`ts-ec`). See the [spec section](../../../spec/modules/ec.md) and the [Trusted Server guide](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html).
 
 - **This is the one IP-derived ID in the project, on purpose.** The prefix is HMAC-SHA256(passphrase, normalized client IP), because that's how Trusted Server defines EC. Keep it opt-in (only via `SID_MODULES`), keep the warning in the README, and don't reuse this pattern elsewhere.
 - **Stay faithful to Trusted Server's implementation.** The format, IPv6 /64 normalization, the cookie attributes (`HttpOnly`, one year, `Domain=.{domain}`), no refresh, and format-only validation all follow Trusted Server's code, which differs from its draft spec in places (the spec says not `HttpOnly`, and colon-joined IPv6). If Trusted Server changes, follow its code and note the version.

@@ -143,6 +143,6 @@ Exports:
 | Symptom | Cause |
 | --- | --- |
 | `ext.modules.ip` is missing | `ip` isn't in `SID_MODULES`. |
-| `status` is `empty` for everyone | On Node.js behind a proxy without `SID_TRUST_PROXY`, the address is the proxy's, which is still returned; `empty` means consent rules it out. Check the request's `gdpr`, `gdpr_consent`, `Sec-GPC`, `us_privacy` and `coppa`. EU visitors without a readable TC string get nothing: see the CMP note in the main README. |
+| `status` is `empty` for everyone | On Node.js behind a proxy without `SID_TRUST_PROXY`, the address is the proxy's, which is still returned; `empty` means consent rules it out. Check the request's `gdpr`, `gdpr_consent`, `Sec-GPC`, `us_privacy` and `coppa`. EU visitors without a readable TC string get nothing: see the CMP note in [Consent and opt-out](../../../docs/consent.md). |
 | The address is your load balancer's | Self-hosting behind a proxy: set `SID_TRUST_PROXY=true`, and make sure the proxy overwrites `X-Forwarded-For`. |
 | The page can't read `/_sid/v1` | It's on another origin: add that origin to `SID_ALLOWED_ORIGINS` and fetch with `credentials: 'include'`. |

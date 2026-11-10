@@ -2,7 +2,7 @@
 
 User documentation is in [README.md](README.md) (also the npm package page); keep it in step with behaviour changes.
 
-The `bot` module (`@sharedid-edge/module-bot`): bot and staff-traffic reports for the shared traffic signal, `ortb2.device.ext.traffic`. See the [spec section](../../../spec/SPEC.md#the-bot-module) and the [traffic signal](../../../spec/SPEC.md#traffic-signal) rules. It follows the module rules in [`../AGENTS.md`](../AGENTS.md).
+The `bot` module (`@sharedid-edge/module-bot`): bot and staff-traffic reports for the shared traffic signal, `ortb2.device.ext.traffic`. See the [spec section](../../../spec/modules/bot.md) and the [traffic signal](../../../spec/SPEC.md#traffic-signal) rules. It follows the module rules in [`../AGENTS.md`](../AGENTS.md).
 
 - **Report with `traffic`, never `ortb2`.** Core merges every report and writes `ortb2.device.ext.traffic` itself; it sets `sources` too.
 - **No platform data here.** The platform's verdict (Cloudflare Bot Management) enters through `PlatformInfo.traffic`, filled by the adapter, and core merges it as source `platform`. Repeating it here would count it twice and tie the output to this module.

@@ -6,14 +6,23 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 
 | Folder | What | Notes |
 | --- | --- | --- |
-| `spec/` | The specification | Behaviour changes start here. |
+| `spec/` | The specification: `SPEC.md`, and `modules/<name>.md` per module | Behaviour changes start here. |
+| `docs/` | Topic docs for publishers (Prebid.js, responses, configuration, consent, modules, migrating, troubleshooting, development) | Linked from [README.md](README.md). |
 | `conformance/` | HTTP cases and their runner | The contract; every implementation must pass. |
 | `packages/core/` | Platform-neutral handler, consent, cookies, module interface | Published as `@sharedid-edge/core`. Depends on no module. |
-| `packages/adapters/` | Deployable platform packages: `cloudflare/` (the Worker), `node/` (Node.js server), `aws-lambda/` (Lambda behind CloudFront, its bundle and SAM template), `vercel/` (a Next.js route handler or Routing Middleware on the site's Vercel project, its bundle and a Next.js example), `azure-functions/` (Azure Functions behind Front Door, its bundle and Bicep templates), `gcp-functions/` (a Cloud Run function behind Google Cloud's external Application Load Balancer, its bundle and Terraform) | Rules for every adapter in [`packages/adapters/AGENTS.md`](packages/adapters/AGENTS.md). Each is a conformance target. |
-| `packages/modules/` | Modules this project maintains: `ip/` (client IP), `ec/` (Trusted Server Edge Cookies, IP-derived, opt-in), `geo/` (`ortb2.device.geo`), `reflect/` (re-sets other first-party cookies), `bot/` (bot and staff-traffic signals), `ua/` (User-Agent and Client Hints as `ortb2.device`, with optional full User-Agent parsing by Bowser in an opt-in build, and the bot flag), and `all/` (`@sharedid-edge/modules`, the built-in list) | Rules and how to write a module in [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). Published as `@sharedid-edge/module-<name>`; built into every adapter. |
-| `packages/vendor-modules/` | Modules contributed and maintained by vendors (none yet) | Extra rules in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md). Opt-in at build time; tested in their own CI job. |
+| `packages/adapters/` | Deployable platform packages, one folder per platform (listed below) | Rules for every adapter in [`packages/adapters/AGENTS.md`](packages/adapters/AGENTS.md). Each is a conformance target. |
+| `packages/modules/` | Modules this project maintains, one folder per module (listed below), and `all/` (`@sharedid-edge/modules`, the built-in list) | Rules and how to write a module in [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). Published as `@sharedid-edge/module-<name>`; built into every adapter. |
+| `packages/vendor-modules/` | Modules contributed and maintained by vendors (listed below) | Extra rules in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md). Opt-in at build time; tested in their own CI job. |
 | `e2e/` | Unmodified Prebid.js against the worker in three browsers | Separate install. |
-| `scripts/` | Type-check helpers, the repo checks (`check-projects`, `check-links`), the bundled adapters' build and size budget (`bundle-adapter.mjs`) and `verify-deployment` | `projects.mjs` derives the project list from the workspace folders. |
+| `scripts/` | Type-check helpers, the repo checks (`check-projects`, `check-links`), the docs generator (`docs.mjs`), the bundled adapters' build and size budget (`bundle-adapter.mjs`) and `verify-deployment` | `projects.mjs` derives the project list from the workspace folders. |
+
+The packages, generated from their `package.json` by `node scripts/docs.mjs --write`:
+
+<!-- generated:packages:start -->
+- **Adapters** (`packages/adapters/`): [`aws-lambda/`](packages/adapters/aws-lambda/README.md): AWS (Lambda and CloudFront); [`azure-functions/`](packages/adapters/azure-functions/README.md): Azure (Functions and Front Door); [`cloudflare/`](packages/adapters/cloudflare/README.md): Cloudflare Workers; [`gcp-functions/`](packages/adapters/gcp-functions/README.md): Google Cloud (Cloud Run functions and Load Balancing); [`node/`](packages/adapters/node/README.md): Node.js (self-hosted); [`vercel/`](packages/adapters/vercel/README.md): Vercel.
+- **Modules** (`packages/modules/`): [`bot/`](packages/modules/bot/README.md): bot and staff-traffic signals; [`ec/`](packages/modules/ec/README.md): Trusted Server Edge Cookies; [`geo/`](packages/modules/geo/README.md): the visitor's location as `device.geo`; [`ip/`](packages/modules/ip/README.md): the real client IP; [`reflect/`](packages/modules/reflect/README.md): keep other first-party cookies durable; [`ua/`](packages/modules/ua/README.md): device data and the bot flag; and [`all/`](packages/modules/all/README.md): the built-in list.
+- **Vendor modules** (`packages/vendor-modules/`): none yet.
+<!-- generated:packages:end -->
 
 ## TypeScript is strict, everywhere
 
@@ -39,6 +48,7 @@ npm run consumer-types                          # packed @sharedid-edge/core, st
 npm run attw                                    # published types resolve
 npm run check:projects                          # tsconfig.json references every workspace project
 npm run check:links                             # relative Markdown links and anchors resolve
+npm run check:docs                              # generated doc sections are up to date (node scripts/docs.mjs --write)
 npm run check:duplication                       # no code copied between packages (jscpd)
 ```
 
@@ -51,13 +61,26 @@ TypeScript 6.0 is the main compiler because `typescript-eslint` doesn't support 
 Every pull request that adds or changes something users touch ships its documentation in the same PR. Reviewers should treat missing docs as a blocking gap.
 
 - **Every package has its own `README.md`** (also its npm page). This covers modules, adapters and platform packages alike.
-  - **A module's README** covers: turning it on, the response shape with JSON examples (when it returns data, and when it doesn't), consent rules, settings and secrets, and troubleshooting. Models: `packages/modules/ip/README.md` and `packages/modules/ec/README.md`. Vendor modules add the disclosures in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md).
-  - **An adapter's README** covers: architecture, build, deploy, configuration and secrets, how platform data maps to `PlatformInfo`, verifying, and troubleshooting.
-- **Link it from the main [README.md](README.md):**
-  - modules in the built-in modules table and the Modules section;
-  - adapters as a self-contained quick start under a "Deploy on …" section.
-- **Update the [README.md](README.md) "Responses" section** whenever the shape of a response changes, with real output.
-- **Update [spec/SPEC.md](spec/SPEC.md) and the folder's `AGENTS.md`** for behaviour and conventions.
+  - **A module's README** covers: turning it on, the response shape with JSON examples (when it returns data, and when it doesn't), consent rules, settings and secrets, and troubleshooting. **Per-module response examples live here,** not in `docs/responses.md`. Models: `packages/modules/ip/README.md` and `packages/modules/ec/README.md`. Vendor modules add the disclosures in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md).
+  - **An adapter's README** covers: architecture, build, the deployment walkthrough (prerequisites to verifying, working without reading anything else), configuration and secrets, how platform data maps to `PlatformInfo`, verifying, and troubleshooting.
+- **Where each kind of doc goes:**
+
+  | Doc | Where |
+  | --- | --- |
+  | What SharedID Edge is, how it works, the platform table, the Prebid.js snippet, the docs index | The root [README.md](README.md). Keep it short: no per-module or per-adapter prose. |
+  | Deploying on a platform | That adapter's `README.md` |
+  | A module: settings, responses, consent, troubleshooting | That module's `README.md` |
+  | Configuring Prebid.js | [`docs/prebid.md`](docs/prebid.md) |
+  | Core responses (`/sync`, `/v1`, opt-out, the debugging headers) | [`docs/responses.md`](docs/responses.md) |
+  | Core settings | `SETTINGS` in [`packages/core/src/config.ts`](packages/core/src/config.ts); [`docs/configuration.md`](docs/configuration.md) is generated from it |
+  | Consent, modules in general, migrating, troubleshooting, development | [`docs/consent.md`](docs/consent.md), [`docs/modules.md`](docs/modules.md), [`docs/migrating.md`](docs/migrating.md), [`docs/troubleshooting.md`](docs/troubleshooting.md), [`docs/development.md`](docs/development.md) |
+  | Core behaviour | [spec/SPEC.md](spec/SPEC.md) |
+  | A module's behaviour | `spec/modules/<name>.md` |
+
+- **Indexes are generated:** the root README's platform table and module list, the module index in `docs/modules.md`, the settings table in `docs/configuration.md`, the spec's module list and the package list in this file sit between `<!-- generated:<name>:start -->` and `<!-- generated:<name>:end -->` markers. Don't edit them by hand: change the source (a `package.json`'s `sharedidEdge` block, `SETTINGS`, or a file in `spec/modules/`) and run `node scripts/docs.mjs --write`. `npm run check:docs` fails when they're out of date. See [Generated docs](docs/development.md#generated-docs).
+- **A new module or adapter adds its own folder,** with a `sharedidEdge` block in its `package.json` ([Package metadata](docs/development.md#package-metadata)), its README, and for a project module `spec/modules/<name>.md`. It doesn't edit the root README or shared tables; the generator lists it.
+- **Update the core docs** when core behaviour changes: [`docs/responses.md`](docs/responses.md) whenever the shape of a core response changes, with real output, and `SETTINGS` for a new or changed setting.
+- **Update [spec/SPEC.md](spec/SPEC.md) (or `spec/modules/<name>.md`) and the folder's `AGENTS.md`** for behaviour and conventions.
 - **Write docs for publishers and their engineers:** what to set, what they'll see, and why. Don't write internal notes.
 
 ## Changing behaviour
@@ -65,7 +88,7 @@ Every pull request that adds or changes something users touch ships its document
 1. Update [spec/SPEC.md](spec/SPEC.md).
 2. Add or change conformance cases in `conformance/cases/` (see [conformance/AGENTS.md](conformance/AGENTS.md)).
 3. Implement in `packages/core`, with unit tests.
-4. Update the docs: the package's own README.md, [README.md](README.md) (configuration, Responses, Modules), and folder AGENTS.md files. See [Documentation is part of the change](#documentation-is-part-of-the-change).
+4. Update the docs: the package's own README.md, the topic doc in [`docs/`](docs) (configuration, responses, consent, modules), and folder AGENTS.md files. See [Documentation is part of the change](#documentation-is-part-of-the-change).
 
 Behaviour that must not regress, each covered by tests:
 

@@ -2,7 +2,7 @@
 
 [SharedID Edge](../../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `ec`, `geo`, `reflect`, `bot` and `ua`, and it passes the same conformance suite.
 
-The main README has a [quick start](../../../README.md#deploy-on-aws-lambda-and-cloudfront). This is the full guide.
+This is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform).
 
 ## Contents
 
@@ -138,7 +138,7 @@ Without `Aliases` and `AcmCertificateArn` it answers on `<id>.cloudfront.net`, w
 
 ## Configuration
 
-Settings are environment variables on the function, the same `SID_*` variables as everywhere else (see the [configuration reference](../../../README.md#configuration-reference)). The template has a parameter for each, `SidCookieName` for `SID_COOKIE_NAME` and so on, and passes empty values through as "use the default". Change them with:
+Settings are environment variables on the function, the same `SID_*` variables as everywhere else (see the [configuration reference](../../../docs/configuration.md)). The template has a parameter for each, `SidCookieName` for `SID_COOKIE_NAME` and so on, and passes empty values through as "use the default". Change them with:
 
 ```sh
 sam deploy --parameter-overrides SidModules=ip SidCookieDomain=.example.com
@@ -185,7 +185,7 @@ curl -s  'https://www.example.com/_sid/v1' | jq .                   # the payloa
 curl -sI "$(aws cloudformation describe-stacks --stack-name sharedid-edge --query "Stacks[0].Outputs[?OutputKey=='FunctionUrl'].OutputValue" --output text)_sid/v1"   # 403: only CloudFront may call it
 ```
 
-Then [turn it on in Prebid.js](../../../README.md#configure-prebidjs).
+Then [turn it on in Prebid.js](../../../docs/prebid.md).
 
 ## How events map to requests and responses
 
@@ -239,7 +239,7 @@ Core's `locationInfo` validates the location values the same way as on the other
 **The `ua` module** reads the visitor's `User-Agent` and User-Agent Client Hints (`Sec-CH-UA`, `Sec-CH-UA-Mobile`, `Sec-CH-UA-Platform`, and any high-entropy hints you ask for). The template's policy doesn't forward them yet, and CloudFront then sends `User-Agent: Amazon CloudFront`, which the module ignores, so it reports `empty`. Add them to the policy's headers to use it; CloudFront allows 10 headers per policy by default. See the [`ua` module's README](../../modules/ua/README.md#on-aws-lambda-behind-cloudfront).
 
 - **`requestContext.http.sourceIp` is never used behind CloudFront:** it's CloudFront's address, not the visitor's. Nor is `X-Forwarded-For`.
-- **`isEU`** comes from a bundled list of the 27 EU member states (`EU_COUNTRY_CODES`), the same meaning as Cloudflare's `request.cf.isEUCountry`, so both platforms treat a visitor the same way. It's EU membership, not the EEA (Iceland, Liechtenstein, Norway) or the UK: pages there should send `gdpr=1` (the [consent rules](../../../README.md#consent-and-opt-out)). When it's `true`, GDPR applies unless the request says `gdpr=0`. When CloudFront sends no country (the header isn't forwarded, or the location is unknown) `isEU` is unknown, as on the other platforms.
+- **`isEU`** comes from a bundled list of the 27 EU member states (`EU_COUNTRY_CODES`), the same meaning as Cloudflare's `request.cf.isEUCountry`, so both platforms treat a visitor the same way. It's EU membership, not the EEA (Iceland, Liechtenstein, Norway) or the UK: pages there should send `gdpr=1` (the [consent rules](../../../docs/consent.md)). When it's `true`, GDPR applies unless the request says `gdpr=0`. When CloudFront sends no country (the header isn't forwarded, or the location is unknown) `isEU` is unknown, as on the other platforms.
 - **Without CloudFront** (`SID_BEHIND_CLOUDFRONT=false`, for example behind an HTTP API on its own), the `CloudFront-Viewer-*` headers are ignored, since anyone could send them, and the client IP is `requestContext.http.sourceIp`. There's no location.
 
 ## Using it in code

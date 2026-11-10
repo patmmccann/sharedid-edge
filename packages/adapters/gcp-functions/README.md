@@ -2,7 +2,7 @@
 
 [SharedID Edge](../../../README.md) on Google Cloud: a Cloud Run function (2nd gen, Node.js 24, the Functions Framework) behind a `/_sid/*` path rule of **the external Application Load Balancer that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server and the Lambda function, with built-in modules `ip`, `ec`, `geo` and `reflect`. It passes the same conformance suite, and it uses `@sharedid-edge/node`'s request and response conversion.
 
-The main README has a [quick start](../../../README.md#deploy-on-google-cloud-cloud-run-functions-and-load-balancing). This is the full guide.
+This is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform).
 
 ## Contents
 
@@ -175,7 +175,7 @@ Cloud CDN is off unless you turn it on (`--enable-cdn`); keep it off. Then [add 
 
 ## Configuration
 
-Settings are the function's environment variables, the same `SID_*` variables as everywhere else (see the [configuration reference](../../../README.md#configuration-reference)). Terraform has a variable for each (`sid_cookie_name` for `SID_COOKIE_NAME` and so on). Changing them deploys a new revision. Configuration is read once per instance: an invalid setting makes every request return `500 SharedID Edge is misconfigured`, and the reason is logged, rather than setting wrong cookies.
+Settings are the function's environment variables, the same `SID_*` variables as everywhere else (see the [configuration reference](../../../docs/configuration.md)). Terraform has a variable for each (`sid_cookie_name` for `SID_COOKIE_NAME` and so on). Changing them deploys a new revision. Configuration is read once per instance: an invalid setting makes every request return `500 SharedID Edge is misconfigured`, and the reason is logged, rather than setting wrong cookies.
 
 Read only by the Google Cloud adapter:
 
@@ -214,7 +214,7 @@ curl -s  'https://www.example.com/_sid/v1' | jq .                # the payload
 curl -sI "$(terraform -chdir=packages/adapters/gcp-functions/terraform output -raw function_uri)/_sid/v1"   # 404 or 403: ingress refuses it
 ```
 
-Then [turn it on in Prebid.js](../../../README.md#configure-prebidjs).
+Then [turn it on in Prebid.js](../../../docs/prebid.md).
 
 ## Platform information
 
@@ -233,7 +233,7 @@ Core's `locationInfo` validates every value the same way as on the other platfor
 
 **The trust model.** The load balancer appends the client's address to `X-Forwarded-For`, and its custom request headers **overwrite** headers of the same name that a visitor sends. Both are only trustworthy because the function's ingress admits the load balancer and the project's own network alone. That's why the adapter reads no location header unless `SID_LOCATION_HEADERS` names it: without the backend service's custom headers, those names would be visitor-controlled. With `SID_BEHIND_LOAD_BALANCER=false`, nothing is trusted.
 
-**GDPR.** With the location headers, EU visitors get GDPR from their country. Without them (`location_headers = false`), `isEU` is unknown, and GDPR applies only when the page sends `gdpr=1`, as on the other platforms when the location is unknown. EEA countries outside the EU (Iceland, Liechtenstein, Norway) and the UK aren't in the list: pages there should send `gdpr=1` (the [consent rules](../../../README.md#consent-and-opt-out)).
+**GDPR.** With the location headers, EU visitors get GDPR from their country. Without them (`location_headers = false`), `isEU` is unknown, and GDPR applies only when the page sends `gdpr=1`, as on the other platforms when the location is unknown. EEA countries outside the EU (Iceland, Liechtenstein, Norway) and the UK aren't in the list: pages there should send `gdpr=1` (the [consent rules](../../../docs/consent.md)).
 
 ## Using it in code
 

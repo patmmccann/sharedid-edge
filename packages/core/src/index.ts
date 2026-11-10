@@ -5,6 +5,8 @@ export {
   DEFAULT_CONFIG,
   MAX_COOKIE_AGE_DAYS,
   resolveConfig,
+  SETTINGS,
+  type ConfigSetting,
   type SharedIdEdgeConfig
 } from './config.js';
 export {

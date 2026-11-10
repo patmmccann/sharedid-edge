@@ -2,7 +2,7 @@
 
 User documentation is in [README.md](README.md) (also the npm package page); keep it in step with behaviour changes.
 
-The `ip` module (`@sharedid-edge/module-ip`): the client's IP address in the `/v1` payload's `ortb2.device.ip` or `ortb2.device.ipv6`, or nothing when consent signals rule it out. It never sends a truncated address. See the [spec section](../../../spec/SPEC.md#the-ip-module).
+The `ip` module (`@sharedid-edge/module-ip`): the client's IP address in the `/v1` payload's `ortb2.device.ip` or `ortb2.device.ipv6`, or nothing when consent signals rule it out. It never sends a truncated address. See the [spec section](../../../spec/modules/ip.md).
 
 It's the pattern for module packages; the rules for all of them are in [`../AGENTS.md`](../AGENTS.md).
 

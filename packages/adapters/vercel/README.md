@@ -2,7 +2,7 @@
 
 [SharedID Edge](../../../README.md) on Vercel: a `/_sid/*` route of the Vercel project that serves your site, as a Next.js route handler or as Routing Middleware. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server and the Lambda function, with built-in modules `ip`, `ec`, `geo`, `reflect`, `bot` and `ua`, and it passes the same conformance suite.
 
-The main README has a [quick start](../../../README.md#deploy-on-vercel). This is the full guide.
+This is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform).
 
 ## Contents
 
@@ -139,7 +139,7 @@ If you already have middleware, call `sharedId(request)` first and fall through 
 
 **Base path.** The route folder and the middleware follow `SID_BASE_PATH`. With the route handler, put the route at the matching folder (`app/<base path>/[...path]/route.ts`, escaping a leading `_` as `%5F`). With the middleware, the `matcher` must cover the base path; with the root base path (`/`) the middleware answers exactly `/sync`, `/v1`, `/optout` and `/optin` and passes everything else to the site, so a broad matcher is safe.
 
-Settings are the project's environment variables, the same `SID_*` variables as everywhere else (see the [configuration reference](../../../README.md#configuration-reference)): Project Settings → Environment Variables, or the CLI:
+Settings are the project's environment variables, the same `SID_*` variables as everywhere else (see the [configuration reference](../../../docs/configuration.md)): Project Settings → Environment Variables, or the CLI:
 
 ```sh
 vercel env add SID_MODULES production            # e.g. ip,geo
@@ -183,7 +183,7 @@ curl -sI 'https://www.example.com/_sid/sync?id=pubcid:test-id'   # 200, image/gi
 curl -s  'https://www.example.com/_sid/v1' | jq .                # the payload
 ```
 
-Then [turn it on in Prebid.js](../../../README.md#configure-prebidjs).
+Then [turn it on in Prebid.js](../../../docs/prebid.md).
 
 ## Platform information
 
@@ -211,7 +211,7 @@ Core's `locationInfo` validates the location values the same way as on the other
 - **A proxy in front of Vercel** (another CDN) makes Vercel see the proxy's address, not the visitor's; Vercel only forwards a client IP from a proxy with its Enterprise trusted-proxy feature. Don't put another CDN in front: it also breaks the Safari IP rule unless that CDN serves the whole site.
 - **`x-vercel-forwarded-for`**, which Vercel also sets, isn't needed: `x-real-ip` comes first.
 
-**GDPR.** `isEU` comes from the country. When Vercel sends no country (an unknown location), `isEU` is unknown and GDPR applies only if the page sends `gdpr=1`, as on the other platforms. EEA countries outside the EU (Iceland, Liechtenstein, Norway) and the UK aren't in the list: pages there should send `gdpr=1` (the [consent rules](../../../README.md#consent-and-opt-out)).
+**GDPR.** `isEU` comes from the country. When Vercel sends no country (an unknown location), `isEU` is unknown and GDPR applies only if the page sends `gdpr=1`, as on the other platforms. EEA countries outside the EU (Iceland, Liechtenstein, Norway) and the UK aren't in the list: pages there should send `gdpr=1` (the [consent rules](../../../docs/consent.md)).
 
 ## Using it in code
 

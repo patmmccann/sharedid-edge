@@ -46,5 +46,10 @@
     "@azure/functions": {
       "optional": true
     }
+  },
+  "sharedidEdge": {
+    "kind": "adapter",
+    "platform": "Azure (Functions and Front Door)",
+    "summary": "An Azure Functions app behind a `/_sid/*` route of your site's Front Door profile."
   }
 }

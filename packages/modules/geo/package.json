@@ -30,5 +30,15 @@
     "type": "git",
     "url": "git+https://github.com/patmmccann/sharedid-edge.git",
     "directory": "packages/modules/geo"
+  },
+  "sharedidEdge": {
+    "kind": "module",
+    "name": "geo",
+    "title": "the visitor's location as `device.geo`",
+    "summary": "`ortb2.device.geo`: country, region, metro and UTC offset, plus city, postal code and coordinates when consent allows",
+    "settings": "`precision`: `precise` (default) or `coarse`",
+    "routes": [
+      "v1"
+    ]
   }
 }

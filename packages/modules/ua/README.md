@@ -224,7 +224,7 @@ if (payload.ortb2?.device?.ext?.traffic?.bot) {
 }
 ```
 
-Core reads the module's `device.ext.traffic` as its report to the shared [traffic signal](../../../README.md#bot-bot-and-staff-traffic-signals) and merges it with the other reports (the `bot` module's, the platform's), most cautious first, so `sources` lists every contributor. With `SID_SKIP_BOTS=declared` (or `likely`), a crawler `ua` flags gets no SharedID.
+Core reads the module's `device.ext.traffic` as its report to the shared [traffic signal](../../../docs/modules.md#the-traffic-signal) and merges it with the other reports (the `bot` module's, the platform's), most cautious first, so `sources` lists every contributor. With `SID_SKIP_BOTS=declared` (or `likely`), a crawler `ua` flags gets no SharedID.
 
 ## Consent
 
