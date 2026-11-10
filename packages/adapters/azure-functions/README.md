@@ -1,6 +1,6 @@
 # @sharedid-edge/azure-functions
 
-[SharedID Edge](../../../README.md) on Azure: an Azure Functions app (Node.js v4 programming model) behind a `/_sid/*` route of **the Azure Front Door profile that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server, the Lambda function and the Vercel adapter, with built-in modules `ip`, `ec`, `geo`, `reflect` and `bot`. It passes the same conformance suite, except for one documented limitation of Azure Functions: [cookie values](#cookie-values).
+[SharedID Edge](../../../README.md) on Azure: an Azure Functions app (Node.js v4 programming model) behind a `/_sid/*` route of **the Azure Front Door profile that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server, the Lambda function and the Vercel adapter, with built-in modules `ip`, `ec`, `geo`, `reflect`, `bot` and `ua`. It passes the same conformance suite, except for one documented limitation of Azure Functions: [cookie values](#cookie-values).
 
 The main README has a [quick start](../../../README.md#deploy-on-azure-functions-and-front-door). This is the full guide.
 

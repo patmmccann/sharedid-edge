@@ -11,12 +11,14 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Env, VercelHandler } from '@sharedid-edge/vercel';
 
-const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/vercel/deploy/sharedid-edge.mjs');
+// CONFORMANCE_VERCEL_BUNDLE is the bundle's directory: deploy, or deploy-bowser for case files that need Bowser.
+const BUNDLE_DIR = process.env['CONFORMANCE_VERCEL_BUNDLE'] === 'deploy-bowser' ? 'deploy-bowser' : 'deploy';
+const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/vercel', BUNDLE_DIR, 'sharedid-edge.mjs');
 
 async function loadHandler(env: Env): Promise<VercelHandler> {
   const loaded: unknown = await import(pathToFileURL(BUNDLE).href);
   const fromEnv = typeof loaded === 'object' && loaded !== null && 'handlerFromEnv' in loaded ? loaded.handlerFromEnv : undefined;
-  if (typeof fromEnv !== 'function') throw new Error(`${BUNDLE} doesn't export handlerFromEnv; run npm run bundle -w @sharedid-edge/vercel`);
+  if (typeof fromEnv !== 'function') throw new Error(`${BUNDLE} doesn't export handlerFromEnv; run npm run conformance:vercel from the repository root`);
   // Checked to be a function above; the bundle is built from src/bundle.ts, whose handlerFromEnv returns a handler.
   return (fromEnv as (env: Env) => VercelHandler)(env);
 }

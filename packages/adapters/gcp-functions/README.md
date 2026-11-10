@@ -90,7 +90,7 @@ npm run bundle -w @sharedid-edge/gcp-functions    # packages/adapters/gcp-functi
 | `sharedid-edge.mjs` | The function: `src/function.ts` with core, `@sharedid-edge/node`'s conversion and the built-in modules, in one minified ESM file (about 16 KB gzipped; the bundle step fails it over 32 KB). It registers the HTTP function `sharedidEdge`. |
 | `package.json` | `main` is the bundle; its one dependency is `@google-cloud/functions-framework`, which Cloud Build installs and which runs the function. |
 
-Rebuild and bundle after updating the code.
+To parse User-Agents fully with Bowser in the `ua` module, bundle with `npm run bundle:bowser -w @sharedid-edge/gcp-functions` instead (see the [`ua` module](../../modules/ua/README.md)). Rebuild and bundle after updating the code.
 
 ## Deploy with Terraform
 

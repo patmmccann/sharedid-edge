@@ -51,20 +51,24 @@ jobs:
         run: npm run consumer-types
       - name: Published types resolve (attw)
         run: npm run attw
-      - name: Worker bundle and size budget
+      # The default build, and the opt-in build with Bowser in the ua module: both must fit the budget.
+      - name: Worker bundles (default and with Bowser) and size budget
         run: |
           npm run build -w @sharedid-edge/cloudflare
+          npm run build:bowser -w @sharedid-edge/cloudflare
           node -e '
             const { readFileSync } = require("node:fs");
             const { gzipSync } = require("node:zlib");
-            const gz = gzipSync(readFileSync("packages/adapters/cloudflare/dist/index.js")).length;
             const budget = 32 * 1024;
-            console.log(`Worker bundle: ${gz} bytes gzipped (budget ${budget})`);
-            if (gz > budget) { console.error("Over the bundle size budget"); process.exit(1); }
+            for (const [name, file] of [["Worker bundle", "dist/index.js"], ["Worker bundle with Bowser", "dist-bowser/bowser.js"]]) {
+              const gz = gzipSync(readFileSync(`packages/adapters/cloudflare/${file}`)).length;
+              console.log(`${name}: ${gz} bytes gzipped (budget ${budget})`);
+              if (gz > budget) { console.error("Over the bundle size budget"); process.exitCode = 1; }
+            }
           '
-      - name: Lambda bundle, size budget, and conformance suite against it (local CloudFront stand-in)
+      - name: Lambda bundles (default and with Bowser), size budget, and conformance suite against them (local CloudFront stand-in)
         run: npm run conformance:lambda
-      - name: Vercel bundle (no Node.js built-ins), size budget, and conformance suite against it (local Vercel proxy stand-in)
+      - name: Vercel bundles (default and with Bowser; no Node.js built-ins), size budget, and conformance suite against them (local Vercel proxy stand-in)
         run: npm run conformance:vercel
       - name: Cloud Run function bundle, size budget, and conformance suite against it (the Functions Framework behind a local load balancer stand-in)
         run: npm run conformance:gcp

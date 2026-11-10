@@ -1,10 +1,10 @@
 # packages/modules
 
-The modules this project maintains: [`ip`](ip/README.md), [`ec`](ec/README.md), [`geo`](geo/README.md), [`reflect`](reflect/README.md) and [`bot`](bot/README.md), each its own package (`@sharedid-edge/module-<name>`), plus [`all`](all/README.md) (`@sharedid-edge/modules`), the built-in list. Vendor modules live in [`../vendor-modules/`](../vendor-modules/AGENTS.md), with extra rules. Each module's own `AGENTS.md` adds its specifics.
+The modules this project maintains: [`ip`](ip/README.md), [`ec`](ec/README.md), [`geo`](geo/README.md), [`reflect`](reflect/README.md), [`bot`](bot/README.md) and [`ua`](ua/README.md), each its own package (`@sharedid-edge/module-<name>`), plus [`all`](all/README.md) (`@sharedid-edge/modules`), the built-in list. Vendor modules live in [`../vendor-modules/`](../vendor-modules/AGENTS.md), with extra rules. Each module's own `AGENTS.md` adds its specifics.
 
 - **Project modules are built in.** Every adapter bundles them through `builtInModules` (`all/src/index.ts`); a new module is added there, never to an adapter. Being built in doesn't turn a module on: it does nothing until listed in `SID_MODULES`.
 - **A package per module,** depending only on `@sharedid-edge/core`'s public API (and, where it saves duplicating code, another project module, as `ec` uses `ip`'s parser). Core never depends on a module.
-- **Platform-neutral**, like core: `lib: ["ES2023", "WebWorker"]`, no Node or DOM types, no runtime dependencies besides core. Platform data comes through `PlatformInfo`, never `request.cf` or headers read directly; add new fields to `PlatformInfo` in core and to the adapters.
+- **Platform-neutral**, like core: `lib: ["ES2023", "WebWorker"]`, no Node or DOM types, no runtime dependencies besides core (the exception is `ua`, which bundles `isbot`, and `bowser` in opt-in builds; see its `AGENTS.md`). Platform data comes through `PlatformInfo`, never `request.cf` or headers read directly; add new fields to `PlatformInfo` in core and to the adapters.
 - **No network calls,** and no data updates during requests.
 
 ## Writing a module

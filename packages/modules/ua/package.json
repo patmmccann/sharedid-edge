@@ -1,0 +1,40 @@
+{
+  "name": "@sharedid-edge/module-ua",
+  "version": "0.1.0",
+  "description": "SharedID Edge module: User-Agent and Client Hints as OpenRTB ortb2.device (sua, devicetype, os, make, model) and a declared-crawler traffic signal",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./bowser": {
+      "types": "./dist/bowser.d.ts",
+      "default": "./dist/bowser.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.tsbuildinfo"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "attw": "attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "@sharedid-edge/core": "0.1.0",
+    "bowser": "^2.15.0",
+    "isbot": "^5.2.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patmmccann/sharedid-edge.git",
+    "directory": "packages/modules/ua"
+  }
+}
