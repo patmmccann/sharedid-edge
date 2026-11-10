@@ -1,6 +1,6 @@
 {
   "$schema": "../case-file.schema.json",
-  "description": "The ip module (SID_MODULES=ip): the full client IP in the v1 payload's ortb2.device, or nothing (status empty) with GPC, COPPA, a US privacy opt-out, or under GDPR without opt-in to TCF Special Feature 1. It never sends a truncated address. Requests carry the client IP as both X-Forwarded-For (the Node.js target runs with SID_TRUST_PROXY) and CF-Connecting-IP (the Workers runtime). TC strings: CAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAA opts in to Special Feature 1 and nothing else; CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA has no special features.",
+  "description": "The ip module (SID_MODULES=ip): the full client IP in the v1 payload's ortb2.device, or nothing (status empty) with GPC, COPPA, a US privacy opt-out, or under GDPR without opt-in to TCF Special Feature 1. It never sends a truncated address. Requests carry the client IP as both X-Forwarded-For (the Node.js target, and the Lambda target's CloudFront stand-in, run with SID_TRUST_PROXY) and CF-Connecting-IP (the Workers runtime). TC strings: CAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAA opts in to Special Feature 1 and nothing else; CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA has no special features.",
   "config": { "SID_MODULES": "ip", "SID_TRUST_PROXY": "true" },
   "cases": [
     {

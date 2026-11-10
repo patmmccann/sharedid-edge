@@ -17,6 +17,8 @@ const projects = [
   'packages/module-geo/test',
   'packages/node',
   'packages/node/test',
+  'packages/aws-lambda',
+  'packages/aws-lambda/test',
   'conformance',
   'scripts',
   'packages/cloudflare',

@@ -14,6 +14,8 @@
     { "path": "packages/module-geo/test" },
     { "path": "packages/node" },
     { "path": "packages/node/test" },
+    { "path": "packages/aws-lambda" },
+    { "path": "packages/aws-lambda/test" },
     { "path": "conformance" },
     { "path": "scripts" }
   ]

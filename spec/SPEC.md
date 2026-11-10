@@ -144,6 +144,10 @@ Modules work only from what the worker has; by default they make no network call
 
 Modules run on `/v1` only; `/sync` is unchanged by them.
 
+### Platform information
+
+Each platform adapter fills the platform information from values the platform itself sets, which visitors can't forge: on Cloudflare `CF-Connecting-IP` and `request.cf`; behind CloudFront the `CloudFront-Viewer-Address` (`ip:port`), `CloudFront-Viewer-Country` and `CloudFront-Viewer-Country-Region` headers, accepted only when the origin can be reached through CloudFront alone. A value the platform doesn't provide is left out, never guessed. The EU flag means the country is one of the 27 EU member states (the meaning of Cloudflare's `isEUCountry`), and is unknown when the country is.
+
 ### The `ip` module
 
 Name `ip`; no `purposes`, no `gvlid`, no settings. It runs only when listed in `SID_MODULES`.

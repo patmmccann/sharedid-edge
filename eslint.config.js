@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/.tsbuild/**', '**/.wrangler/**', '**/node_modules/**', 'e2e/**', 'consumer-types/**', '**/worker-configuration.d.ts']
+    ignores: ['**/dist/**', 'packages/aws-lambda/deploy/**', '**/.tsbuild/**', '**/.wrangler/**', '**/node_modules/**', 'e2e/**', 'consumer-types/**', '**/worker-configuration.d.ts']
   },
   js.configs.recommended,
   // The strictest type-aware presets: no `any` leaks, no floating promises, no unnecessary conditions.
@@ -34,7 +34,7 @@ export default tseslint.config(
   },
   {
     // The CLIs and runners print to stdout by design.
-    files: ['packages/node/src/cli.ts', 'conformance/src/**', 'scripts/**'],
+    files: ['packages/node/src/cli.ts', 'conformance/src/**', 'scripts/**', 'packages/*/scripts/**'],
     rules: { 'no-console': 'off' }
   },
   {
@@ -43,7 +43,7 @@ export default tseslint.config(
   },
   {
     // Build scripts run on Node.
-    files: ['scripts/*.mjs'],
+    files: ['scripts/*.mjs', 'packages/*/scripts/*.mjs'],
     languageOptions: { globals: { process: 'readonly', console: 'readonly' } }
   }
 );

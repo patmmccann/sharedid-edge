@@ -1,0 +1,277 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >-
+  SharedID Edge on AWS Lambda behind CloudFront. A Node.js 22 function with a function URL that only CloudFront can
+  call (AWS_IAM auth and origin access control), an origin request policy that forwards the CloudFront viewer
+  headers, and optionally a CloudFront distribution with the /_sid/* behaviour. Most sites already have a
+  distribution: leave CreateDistribution as false, pass its ID, and add the behaviour to it (see README.md).
+  Build first: npm run build && npm run bundle -w @sharedid-edge/aws-lambda.
+
+Parameters:
+  CreateDistribution:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'false'
+    Description: >-
+      true creates a new CloudFront distribution in front of SiteOriginDomainName with the /_sid/* behaviour (for
+      trying it out, or a new site). false (usual) leaves your existing distribution to you; set DistributionId.
+  DistributionId:
+    Type: String
+    Default: ''
+    AllowedPattern: '^[A-Z0-9]*$'
+    Description: >-
+      The ID of your existing CloudFront distribution (like E2ABCDEFGHIJKL), allowed to invoke the function. Required
+      when CreateDistribution is false; ignored otherwise.
+  SiteOriginDomainName:
+    Type: String
+    Default: ''
+    Description: With CreateDistribution, the origin serving the rest of your site (like origin.example.com).
+  Aliases:
+    Type: CommaDelimitedList
+    Default: ''
+    Description: With CreateDistribution, the site's hostnames (like www.example.com). Needs AcmCertificateArn.
+  AcmCertificateArn:
+    Type: String
+    Default: ''
+    Description: With CreateDistribution and Aliases, an ACM certificate for them, in us-east-1.
+
+  # SharedID Edge settings. Empty means the default; see the configuration reference in the main README.
+  SidBasePath:
+    Type: String
+    Default: /_sid
+    AllowedPattern: '^/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$'
+    Description: SID_BASE_PATH, the path prefix. The CloudFront behaviour's path pattern is this plus /*.
+  SidCookieName:
+    Type: String
+    Default: ''
+    Description: SID_COOKIE_NAME (default _pubcid); must match storage.name in Prebid.js.
+  SidCookieDomain:
+    Type: String
+    Default: ''
+    Description: SID_COOKIE_DOMAIN, e.g. .example.com to share the cookie across subdomains (default host-only).
+  SidMaxAgeDays:
+    Type: String
+    Default: ''
+    Description: SID_MAX_AGE_DAYS (default 365).
+  SidCreate:
+    Type: String
+    Default: ''
+    Description: SID_CREATE (default true).
+  SidRecoveryCookie:
+    Type: String
+    Default: ''
+    Description: SID_RECOVERY_COOKIE (default _pubcid_sv; none disables it).
+  SidOptoutCookie:
+    Type: String
+    Default: ''
+    Description: SID_OPTOUT_COOKIE (default _pubcid_optout).
+  SidVendorId:
+    Type: String
+    Default: ''
+    Description: SID_VENDOR_ID, your TCF vendor ID, only if you are one (default publisher mode).
+  SidAllowedOrigins:
+    Type: String
+    Default: ''
+    Description: SID_ALLOWED_ORIGINS, comma-separated origins allowed to read /v1 from another origin.
+  SidSyncCacheSeconds:
+    Type: String
+    Default: ''
+    Description: SID_SYNC_CACHE_SECONDS (default 86400).
+  SidModules:
+    Type: String
+    Default: ''
+    Description: SID_MODULES, comma-separated modules to run for /v1 (built in, ip and ec).
+  SidModuleConfig:
+    Type: String
+    Default: ''
+    Description: SID_MODULE_CONFIG, JSON settings per module.
+  SidModuleSecrets:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: >-
+      SID_MODULE_SECRETS, JSON secrets per module (like the ec passphrase). Not shown by CloudFormation; stored as an
+      environment variable, which Lambda encrypts at rest.
+  SidModuleTimeoutMs:
+    Type: String
+    Default: ''
+    Description: SID_MODULE_TIMEOUT_MS (default 50).
+
+Conditions:
+  CreateDistribution: !Equals [!Ref CreateDistribution, 'true']
+  UseExistingDistribution: !And
+    - !Not [!Condition CreateDistribution]
+    - !Not [!Equals [!Ref DistributionId, '']]
+  CanInvoke: !Or [!Condition CreateDistribution, !Condition UseExistingDistribution]
+  HasCertificate: !Not [!Equals [!Ref AcmCertificateArn, '']]
+
+Resources:
+  SharedIdFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: SharedID Edge (answers /_sid/* behind CloudFront)
+      # The single-file bundle in deploy/ (npm run bundle), alone in its directory: dist/ also holds TypeScript's
+      # unbundled lambda.js, which Lambda would load before lambda.mjs. Its handler is lambda.handler.
+      CodeUri: deploy/
+      Handler: lambda.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      MemorySize: 256
+      Timeout: 5
+      FunctionUrlConfig:
+        # Only signed requests: CloudFront signs them with origin access control. Nobody else can call the URL, so
+        # the CloudFront-Viewer-* headers the function trusts can't be forged.
+        AuthType: AWS_IAM
+      Environment:
+        Variables:
+          SID_BASE_PATH: !Ref SidBasePath
+          SID_COOKIE_NAME: !Ref SidCookieName
+          SID_COOKIE_DOMAIN: !Ref SidCookieDomain
+          SID_MAX_AGE_DAYS: !Ref SidMaxAgeDays
+          SID_CREATE: !Ref SidCreate
+          SID_RECOVERY_COOKIE: !Ref SidRecoveryCookie
+          SID_OPTOUT_COOKIE: !Ref SidOptoutCookie
+          SID_VENDOR_ID: !Ref SidVendorId
+          SID_ALLOWED_ORIGINS: !Ref SidAllowedOrigins
+          SID_SYNC_CACHE_SECONDS: !Ref SidSyncCacheSeconds
+          SID_MODULES: !Ref SidModules
+          SID_MODULE_CONFIG: !Ref SidModuleConfig
+          SID_MODULE_SECRETS: !Ref SidModuleSecrets
+          SID_MODULE_TIMEOUT_MS: !Ref SidModuleTimeoutMs
+
+  SharedIdLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${SharedIdFunction}
+      RetentionInDays: 30
+
+  # Lets the distribution, and only it, call the function URL.
+  CloudFrontInvokeUrlPermission:
+    Type: AWS::Lambda::Permission
+    Condition: CanInvoke
+    Properties:
+      FunctionName: !Ref SharedIdFunction
+      Action: lambda:InvokeFunctionUrl
+      FunctionUrlAuthType: AWS_IAM
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !Sub
+        - arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Id}
+        - Id: !If [CreateDistribution, !Ref Distribution, !Ref DistributionId]
+
+  CloudFrontInvokePermission:
+    Type: AWS::Lambda::Permission
+    Condition: CanInvoke
+    Properties:
+      FunctionName: !Ref SharedIdFunction
+      Action: lambda:InvokeFunction
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !Sub
+        - arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Id}
+        - Id: !If [CreateDistribution, !Ref Distribution, !Ref DistributionId]
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-lambda
+        Description: CloudFront signs requests to the SharedID Edge function URL
+        OriginAccessControlOriginType: lambda
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # What CloudFront sends to the function: every cookie and query parameter, the viewer's address and location,
+  # and the headers the handler reads (Origin for CORS on /v1, Sec-GPC for Global Privacy Control). The Host header
+  # is not forwarded: with origin access control it must be the function URL's own.
+  OriginRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: !Sub ${AWS::StackName}-viewer
+        Comment: SharedID Edge, cookies, query strings and the CloudFront viewer headers
+        CookiesConfig:
+          CookieBehavior: all
+        QueryStringsConfig:
+          QueryStringBehavior: all
+        HeadersConfig:
+          HeaderBehavior: whitelist
+          Headers:
+            - CloudFront-Viewer-Address
+            - CloudFront-Viewer-Country
+            - CloudFront-Viewer-Country-Region
+            # The rest of CloudFront's geolocation headers, for the geo module.
+            - CloudFront-Viewer-City
+            - CloudFront-Viewer-Postal-Code
+            - CloudFront-Viewer-Metro-Code
+            - CloudFront-Viewer-Latitude
+            - CloudFront-Viewer-Longitude
+            - CloudFront-Viewer-Time-Zone
+            - Origin
+            - Sec-GPC
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: CreateDistribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub ${AWS::StackName} (SharedID Edge)
+        HttpVersion: http2and3
+        Aliases: !If [HasCertificate, !Ref Aliases, !Ref AWS::NoValue]
+        ViewerCertificate: !If
+          - HasCertificate
+          - AcmCertificateArn: !Ref AcmCertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - CloudFrontDefaultCertificate: true
+        Origins:
+          - Id: site
+            DomainName: !Ref SiteOriginDomainName
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+          - Id: sharedid-edge
+            # The function URL is https://<id>.lambda-url.<region>.on.aws/; the origin is its host.
+            DomainName: !Select [2, !Split ['/', !GetAtt SharedIdFunctionUrl.FunctionUrl]]
+            OriginAccessControlId: !GetAtt OriginAccessControl.Id
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+        DefaultCacheBehavior:
+          TargetOriginId: site
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+          Compress: true
+          # Managed policies: CachingOptimized, and AllViewerExceptHostHeader. Adjust for your site.
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+        CacheBehaviors:
+          - PathPattern: !Sub ${SidBasePath}/*
+            TargetOriginId: sharedid-edge
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            # Managed CachingDisabled: responses carry per-visitor cookies.
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: !Ref OriginRequestPolicy
+
+Outputs:
+  FunctionUrl:
+    Description: The function URL. Only CloudFront can call it; direct requests get 403.
+    Value: !GetAtt SharedIdFunctionUrl.FunctionUrl
+  OriginDomainName:
+    Description: The origin domain to add to your distribution for the /_sid/* behaviour.
+    Value: !Select [2, !Split ['/', !GetAtt SharedIdFunctionUrl.FunctionUrl]]
+  OriginAccessControlId:
+    Description: Attach this origin access control to that origin.
+    Value: !GetAtt OriginAccessControl.Id
+  OriginRequestPolicyId:
+    Description: The origin request policy for the /_sid/* behaviour.
+    Value: !Ref OriginRequestPolicy
+  CachePolicyId:
+    Description: The managed CachingDisabled cache policy, for the /_sid/* behaviour.
+    Value: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+  DistributionDomainName:
+    Condition: CreateDistribution
+    Description: The new distribution's domain; point your site's hostnames at it.
+    Value: !GetAtt Distribution.DomainName

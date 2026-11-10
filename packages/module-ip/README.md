@@ -17,7 +17,7 @@ Bid requests made from the page, or relayed through Prebid Server, don't always 
 
 ## Turning it on
 
-The module is built into the Cloudflare Worker and the Node.js server, and does nothing until you list it. It has no settings.
+The module is built into the Cloudflare Worker, the Node.js server and the AWS Lambda adapter, and does nothing until you list it. It has no settings.
 
 ```jsonc
 // packages/cloudflare/wrangler.jsonc
@@ -90,6 +90,7 @@ Otherwise it sends the full address.
 | Platform | Source | Spoofable? |
 | --- | --- | --- |
 | Cloudflare Worker | `CF-Connecting-IP`, set by Cloudflare | No: Cloudflare overwrites it. |
+| AWS Lambda behind CloudFront | `CloudFront-Viewer-Address`, set by CloudFront (forwarded by the template's origin request policy) | No, as long as only CloudFront can call the function URL (origin access control). |
 | Node.js server | The socket's remote address | No. Behind a proxy, though, it's the proxy's address. |
 | Node.js server with `SID_TRUST_PROXY=true` | The first `X-Forwarded-For` entry | Only safe behind a proxy that overwrites the header. Otherwise visitors can set it. |
 
