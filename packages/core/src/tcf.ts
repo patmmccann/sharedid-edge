@@ -1,6 +1,6 @@
 /**
- * Just enough of a TCF v2 TC string to check consent: the core segment's version, purpose consents and vendor consents,
- * and the publisher TC segment's purpose consents. A full decoder is much larger than this worker needs.
+ * Just enough of a TCF v2 TC string to check consent: the core segment's version, purpose consents, purpose
+ * legitimate interests and vendor consents, and the publisher TC segment's purpose consents and legitimate interests. A full decoder is much larger than this worker needs.
  *
  * Core segment layout (bit offsets): Version 0-5, Created 6-41, LastUpdated 42-77, CmpId 78-89, CmpVersion 90-101,
  * ConsentScreen 102-107, ConsentLanguage 108-119, VendorListVersion 120-131, TcfPolicyVersion 132-137,
@@ -16,6 +16,8 @@ export interface TcfConsents {
   readonly version: number;
   /** Purposes (1-24) the user consented to for vendors (the core segment). */
   readonly purposeConsents: ReadonlySet<number>;
+  /** Purposes (1-24) with legitimate interest established for vendors (the core segment). */
+  readonly purposeLegitimateInterests: ReadonlySet<number>;
   /** Whether the user consented to a vendor, by Global Vendor List ID (the core segment's vendor consent section). */
   readonly vendorConsent: (vendorId: number) => boolean;
   /**
@@ -23,12 +25,16 @@ export interface TcfConsents {
    * has no publisher TC segment.
    */
   readonly publisherPurposeConsents: ReadonlySet<number> | undefined;
+  /** Purposes (1-24) with legitimate interest established for the publisher, or undefined without a publisher TC segment. */
+  readonly publisherPurposeLegitimateInterests: ReadonlySet<number> | undefined;
 }
 
 const CORE_PURPOSES_OFFSET = 152;
+const CORE_LI_OFFSET = 176;
 const VENDOR_SECTION_OFFSET = 213;
 const PUBLISHER_SEGMENT_TYPE = 3;
 const PUBLISHER_PURPOSES_OFFSET = 3;
+const PUBLISHER_LI_OFFSET = 27;
 const PURPOSES_LENGTH = 24;
 const MAX_LENGTH = 8192;
 const BASE64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -38,23 +44,27 @@ export function decodeTcf(tcString: string): TcfConsents | undefined {
   if (tcString.length > MAX_LENGTH) return undefined;
   const [core, ...segments] = tcString.split('.');
   const coreBits = core === undefined ? undefined : toBits(core);
-  if (coreBits === undefined || coreBits.length < CORE_PURPOSES_OFFSET + PURPOSES_LENGTH) return undefined;
+  if (coreBits === undefined || coreBits.length < CORE_LI_OFFSET + PURPOSES_LENGTH) return undefined;
   const version = readInt(coreBits, 0, 6);
   if (version !== 2) return undefined;
 
   let publisherPurposeConsents: ReadonlySet<number> | undefined;
+  let publisherPurposeLegitimateInterests: ReadonlySet<number> | undefined;
   for (const segment of segments) {
     const bits = toBits(segment);
     if (bits === undefined) return undefined;
-    if (bits.length >= PUBLISHER_PURPOSES_OFFSET + PURPOSES_LENGTH && readInt(bits, 0, 3) === PUBLISHER_SEGMENT_TYPE) {
+    if (bits.length >= PUBLISHER_LI_OFFSET + PURPOSES_LENGTH && readInt(bits, 0, 3) === PUBLISHER_SEGMENT_TYPE) {
       publisherPurposeConsents = readPurposes(bits, PUBLISHER_PURPOSES_OFFSET);
+      publisherPurposeLegitimateInterests = readPurposes(bits, PUBLISHER_LI_OFFSET);
     }
   }
   return {
     version,
     purposeConsents: readPurposes(coreBits, CORE_PURPOSES_OFFSET),
+    purposeLegitimateInterests: readPurposes(coreBits, CORE_LI_OFFSET),
     vendorConsent: readVendorConsents(coreBits),
-    publisherPurposeConsents
+    publisherPurposeConsents,
+    publisherPurposeLegitimateInterests
   };
 }
 

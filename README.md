@@ -184,13 +184,12 @@ Existing visitors keep their IDs: the worker adopts the cookie the plugin set. T
 
 **TCF.** Whenever a request carries a TCF TC string, the worker checks it before setting the cookie:
 
-- **Publisher mode** (the default). SharedID is your own first-party ID, so the worker reads the **publisher** consents (the TC string's publisher TC segment): it needs consent for Purpose 1 (store and access information on a device) and for at least one of Purposes 2 to 10. Configure your CMP to ask for publisher consent for these purposes, or it won't include a publisher TC segment and no one gets a server cookie.
-- **Vendor mode.** If your company is registered as a TCF vendor, set `SID_VENDOR_ID` to your vendor ID. The worker then needs consent for that vendor, and vendor consent for Purpose 1 and at least one of Purposes 2 to 10, instead of publisher consent.
-- Legitimate interest doesn't count; only consent does.
+- **Publisher mode** (the default). SharedID is your own first-party ID, so the worker reads the **publisher** consents (the TC string's publisher TC segment): it needs consent for Purpose 1 (store and access information on a device), and consent or legitimate interest for at least one of Purposes 2 to 10. Configure your CMP to ask for publisher consent for these purposes, or it won't include a publisher TC segment and no one gets a server cookie.
+- **Vendor mode.** If your company is registered as a TCF vendor, set `SID_VENDOR_ID` to your vendor ID. The worker then needs consent for that vendor, consent for Purpose 1, and consent or legitimate interest for at least one of Purposes 2 to 10, all from the vendor part of the TC string instead of the publisher segment.
 
-When GDPR applies and there's no TC string, the worker sets nothing. GDPR applies when Cloudflare places the request in the EU (`request.cf.isEUCountry`), or when the request says so with `gdpr=1`.
+When GDPR applies and there's no TC string, that counts as no consent: the worker sets nothing and deletes the ID cookies. GDPR applies when Cloudflare places the request in the EU (`request.cf.isEUCountry`), or when the request says so with `gdpr=1`.
 
-The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` parameter. Prebid.js doesn't add consent parameters to `pixelUrl`, so for the sync route **your CMP must store the TC string in the `euconsent-v2` cookie** (check yours: some keep it only in local storage). Without it, EU visitors get no server cookie, which is the safe failure.
+The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` parameter. Prebid.js doesn't add consent parameters to `pixelUrl`, so for the sync route **your CMP must store the TC string in the `euconsent-v2` cookie** (check yours: some keep it only in local storage). Without it, EU visitors get no server cookie, which is the safe failure. Sending the consent strings from Prebid.js to the worker is planned.
 
 **Deleting the cookie.** When consent is missing or withdrawn, or with GPC or opt-out, the worker deletes the ID cookies it finds: it overwrites each with an empty value, `Max-Age=0` and an `Expires` date in 1970, which browsers treat as a delete. With `SID_COOKIE_DOMAIN` set, it deletes a host-only copy too.
 
@@ -324,7 +323,7 @@ Register it in [`packages/cloudflare/src/modules.ts`](packages/cloudflare/src/mo
 ## Roadmap
 
 1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, and a Node.js server.
-2. **Next:** an `ip` module returning the connecting IP (`ortb2.device.ip`/`ipv6`), off by default.
+2. **Next:** an `ip` module returning the connecting IP (`ortb2.device.ip`/`ipv6`), off by default; and Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
 3. A Prebid.js RTD module that reads `/_sid/v1`, plus first-party modules for geography, bot scores and device type, and a Fastly adapter.
 4. Vendor modules, a Rust implementation, and inline mode.
 

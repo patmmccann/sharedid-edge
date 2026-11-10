@@ -81,7 +81,7 @@ Storage is **not allowed** when, in this order:
 1. the opt-out cookie is present (reason `opt-out`);
 2. the request has `Sec-GPC: 1`, Global Privacy Control (reason `gpc`);
 3. there is a TC string and it doesn't give the consent below (reason `tcf: …`);
-4. GDPR applies and there is no TC string (reason `tcf: GDPR applies and there is no TC string`).
+4. GDPR applies and there is no TC string (reason `tcf: GDPR applies and there is no TC string`): that counts as no consent.
 
 When storage isn't allowed, existing ID cookies are deleted (see [Cookies](#cookies)).
 
@@ -89,10 +89,10 @@ When storage isn't allowed, existing ID cookies are deleted (see [Cookies](#cook
 
 - **GDPR applies** when the `gdpr` query parameter is `1`, or when it's absent and the platform reports an EU location (on Cloudflare, `request.cf.isEUCountry`). `gdpr=0` means it doesn't apply. With no TC string and no signal, it's unknown, and storage is allowed.
 - **The TC string** comes from the `gdpr_consent` query parameter, else the CMP's `euconsent-v2` cookie. When there is one, it is checked whatever `gdpr` says. A string that isn't a valid TCF v2 TC string denies storage (reason `tcf: invalid TC string`).
-- **Publisher mode** (the default, `SID_VENDOR_ID` unset). SharedID is the publisher's own first-party ID, so the TC string's **publisher TC segment** (segment type 3) MUST consent to Purpose 1 (store and access information on a device) and to at least one of Purposes 2 to 10. Reasons: `tcf: no publisher TC segment`, `tcf: no publisher consent for purpose 1`, `tcf: no publisher consent for any of purposes 2-10`.
-- **Vendor mode** (`SID_VENDOR_ID` set, for a publisher registered as a TCF vendor). The core segment's vendor consents MUST include that vendor ID, and its purpose consents MUST include Purpose 1 and at least one of Purposes 2 to 10. The publisher TC segment isn't used. Reasons: `tcf: no consent for vendor <id>`, `tcf: no vendor consent for purpose 1`, `tcf: no vendor consent for any of purposes 2-10`.
-- Only consent counts, not legitimate interest.
-- Implementations need only decode the core segment's version (must be 2), purpose consents (bits 152 to 175) and vendor consent section (from bit 213, bit field or range encoded), and the publisher TC segment's purpose consents (bits 3 to 26).
+- **Publisher mode** (the default, `SID_VENDOR_ID` unset). SharedID is the publisher's own first-party ID, so the TC string's **publisher TC segment** (segment type 3) MUST have consent for Purpose 1 (store and access information on a device), and consent or legitimate interest for at least one of Purposes 2 to 10. Reasons: `tcf: no publisher TC segment`, `tcf: no publisher consent for purpose 1`, `tcf: no publisher consent or legitimate interest for any of purposes 2-10`.
+- **Vendor mode** (`SID_VENDOR_ID` set, for a publisher registered as a TCF vendor). The core segment's vendor consents MUST include that vendor ID, its purpose consents MUST include Purpose 1, and its purpose consents or purpose legitimate interests MUST include at least one of Purposes 2 to 10. The publisher TC segment isn't used. Reasons: `tcf: no consent for vendor <id>`, `tcf: no vendor consent for purpose 1`, `tcf: no vendor consent or legitimate interest for any of purposes 2-10`.
+- Purpose 1 always needs consent; legitimate interest isn't a legal basis for it.
+- Implementations need only decode the core segment's version (must be 2), purpose consents (bits 152 to 175), purpose legitimate interests (176 to 199) and vendor consent section (from bit 213, bit field or range encoded), and the publisher TC segment's purpose consents (bits 3 to 26) and legitimate interests (27 to 50).
 - `us_privacy`, `gpp` and `gpp_sid` query parameters are read and passed to modules.
 
 A response where storage was denied SHOULD carry `X-SharedID-Status: denied: <reason>`. A response that set an ID SHOULD carry `X-SharedID-Source: cookie|recovery|param|minted`.

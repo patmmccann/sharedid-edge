@@ -142,6 +142,11 @@ describe('decodeTcf', () => {
   it('skips other segments, such as disclosed vendors', () => {
     expect(decodeTcf(`${tcString([1])}.IFoEUQQgAIQwgIwQABAEAAAAOIAACAIAAAAQAIAgEAACEAAAAAgAQBAAAAAAAGBAAgAAAAAAAFAAECAAAgAAQARAEQAAAAAJAAIAAgAAAYQEAAAQmAgBC3ZAYzUw`)?.publisherPurposeConsents).toBeUndefined();
   });
+  it('reads legitimate interests in both segments', () => {
+    const decoded = decodeTcf(tcString([1], { legitimateInterests: [2, 7], publisher: [1], publisherLegitimateInterests: [8, 10] }));
+    expect([...(decoded?.purposeLegitimateInterests ?? [])]).toEqual([2, 7]);
+    expect([...(decoded?.publisherPurposeLegitimateInterests ?? [])]).toEqual([8, 10]);
+  });
   it('reads vendor consents in bit field and range encodings', () => {
     for (const vendorEncoding of ['bitfield', 'range'] as const) {
       const decoded = decodeTcf(tcString([1], { vendors: [3, 755, 756, 757, 1000], vendorEncoding }));
@@ -179,12 +184,23 @@ describe('storageDecision', () => {
     expect(storageDecision(publisherMode, consent('', { gpc: true }))).toEqual(denied('gpc'));
     expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${publisherTc([1, 2])}`, { gpc: true }))).toEqual(denied('gpc'));
   });
+  it('accepts legitimate interest for purposes 2-10, but not for purpose 1', () => {
+    const tc = (consents: readonly number[], li: readonly number[]): string => tcString([], { publisher: consents, publisherLegitimateInterests: li });
+    expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${tc([1], [2, 7])}`))).toEqual({ allowed: true });
+    expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${tc([1], [10])}`))).toEqual({ allowed: true });
+    expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${tc([2], [1])}`))).toEqual(denied('tcf: no publisher consent for purpose 1'));
+    expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${tc([1], [11])}`))).toEqual(denied('tcf: no publisher consent or legitimate interest for any of purposes 2-10'));
+    // vendor legitimate interests don't count in publisher mode, nor publisher ones in vendor mode
+    expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${tcString([], { publisher: [1], legitimateInterests: [2] })}`)).allowed).toBe(false);
+    expect(storageDecision(vendorMode, consent(`gdpr=1&gdpr_consent=${tcString([1], { vendors: [755], legitimateInterests: [2] })}`))).toEqual({ allowed: true });
+    expect(storageDecision(vendorMode, consent(`gdpr=1&gdpr_consent=${tcString([1], { vendors: [755], publisherLegitimateInterests: [2] })}`)).allowed).toBe(false);
+  });
   it('requires publisher consent for purpose 1 and at least one of purposes 2-10', () => {
     expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${publisherTc([1, 2])}`))).toEqual({ allowed: true });
     expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${publisherTc([1, 10])}`))).toEqual({ allowed: true });
     expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${publisherTc([2, 3])}`))).toEqual(denied('tcf: no publisher consent for purpose 1'));
-    expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${publisherTc([1])}`))).toEqual(denied('tcf: no publisher consent for any of purposes 2-10'));
-    expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${publisherTc([1, 11])}`))).toEqual(denied('tcf: no publisher consent for any of purposes 2-10'));
+    expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${publisherTc([1])}`))).toEqual(denied('tcf: no publisher consent or legitimate interest for any of purposes 2-10'));
+    expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${publisherTc([1, 11])}`))).toEqual(denied('tcf: no publisher consent or legitimate interest for any of purposes 2-10'));
   });
   it('doesn\'t count vendor purpose consents in the core segment', () => {
     expect(storageDecision(publisherMode, consent(`gdpr=1&gdpr_consent=${tcString([1, 2, 3])}`))).toEqual(denied('tcf: no publisher TC segment'));
@@ -204,7 +220,7 @@ describe('storageDecision', () => {
     expect(storageDecision(vendorMode, consent(`gdpr=1&gdpr_consent=${tc([755], [1, 2])}`))).toEqual({ allowed: true });
     expect(storageDecision(vendorMode, consent(`gdpr=1&gdpr_consent=${tc([1, 2], [1, 2])}`))).toEqual(denied('tcf: no consent for vendor 755'));
     expect(storageDecision(vendorMode, consent(`gdpr=1&gdpr_consent=${tc([755], [2, 3])}`))).toEqual(denied('tcf: no vendor consent for purpose 1'));
-    expect(storageDecision(vendorMode, consent(`gdpr=1&gdpr_consent=${tc([755], [1, 11])}`))).toEqual(denied('tcf: no vendor consent for any of purposes 2-10'));
+    expect(storageDecision(vendorMode, consent(`gdpr=1&gdpr_consent=${tc([755], [1, 11])}`))).toEqual(denied('tcf: no vendor consent or legitimate interest for any of purposes 2-10'));
     // publisher consent alone isn't enough in vendor mode
     expect(storageDecision(vendorMode, consent(`gdpr=1&gdpr_consent=${publisherTc([1, 2])}`)).allowed).toBe(false);
     expect(storageDecision(vendorMode, consent('gdpr=1'))).toEqual(denied('tcf: GDPR applies and there is no TC string'));

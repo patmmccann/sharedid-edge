@@ -1,8 +1,12 @@
 const BASE64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 export interface TcStringOptions {
+  /** Purpose legitimate interests in the core segment. */
+  readonly legitimateInterests?: readonly number[];
   /** Purpose consents in a publisher TC segment; no publisher segment when omitted. */
   readonly publisher?: readonly number[];
+  /** Purpose legitimate interests in the publisher TC segment (which is added if this is set). */
+  readonly publisherLegitimateInterests?: readonly number[];
   /** Vendor consents in the core segment. */
   readonly vendors?: readonly number[];
   /** How the vendor consents are encoded; a bit field by default. */
@@ -19,13 +23,14 @@ export function tcString(purposes: readonly number[], options: TcStringOptions =
   pushInt(bits, options.version ?? 2, 6);
   while (bits.length < 152) bits.push(0);
   pushPurposes(bits, purposes);
+  pushPurposes(bits, options.legitimateInterests ?? []);
   while (bits.length < 213) bits.push(0);
   pushVendors(bits, options.vendors ?? [], options.vendorEncoding ?? 'bitfield');
-  if (options.publisher === undefined) return encode(bits);
+  if (options.publisher === undefined && options.publisherLegitimateInterests === undefined) return encode(bits);
   const publisher: number[] = [];
   pushInt(publisher, 3, 3); // SegmentType: publisher TC
-  pushPurposes(publisher, options.publisher); // PubPurposesConsent
-  pushPurposes(publisher, []); // PubPurposesLITransparency
+  pushPurposes(publisher, options.publisher ?? []); // PubPurposesConsent
+  pushPurposes(publisher, options.publisherLegitimateInterests ?? []); // PubPurposesLITransparency
   pushInt(publisher, 0, 6); // NumCustomPurposes
   return `${encode(bits)}.${encode(publisher)}`;
 }
