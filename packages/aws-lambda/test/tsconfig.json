@@ -1,0 +1,12 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "../../../.tsbuild/aws-lambda-test",
+    "emitDeclarationOnly": true,
+    "isolatedDeclarations": false,
+    "types": ["node"]
+  },
+  "include": ["."],
+  "references": [{ "path": ".." }, { "path": "../../core" }]
+}

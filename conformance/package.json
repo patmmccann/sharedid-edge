@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "conformance": "node dist/run.js --target node",
-    "conformance:wrangler": "node dist/run.js --target wrangler"
+    "conformance:wrangler": "node dist/run.js --target wrangler",
+    "conformance:lambda": "node dist/run.js --target lambda"
   }
 }

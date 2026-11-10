@@ -13,6 +13,8 @@ const projects = [
   'packages/module-ip/test',
   'packages/node',
   'packages/node/test',
+  'packages/aws-lambda',
+  'packages/aws-lambda/test',
   'conformance',
   'scripts',
   'packages/cloudflare',

@@ -7,7 +7,7 @@ export interface RunningTarget {
   stop(): Promise<void>;
 }
 
-export type TargetName = 'node' | 'wrangler';
+export type TargetName = 'node' | 'wrangler' | 'lambda';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -60,6 +60,13 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
   if (target === 'node') {
     child = spawn(process.execPath, [join(ROOT, 'packages/node/dist/cli.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), HOST: '127.0.0.1', ...config },
+      stdio: ['ignore', 'ignore', 'inherit']
+    });
+  } else if (target === 'lambda') {
+    // The bundled Lambda handler behind a local CloudFront and function URL stand-in (lambda-emulator.ts). The
+    // public origin is the emulator's own http URL, so cookies aren't Secure, as for the other local targets.
+    child = spawn(process.execPath, [join(ROOT, 'conformance/dist/lambda-emulator.js')], {
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else {

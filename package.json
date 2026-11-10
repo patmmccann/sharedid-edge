@@ -12,6 +12,7 @@
     "packages/module-ip",
     "packages/node",
     "packages/cloudflare",
+    "packages/aws-lambda",
     "conformance"
   ],
   "scripts": {
@@ -22,10 +23,11 @@
     "test": "npm run test -ws --if-present",
     "conformance": "npm run conformance -w @sharedid-edge/conformance",
     "consumer-types": "node scripts/consumer-types.mjs",
-    "attw": "npm run attw -w @sharedid-edge/core -w @sharedid-edge/module-ip",
-    "check": "npm run build && npm run lint && npm run typecheck:ts7 && npm run typecheck:cloudflare && npm run types:check -w @sharedid-edge/cloudflare && npm test && npm run conformance && npm run consumer-types && npm run attw",
+    "attw": "npm run attw -w @sharedid-edge/core -w @sharedid-edge/module-ip -w @sharedid-edge/aws-lambda",
+    "check": "npm run build && npm run lint && npm run typecheck:ts7 && npm run typecheck:cloudflare && npm run types:check -w @sharedid-edge/cloudflare && npm test && npm run conformance && npm run consumer-types && npm run attw && npm run conformance:lambda",
     "verify-deployment": "tsx scripts/verify-deployment.ts",
-    "conformance:wrangler": "npm run conformance:wrangler -w @sharedid-edge/conformance"
+    "conformance:wrangler": "npm run conformance:wrangler -w @sharedid-edge/conformance",
+    "conformance:lambda": "npm run bundle -w @sharedid-edge/aws-lambda && npm run conformance:lambda -w @sharedid-edge/conformance"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
