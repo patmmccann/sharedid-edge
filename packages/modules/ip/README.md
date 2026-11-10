@@ -2,6 +2,8 @@
 
 The `ip` module for [SharedID Edge](../../../README.md): the visitor's real IP address, in the `/_sid/v1` payload as OpenRTB `ortb2.device.ip` or `ortb2.device.ipv6`.
 
+It runs on `/_sid/v1` only: `/_sid/sync` returns an image, so there's nowhere to put the address.
+
 Bid requests made from the page, or relayed through Prebid Server, don't always carry the user's own address; bidders may see a proxy's or a server's instead. The worker sees the connecting address, so it can hand it back to the page for the auction's first-party data.
 
 ## Contents

@@ -2,7 +2,7 @@
 
 The `ec` module for [SharedID Edge](../../../README.md): IAB Tech Lab [Trusted Server Edge Cookies](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html) (`ts-ec`).
 
-It sets the `ts-ec` cookie on the publisher's domain and returns the Edge Cookie as `ortb2.user.id` in the `/_sid/v1` payload. Publishers who use Trusted Server, or want its identifier, can then run one edge worker for both the SharedID and the EC.
+It sets the `ts-ec` cookie on the publisher's domain, on Prebid.js's `/_sid/sync` calls on page views as well as on `/_sid/v1`, and returns the Edge Cookie as `ortb2.user.id` in the `/_sid/v1` payload. Publishers who use Trusted Server, or want its identifier, can then run one edge worker for both the SharedID and the EC.
 
 > **This ID is derived from the visitor's IP address.** An EC is `HMAC-SHA256(passphrase, IP)` as 64 hex characters, a dot, and 6 random characters. Everyone behind the same IPv4 address, or the same IPv6 /64, gets the same 64-character prefix, and anyone with the passphrase can test which address an EC came from. That's how Trusted Server defines EC. It's the one IP-derived identifier in SharedID Edge, so the module is **off unless you turn it on**. The SharedID (`_pubcid`) is unaffected and stays random.
 
@@ -55,13 +55,16 @@ The module is built into the Cloudflare Worker, the Node.js server and the AWS L
    curl -si https://www.example.com/_sid/v1 | grep -i '^set-cookie: ts-ec'
    curl -s https://www.example.com/_sid/v1 | jq .ext.modules.ec
    # { "ms": 1, "status": "ok" }
+   curl -si https://www.example.com/_sid/sync | grep -i '^x-sharedid-modules\|^set-cookie: ts-ec'
+   # x-sharedid-modules: ec=ok
+   # set-cookie: ts-ec=…; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
    ```
 
-5. **On the page,** merge the payload's `ortb2` into Prebid.js before the auction, as the main README shows. The EC then reaches bidders as `user.id`.
+5. **On the page,** nothing is needed to set the cookie if Prebid.js calls `/_sid/sync` (its `pixelUrl`, with `extend: true`). To send the EC to bidders, merge the `/_sid/v1` payload's `ortb2` into Prebid.js before the auction, as the main README shows. The EC then reaches bidders as `user.id`.
 
 ## What it does
 
-On each `/_sid/v1` request, the module does one of three things:
+On each `/_sid/v1` or `/_sid/sync` request, the module does one of three things (on `/_sid/sync` there's no payload: only the cookie is set or deleted):
 
 | Situation | Cookie | Payload |
 | --- | --- | --- |
@@ -70,7 +73,9 @@ On each `/_sid/v1` request, the module does one of three things:
 | Consent withdrawn (see below) | deletes `ts-ec` | nothing |
 | Consent unclear (GDPR applies without a TC string, or the TC string can't be decoded) | none; an existing `ts-ec` is left alone | nothing |
 
-`/_sid/optout` also deletes `ts-ec`, whether or not `ec` is in `SID_MODULES`. The module doesn't run on `/_sid/sync`, so Prebid.js's `pixelUrl` calls never set an EC; only `/_sid/v1` does.
+`/_sid/optout` also deletes `ts-ec`, whether or not `ec` is in `SID_MODULES`.
+
+**On `/_sid/sync`.** Prebid.js calls `/_sid/sync` (its `pixelUrl`) on page views, so the EC is set on page loads, as Trusted Server does, without the page calling `/_sid/v1`. The response stays Prebid.js's 1×1 GIF, with the `ts-ec` cookie and `X-SharedID-Modules: ec=ok` (or `empty`, `error`) added. The browser caches a successful sync for `SID_SYNC_CACHE_SECONDS` (a day by default), so a withdrawal by GPC or missing consent is applied on the next uncached call; an opt-out at `/_sid/optout` deletes `ts-ec` at once. To set the EC only on `/_sid/v1`, set `SID_SYNC_MODULES` without `ec` (or to `none`).
 
 ## The ID
 
@@ -156,7 +161,7 @@ Trusted Server's rules, applied to the signals SharedID Edge has.
 
 This module implements the cookie and its ID. It doesn't implement the rest of Trusted Server:
 
-- **When the EC is set:** on `/_sid/v1` calls only, not on page loads proxied through Trusted Server.
+- **When the EC is set:** on Prebid.js's `/_sid/sync` calls on page views (at most once per `SID_SYNC_CACHE_SECONDS` per browser) and on `/_sid/v1` calls, not on every page load proxied through Trusted Server.
 - **No server-side state:** no KV identity graph, partner ID sync, pull sync, `/identify` or batch-sync API, `ts-ec-pull-complete` marker, or tombstones.
 - **Consent signals:** this worker's (`gdpr`, the TC string, GPC, `us_privacy`, `coppa`), not Trusted Server's per-country and per-state jurisdiction lists. GPP isn't decoded yet, and GPC withdraws everywhere, not only in US states.
 - **No `x-ts-ec` header,** inbound or outbound. Trusted Server's current code doesn't set one either, though its draft spec describes it.

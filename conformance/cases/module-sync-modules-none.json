@@ -1,0 +1,64 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "SID_SYNC_MODULES=none runs no module on /sync. SID_MODULES=reflect, with uid1 configured (domain example.com, 365 days): /v1 still reflects it.",
+  "config": {
+    "SID_MODULES": "reflect",
+    "SID_SYNC_MODULES": "none",
+    "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,\"domain\":\"example.com\"}]}}"
+  },
+  "cases": [
+    {
+      "name": "doesn't reflect on /sync",
+      "request": {
+        "path": "/_sid/sync",
+        "headers": {
+          "cookie": "uid1=abc"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "cache-control": "private, max-age=86400"
+        },
+        "absentHeaders": [
+          "x-sharedid-modules"
+        ],
+        "cookies": [
+          {
+            "name": "_pubcid"
+          },
+          {
+            "name": "_pubcid_sv"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "still reflects on /v1",
+      "request": {
+        "path": "/_sid/v1",
+        "headers": {
+          "cookie": "uid1=abc"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid"
+          },
+          {
+            "name": "_pubcid_sv"
+          },
+          {
+            "name": "uid1",
+            "value": "abc",
+            "maxAge": 31536000
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    }
+  ]
+}

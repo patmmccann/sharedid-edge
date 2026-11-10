@@ -4,7 +4,7 @@
     "rootDir": "src",
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo",
-    // Lambda's Node.js 22 runtime: Node's types (Buffer, process.env) and its global fetch types.
+    // Lambda's Node.js 24 runtime: Node's types (Buffer, process.env) and its global fetch types.
     "types": ["node"]
   },
   "include": ["src"],

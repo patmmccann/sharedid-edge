@@ -2,6 +2,8 @@
 
 The `geo` module for [SharedID Edge](../../../README.md): the visitor's location, as your CDN sees it, in the `/_sid/v1` payload as OpenRTB 2.6 `ortb2.device.geo`.
 
+It runs on `/_sid/v1` only: `/_sid/sync` returns an image, so there's nowhere to put the location.
+
 Cloudflare geolocates every request, on every plan. With this module the page can give bidders that location without a geolocation script or a call to a geo service: merge the payload's `ortb2` into Prebid.js and the auction gets `device.geo`. Coarse fields (country, region, metro, UTC offset) are always sent; precise ones (city, postal code, coordinates) only when consent allows, and never rounded.
 
 ## Contents

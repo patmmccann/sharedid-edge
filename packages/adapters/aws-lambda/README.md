@@ -37,7 +37,7 @@ CloudFront: your site's distribution (www.example.com)
                      │
                      ▼
 Lambda function URL (AuthType AWS_IAM: only your distribution may invoke it)
-   └─ Node.js 22 function, handler lambda.handler (deploy/lambda.mjs)
+   └─ Node.js 24 function, handler lambda.handler (deploy/lambda.mjs)
         event (payload format 2.0) → Request → SharedID Edge handler → Response → result with cookies[]
 ```
 
@@ -49,7 +49,7 @@ Lambda function URL (AuthType AWS_IAM: only your distribution may invoke it)
 
 - A CloudFront distribution serving your site over https, and its ID (like `E2ABCDEFGHIJKL`). Or, to try it out, let the template create one ([A new distribution](#a-new-distribution)).
 - The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html), configured with credentials (`aws configure`) that can create CloudFormation stacks, Lambda functions and permissions, IAM roles, CloudWatch log groups, and CloudFront origin access controls and origin request policies.
-- Node.js 22 or later and npm, to build.
+- Node.js 24 or later and npm, to build.
 
 ## Build
 
