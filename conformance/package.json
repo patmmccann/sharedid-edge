@@ -8,6 +8,10 @@
   "scripts": {
     "conformance": "node dist/run.js --target node",
     "conformance:wrangler": "node dist/run.js --target wrangler",
-    "conformance:lambda": "node dist/run.js --target lambda"
+    "conformance:lambda": "node dist/run.js --target lambda",
+    "conformance:azure": "node dist/run.js --target azure"
+  },
+  "devDependencies": {
+    "@azure/functions": "^4.17.1"
   }
 }

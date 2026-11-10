@@ -148,7 +148,7 @@ Modules run on `/v1` only; `/sync` is unchanged by them.
 
 ### Platform information
 
-Each platform adapter fills the platform information from values the platform itself sets, which visitors can't forge: on Cloudflare `CF-Connecting-IP` and `request.cf`; behind CloudFront the `CloudFront-Viewer-Address` (`ip:port`), `CloudFront-Viewer-Country` and `CloudFront-Viewer-Country-Region` headers, accepted only when the origin can be reached through CloudFront alone. A value the platform doesn't provide is left out, never guessed. The EU flag means the country is one of the 27 EU member states (the meaning of Cloudflare's `isEUCountry`), and is unknown when the country is.
+Each platform adapter fills the platform information from values the platform itself sets, which visitors can't forge: on Cloudflare `CF-Connecting-IP` and `request.cf`; behind CloudFront the `CloudFront-Viewer-Address` (`ip:port`), `CloudFront-Viewer-Country` and `CloudFront-Viewer-Country-Region` headers, accepted only when the origin can be reached through CloudFront alone. Behind Azure Front Door, `X-Azure-ClientIP`, and the location from headers a Front Door rule overwrites on every request (Front Door's `{geo_country}`; it has no other location data), accepted only when the function app can be reached through that Front Door profile alone (its `X-Azure-FDID`). An adapter whose platform changes cookie values in transit (Azure Functions percent-encodes them) leaves out a cookie it can't set unchanged, rather than set a different value. A value the platform doesn't provide is left out, never guessed. The EU flag means the country is one of the 27 EU member states (the meaning of Cloudflare's `isEUCountry`), and is unknown when the country is.
 
 ### The `ip` module
 

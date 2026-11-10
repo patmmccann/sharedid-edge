@@ -7,6 +7,6 @@
     "types": ["node"]
   },
   "include": ["src"],
-  // lambda-emulator.ts uses the Lambda adapter's event types.
-  "references": [{ "path": "../packages/adapters/aws-lambda" }]
+  // The emulators use their adapter's types: lambda-emulator.ts the Lambda events, azure-emulator.ts the handler.
+  "references": [{ "path": "../packages/adapters/aws-lambda" }, { "path": "../packages/adapters/azure-functions" }]
 }

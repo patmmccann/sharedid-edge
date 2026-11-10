@@ -142,6 +142,10 @@ Anything else in `geo`'s settings, including a misspelt key (`{"geo":{"precison"
 
 The Lambda adapter reads CloudFront’s geolocation headers (`CloudFront-Viewer-Country`, `-Country-Region`, `-City`, `-Postal-Code`, `-Metro-Code`, `-Latitude`, `-Longitude`, `-Time-Zone`). The SAM template’s origin request policy forwards them. CloudFront has no continent header. See [`packages/adapters/aws-lambda/README.md`](../../adapters/aws-lambda/README.md#platform-information).
 
+## On Azure Functions behind Front Door
+
+Front Door has no location headers of its own, and its rules can only pass on the visitor's country (`{geo_country}`). The Azure template adds a rule that does, so the module sends `country` alone: no region, metro, city or coordinates, and `utcoffset` is unknown. See [`packages/adapters/azure-functions/README.md`](../../adapters/azure-functions/README.md#platform-information).
+
 ## With the Node.js server
 
 The Node.js server has no geolocation of its own. Behind Cloudflare, it can use Cloudflare's **visitor location headers**: turn on the **Add visitor location headers** managed transform (in the Cloudflare dashboard, under Rules, Managed Transforms). Cloudflare then adds these headers to requests it forwards to your server:

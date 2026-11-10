@@ -10,10 +10,16 @@ export interface RunningTarget {
    * `request.cf`.
    */
   readonly requestHeaders: (headers: Readonly<Record<string, string>>) => Record<string, string>;
+  /**
+   * Cases the platform can't pass, by `file#case name`, with the reason. The runner reports them as TODO instead of
+   * failures, and fails if one passes. Only for a documented limitation of the platform itself, never to skip a
+   * failure of the adapter; the adapter's README says what it means for publishers.
+   */
+  readonly limitations: Readonly<Record<string, string>>;
   stop(): Promise<void>;
 }
 
-export type TargetName = 'node' | 'wrangler' | 'lambda';
+export type TargetName = 'node' | 'wrangler' | 'lambda' | 'azure';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -88,6 +94,33 @@ function asRequestCf(headers: Readonly<Record<string, string>>): Record<string, 
   return { ...headers, 'MF-CF-Blob': JSON.stringify({ ...cf, clientAcceptEncoding: '' }) };
 }
 
+/** The Front Door profile ID the Azure stand-in sends as X-Azure-FDID, and the function app accepts. */
+const AZURE_FRONT_DOOR_ID = '0f1e2d3c-4b5a-4978-8a7b-6c5d4e3f2a1b';
+
+/** The headers the Azure stand-in's "rule set" adds, by location field (SID_LOCATION_HEADERS). */
+const AZURE_LOCATION_HEADERS: Readonly<Record<string, string>> = {
+  country: 'x-sid-country',
+  regionCode: 'x-sid-region',
+  city: 'x-sid-city',
+  postalCode: 'x-sid-postal-code',
+  metroCode: 'x-sid-metro-code',
+  latitude: 'x-sid-latitude',
+  longitude: 'x-sid-longitude',
+  timezone: 'x-sid-timezone',
+  continent: 'x-sid-continent'
+};
+
+const PERCENT_ENCODED = 'the Functions host percent-encodes cookie values, so the adapter leaves out a cookie whose value it would change';
+
+/**
+ * What Azure Functions can't do; see `RunningTarget.limitations`. The reflect module re-sets cookies byte for byte, and
+ * these cases' uid1 has `%`, `+`, `/` and `=` in its value.
+ */
+const AZURE_LIMITATIONS: Readonly<Record<string, string>> = {
+  'module-reflect.json#reflects uid1 byte for byte with Domain=.example.com and a new Max-Age': PERCENT_ENCODED,
+  'module-reflect-prefer.json#backup: restores the saved uid1 byte for byte over the present one, restores the missing _ga, and keeps {_ga, uid1}': PERCENT_ENCODED
+};
+
 /** Starts a target configured with `config` (SID_* environment variables). */
 export async function startTarget(target: TargetName, config: Readonly<Record<string, string>>): Promise<RunningTarget> {
   const port = await freePort();
@@ -103,6 +136,22 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
     // public origin is the emulator's own http URL, so cookies aren't Secure, as for the other local targets.
     child = spawn(process.execPath, [join(ROOT, 'conformance/dist/lambda-emulator.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
+      stdio: ['ignore', 'ignore', 'inherit']
+    });
+  } else if (target === 'azure') {
+    // The bundled function app behind a local stand-in for Front Door and the Functions host (azure-emulator.ts). The
+    // handler checks X-Azure-FDID against a fixed profile ID the stand-in sends, and reads every location field from
+    // the headers a Front Door rule set would add. Plain http, so cookies aren't Secure, as for the other targets.
+    child = spawn(process.execPath, [join(ROOT, 'conformance/dist/azure-emulator.js')], {
+      env: {
+        PATH: process.env['PATH'] ?? '',
+        PORT: String(port),
+        SID_PUBLIC_ORIGIN: baseUrl,
+        AZURE_FRONT_DOOR_ID: AZURE_FRONT_DOOR_ID,
+        SID_FRONT_DOOR_ID: AZURE_FRONT_DOOR_ID,
+        SID_LOCATION_HEADERS: JSON.stringify(AZURE_LOCATION_HEADERS),
+        ...config
+      },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else {
@@ -122,5 +171,10 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
     await stop();
     throw error;
   }
-  return { baseUrl, stop, requestHeaders: target === 'wrangler' ? asRequestCf : headers => ({ ...headers }) };
+  return {
+    baseUrl,
+    stop,
+    requestHeaders: target === 'wrangler' ? asRequestCf : headers => ({ ...headers }),
+    limitations: target === 'azure' ? AZURE_LIMITATIONS : {}
+  };
 }
