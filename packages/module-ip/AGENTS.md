@@ -1,8 +1,10 @@
 # packages/module-ip
 
+User documentation is in [README.md](README.md) (also the npm package page); keep it in step with behaviour changes.
+
 The `ip` module (`@sharedid-edge/module-ip`): the client's IP address in the `/v1` payload's `ortb2.device.ip` or `ortb2.device.ipv6`, or nothing when consent signals rule it out. It never sends a truncated address. See the [spec section](../../spec/SPEC.md#the-ip-module).
 
-It's the pattern for module packages: a separate workspace package depending only on `@sharedid-edge/core`'s public API, registered in `packages/cloudflare/src/modules.ts` and `packages/node/src/cli.ts`, and doing nothing until listed in `SID_MODULES`.
+It's the pattern for module packages: a separate workspace package depending only on `@sharedid-edge/core`'s public API, registered in `packages/cloudflare/src/modules.ts` and `packages/node/src/cli.ts`, doing nothing until listed in `SID_MODULES`, and documented in its own README.md.
 
 - **Platform-neutral**, like core (`lib: ["ES2023", "WebWorker"]`, no Node or DOM types), and no runtime dependencies besides core: it's bundled into the worker.
 - `src/ip.ts` parses and formats (RFC 5952) addresses without platform APIs. Reject anything that isn't a plain address rather than echo it back; zone IDs aren't accepted.
