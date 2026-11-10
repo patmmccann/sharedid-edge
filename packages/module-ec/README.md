@@ -123,7 +123,7 @@ With `SID_MODULES=ec`, a first `/_sid/v1` call from `192.0.2.77`:
 `ext.modules.ec.status` is:
 - `ok`: an EC was returned.
 - `empty`: none, because consent rules it out, there's no client IP, or the cookie was only deleted.
-- `error`: a missing or short passphrase, or an invalid `domain`. No details are given.
+- `error`: a missing or short passphrase, or an invalid `domain`. No details are given. Withdrawal doesn’t need the passphrase, so even then GPC, COPPA, opt-out and withdrawn consent still delete an existing `ts-ec`.
 
 The EC is returned as `user.id`, which is where Trusted Server puts it. There's no EID source for EC.
 
