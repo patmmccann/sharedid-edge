@@ -1,0 +1,34 @@
+{
+  "name": "@sharedid-edge/module-ip",
+  "version": "0.1.0",
+  "description": "SharedID Edge module: the connecting client's full IP address in ortb2.device, or nothing when consent rules it out",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.tsbuildinfo"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "attw": "attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "@sharedid-edge/core": "0.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patmmccann/sharedid-edge.git",
+    "directory": "packages/module-ip"
+  }
+}

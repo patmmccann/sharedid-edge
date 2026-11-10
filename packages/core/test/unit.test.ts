@@ -93,6 +93,7 @@ describe('resolveConfig', () => {
       SID_SYNC_CACHE_SECONDS: '0',
       SID_MODULES: 'ip, geo',
       SID_MODULE_CONFIG: '{"ip":{"field":"ipv6"}}',
+      SID_MODULE_SECRETS: '{"ec":{"passphrase":"p"}}',
       SID_MODULE_TIMEOUT_MS: '20'
     });
     expect(config).toEqual({
@@ -108,8 +109,12 @@ describe('resolveConfig', () => {
       syncCacheSeconds: 0,
       modules: ['ip', 'geo'],
       moduleConfig: { ip: { field: 'ipv6' } },
+      moduleSecrets: { ec: { passphrase: 'p' } },
       moduleTimeoutMs: 20
     } satisfies SharedIdEdgeConfig);
+  });
+  it('never echoes SID_MODULE_SECRETS in errors', () => {
+    expect(() => resolveConfig({ SID_MODULE_SECRETS: 'hunter2-not-json' })).toThrow(/^(?!.*hunter2)/);
   });
   it.each([
     ['SID_MAX_AGE_DAYS', '401'],
@@ -122,6 +127,8 @@ describe('resolveConfig', () => {
     ['SID_VENDOR_ID', 'abc'],
     ['SID_ALLOWED_ORIGINS', 'https://example.com/path'],
     ['SID_MODULE_CONFIG', '[1]'],
+    ['SID_MODULE_SECRETS', '{"ec":{"passphrase":1}}'],
+    ['SID_MODULE_SECRETS', 'not json'],
     ['SID_RECOVERY_COOKIE', '_pubcid'],
     ['SID_RECOVERY_COOKIE', '_pubcid_optout']
   ])('rejects %s=%s', (key, value) => {
@@ -142,6 +149,10 @@ describe('decodeTcf', () => {
   });
   it('skips other segments, such as disclosed vendors', () => {
     expect(decodeTcf(`${tcString([1])}.IFoEUQQgAIQwgIwQABAEAAAAOIAACAIAAAAQAIAgEAACEAAAAAgAQBAAAAAAAGBAAgAAAAAAAFAAECAAAgAAQARAEQAAAAAJAAIAAgAAAYQEAAAQmAgBC3ZAYzUw`)?.publisherPurposeConsents).toBeUndefined();
+  });
+  it('reads special feature opt-ins', () => {
+    expect([...(decodeTcf(tcString([1], { specialFeatures: [1, 12] }))?.specialFeatureOptIns ?? [])]).toEqual([1, 12]);
+    expect(decodeTcf(tcString([1]))?.specialFeatureOptIns.size).toBe(0);
   });
   it('reads legitimate interests in both segments', () => {
     const decoded = decodeTcf(tcString([1], { legitimateInterests: [2, 7], publisher: [1], publisherLegitimateInterests: [8, 10] }));
@@ -228,6 +239,12 @@ describe('storageDecision', () => {
     expect(storageDecision(publisherMode, consent(`gdpr=0&gdpr_consent=${publisherTc([])}`)).allowed).toBe(false);
     expect(storageDecision(publisherMode, consent(`gdpr_consent=${publisherTc([1, 2])}`)).allowed).toBe(true);
     expect(storageDecision(publisherMode, consent('gdpr_consent=not-a-tc-string'))).toEqual(denied('tcf: invalid TC string'));
+  });
+  it('denies storage for a COPPA request, like GPC, whatever the TC string says', () => {
+    expect(storageDecision(publisherMode, consent('coppa=1'))).toEqual(denied('coppa'));
+    expect(storageDecision(publisherMode, consent(`coppa=1&gdpr=1&gdpr_consent=${publisherTc([1, 2])}`))).toEqual(denied('coppa'));
+    expect(storageDecision(vendorMode, consent('coppa=1'))).toEqual(denied('coppa'));
+    expect(storageDecision(publisherMode, consent('coppa=0')).allowed).toBe(true);
   });
   it('denies storage when GDPR applies and there is no TC string', () => {
     expect(storageDecision(publisherMode, consent('gdpr=1'))).toEqual(denied('tcf: GDPR applies and there is no TC string'));

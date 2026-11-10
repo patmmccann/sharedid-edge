@@ -25,4 +25,5 @@ export const example = defineModule({
 - Don't put personal data in the output unless the publisher enabled it in the module's config, and default to off. Don't log request data.
 - A module that throws or exceeds `SID_MODULE_TIMEOUT_MS` is reported (`ext.modules`) and left out. Don't rely on that for control flow; return `undefined` when there's nothing to add.
 - Modules with a `gvlid` don't run when GDPR applies until vendor consent decoding exists.
+- Give each module package its own README.md: turning it on, response shapes with JSON examples, consent rules, settings and troubleshooting (see `packages/module-ip/README.md`). Link it from the main README's Modules section.
 - Test each module with the handler (`createHandler({ modules: [module], config: resolveConfig({ SID_MODULES: 'name' }) })`), including consent skips, and add conformance cases when its output is part of the payload contract.

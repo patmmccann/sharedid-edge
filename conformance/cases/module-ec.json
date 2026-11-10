@@ -1,0 +1,63 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The ec module (SID_MODULES=ec): IAB Tech Lab Trusted Server Edge Cookies. The ts-ec cookie is HMAC-SHA256(passphrase, normalized client IP) as 64 hex, a dot, and 6 random alphanumerics; HttpOnly, one year, Domain=.{domain}. HMAC-SHA256('conformance-passphrase-0123456789abcdef', '192.0.2.77') = 7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc, and for 2001:db8:85a3:0:8a2e:370:7334:1234 (normalized to its /64, 20010db885a30000) = 53535a5d73a52082fa6be4418fff1ca1f0b3986ac180be1ffbfce280a0db284b. Requests carry the client IP as X-Forwarded-For (Node.js, SID_TRUST_PROXY) and CF-Connecting-IP (Workers).",
+  "config": {
+    "SID_MODULES": "ec",
+    "SID_MODULE_CONFIG": "{\"ec\":{\"domain\":\"example.com\"}}",
+    "SID_MODULE_SECRETS": "{\"ec\":{\"passphrase\":\"conformance-passphrase-0123456789abcdef\"}}",
+    "SID_TRUST_PROXY": "true"
+  },
+  "cases": [
+    {
+      "name": "mints ts-ec from an IPv4 address",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "ts-ec", "valuePattern": "^7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc\\.[A-Za-z0-9]{6}$", "maxAge": 31536000, "domain": ".example.com", "httpOnly": true, "sameSite": "Lax", "path": "/" }],
+        "jsonIncludes": { "ext": { "modules": { "ec": { "status": "ok" } } } }
+      }
+    },
+    {
+      "name": "mints ts-ec from an IPv6 address's /64",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "2001:db8:85a3:0:8a2e:370:7334:1234", "cf-connecting-ip": "2001:db8:85a3:0:8a2e:370:7334:1234" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "ts-ec", "valuePattern": "^53535a5d73a52082fa6be4418fff1ca1f0b3986ac180be1ffbfce280a0db284b\\.[A-Za-z0-9]{6}$", "httpOnly": true }]
+      }
+    },
+    {
+      "name": "returns an existing ts-ec as ortb2.user.id without refreshing it",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }],
+        "onlyListedCookies": true,
+        "jsonIncludes": { "ortb2": { "user": { "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } } }
+      }
+    },
+    {
+      "name": "deletes ts-ec on opt-out",
+      "request": { "path": "/_sid/optout", "headers": { "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
+      "expect": {
+        "status": 204,
+        "cookies": [{ "name": "_pubcid_optout", "value": "1" }, { "name": "_pubcid", "maxAge": 0 }, { "name": "_pubcid_sv", "maxAge": 0 }, { "name": "ts-ec", "value": "", "maxAge": 0, "domain": ".example.com", "httpOnly": true }],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "deletes ts-ec with Global Privacy Control",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "sec-gpc": "1", "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
+      "expect": { "status": 200, "cookies": [{ "name": "ts-ec", "value": "", "maxAge": 0, "domain": ".example.com", "httpOnly": true }], "onlyListedCookies": true }
+    },
+    {
+      "name": "deletes ts-ec for a TC string without Purpose 1",
+      "request": { "path": "/_sid/v1?gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
+      "expect": { "status": 200, "cookies": [{ "name": "ts-ec", "value": "", "maxAge": 0 }], "onlyListedCookies": true }
+    },
+    {
+      "name": "sets nothing and deletes nothing when GDPR applies without a TC string",
+      "request": { "path": "/_sid/v1?gdpr=1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
+      "expect": { "status": 200, "noCookies": true, "jsonIncludes": { "ext": { "modules": { "ec": { "status": "empty" } } } } }
+    }
+  ]
+}

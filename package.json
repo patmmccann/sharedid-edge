@@ -9,6 +9,8 @@
   },
   "workspaces": [
     "packages/core",
+    "packages/module-ip",
+    "packages/module-ec",
     "packages/node",
     "packages/cloudflare",
     "conformance"
@@ -21,7 +23,7 @@
     "test": "npm run test -ws --if-present",
     "conformance": "npm run conformance -w @sharedid-edge/conformance",
     "consumer-types": "node scripts/consumer-types.mjs",
-    "attw": "npm run attw -w @sharedid-edge/core",
+    "attw": "npm run attw -w @sharedid-edge/core -w @sharedid-edge/module-ip -w @sharedid-edge/module-ec",
     "check": "npm run build && npm run lint && npm run typecheck:ts7 && npm run typecheck:cloudflare && npm run types:check -w @sharedid-edge/cloudflare && npm test && npm run conformance && npm run consumer-types && npm run attw",
     "verify-deployment": "tsx scripts/verify-deployment.ts",
     "conformance:wrangler": "npm run conformance:wrangler -w @sharedid-edge/conformance"

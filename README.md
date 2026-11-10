@@ -162,6 +162,72 @@ pbjs.setConfig({
 
 **Known Prebid.js issue:** with `extend: true` and `pixelUrl`, `pbjs.getUserIdsAsync()` doesn't resolve on visits after the first, because `sharedIdSystem`'s extend callback never signals completion. Cookies aren't affected, but code that awaits `getUserIdsAsync()` hangs, and with `auctionDelay` above 0 every auction waits the full delay. Until the fix ([prebid/Prebid.js#16135](https://github.com/prebid/Prebid.js/pull/16135)) is released, keep `auctionDelay` at 0 with `extend: true` and `pixelUrl`.
 
+## Responses
+
+Every route is under `SID_BASE_PATH` (`/_sid` by default). None of them reaches your origin.
+
+### `GET /_sid/sync`: the `pixelUrl` endpoint
+
+A 1×1 GIF (`200`, `Content-Type: image/gif`), plus the cookies:
+
+```http
+HTTP/1.1 200 OK
+Content-Type: image/gif
+Cache-Control: private, max-age=86400        (no-store when no ID was set)
+Set-Cookie: _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=…; Path=/; SameSite=Lax; Secure
+Set-Cookie: _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=…; Path=/; SameSite=Lax; Secure; HttpOnly
+X-SharedID-Source: param
+```
+
+Modules don't run on `/sync`.
+
+### `GET /_sid/v1`: the ID and the modules' output
+
+JSON (`Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store`), with the same cookies as `/sync`. With `SID_MODULES=ip` and an IPv4 visitor:
+
+```json
+{
+  "v": 1,
+  "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+  "eids": [
+    { "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }
+  ],
+  "ortb2": { "device": { "ip": "192.0.2.77" } },
+  "ext": { "modules": { "ip": { "ms": 0, "status": "ok" } } }
+}
+```
+
+An IPv6 visitor gets `"ortb2": { "device": { "ipv6": "2001:db8::7" } }` instead.
+
+The same request with `Sec-GPC: 1` gets no ID, deletes the ID cookies, and returns no IP:
+
+```json
+{
+  "v": 1,
+  "eids": [],
+  "ext": { "modules": { "ip": { "ms": 0, "status": "empty" } } }
+}
+```
+
+| Field | |
+| --- | --- |
+| `v` | Payload version, `1`. |
+| `sharedid` | The SharedID. Absent when storage isn't allowed (opt-out, GPC, COPPA, consent). |
+| `eids` | OpenRTB `user.ext.eids`: the SharedID as `pubcid.org` (`atype` 1), then any IDs from modules. `[]` when there are none. |
+| `ortb2` | An OpenRTB 2.x first-party data fragment, merged from every module's output in `SID_MODULES` order. Absent when no module returned anything. Pass it to `pbjs.mergeConfig({ ortb2 })`. |
+| `ext.modules` | One entry per module in `SID_MODULES`: `ms` (time taken) and `status`: `ok` (it returned data), `empty` (nothing to add, for example consent rules out the IP), `skipped` (with a `reason`, such as `not installed` for a name the worker doesn't have), `error` or `timeout`. Error details are never returned. |
+
+To read `/v1` from a page on another origin, list that origin in `SID_ALLOWED_ORIGINS` and fetch with `credentials: 'include'`. The response then carries `Access-Control-Allow-Origin: <origin>` and `Access-Control-Allow-Credentials: true`; it never carries `*`.
+
+### `GET /_sid/optout` and `GET /_sid/optin`
+
+`204 No Content`. `/optout` sets `_pubcid_optout=1` and deletes the ID cookies; `/optin` deletes `_pubcid_optout`.
+
+### Debugging headers
+
+- `X-SharedID-Source`: where the ID came from: `cookie`, `recovery` (restored from the `HttpOnly` copy), `param` (adopted from Prebid.js's `?id=`) or `minted`.
+- `X-SharedID-Status: denied: <reason>`: why no ID was set. The reason is `opt-out`, `gpc`, `coppa` or `tcf: …`.
+
 ## Migrate from the WordPress or Drupal plugin
 
 The plugins and SharedID Edge implement the same contract, so switching is a configuration change:
@@ -180,7 +246,7 @@ Existing visitors keep their IDs: the worker adopts the cookie the plugin set. T
 
 **Opt-out.** If the `_pubcid_optout` cookie is present, the worker sets no ID and expires any it finds; Prebid.js checks the same cookie. Link your privacy page to `https://www.example.com/_sid/optout` to opt a browser out, and `/_sid/optin` to undo it.
 
-**Global Privacy Control.** A request with `Sec-GPC: 1` gets no ID, and any ID cookies it carries are deleted.
+**Global Privacy Control and COPPA.** A request with `Sec-GPC: 1`, or with `coppa=1` (a site or page directed at children, as in OpenRTB `regs.coppa`), gets no ID, and any ID cookies it carries are deleted. Prebid.js doesn't call `pixelUrl` for COPPA requests, so for sync requests this only matters for other callers. Pages that fetch `/_sid/v1` themselves should add `coppa=1` when it applies.
 
 **TCF.** Whenever a request carries a TCF TC string, the worker checks it before setting the cookie:
 
@@ -191,9 +257,118 @@ When GDPR applies and there's no TC string, that counts as no consent: the worke
 
 The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` parameter. Prebid.js doesn't add consent parameters to `pixelUrl`, so for the sync route **your CMP must store the TC string in the `euconsent-v2` cookie** (check yours: some keep it only in local storage). Without it, EU visitors get no server cookie, which is the safe failure. Sending the consent strings from Prebid.js to the worker is planned.
 
-**Deleting the cookie.** When consent is missing or withdrawn, or with GPC or opt-out, the worker deletes the ID cookies it finds: it overwrites each with an empty value, `Max-Age=0` and an `Expires` date in 1970, which browsers treat as a delete. With `SID_COOKIE_DOMAIN` set, it deletes a host-only copy too.
+**Deleting the cookie.** When consent is missing or withdrawn, or with GPC, COPPA or opt-out, the worker deletes the ID cookies it finds: it overwrites each with an empty value, `Max-Age=0` and an `Expires` date in 1970, which browsers treat as a delete. With `SID_COOKIE_DOMAIN` set, it deletes a host-only copy too.
 
-**What's stored and logged.** IDs are random UUIDs, never derived from the IP address or other request data. The worker stores nothing server-side and logs nothing about requests (Workers observability is off in the default config).
+**What's stored and logged.** SharedIDs are random UUIDs, never derived from the IP address or other request data. (The opt-in `ec` module is the exception: see below.) The worker stores nothing server-side and logs nothing about requests (Workers observability is off in the default config).
+
+## Modules
+
+Modules add IDs and signals to `/_sid/v1`. They're built into the worker but **none runs until you list it**.
+
+### Choosing modules
+
+Set `SID_MODULES` to a comma-separated list of module names, in the order their output should merge. Pass any settings in `SID_MODULE_CONFIG`, as JSON keyed by module name:
+
+```jsonc
+"vars": {
+  "SID_MODULES": "ip",                  // e.g. "ip,geo" once more modules exist
+  "SID_MODULE_CONFIG": "{}",            // e.g. "{\"geo\":{\"precision\":\"coarse\"}}"
+  "SID_MODULE_TIMEOUT_MS": "50"         // each module's time limit
+}
+```
+
+Then deploy, and check `ext.modules` in the `/_sid/v1` response:
+
+```sh
+curl -s https://www.example.com/_sid/v1 | jq .ext.modules
+# { "ip": { "ms": 0, "status": "ok" } }
+```
+
+- **Unknown names** are reported as `skipped` with reason `not installed`: check the spelling, or that your build includes the module.
+- **Failures are contained:** a module that errors or exceeds `SID_MODULE_TIMEOUT_MS` is reported and left out, and the rest of the response is unaffected.
+- **Removing a module** from `SID_MODULES` turns it off.
+
+Built-in modules:
+
+| Name | Adds | Settings |
+| --- | --- | --- |
+| [`ip`](packages/module-ip/README.md) | `ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out | none |
+| [`ec`](packages/module-ec/README.md) | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**; see below | `domain`; secret `passphrase` |
+
+To build your own, see [Adding a module](#adding-a-module).
+
+### `ip`: the real client IP
+
+Full documentation: [`packages/module-ip/README.md`](packages/module-ip/README.md).
+
+Bid requests made from the page, or relayed by Prebid Server, don't always carry the user's own IP address. The `ip` module returns the address the worker sees, so you can add it to the auction's first-party data. It's built into the worker but **off until you enable it**:
+
+```jsonc
+"vars": {
+  "SID_MODULES": "ip",
+  "SID_ALLOWED_ORIGINS": ""             // only needed if the page fetching /_sid/v1 is on another origin
+}
+```
+
+`/_sid/v1` then includes `"ortb2": {"device": {"ip": "192.0.2.77"}}` (or `"ipv6"`; see [Responses](#get-_sidv1-the-id-and-the-modules-output) for the whole payload). On the page, merge it into Prebid.js's first-party data before the auction:
+
+```js
+fetch('/_sid/v1', { credentials: 'include' })
+  .then(response => response.json())
+  .then(payload => {
+    if (payload.ortb2) pbjs.que.push(() => pbjs.mergeConfig({ ortb2: payload.ortb2 }));
+  })
+  .catch(() => {});
+```
+
+**Full address or nothing.** The module never sends a truncated address, which would look real but place the user in the wrong network. It sends nothing (`ext.modules.ip.status` is `empty`) when:
+- the visitor sends Global Privacy Control, or the request has `coppa=1`;
+- a US privacy string opts out of sale;
+- a TCF TC string doesn't opt in to Special Feature 1 (precise geolocation);
+- GDPR applies and there's no TC string.
+
+**Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
+
+The address is only returned to the browser that sent the request. The worker doesn't store or log it, and SharedIDs are never derived from it. `/_sid/v1` responses are `Cache-Control: no-store`.
+
+### `ec`: Trusted Server Edge Cookies
+
+Full documentation: [`packages/module-ec/README.md`](packages/module-ec/README.md).
+
+The `ec` module implements IAB Tech Lab [Trusted Server](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html) Edge Cookies, for publishers who use Trusted Server or want its identifier. It sets the `ts-ec` cookie and returns the EC as `ortb2.user.id` in `/_sid/v1`.
+
+> **This ID is derived from the visitor's IP address.** An EC is `HMAC-SHA256(passphrase, IP)` as 64 hex characters, a dot, and 6 random characters. Everyone behind the same IPv4 address, or the same IPv6 /64, gets the same 64-character prefix, and anyone with the passphrase can test which address an EC came from. That's how Trusted Server defines it, and it's why the module is off unless you turn it on. The SharedID itself stays random.
+
+Turn it on with a passphrase of at least 32 bytes, kept as a secret:
+
+```sh
+npm exec -w @sharedid-edge/cloudflare -- wrangler secret put SID_MODULE_SECRETS
+# paste: {"ec":{"passphrase":"<at least 32 random bytes, e.g. from openssl rand -hex 32>"}}
+```
+
+```jsonc
+"vars": {
+  "SID_MODULES": "ip,ec",
+  "SID_MODULE_CONFIG": "{\"ec\":{\"domain\":\"example.com\"}}"   // the cookie gets Domain=.example.com
+}
+```
+
+`/_sid/v1` then sets `ts-ec=<id>; Max-Age=31536000; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly` on the first call, and returns:
+
+```json
+{ "ortb2": { "user": { "id": "7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc.nZ1GxL" } } }
+```
+
+**Behaviour.**
+- An existing `ts-ec` is returned as is and isn't refreshed, as in Trusted Server.
+- Opt-out (including a visit to `/_sid/optout`), GPC, `coppa=1`, a US privacy opt-out, or a TC string without Purpose 1 consent deletes it.
+- An undecodable TC string, or GDPR without a TC string, sets and returns nothing but leaves an existing cookie alone.
+- Changing the passphrase changes the prefix for new ECs only.
+
+**Differences from Trusted Server.**
+- The EC is set only when the page calls `/_sid/v1`, not on page loads.
+- There's no server-side identity graph, partner sync or `/identify` API.
+- Consent uses this worker's signals (`gdpr`, the TC string, GPC, `us_privacy`, `coppa`), not Trusted Server's per-country and per-state jurisdiction lists, and GPP isn't decoded yet.
 
 ## Self-host with Node.js
 
@@ -240,8 +415,9 @@ All settings are strings, set as Worker `vars` (Cloudflare) or environment varia
 | `SID_VENDOR_ID` | (empty: publisher mode) | Your TCF vendor ID, for vendor mode. |
 | `SID_ALLOWED_ORIGINS` | none | Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin. |
 | `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. |
-| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. |
-| `SID_MODULE_CONFIG` | `{}` | JSON settings per module, e.g. `{"ip":{"field":"ip"}}`. |
+| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`. |
+| `SID_MODULE_CONFIG` | `{}` | JSON settings per module, keyed by module name. |
+| `SID_MODULE_SECRETS` | `{}` | JSON secrets per module, e.g. the `ec` passphrase. Set it as a secret (`wrangler secret put SID_MODULE_SECRETS`), not in `vars`. |
 | `SID_MODULE_TIMEOUT_MS` | `50` | Time limit for each module. |
 
 Routes, under `SID_BASE_PATH`:
@@ -318,12 +494,12 @@ export const geo = defineModule({
 });
 ```
 
-Register it in [`packages/cloudflare/src/modules.ts`](packages/cloudflare/src/modules.ts), and enable it with `SID_MODULES=geo`. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/core/AGENTS.md`](packages/core/AGENTS.md).
+Publish it as its own package like [`packages/module-ip`](packages/module-ip), register it in [`packages/cloudflare/src/modules.ts`](packages/cloudflare/src/modules.ts) (and the Node.js CLI), and enable it with `SID_MODULES=geo`. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/core/AGENTS.md`](packages/core/AGENTS.md).
 
 ## Roadmap
 
-1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, and a Node.js server.
-2. **Next:** an `ip` module returning the connecting IP (`ortb2.device.ip`/`ipv6`), off by default; and Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
+1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, and the `ip` module.
+2. **Next:** Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
 3. A Prebid.js RTD module that reads `/_sid/v1`, plus first-party modules for geography, bot scores and device type, and a Fastly adapter.
 4. Vendor modules, a Rust implementation, and inline mode.
 

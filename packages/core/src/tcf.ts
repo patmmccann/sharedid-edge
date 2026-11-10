@@ -1,6 +1,6 @@
 /**
- * Just enough of a TCF v2 TC string to check consent: the core segment's version, purpose consents, purpose
- * legitimate interests and vendor consents, and the publisher TC segment's purpose consents and legitimate interests. A full decoder is much larger than this worker needs.
+ * Just enough of a TCF v2 TC string to check consent: the core segment's version, special feature opt-ins, purpose
+ * consents, purpose legitimate interests and vendor consents, and the publisher TC segment's purpose consents and legitimate interests. A full decoder is much larger than this worker needs.
  *
  * Core segment layout (bit offsets): Version 0-5, Created 6-41, LastUpdated 42-77, CmpId 78-89, CmpVersion 90-101,
  * ConsentScreen 102-107, ConsentLanguage 108-119, VendorListVersion 120-131, TcfPolicyVersion 132-137,
@@ -15,6 +15,8 @@
  */
 export interface TcfConsents {
   readonly version: number;
+  /** Special features (1-12) the user opted in to, e.g. 1 for precise geolocation data. */
+  readonly specialFeatureOptIns: ReadonlySet<number>;
   /** Purposes (1-24) the user consented to for vendors (the core segment). */
   readonly purposeConsents: ReadonlySet<number>;
   /** Purposes (1-24) with legitimate interest established for vendors (the core segment). */
@@ -30,6 +32,8 @@ export interface TcfConsents {
   readonly publisherPurposeLegitimateInterests: ReadonlySet<number> | undefined;
 }
 
+const SPECIAL_FEATURES_OFFSET = 140;
+const SPECIAL_FEATURES_LENGTH = 12;
 const CORE_PURPOSES_OFFSET = 152;
 const CORE_LI_OFFSET = 176;
 const VENDOR_SECTION_OFFSET = 213;
@@ -72,6 +76,7 @@ export function decodeTcf(tcString: string): TcfConsents | undefined {
   }
   return {
     version,
+    specialFeatureOptIns: readPurposes(coreBits, SPECIAL_FEATURES_OFFSET, SPECIAL_FEATURES_LENGTH),
     purposeConsents: readPurposes(coreBits, CORE_PURPOSES_OFFSET),
     purposeLegitimateInterests: readPurposes(coreBits, CORE_LI_OFFSET),
     vendorConsent: vendorConsents.has,
@@ -153,9 +158,10 @@ function toBits(segment: string): number[] | undefined {
   return bits;
 }
 
-function readPurposes(bits: readonly number[], offset: number): Set<number> {
+/** A bit field as the set of 1-based positions that are set. */
+function readPurposes(bits: readonly number[], offset: number, length: number = PURPOSES_LENGTH): Set<number> {
   const purposes = new Set<number>();
-  for (let i = 0; i < PURPOSES_LENGTH; i++) {
+  for (let i = 0; i < length; i++) {
     if (bits[offset + i] === 1) purposes.add(i + 1);
   }
   return purposes;

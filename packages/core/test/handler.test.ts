@@ -118,6 +118,14 @@ describe('sync (pixelUrl)', () => {
     expect(setCookies(response).map(c => [c.name, c.value, c.attributes.get('max-age')])).toEqual([['_pubcid', '', '0'], ['_pubcid_sv', '', '0']]);
   });
 
+  it('deletes the cookies and sets none for a COPPA request', async () => {
+    const response = await handler()(get(`/_sid/sync?id=pubcid:${UUID}&coppa=1`, { Cookie: `_pubcid=${UUID}; _pubcid_sv=${UUID}` }));
+    expect(response.headers.get('X-SharedID-Status')).toBe('denied: coppa');
+    expect(setCookies(response).map(c => [c.name, c.value, c.attributes.get('max-age')])).toEqual([['_pubcid', '', '0'], ['_pubcid_sv', '', '0']]);
+    const payload = await (await handler()(get('/_sid/v1?coppa=1', { Cookie: `_pubcid=${UUID}` }))).json() as PayloadV1;
+    expect(payload.sharedid).toBeUndefined();
+  });
+
   it('deletes host-only copies too when a cookie domain is configured', async () => {
     const response = await handler({ SID_COOKIE_DOMAIN: '.example.com' })(get('/_sid/sync', { 'Sec-GPC': '1', Cookie: `_pubcid=${UUID}` }));
     expect(setCookies(response).map(c => [c.name, c.attributes.get('domain'), c.attributes.get('max-age')])).toEqual([
@@ -216,6 +224,59 @@ describe('v1 payload', () => {
     expect(payload.ext.modules['vendor']?.reason).toBe('tcf: vendor consent is not checked yet');
     const outsideGdpr = await (await h(get('/_sid/v1?gdpr=0'))).json() as PayloadV1;
     expect(outsideGdpr.ortb2).toEqual({ a: 1, b: 1 });
+  });
+
+  it('lets modules set cookies, read cookies, secrets and the opt-out state', async () => {
+    const seen: unknown[] = [];
+    const cookieModule = defineModule({
+      name: 'cookie',
+      run: ({ cookies, secrets, optedOut }) => {
+        seen.push({ existing: cookies.get('mine'), secret: secrets['key'], optedOut });
+        return { cookies: [{ name: 'mine', value: 'v1', maxAgeSeconds: 60, httpOnly: true }, { name: 'gone', value: '', maxAgeSeconds: 0, httpOnly: false, domain: '.example.com' }] };
+      }
+    });
+    const h = handler({ SID_MODULES: 'cookie', SID_MODULE_SECRETS: '{"cookie":{"key":"s3cret"}}' }, { modules: [cookieModule] });
+    const response = await h(get('/_sid/v1', { Cookie: 'mine=v0' }));
+    const body = await response.json() as PayloadV1;
+    expect(seen).toEqual([{ existing: 'v0', secret: 's3cret', optedOut: false }]);
+    expect(body.ext.modules['cookie']?.status).toBe('empty');
+    expect(JSON.stringify(body)).not.toContain('s3cret');
+    expect(cookieNamed(response, 'mine')?.attributes).toEqual(new Map([['max-age', '60'], ['expires', expect.any(String) as string], ['path', '/'], ['samesite', 'Lax'], ['secure', ''], ['httponly', '']]));
+    expect(cookieNamed(response, 'gone')?.attributes.get('domain')).toBe('.example.com');
+    expect(cookieNamed(response, 'gone')?.attributes.get('max-age')).toBe('0');
+    await h(get('/_sid/v1', { Cookie: '_pubcid_optout=1' }));
+    expect(seen[1]).toEqual({ existing: undefined, secret: 's3cret', optedOut: true });
+  });
+
+  it('deletes installed modules\' cookies on opt-out, listed in SID_MODULES or not, and skips bad hooks', async () => {
+    const owner = defineModule({ name: 'owner', run: () => undefined, optOutCookies: config => [{ name: 'owned', value: '', maxAgeSeconds: 0, httpOnly: true, domain: String(config['domain']) }] });
+    const notADeletion = defineModule({ name: 'keeps', run: () => undefined, optOutCookies: () => [{ name: 'kept', value: 'x', maxAgeSeconds: 60, httpOnly: false }] });
+    const throws = defineModule({ name: 'throws', run: () => undefined, optOutCookies: () => { throw new Error('secret'); } });
+    const h = handler({ SID_MODULE_CONFIG: '{"owner":{"domain":".example.com"}}' }, { modules: [owner, notADeletion, throws] });
+    const response = await h(get('/_sid/optout', { Cookie: 'owned=1; kept=1' }));
+    expect(response.status).toBe(204);
+    // a cookie the browser didn't send isn't deleted
+    expect(setCookies(await h(get('/_sid/optout'))).map(c => c.name)).not.toContain('owned');
+    expect(setCookies(response).map(c => [c.name, c.attributes.get('max-age'), c.attributes.get('domain')])).toEqual([
+      ['_pubcid_optout', String(365 * 86_400), undefined],
+      ['_pubcid', '0', undefined],
+      ['_pubcid_sv', '0', undefined],
+      ['owned', '0', '.example.com']
+    ]);
+  });
+
+  it('rejects module cookies that clash with the worker\'s or are malformed, leaving the module out', async () => {
+    const make = (name: string, value = 'x'): ReturnType<typeof defineModule> => defineModule({
+      name: `bad-${String(name.length)}-${String(value.length)}`,
+      run: () => ({ ortb2: { leaked: true }, cookies: [{ name, value, maxAgeSeconds: 60, httpOnly: false }] })
+    });
+    for (const module of [make('_pubcid'), make('_pubcid_optout'), make('bad name'), make('ok', 'semi;colon')]) {
+      const response = await handler({ SID_MODULES: module.name }, { modules: [module] })(get('/_sid/v1'));
+      const body = await response.json() as PayloadV1;
+      expect(body.ext.modules[module.name]?.status).toBe('error');
+      expect(body.ortb2).toBeUndefined();
+      expect(setCookies(response).map(c => c.name)).toEqual(['_pubcid', '_pubcid_sv']);
+    }
   });
 
   it('omits the SharedID after an opt-out but still runs modules that don\'t need consent', async () => {

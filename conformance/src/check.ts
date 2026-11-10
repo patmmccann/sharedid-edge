@@ -37,14 +37,19 @@ export async function runCase(baseUrl: string, testCase: Case): Promise<string[]
   if (expect.bodyLength !== undefined && method !== 'HEAD' && body.byteLength !== expect.bodyLength) {
     failures.push(`body is ${String(body.byteLength)} bytes, expected ${String(expect.bodyLength)}`);
   }
-  if (expect.json !== undefined) {
+  if (expect.json !== undefined || expect.jsonIncludes !== undefined) {
     let json: unknown;
     try {
       json = JSON.parse(new TextDecoder().decode(body));
     } catch {
       failures.push('body is not JSON');
     }
-    if (json !== undefined && !isDeepStrictEqual(json, expect.json)) failures.push(`json ${JSON.stringify(json)}, expected ${JSON.stringify(expect.json)}`);
+    if (json !== undefined && expect.json !== undefined && !isDeepStrictEqual(json, expect.json)) {
+      failures.push(`json ${JSON.stringify(json)}, expected ${JSON.stringify(expect.json)}`);
+    }
+    if (json !== undefined && expect.jsonIncludes !== undefined && !includes(json, expect.jsonIncludes)) {
+      failures.push(`json ${JSON.stringify(json)} doesn't include ${JSON.stringify(expect.jsonIncludes)}`);
+    }
   }
 
   const cookies = response.headers.getSetCookie().map(parseSetCookie);
@@ -78,4 +83,17 @@ export async function runCase(baseUrl: string, testCase: Case): Promise<string[]
     if (extra.length > 0) failures.push(`unexpected cookies: ${extra.join(', ')}`);
   }
   return failures;
+}
+
+/** Whether `actual` contains `expected`: objects match on `expected`'s keys, recursively; anything else exactly. */
+function includes(actual: unknown, expected: unknown): boolean {
+  if (isPlainObject(expected)) {
+    if (!isPlainObject(actual)) return false;
+    return Object.entries(expected).every(([key, value]) => Object.hasOwn(actual, key) && includes(actual[key], value));
+  }
+  return isDeepStrictEqual(actual, expected);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

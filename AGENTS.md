@@ -10,6 +10,8 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | `conformance/` | HTTP cases and their runner | The contract; every implementation must pass. |
 | `packages/core/` | Platform-neutral handler, consent, cookies, module interface | Published as `@sharedid-edge/core`. |
 | `packages/cloudflare/` | The Cloudflare Worker | |
+| `packages/module-ip/` | The `ip` module: client IP in `ortb2.device` | Published as `@sharedid-edge/module-ip`; the pattern for module packages. |
+| `packages/module-ec/` | The `ec` module: Trusted Server Edge Cookies (`ts-ec`) | Opt-in; its ID prefix is derived from the client IP. |
 | `packages/node/` | Node.js server | Local development, self-hosting, conformance target. |
 | `e2e/` | Unmodified Prebid.js against the worker in three browsers | Separate install. |
 | `scripts/` | Type-check helpers and `verify-deployment` | |
@@ -42,19 +44,33 @@ npm run attw                                    # published types resolve
 
 TypeScript 6.0 is the main compiler because `typescript-eslint` doesn't support 7 yet; `typecheck:ts7` keeps the code working on 7. Call TypeScript 7 as `node node_modules/typescript7/bin/tsc`, since both packages install a `tsc` command.
 
+## Documentation is part of the change
+
+Every pull request that adds or changes something users touch ships its documentation in the same PR. Reviewers should treat missing docs as a blocking gap.
+
+- **Every package has its own `README.md`** (also its npm page). This covers modules, adapters and platform packages alike.
+  - **A module's README** covers: turning it on, the response shape with JSON examples (when it returns data, and when it doesn't), consent rules, settings and secrets, and troubleshooting. Models: `packages/module-ip/README.md` and `packages/module-ec/README.md`.
+  - **An adapter's README** covers: architecture, build, deploy, configuration and secrets, how platform data maps to `PlatformInfo`, verifying, and troubleshooting.
+- **Link it from the main [README.md](README.md):**
+  - modules in the built-in modules table and the Modules section;
+  - adapters as a self-contained quick start under a "Deploy on …" section.
+- **Update the [README.md](README.md) "Responses" section** whenever the shape of a response changes, with real output.
+- **Update [spec/SPEC.md](spec/SPEC.md) and the folder's `AGENTS.md`** for behaviour and conventions.
+- **Write docs for publishers and their engineers:** what to set, what they'll see, and why. Don't write internal notes.
+
 ## Changing behaviour
 
 1. Update [spec/SPEC.md](spec/SPEC.md).
 2. Add or change conformance cases in `conformance/cases/` (see [conformance/AGENTS.md](conformance/AGENTS.md)).
 3. Implement in `packages/core`, with unit tests.
-4. Update [README.md](README.md) where it affects deploying or configuring.
+4. Update the docs: the package's own README.md, [README.md](README.md) (configuration, Responses, Modules), and folder AGENTS.md files. See [Documentation is part of the change](#documentation-is-part-of-the-change).
 
 Behaviour that must not regress, each covered by tests:
 
 - An existing valid ID is never replaced; the `HttpOnly` recovery copy restores a re-minted one.
 - The worker answers only its own routes and never forwards requests to the origin.
-- Opt-out, Global Privacy Control and denied consent delete existing ID cookies and set none.
-- IDs are random; nothing is derived from the IP address or other request data, and nothing about requests is logged.
+- Opt-out, Global Privacy Control, COPPA and denied consent delete existing ID cookies and set none.
+- The SharedID is random; nothing is derived from the IP address or other request data, and nothing about requests is logged. The one exception is the opt-in `ec` module (`packages/module-ec`), which implements Trusted Server Edge Cookies as specified: its ID prefix is an HMAC of the client IP. Don't add other IP-derived IDs, and don't make `ec` the default.
 - `Access-Control-Allow-Origin` is never `*`.
 
 ## Conventions
