@@ -26,6 +26,8 @@ export interface Case {
     readonly absentHeaders?: readonly string[];
     readonly bodyLength?: number;
     readonly json?: unknown;
+    /** The JSON body contains these values: objects match on the listed keys only, recursively; arrays and scalars exactly. */
+    readonly jsonIncludes?: unknown;
     readonly cookies?: readonly ExpectedCookie[];
     /** No other cookies than those listed may be set. */
     readonly onlyListedCookies?: boolean;
@@ -74,7 +76,7 @@ export function validateCaseFile(file: string, value: unknown): CaseFile {
   if (typeof description !== 'string') fail(file, '"description" must be a string');
   if (!Array.isArray(cases) || cases.length === 0) fail(file, '"cases" must be a non-empty array');
   const known = new Set(['name', 'request', 'expect']);
-  const expectKeys = new Set(['status', 'headers', 'absentHeaders', 'bodyLength', 'json', 'cookies', 'onlyListedCookies', 'noCookies']);
+  const expectKeys = new Set(['status', 'headers', 'absentHeaders', 'bodyLength', 'json', 'jsonIncludes', 'cookies', 'onlyListedCookies', 'noCookies']);
   const cookieKeys = new Set(['name', 'value', 'valuePattern', 'maxAge', 'sameSite', 'path', 'domain', 'httpOnly']);
   cases.forEach((c: unknown, i) => {
     const where = `cases[${String(i)}]`;

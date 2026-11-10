@@ -195,6 +195,35 @@ The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` pa
 
 **What's stored and logged.** IDs are random UUIDs, never derived from the IP address or other request data. The worker stores nothing server-side and logs nothing about requests (Workers observability is off in the default config).
 
+## Send the real client IP (`ip` module)
+
+Bid requests made from the page, or relayed by Prebid Server, don't always carry the user's own IP address. The `ip` module returns the address the worker sees, so you can add it to the auction's first-party data. It's built into the worker but **off until you enable it**:
+
+```jsonc
+"vars": {
+  "SID_MODULES": "ip",
+  "SID_MODULE_CONFIG": "{}",            // or "{\"ip\":{\"truncate\":true}}" to always truncate
+  "SID_ALLOWED_ORIGINS": ""             // only needed if the page fetching /_sid/v1 is on another origin
+}
+```
+
+`/_sid/v1` then includes `"ortb2": {"device": {"ip": "192.0.2.77"}}` (or `"ipv6"`). On the page, merge it into Prebid.js's first-party data before the auction:
+
+```js
+fetch('/_sid/v1', { credentials: 'include' })
+  .then(response => response.json())
+  .then(payload => {
+    if (payload.ortb2) pbjs.que.push(() => pbjs.mergeConfig({ ortb2: payload.ortb2 }));
+  })
+  .catch(() => {});
+```
+
+**Truncation.** The module sends a truncated address (IPv4 /24, so `192.0.2.0`; IPv6 /56) instead of the full one when the visitor sends Global Privacy Control, a US privacy string opts out of sale, a TCF TC string doesn't opt in to Special Feature 1 (precise geolocation), or GDPR applies and there's no TC string. This matches how Prebid Server masks addresses.
+
+**Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
+
+The address is only returned to the browser that sent the request. The worker doesn't store or log it, and SharedIDs are never derived from it. `/_sid/v1` responses are `Cache-Control: no-store`.
+
 ## Self-host with Node.js
 
 If your site isn't on Cloudflare, you can run the same handler as a Node.js server behind the web server or load balancer that serves your site. It must answer on your site's own hostname and IP addresses, for the same reason as above.
@@ -240,8 +269,8 @@ All settings are strings, set as Worker `vars` (Cloudflare) or environment varia
 | `SID_VENDOR_ID` | (empty: publisher mode) | Your TCF vendor ID, for vendor mode. |
 | `SID_ALLOWED_ORIGINS` | none | Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin. |
 | `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. |
-| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. |
-| `SID_MODULE_CONFIG` | `{}` | JSON settings per module, e.g. `{"ip":{"field":"ip"}}`. |
+| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`. |
+| `SID_MODULE_CONFIG` | `{}` | JSON settings per module, e.g. `{"ip":{"truncate":true}}`. |
 | `SID_MODULE_TIMEOUT_MS` | `50` | Time limit for each module. |
 
 Routes, under `SID_BASE_PATH`:
@@ -318,12 +347,12 @@ export const geo = defineModule({
 });
 ```
 
-Register it in [`packages/cloudflare/src/modules.ts`](packages/cloudflare/src/modules.ts), and enable it with `SID_MODULES=geo`. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/core/AGENTS.md`](packages/core/AGENTS.md).
+Publish it as its own package like [`packages/module-ip`](packages/module-ip), register it in [`packages/cloudflare/src/modules.ts`](packages/cloudflare/src/modules.ts) (and the Node.js CLI), and enable it with `SID_MODULES=geo`. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/core/AGENTS.md`](packages/core/AGENTS.md).
 
 ## Roadmap
 
-1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, and a Node.js server.
-2. **Next:** an `ip` module returning the connecting IP (`ortb2.device.ip`/`ipv6`), off by default; and Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
+1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, and the `ip` module.
+2. **Next:** Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
 3. A Prebid.js RTD module that reads `/_sid/v1`, plus first-party modules for geography, bot scores and device type, and a Fastly adapter.
 4. Vendor modules, a Rust implementation, and inline mode.
 

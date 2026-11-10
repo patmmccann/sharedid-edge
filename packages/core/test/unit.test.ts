@@ -142,6 +142,10 @@ describe('decodeTcf', () => {
   it('skips other segments, such as disclosed vendors', () => {
     expect(decodeTcf(`${tcString([1])}.IFoEUQQgAIQwgIwQABAEAAAAOIAACAIAAAAQAIAgEAACEAAAAAgAQBAAAAAAAGBAAgAAAAAAAFAAECAAAgAAQARAEQAAAAAJAAIAAgAAAYQEAAAQmAgBC3ZAYzUw`)?.publisherPurposeConsents).toBeUndefined();
   });
+  it('reads special feature opt-ins', () => {
+    expect([...(decodeTcf(tcString([1], { specialFeatures: [1, 12] }))?.specialFeatureOptIns ?? [])]).toEqual([1, 12]);
+    expect(decodeTcf(tcString([1]))?.specialFeatureOptIns.size).toBe(0);
+  });
   it('reads legitimate interests in both segments', () => {
     const decoded = decodeTcf(tcString([1], { legitimateInterests: [2, 7], publisher: [1], publisherLegitimateInterests: [8, 10] }));
     expect([...(decoded?.purposeLegitimateInterests ?? [])]).toEqual([2, 7]);

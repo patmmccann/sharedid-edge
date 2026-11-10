@@ -6,6 +6,8 @@
   "references": [
     { "path": "packages/core" },
     { "path": "packages/core/test" },
+    { "path": "packages/module-ip" },
+    { "path": "packages/module-ip/test" },
     { "path": "packages/node" },
     { "path": "packages/node/test" },
     { "path": "conformance" },

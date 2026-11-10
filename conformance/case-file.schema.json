@@ -36,6 +36,7 @@
               "absentHeaders": { "type": "array", "items": { "type": "string" } },
               "bodyLength": { "type": "integer" },
               "json": {},
+              "jsonIncludes": { "description": "The JSON body contains these values: objects match on the listed keys only, recursively; arrays and scalars exactly" },
               "onlyListedCookies": { "type": "boolean" },
               "noCookies": { "type": "boolean" },
               "cookies": {
