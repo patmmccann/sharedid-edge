@@ -3,6 +3,7 @@ import { readConsent, storageDecision, type ConsentContext, type StorageDecision
 import { parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
 import { idFromSyncParam, isValidId, mintId } from './id.js';
 import { ModuleRegistry, optOutCookies, runModules, type EdgeModule, type ModuleContext, type ModuleCookie } from './modules.js';
+import { trimEnd } from './text.js';
 import type { Eid, PayloadV1, PlatformInfo } from './types.js';
 
 /** The 43-byte transparent GIF the WordPress and Drupal plugins return, so `pixelUrl` image requests load. */
@@ -106,7 +107,7 @@ const ROUTE_LIST: readonly Route[] = Object.values(ROUTES);
 function routeOf(pathname: string, basePath: string): Route | undefined {
   const prefix = basePath === '/' ? '' : basePath;
   if (!pathname.startsWith(prefix + '/')) return undefined;
-  const rest = pathname.slice(prefix.length).replace(/\/+$/, '');
+  const rest = trimEnd(pathname.slice(prefix.length), '/');
   return ROUTE_LIST.find(route => route === rest);
 }
 

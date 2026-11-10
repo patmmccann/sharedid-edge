@@ -152,6 +152,12 @@ describe('routes', () => {
   it('accepts a trailing slash, like the WordPress endpoint requires', async () => {
     expect((await handler()(get('/_sid/sync/'))).status).toBe(200);
   });
+  it('stays fast on a path with a long run of slashes', async () => {
+    const started = Date.now();
+    expect((await handler()(get(`/_sid/${'/'.repeat(100_000)}x`))).status).toBe(404);
+    expect((await handler()(get(`/_sid/sync${'/'.repeat(100_000)}`))).status).toBe(200);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
   it('rejects other methods', async () => {
     const response = await handler()(new Request('https://www.example.com/_sid/sync', { method: 'POST' }));
     expect(response.status).toBe(405);
