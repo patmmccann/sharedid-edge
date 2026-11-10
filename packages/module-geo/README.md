@@ -55,7 +55,7 @@ Nothing is stored or logged, and no network call is made: the location is alread
 | `country` | ISO 3166-1 **alpha-3**, as OpenRTB requires | `country` (alpha-2) | `"USA"` |
 | `region` | ISO 3166-2 subdivision code, without the country prefix | `regionCode` | `"TX"` |
 | `metro` | Nielsen DMA code (US only) | `metroCode` | `"635"` |
-| `utcoffset` | minutes from UTC at the time of the request, so it follows daylight saving time | `timezone` | `-300` |
+| `utcoffset` | minutes from UTC at the time of the request, so it follows daylight saving time | `timezone` | `-360` |
 | `city` | precise | `city` | `"Austin"` |
 | `zip` | precise | `postalCode` | `"78701"` |
 | `lat`, `lon` | precise; numbers | `latitude`, `longitude` | `30.2713`, `-97.7426` |
@@ -69,7 +69,7 @@ Nothing is stored or logged, and no network call is made: the location is alread
 
 ## Response
 
-With `SID_MODULES=geo`, a visitor in Austin with no consent restrictions gets every field:
+With `SID_MODULES=geo`, a visitor in Austin, in winter, with no consent restrictions gets every field:
 
 ```json
 {
@@ -83,7 +83,7 @@ With `SID_MODULES=geo`, a visitor in Austin with no consent restrictions gets ev
         "country": "USA",
         "region": "TX",
         "metro": "635",
-        "utcoffset": -300,
+        "utcoffset": -360,
         "city": "Austin",
         "zip": "78701",
         "lat": 30.2713,
@@ -101,7 +101,7 @@ The same visitor with Global Privacy Control (`Sec-GPC: 1`), or with `{"precisio
 {
   "v": 1,
   "eids": [],
-  "ortb2": { "device": { "geo": { "type": 2, "country": "USA", "region": "TX", "metro": "635", "utcoffset": -300 } } },
+  "ortb2": { "device": { "geo": { "type": 2, "country": "USA", "region": "TX", "metro": "635", "utcoffset": -360 } } },
   "ext": { "modules": { "geo": { "ms": 0, "status": "ok" } } }
 }
 ```
@@ -119,7 +119,7 @@ TCF treats precise geolocation (within about 500 metres) as a special feature th
 
 **Coarse fields** (`type`, `country`, `region`, `metro`, `utcoffset`) are always sent when known.
 
-**Precise fields** (`city`, `zip`, `lat`, `lon`) are sent **in full or not at all**. A rounded coordinate or a truncated postal code still looks real but is wrong, so they're never coarsened. They're left out when any of these apply, the same rules as the [`ip` module](../../README.md#ip-the-real-client-ip)'s address:
+**Precise fields** (`city`, `zip`, `lat`, `lon`) are sent **in full or not at all**. A rounded coordinate or a truncated postal code still looks real but is wrong, so they're never coarsened. They're left out when any of these apply, the same rules as the [`ip` module](../module-ip/README.md)'s address:
 - the visitor sends Global Privacy Control (`Sec-GPC: 1`), or the request has `coppa=1`;
 - a `us_privacy` string opts out of sale (third character `Y`);
 - a TCF TC string is invalid, or doesn't opt in to **Special Feature 1** (use precise geolocation data);
@@ -190,5 +190,6 @@ Other exports: `ALPHA_3` (the whole table), `geoPrecision(config)` (settings par
 | `status` is `empty` with the Node.js server | `SID_TRUST_PROXY` isn't set, or the visitor location headers managed transform is off. |
 | No `city`, `zip`, `lat` or `lon` | Consent rules them out (see [Consent](#consent)): check the request's `gdpr`, `gdpr_consent`, `Sec-GPC`, `us_privacy` and `coppa`, or `precision` is `"coarse"`. Cloudflare also doesn't know them for every address. |
 | No `utcoffset` | Cloudflare gave no time zone, or the runtime doesn't know it. |
+| `status` is `timeout` | The first request in a fresh isolate or process loads the runtime's time zone data (about 20 ms in Node.js); later ones take under a millisecond. If it still exceeds `SID_MODULE_TIMEOUT_MS` (50 ms by default), raise that. |
 | No `country` for Kosovo | `XK` isn't an officially assigned ISO 3166-1 code, so there's no alpha-3 code to send. |
 | Locally, `wrangler dev` shows your own location | `wrangler dev` fills `request.cf` from Cloudflare's view of your machine. |

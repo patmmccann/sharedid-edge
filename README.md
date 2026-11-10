@@ -197,15 +197,45 @@ JSON (`Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store`
 }
 ```
 
-An IPv6 visitor gets `"ortb2": { "device": { "ipv6": "2001:db8::7" } }` instead. With `SID_MODULES=ip,geo` the location is merged into the same object: `"ortb2": { "device": { "ip": "192.0.2.77", "geo": { "type": 2, "country": "USA", "region": "TX", … } } }` (see [`geo`](#geo-the-visitors-location-as-devicegeo)).
+An IPv6 visitor gets `"ortb2": { "device": { "ipv6": "2001:db8::7" } }` instead.
 
-The same request with `Sec-GPC: 1` gets no ID, deletes the ID cookies, and returns no IP (with `geo`, only the coarse location fields):
+With `SID_MODULES=ip,geo`, both modules' output is merged into one `device` object. A visitor in Austin, in winter:
+
+```json
+{
+  "v": 1,
+  "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+  "eids": [
+    { "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }
+  ],
+  "ortb2": {
+    "device": {
+      "ip": "192.0.2.77",
+      "geo": { "type": 2, "country": "USA", "region": "TX", "metro": "635", "utcoffset": -360, "city": "Austin", "zip": "78701", "lat": 30.2713, "lon": -97.7426 }
+    }
+  },
+  "ext": { "modules": { "ip": { "ms": 1, "status": "ok" }, "geo": { "ms": 0, "status": "ok" } } }
+}
+```
+
+The same request with `Sec-GPC: 1` gets no ID, deletes the ID cookies, and returns no IP:
 
 ```json
 {
   "v": 1,
   "eids": [],
   "ext": { "modules": { "ip": { "ms": 0, "status": "empty" } } }
+}
+```
+
+With `SID_MODULES=ip,geo`, `geo` still returns the coarse location, without city, postal code or coordinates:
+
+```json
+{
+  "v": 1,
+  "eids": [],
+  "ortb2": { "device": { "geo": { "type": 2, "country": "USA", "region": "TX", "metro": "635", "utcoffset": -360 } } },
+  "ext": { "modules": { "ip": { "ms": 1, "status": "empty" }, "geo": { "ms": 0, "status": "ok" } } }
 }
 ```
 
@@ -384,13 +414,13 @@ Cloudflare geolocates every request, and the Worker already has the result. The 
 }
 ```
 
-`/_sid/v1` then includes, for a visitor in Austin (merge it into Prebid.js as shown for `ip`):
+`/_sid/v1` then includes, for a visitor in Austin in winter (merge it into Prebid.js as shown for `ip`):
 
 ```json
 {
   "ortb2": {
     "device": {
-      "geo": { "type": 2, "country": "USA", "region": "TX", "metro": "635", "utcoffset": -300, "city": "Austin", "zip": "78701", "lat": 30.2713, "lon": -97.7426 }
+      "geo": { "type": 2, "country": "USA", "region": "TX", "metro": "635", "utcoffset": -360, "city": "Austin", "zip": "78701", "lat": 30.2713, "lon": -97.7426 }
     }
   }
 }
