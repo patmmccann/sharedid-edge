@@ -6,12 +6,26 @@
 export interface PlatformInfo {
   /** The connecting client's IP address (for example `CF-Connecting-IP` on Cloudflare). */
   readonly clientIp?: string;
-  /** ISO 3166-1 alpha-2 country code. */
+  /** ISO 3166-1 alpha-2 country code, upper case. Never `XX` (unknown) or `T1` (Tor). */
   readonly country?: string;
-  /** Region or subdivision code within the country. */
+  /** ISO 3166-2 subdivision code, with or without the country prefix (`TX` or `US-TX`). */
   readonly region?: string;
   /** Whether the request comes from a country where GDPR applies, if the platform can tell. */
   readonly isEU?: boolean;
+  /** City name. */
+  readonly city?: string;
+  /** Postal code. */
+  readonly postalCode?: string;
+  /** Metro code: the Nielsen DMA code (US only), digits. */
+  readonly metroCode?: string;
+  /** Latitude in degrees, -90 to 90. */
+  readonly latitude?: number;
+  /** Longitude in degrees, -180 to 180. */
+  readonly longitude?: number;
+  /** IANA time zone name, e.g. `America/Chicago`. */
+  readonly timezone?: string;
+  /** Continent code: `AF`, `AN`, `AS`, `EU`, `NA`, `OC` or `SA`. */
+  readonly continent?: string;
 }
 
 /** An OpenRTB extended identifier, in the `user.ext.eids` format. */

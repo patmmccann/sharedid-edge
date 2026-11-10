@@ -10,6 +10,8 @@
     { "path": "packages/module-ip/test" },
     { "path": "packages/module-ec" },
     { "path": "packages/module-ec/test" },
+    { "path": "packages/module-geo" },
+    { "path": "packages/module-geo/test" },
     { "path": "packages/node" },
     { "path": "packages/node/test" },
     { "path": "conformance" },

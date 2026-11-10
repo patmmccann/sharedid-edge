@@ -1,10 +1,18 @@
-import { defineModule, type ConsentContext, type EdgeModule, type ModuleContext, type ModuleResult } from '@sharedid-edge/core';
+import {
+  defineModule,
+  preciseLocationDenial,
+  type ConsentContext,
+  type EdgeModule,
+  type ModuleContext,
+  type ModuleResult,
+  type PreciseLocationDenial
+} from '@sharedid-edge/core';
 import { formatIpv4, formatIpv6, parseIp, type ParsedIp } from './ip.js';
 
 export { formatIpv4, formatIpv6, parseIp, type ParsedIp } from './ip.js';
 
 /** Why the address is left out, or undefined to send it. */
-export type OmissionReason = 'gpc' | 'coppa' | 'us-privacy' | 'tcf: no TC string' | 'tcf: invalid TC string' | 'tcf: no opt-in to precise geolocation';
+export type OmissionReason = PreciseLocationDenial;
 
 /**
  * Whether to leave the address out. A truncated address is worse than none (it looks like a real one but places the
@@ -13,18 +21,11 @@ export type OmissionReason = 'gpc' | 'coppa' | 'us-privacy' | 'tcf: no TC string
  * - with Global Privacy Control, for a request subject to COPPA, or with a `us_privacy` string that opts out of sale;
  * - when there is a TC string without opt-in to Special Feature 1 (precise geolocation data), or GDPR applies and
  *   there is no TC string.
+ *
+ * These are core's `preciseLocationDenial` rules, shared with the `geo` module's precise fields.
  */
 export function omissionReason(consent: ConsentContext): OmissionReason | undefined {
-  if (consent.gpc) return 'gpc';
-  if (consent.coppa) return 'coppa';
-  if (consent.usPrivacy?.charAt(2).toUpperCase() === 'Y') return 'us-privacy';
-  if (consent.tcString !== undefined) {
-    if (consent.tcf === undefined) return 'tcf: invalid TC string';
-    if (!consent.tcf.specialFeatureOptIns.has(1)) return 'tcf: no opt-in to precise geolocation';
-    return undefined;
-  }
-  if (consent.gdprApplies === true) return 'tcf: no TC string';
-  return undefined;
+  return preciseLocationDenial(consent);
 }
 
 /** The OpenRTB `device` field for an address: `ip` for IPv4 (including IPv4-mapped IPv6), `ipv6` otherwise. */
