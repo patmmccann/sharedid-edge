@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { ConfigError, resolveConfig } from '@sharedid-edge/core';
-import { builtInModules } from '@sharedid-edge/modules';
+// The built-in list with Bowser available to the ua module (SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}): the
+// server isn't bundled, so it has no size budget to keep it out.
+import { builtInModules } from '@sharedid-edge/modules/bowser';
 import { createNodeServer } from './index.js';
 
 // Configuration comes from the same SID_* environment variables as the edge workers (SID_MODULES picks which of the

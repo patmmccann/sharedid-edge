@@ -425,6 +425,33 @@ With `SID_MODULES=ip,geo`, `geo` still returns the coarse location, without city
 }
 ```
 
+With `SID_MODULES=ua`, Chrome on Windows (sending the default Client Hints) gets device data, and a crawler gets the bot flag:
+
+```json
+{
+  "ortb2": {
+    "device": {
+      "sua": {
+        "browsers": [{ "brand": "Google Chrome", "version": ["131"] }, { "brand": "Chromium", "version": ["131"] }],
+        "platform": { "brand": "Windows" },
+        "mobile": 0,
+        "source": 1
+      },
+      "devicetype": 2,
+      "os": "Windows"
+    }
+  },
+  "ext": { "modules": { "ua": { "ms": 0, "status": "ok" } } }
+}
+```
+
+```json
+{
+  "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "declared", "sources": ["ua"] } } } },
+  "ext": { "modules": { "ua": { "ms": 0, "status": "ok" } } }
+}
+```
+
 With the [`bot` module](#bot-bot-and-staff-traffic-signals) (`SID_MODULES=bot`), a request whose browser user agent comes without `Accept-Language` is a likely bot. The **traffic signal** is returned even with `Sec-GPC: 1`, which still rules out the ID:
 
 ```json
@@ -526,7 +553,7 @@ Prebid.js calls `/_sid/sync` (its `pixelUrl`) on page views with `extend: true`,
 | `reflect` | yes: refreshes the cookies you name, and restores them from the keeper |
 | `ec` | yes: sets `ts-ec` (or deletes it when consent is withdrawn), as Trusted Server does on page loads |
 | `bot` | yes: its report joins the platform's verdict for [`SID_SKIP_BOTS`](#no-sharedid-for-bots), so a likely bot gets no ID from Prebid.js's pixel call either |
-| `ip`, `geo` | no: they return data, and `/_sid/sync` returns an image |
+| `ip`, `geo`, `ua` | no: they return data, and `/_sid/sync` returns an image |
 
 - **Same rules as `/_sid/v1`:** the same consent, opt-out, time limit and failure handling. Only the modules' cookies and traffic reports are used; the GIF, status and other headers Prebid.js gets are unchanged, apart from `X-SharedID-Modules` (see [Debugging headers](#debugging-headers)).
 - **Choosing:** by default, every module in `SID_MODULES` that supports it runs on `/_sid/sync`. `SID_SYNC_MODULES` overrides that with a list (`"SID_SYNC_MODULES": "reflect"`), or `none`. Each name must also be in `SID_MODULES`, or every request fails with a 500 (a configuration error), so a typo can't go unnoticed; a listed module that doesn't run on `/_sid/sync`, such as `ip`, is reported `skipped`.
@@ -541,6 +568,7 @@ Built-in modules:
 | [`geo`](packages/modules/geo/README.md) | `ortb2.device.geo`: country, region, metro and UTC offset, plus city, postal code and coordinates when consent allows | `precision`: `precise` (default) or `coarse` |
 | [`reflect`](packages/modules/reflect/README.md) | Nothing in the payload: re-sets first-party cookies other scripts wrote (such as `uid1` or `_ga`) with the same value and a new expiry, so Safari doesn't cap them, and with `restore`, sets them again from an `HttpOnly` keeper cookie after Safari deletes them | `cookies`, `keeper` |
 | [`bot`](packages/modules/bot/README.md) | `ortb2.device.ext.traffic`: a likely bot when a browser lacks headers browsers send, and `internal` for your own staff, merged with other modules' reports and Cloudflare Bot Management. Sent whatever the consent | `missingHeaders`, `internalCookie`; secret `internalToken` |
+| [`ua`](packages/modules/ua/README.md) | `ortb2.device` from User-Agent Client Hints (`sua`, `devicetype`, `os`, `osv`, `model`), and `device.ext.traffic` with `bot: true` for crawlers that identify themselves | `ua`: also send `device.ua`; `parser`: `bowser`, in a build with Bowser, parses the `User-Agent` too |
 
 To build your own, see [Adding a module](#adding-a-module). Modules from vendors (in [`packages/vendor-modules/`](packages/vendor-modules/README.md); none yet) aren't built in: you add them to your build, and any that forwards data to another service says so at the top of its README and is marked "⚠ forwards data to `<host>`" here.
 
@@ -731,6 +759,47 @@ and Googlebot, on a zone with Bot Management, `{ "bot": true, "botKind": "verifi
 
 `SID_SKIP_BOTS` (off by default) stops the worker setting or returning a SharedID for bots, which inflate ID counts and pollute frequency capping. `verified` skips verified bots, `declared` verified and declared ones, `likely` every bot; `SID_SKIP_BOTS_SCORE=10` also skips scores of 10 or less. A skipped request carries `X-SharedID-Status: skipped: bot`. **Existing IDs are never deleted,** so a misclassified visitor keeps theirs, and internal traffic is never skipped. On `/_sid/sync` the decision is the same: the platform's verdict merged with the reports of the modules that run there (`bot`, and any other in `SID_SYNC_MODULES` that reports traffic).
 
+### `ua`: device data and the bot flag
+
+Full documentation: [`packages/modules/ua/README.md`](packages/modules/ua/README.md).
+
+The worker sees the browser's User-Agent Client Hints and `User-Agent` before any script runs. The `ua` module returns them as OpenRTB 2.6 device data, and flags crawlers that identify themselves (Googlebot, Bingbot, Slackbot, `facebookexternalhit`, `curl`, headless browsers, …) in the shared traffic signal `device.ext.traffic`, so the page can skip or mark auctions for them. It's **off until you enable it**:
+
+```jsonc
+"vars": {
+  "SID_MODULES": "ua",                   // or "ip,geo,ua"
+  "SID_MODULE_CONFIG": "{}"              // "{\"ua\":{\"ua\":true}}" also sends device.ua
+}
+```
+
+Chrome on Android, with high-entropy hints, then gets (merge it into Prebid.js as shown for `ip`):
+
+```json
+{
+  "ortb2": {
+    "device": {
+      "sua": {
+        "browsers": [{ "brand": "Chromium", "version": ["131", "0", "6778", "81"] }, { "brand": "Google Chrome", "version": ["131", "0", "6778", "81"] }],
+        "platform": { "brand": "Android", "version": ["14", "0", "0"] },
+        "mobile": 1,
+        "model": "Pixel 8",
+        "source": 2
+      },
+      "devicetype": 4,
+      "model": "Pixel 8",
+      "os": "Android",
+      "osv": "14.0.0"
+    }
+  }
+}
+```
+
+- **Client Hints first.** `sua.source` is `1` with the default hints and `2` with high-entropy ones. GREASE brands like `"Not A(Brand"` are dropped. Browsers send high-entropy hints only after your **page** asks with an `Accept-CH` header; the module's README has the header to add.
+- **Bots** are detected with [isbot](https://github.com/omrilotan/isbot): `{ "bot": true, "botKind": "declared", "sources": ["ua"] }`. The signal is sent whatever the consent, under GPC and COPPA too: it describes the traffic, not the person.
+- **Consent:** with GPC, `coppa=1`, a US privacy opt-out, an invalid TC string, or GDPR without a TC string, only low-entropy fields are sent (major versions, platform name, mobile, `devicetype`, `os`): no full versions, OS version, model, architecture or `device.ua`.
+- **Safari and Firefox** send no Client Hints, so by default the module only checks them for bots. **Bowser**, an opt-in build (`npm run deploy:bowser` on Cloudflare, `bundle:bowser` on Lambda and Vercel; about 8.5 KB gzipped more, about 25 KB in all against the 32 KB budget) plus `"parser": "bowser"`, parses the `User-Agent` with [Bowser](https://github.com/bowser-js/bowser) and fills every `device` field it can: `sua` (`source` 3), `devicetype` (including tablets, TVs and set-top boxes), `make`, `model`, `os` and `osv`. Client Hints still win where both give a value. See [Full parsing with Bowser](packages/modules/ua/README.md#full-parsing-with-bowser).
+- **On AWS Lambda**, forward `User-Agent` and the `Sec-CH-UA*` headers in the CloudFront origin request policy, which the stack's template doesn't do yet.
+
 ## Self-host with Node.js
 
 Full reference: [`packages/adapters/node/README.md`](packages/adapters/node/README.md).
@@ -778,7 +847,7 @@ All settings are strings, set as Worker `vars` (Cloudflare), environment variabl
 | `SID_VENDOR_ID` | (empty: publisher mode) | Your TCF vendor ID, for vendor mode. |
 | `SID_ALLOWED_ORIGINS` | none | Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin. |
 | `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. Also limits how often modules run on `/_sid/sync`. |
-| `SID_MODULES` | none | Comma-separated modules to run, in order. Built in: `ip`, `ec`, `geo`, `reflect`, `bot`. |
+| `SID_MODULES` | none | Comma-separated modules to run, in order. Built in: `ip`, `ec`, `geo`, `reflect`, `bot`, `ua`. |
 | `SID_SYNC_MODULES` | the modules in `SID_MODULES` that run on `/_sid/sync` (`reflect`, `ec`, `bot`) | Comma-separated modules to run on `/_sid/sync`, each also in `SID_MODULES`, or `none`. See [Modules on `/_sid/sync`](#modules-on-_sidsync). |
 | `SID_MODULE_CONFIG` | `{}` | JSON settings per module, keyed by module name. |
 | `SID_MODULE_SECRETS` | `{}` | JSON secrets per module, e.g. the `ec` passphrase. Set it as a secret (`wrangler secret put SID_MODULE_SECRETS`), not in `vars`. |
@@ -876,7 +945,7 @@ Publish it as its own package like [`packages/modules/ip`](packages/modules/ip),
 
 ## Roadmap
 
-1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, AWS Lambda, Vercel and Azure Functions adapters, and the `ip`, `ec`, `geo`, `reflect` and `bot` modules, with a shared traffic signal any module can report bots to.
+1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, AWS Lambda, Vercel and Azure Functions adapters, and the `ip`, `ec`, `geo`, `reflect`, `bot` and `ua` modules, with a shared traffic signal any module can report bots to.
 2. **Next:** Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
 3. A Prebid.js RTD module that reads `/_sid/v1`, plus a device type module (`ua`, which also reports declared crawlers to the traffic signal), IP intelligence modules, a Fastly adapter, and Lambda@Edge.
 4. Vendor modules, a Rust implementation, and inline mode.

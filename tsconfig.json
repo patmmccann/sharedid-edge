@@ -28,6 +28,8 @@
     { "path": "packages/modules/ip/test" },
     { "path": "packages/modules/reflect" },
     { "path": "packages/modules/reflect/test" },
+    { "path": "packages/modules/ua" },
+    { "path": "packages/modules/ua/test" },
     { "path": "conformance" },
     { "path": "scripts" }
   ]

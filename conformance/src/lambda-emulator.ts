@@ -4,18 +4,20 @@
 // handler's result is written back the way the function URL would.
 //
 // Started by targets.ts with the case file's configuration as environment variables (read by the handler at
-// "cold start", when the bundle is imported), plus PORT and SID_PUBLIC_ORIGIN.
+// "cold start", when the bundle is imported), plus PORT, SID_PUBLIC_ORIGIN and CONFORMANCE_LAMBDA_BUNDLE (the bundle's
+// directory: deploy, or deploy-bowser for case files that need Bowser).
 import { createServer, type IncomingMessage } from 'node:http';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { LambdaEventV2, LambdaHandler } from '@sharedid-edge/aws-lambda';
 
-const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/aws-lambda/deploy/lambda.mjs');
+const BUNDLE_DIR = process.env['CONFORMANCE_LAMBDA_BUNDLE'] === 'deploy-bowser' ? 'deploy-bowser' : 'deploy';
+const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/aws-lambda', BUNDLE_DIR, 'lambda.mjs');
 
 async function loadHandler(): Promise<LambdaHandler> {
   const loaded: unknown = await import(pathToFileURL(BUNDLE).href);
   const handler = typeof loaded === 'object' && loaded !== null && 'handler' in loaded ? loaded.handler : undefined;
-  if (typeof handler !== 'function') throw new Error(`${BUNDLE} doesn't export a handler; run npm run bundle -w @sharedid-edge/aws-lambda`);
+  if (typeof handler !== 'function') throw new Error(`${BUNDLE} doesn't export a handler; run npm run conformance:lambda from the repository root`);
   // Checked to be a function above; the bundle is built from src/lambda.ts, whose `handler` is a LambdaHandler.
   return handler as LambdaHandler;
 }

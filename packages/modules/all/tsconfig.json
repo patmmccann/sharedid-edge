@@ -14,6 +14,7 @@
     { "path": "../ec" },
     { "path": "../geo" },
     { "path": "../reflect" },
-    { "path": "../bot" }
+    { "path": "../bot" },
+    { "path": "../ua" }
   ]
 }

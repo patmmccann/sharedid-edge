@@ -1,6 +1,6 @@
 # Vendor modules
 
-This folder is for [SharedID Edge](../../README.md) modules contributed and maintained by vendors: IP intelligence databases, bot detection, device databases and other data a publisher licenses from a third party. The project's own modules (`ip`, `ec`, `geo`, `reflect`) are in [`../modules/`](../modules/AGENTS.md) and are built into every adapter; vendor modules aren't.
+This folder is for [SharedID Edge](../../README.md) modules contributed and maintained by vendors: IP intelligence databases, bot detection, device databases and other data a publisher licenses from a third party. The project's own modules (`ip`, `ec`, `geo`, `reflect`, `ua`) are in [`../modules/`](../modules/AGENTS.md) and are built into every adapter; vendor modules aren't.
 
 There are no vendor modules yet. The rules below are in full in [AGENTS.md](AGENTS.md).
 

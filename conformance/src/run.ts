@@ -61,14 +61,14 @@ async function main(): Promise<number> {
 
   if (values['base-url'] !== undefined) {
     // A deployment has one configuration; run the files that use the defaults.
-    for (const file of files.filter(f => Object.keys(f.config).length === 0)) {
+    for (const file of files.filter(f => Object.keys(f.config).length === 0 && f.build.length === 0)) {
       total += file.cases.length;
       failed += (await runFile(values['base-url'], file)).failed;
     }
   } else if (values.target === 'node' || values.target === 'wrangler' || values.target === 'lambda' || values.target === 'vercel' || values.target === 'azure') {
     const target: TargetName = values.target;
     for (const file of files) {
-      const running = await startTarget(target, file.config);
+      const running = await startTarget(target, file.config, file.build);
       try {
         total += file.cases.length;
         const result = await runFile(running.baseUrl, file, running.requestHeaders, running);

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import type { BuildOption } from './cases.js';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 
@@ -140,8 +141,14 @@ const AZURE_LIMITATIONS: Readonly<Record<string, string>> = {
   'module-reflect-prefer.json#backup: restores the saved uid1 byte for byte over the present one, restores the missing _ga, and keeps {_ga, uid1}': PERCENT_ENCODED
 };
 
-/** Starts a target configured with `config` (SID_* environment variables). */
-export async function startTarget(target: TargetName, config: Readonly<Record<string, string>>): Promise<RunningTarget> {
+/**
+ * Starts a target configured with `config` (SID_* environment variables) and built with `build`. With `bowser`, the
+ * Worker runs its Bowser entry point (src/bowser.ts), and the Lambda, Vercel and Azure targets load the bundles
+ * `npm run conformance:lambda`, `conformance:vercel` and `conformance:azure` build into deploy-bowser/. The Node.js
+ * server always has Bowser.
+ */
+export async function startTarget(target: TargetName, config: Readonly<Record<string, string>>, build: readonly BuildOption[] = []): Promise<RunningTarget> {
+  const bowser = build.includes('bowser');
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${String(port)}`;
   let child: ChildProcess;
@@ -154,14 +161,14 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
     // The bundled Lambda handler behind a local CloudFront and function URL stand-in (lambda-emulator.ts). The
     // public origin is the emulator's own http URL, so cookies aren't Secure, as for the other local targets.
     child = spawn(process.execPath, [join(ROOT, 'conformance/dist/lambda-emulator.js')], {
-      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_LAMBDA_BUNDLE: bowser ? 'deploy-bowser' : 'deploy', ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else if (target === 'vercel') {
     // The bundled Vercel adapter behind a local stand-in for Vercel's proxy (vercel-emulator.ts), which sets the
     // x-real-ip and x-vercel-ip-* headers. Plain http, so cookies aren't Secure, as for the other local targets.
     child = spawn(process.execPath, [join(ROOT, 'conformance/dist/vercel-emulator.js')], {
-      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_VERCEL_BUNDLE: bowser ? 'deploy-bowser' : 'deploy', ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else if (target === 'azure') {
@@ -173,6 +180,7 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
         PATH: process.env['PATH'] ?? '',
         PORT: String(port),
         SID_PUBLIC_ORIGIN: baseUrl,
+        CONFORMANCE_AZURE_BUNDLE: bowser ? 'deploy-bowser' : 'deploy',
         AZURE_FRONT_DOOR_ID: AZURE_FRONT_DOOR_ID,
         SID_FRONT_DOOR_ID: AZURE_FRONT_DOOR_ID,
         SID_LOCATION_HEADERS: JSON.stringify(AZURE_LOCATION_HEADERS),
@@ -183,8 +191,10 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
   } else {
     // `wrangler dev` runs the worker in workerd, the Workers runtime, locally; no Cloudflare account needed.
     const vars = Object.entries(config).flatMap(([key, value]) => ['--var', `${key}:${value}`]);
+    // The Bowser build is its own entry point, src/bowser.ts, as in the Worker's dev:bowser and deploy:bowser scripts.
+    const entry = bowser ? ['src/bowser.ts'] : [];
     const wrangler = join(ROOT, 'node_modules/wrangler/bin/wrangler.js');
-    child = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'error', '--show-interactive-dev-session=false', ...vars], {
+    child = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'error', '--show-interactive-dev-session=false', ...entry, ...vars], {
       cwd: join(ROOT, 'packages/adapters/cloudflare'),
       env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
       stdio: ['ignore', 'ignore', 'inherit']
