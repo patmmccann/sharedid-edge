@@ -4,7 +4,7 @@ The AWS Lambda adapter (`@sharedid-edge/aws-lambda`), for a function URL behind 
 
 - `src/event.ts`: minimal structural types for payload format 2.0 events and results. Don't add `@types/aws-lambda`; a full event must stay assignable to `LambdaEventV2`.
 - `src/handler.ts`: `createLambdaHandler`, event to `Request` and `Response` to result. Keep it a thin adapter; behaviour belongs in core.
-- `src/platform.ts`: `PlatformInfo` from the `CloudFront-Viewer-*` headers, and `EU_COUNTRY_CODES` (the 27 member states, matching Cloudflare's `isEUCountry`; update it if EU membership changes, with the Worker in mind).
+- `src/platform.ts`: `PlatformInfo` from the `CloudFront-Viewer-*` headers; `isEU` from core's `EU_COUNTRY_CODES` (re-exported here).
 - `src/env.ts`, `src/lambda.ts`: the deployed entry point; configuration from `process.env` once per cold start, a `ConfigError` gives a 500 handler.
 - `scripts/bundle.mjs`: esbuild bundle to `deploy/lambda.mjs`, alone in `deploy/` (the template uploads that directory; `dist/` also has the unbundled `lambda.js`, which Lambda would load first), with its size budget. `template.yaml`: the SAM template.
 

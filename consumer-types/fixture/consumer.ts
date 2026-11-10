@@ -3,6 +3,7 @@
 import {
   createHandler,
   defineModule,
+  EU_COUNTRY_CODES,
   locationInfo,
   preciseLocationDenial,
   resolveConfig,
@@ -38,7 +39,11 @@ const geo: EdgeModule = defineModule({
 // An adapter checking its CDN's location data.
 const source: LocationSource = { country: 'US', latitude: '30.2713', longitude: -97.7426, timezone: 'America/Chicago' };
 const location: PlatformLocation = locationInfo(source);
-export const located: PlatformInfo = { clientIp: '203.0.113.1', ...location };
+export const located: PlatformInfo = {
+  clientIp: '203.0.113.1',
+  ...location,
+  ...(location.country === undefined ? {} : { isEU: EU_COUNTRY_CODES.has(location.country) })
+};
 
 const config: SharedIdEdgeConfig = resolveConfig({ SID_MODULES: 'geo' });
 const handler: SharedIdEdgeHandler = createHandler({ config, modules: [geo] });
