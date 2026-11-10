@@ -1,6 +1,6 @@
 import { createHandler, readConsent, resolveConfig, type ModuleContext, type PayloadV1, type SharedIdEdgeHandler, type StorageDecision } from '@sharedid-edge/core';
 import { describe, expect, it } from 'vitest';
-import { isReflectable, rawCookieValue, reflectModule, reflectModuleConfig, RESERVED_COOKIE_NAMES } from '../src/index.js';
+import { decodeKeeper, encodeKeeper, isReflectable, MAX_KEEPER_COOKIE_BYTES, rawCookieValue, reflectModule, reflectModuleConfig, RESERVED_COOKIE_NAMES } from '../src/index.js';
 
 // TC strings built with tcString() from packages/core/test/helpers.ts:
 // publisherTc([1, 2]): a publisher TC segment consenting to Purposes 1 and 2, so publisher-mode storage is allowed.
@@ -15,11 +15,12 @@ describe('settings', () => {
   it('reads cookies with defaults for the optional keys', () => {
     expect(reflectModuleConfig({ cookies: [UID1, { name: 'x', maxAgeDays: 1 }] })).toEqual({
       cookies: [
-        { name: 'uid1', maxAgeDays: 365, domain: 'example.com', httpOnly: false, deleteOnOptOut: false },
-        { name: 'x', maxAgeDays: 1, domain: undefined, httpOnly: false, deleteOnOptOut: false }
-      ]
+        { name: 'uid1', maxAgeDays: 365, domain: 'example.com', httpOnly: false, deleteOnOptOut: false, restore: false },
+        { name: 'x', maxAgeDays: 1, domain: undefined, httpOnly: false, deleteOnOptOut: false, restore: false }
+      ],
+      keeper: { cookie: '_sid_keep', maxAgeDays: 400, domain: undefined }
     });
-    expect(reflectModuleConfig({ cookies: [FPID] }).cookies[0]).toEqual({ ...FPID, domain: undefined });
+    expect(reflectModuleConfig({ cookies: [FPID] }).cookies[0]).toEqual({ ...FPID, domain: undefined, restore: false });
   });
 
   it.each([
@@ -44,9 +45,32 @@ describe('settings', () => {
     ['a single-label domain', { cookies: [{ ...UID1, domain: 'localhost' }] }],
     ['a domain with a path', { cookies: [{ ...UID1, domain: 'example.com/x' }] }],
     ['httpOnly as a string', { cookies: [{ ...UID1, httpOnly: 'true' }] }],
-    ['deleteOnOptOut as a number', { cookies: [{ ...UID1, deleteOnOptOut: 1 }] }]
+    ['deleteOnOptOut as a number', { cookies: [{ ...UID1, deleteOnOptOut: 1 }] }],
+    ['restore as a string', { cookies: [{ ...UID1, restore: 'yes' }] }],
+    ['a keeper that isn\'t an object', { cookies: [UID1], keeper: '_sid_keep' }],
+    ['an unknown key in keeper', { cookies: [UID1], keeper: { name: 'k' } }],
+    ['an invalid keeper name', { cookies: [UID1], keeper: { cookie: 'a;b' } }],
+    ['a reserved keeper name', { cookies: [UID1], keeper: { cookie: '_pubcid_sv' } }],
+    ['a keeper name that\'s also a configured cookie', { cookies: [UID1], keeper: { cookie: 'uid1' } }],
+    ['a configured cookie with the default keeper name', { cookies: [{ name: '_sid_keep', maxAgeDays: 1 }] }],
+    ['a keeper lifetime over 400 days', { cookies: [UID1], keeper: { maxAgeDays: 730 } }],
+    ['a keeper domain with a leading dot', { cookies: [UID1], keeper: { domain: '.example.com' } }]
   ])('rejects %s', (_, config) => {
     expect(() => reflectModuleConfig(config)).toThrow(TypeError);
+  });
+
+  it('reads the keeper with defaults, its domain falling back to the first restore cookie\'s', () => {
+    const restoring = [
+      { name: 'a', maxAgeDays: 1, restore: true },
+      { name: 'b', maxAgeDays: 1, domain: 'b.example', restore: true },
+      { name: 'c', maxAgeDays: 1, domain: 'c.example', restore: true }
+    ];
+    expect(reflectModuleConfig({ cookies: restoring }).keeper).toEqual({ cookie: '_sid_keep', maxAgeDays: 400, domain: undefined });
+    expect(reflectModuleConfig({ cookies: restoring.slice(1) }).keeper).toEqual({ cookie: '_sid_keep', maxAgeDays: 400, domain: 'b.example' });
+    expect(reflectModuleConfig({ cookies: [UID1, ...restoring.slice(2)] }).keeper.domain).toBe('c.example');
+    expect(reflectModuleConfig({ cookies: restoring, keeper: { cookie: 'k', maxAgeDays: 30, domain: 'example.com' } }).keeper)
+      .toEqual({ cookie: 'k', maxAgeDays: 30, domain: 'example.com' });
+    expect(reflectModuleConfig({ cookies: [UID1], keeper: {} }).keeper.cookie).toBe('_sid_keep');
   });
 
   it.each(RESERVED_COOKIE_NAMES)('refuses to reflect %s', name => {
@@ -77,6 +101,54 @@ describe('reading values', () => {
     expect(isReflectable('')).toBe(false);
     expect(isReflectable(undefined)).toBe(false);
     for (const bad of ['"q"', 'a b', 'a,b', 'a\\b', 'é']) expect(isReflectable(bad)).toBe(false);
+  });
+});
+
+const b64url = (text: string): string => btoa(text).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const fromB64url = (value: string): unknown => JSON.parse(atob(value.replace(/-/g, '+').replace(/_/g, '/')));
+
+describe('the keeper value', () => {
+  it('is base64url of a JSON object, in the order given, without padding', () => {
+    const value = encodeKeeper([['_ga', 'GA1.1.123.456'], ['_gcl_au', '1.1.789.1700000000']], 4096);
+    expect(value).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(value).toBe(b64url('{"_ga":"GA1.1.123.456","_gcl_au":"1.1.789.1700000000"}'));
+    expect(fromB64url(value)).toEqual({ _ga: 'GA1.1.123.456', _gcl_au: '1.1.789.1700000000' });
+    expect(encodeKeeper([], 4096)).toBe('');
+  });
+
+  it('round-trips values whose base64 has + and /', () => {
+    const entries: [string, string][] = [['a', '>>>???~~~'], ['b', 'x+y/z==%2F']];
+    const value = encodeKeeper(entries, 4096);
+    expect(value).toMatch(/[-_]/);
+    expect([...decodeKeeper(value)]).toEqual(entries);
+  });
+
+  it('skips entries that don\'t fit, in order, keeping later ones that do', () => {
+    const big = 'b'.repeat(1000);
+    const value = encodeKeeper([['a', 'x'], ['b', big], ['c', big], ['d', big], ['e', 'y']], 3000);
+    expect(value.length).toBeLessThanOrEqual(3000);
+    expect(fromB64url(value)).toEqual({ a: 'x', b: big, c: big, e: 'y' });
+    expect(encodeKeeper([['a', 'x']], 5)).toBe('');
+  });
+
+  it.each([
+    ['nothing', undefined],
+    ['an empty value', ''],
+    ['characters outside base64url', 'eyJh+IjoiYiJ9'],
+    ['padding', btoa('{"a":"bc"}')],
+    ['a value over the size limit', 'A'.repeat(MAX_KEEPER_COOKIE_BYTES + 4)],
+    ['an invalid base64 length', 'abcde'],
+    ['not JSON', b64url('not json')],
+    ['a JSON array', b64url('["a","b"]')],
+    ['a JSON string', b64url('"a"')],
+    ['JSON null', b64url('null')]
+  ])('decodes %s as empty, without throwing', (_, raw) => {
+    expect(decodeKeeper(raw).size).toBe(0);
+  });
+
+  it('drops entries that aren\'t reflectable strings', () => {
+    const raw = b64url(JSON.stringify({ a: 'ok', b: 1, c: '', d: 'a b', e: 'x'.repeat(1025), f: { g: 'h' } }));
+    expect([...decodeKeeper(raw)]).toEqual([['a', 'ok']]);
   });
 });
 
@@ -199,5 +271,133 @@ describe('the reflect module in the handler', () => {
   it('doesn\'t run on /sync', async () => {
     const response = await handler()(new Request('https://www.example.com/_sid/sync', { headers: { Cookie: 'uid1=abc' } }));
     expect(response.headers.getSetCookie().some(c => c.startsWith('uid1='))).toBe(false);
+  });
+});
+
+describe('the keeper in the handler', () => {
+  const GA = { name: '_ga', maxAgeDays: 400, domain: 'example.com', restore: true };
+  const GCL_AW = { name: '_gcl_aw', maxAgeDays: 90, domain: 'example.com', restore: true };
+  const GCL_AU = { name: '_gcl_au', maxAgeDays: 90, domain: 'example.com', restore: true };
+  const config = { reflect: { cookies: [GA, GCL_AW, GCL_AU, UID1] } };
+  const handler = (moduleConfig: unknown = config, extra: Record<string, string> = {}): SharedIdEdgeHandler =>
+    createHandler({ config: resolveConfig({ SID_MODULES: 'reflect', SID_MODULE_CONFIG: JSON.stringify(moduleConfig), ...extra }), modules: [reflectModule] });
+  const call = async (path: string, headers: Record<string, string> = {}, moduleConfig?: unknown, extra?: Record<string, string>): Promise<{ cookies: string[]; body: PayloadV1 }> => {
+    const response = await handler(moduleConfig, extra)(new Request(`https://www.example.com${path}`, { headers }));
+    return { cookies: response.headers.getSetCookie().filter(c => !c.startsWith('_pubcid')), body: await response.json() as PayloadV1 };
+  };
+  const pairs = (cookies: string[]): (string | undefined)[] => cookies.map(c => c.split(';')[0]);
+  const keeperOf = (cookies: string[], name = '_sid_keep'): string | undefined => cookies.find(c => c.startsWith(`${name}=`));
+  const savedIn = (cookies: string[]): unknown => fromB64url(keeperOf(cookies)?.split(';')[0]?.slice('_sid_keep='.length) ?? '');
+  const saved = (values: Record<string, string>): string => b64url(JSON.stringify(values));
+  const ga = 'GA1.1.1234567890.1700000000';
+  const aw = 'GCL.1700000000.Cj0KCQiA-abc_DEF';
+  const au = '1.1.987654321.1700000000';
+  const DELETED_KEEPER = '_sid_keep=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly';
+
+  it('saves present restore cookies in an HttpOnly keeper, in configured order, and refreshes them', async () => {
+    const { cookies, body } = await call('/_sid/v1', { Cookie: `uid1=u; _gcl_au=${au}; _ga=${ga}` });
+    expect(pairs(cookies)).toEqual([`_ga=${ga}`, `_gcl_au=${au}`, 'uid1=u', `_sid_keep=${saved({ _ga: ga, _gcl_au: au })}`]);
+    expect(keeperOf(cookies)).toMatch(/; Max-Age=34560000; Expires=[^;]+; Path=\/; Domain=\.example\.com; SameSite=Lax; Secure; HttpOnly$/);
+    expect(savedIn(cookies)).toEqual({ _ga: ga, _gcl_au: au });
+    expect(body.ext.modules['reflect']?.status).toBe('empty');
+    expect(JSON.stringify(body)).not.toMatch(/GA1|_ga|_sid_keep/);
+  });
+
+  it('restores missing cookies from the keeper with their configured attributes; present values win', async () => {
+    const { cookies } = await call('/_sid/v1', { Cookie: `_sid_keep=${saved({ _ga: ga, _gcl_aw: aw, _gcl_au: au })}; _gcl_au=1.1.new.1` });
+    expect(cookies.find(c => c.startsWith('_ga='))).toMatch(/^_ga=GA1\.1\.1234567890\.1700000000; Max-Age=34560000; Expires=[^;]+; Path=\/; Domain=\.example\.com; SameSite=Lax; Secure$/);
+    expect(cookies.find(c => c.startsWith('_gcl_aw='))).toMatch(/^_gcl_aw=GCL\.1700000000\.Cj0KCQiA-abc_DEF; Max-Age=7776000; /);
+    expect(cookies.find(c => c.startsWith('_gcl_au='))?.split(';')[0]).toBe('_gcl_au=1.1.new.1');
+    expect(savedIn(cookies)).toEqual({ _ga: ga, _gcl_aw: aw, _gcl_au: '1.1.new.1' });
+  });
+
+  it('rewrites the keeper on every call, so its expiry is refreshed even when nothing changed', async () => {
+    const keeper = saved({ _ga: ga });
+    const { cookies } = await call('/_sid/v1', { Cookie: `_ga=${ga}; _sid_keep=${keeper}` });
+    expect(keeperOf(cookies)?.split(';')[0]).toBe(`_sid_keep=${keeper}`);
+  });
+
+  it('treats a malformed keeper as empty and overwrites it, or deletes it when there\'s nothing to keep', async () => {
+    for (const bad of ['%%%', 'bm90IGpzb24', saved({ _ga: 'a b' }), '"quoted"']) {
+      const withGa = await call('/_sid/v1', { Cookie: `_sid_keep=${bad}; _ga=${ga}` });
+      expect(pairs(withGa.cookies)).toEqual([`_ga=${ga}`, `_sid_keep=${saved({ _ga: ga })}`]);
+      const alone = await call('/_sid/v1', { Cookie: `_sid_keep=${bad}` });
+      expect(alone.cookies).toEqual([DELETED_KEEPER]);
+      expect(alone.body.ext.modules['reflect']?.status).toBe('empty');
+    }
+  });
+
+  it('restores only restore cookies, and drops a saved value whose cookie is present but can\'t be copied', async () => {
+    const { cookies } = await call('/_sid/v1', { Cookie: `_sid_keep=${saved({ uid1: 'x', other: 'y', _ga: ga, _gcl_au: au })}; _ga="quoted"` });
+    expect(pairs(cookies)).toEqual([`_gcl_au=${au}`, `_sid_keep=${saved({ _gcl_au: au })}`]);
+  });
+
+  it('sets no keeper when nothing is configured to restore, and deletes a stale one', async () => {
+    const plain = { reflect: { cookies: [UID1] } };
+    expect(pairs((await call('/_sid/v1', { Cookie: 'uid1=u' }, plain)).cookies)).toEqual(['uid1=u']);
+    const stale = await call('/_sid/v1', { Cookie: `uid1=u; _sid_keep=${saved({ uid1: 'old' })}` }, plain);
+    expect(pairs(stale.cookies)).toEqual(['uid1=u', '_sid_keep=']);
+  });
+
+  it('uses the keeper settings: name, lifetime and domain', async () => {
+    const custom = { reflect: { cookies: [{ name: 'fp', maxAgeDays: 30, restore: true }], keeper: { cookie: 'kp', maxAgeDays: 100, domain: 'example.org' } } };
+    const { cookies } = await call('/_sid/v1', { Cookie: 'fp=1' }, custom);
+    expect(keeperOf(cookies, 'kp')).toMatch(/^kp=[A-Za-z0-9_-]+; Max-Age=8640000; Expires=[^;]+; Path=\/; Domain=\.example\.org; SameSite=Lax; Secure; HttpOnly$/);
+    expect(keeperOf(cookies, 'kp')?.split(';')[0]).toBe(`kp=${saved({ fp: '1' })}`);
+    // a host-only restore cookie and no keeper domain: the keeper is host-only too
+    const hostOnly = await call('/_sid/v1', { Cookie: 'fp=1' }, { reflect: { cookies: [{ name: 'fp', maxAgeDays: 30, restore: true }] } });
+    expect(keeperOf(hostOnly.cookies)).toMatch(/; Path=\/; SameSite=Lax; Secure; HttpOnly$/);
+  });
+
+  it('keeps the keeper within 4096 bytes, skipping cookies that don\'t fit in configured order', async () => {
+    const names = ['k1', 'k2', 'k3', 'k4'];
+    const big = { reflect: { cookies: names.map(name => ({ name, maxAgeDays: 1, restore: true })) } };
+    const value = (n: string): string => n.repeat(500);
+    const { cookies } = await call('/_sid/v1', { Cookie: names.map(n => `${n}=${value(n)}`).join('; ') }, big);
+    expect(cookies.filter(c => /^k\d=/.test(c))).toHaveLength(4);
+    expect((keeperOf(cookies)?.split(';')[0] ?? '').length).toBeLessThanOrEqual(MAX_KEEPER_COOKIE_BYTES + 1);
+    expect(savedIn(cookies)).toEqual({ k1: value('k1'), k2: value('k2'), k3: value('k3') });
+  });
+
+  it.each([
+    ['opt-out', '/_sid/v1', { Cookie: `_pubcid_optout=1; _ga=${ga}; _sid_keep=${saved({ _ga: ga, _gcl_au: au })}` }],
+    ['GPC', '/_sid/v1', { 'Sec-GPC': '1', Cookie: `_ga=${ga}; _sid_keep=${saved({ _ga: ga, _gcl_au: au })}` }],
+    ['COPPA', '/_sid/v1?coppa=1', { Cookie: `_ga=${ga}; _sid_keep=${saved({ _ga: ga, _gcl_au: au })}` }],
+    ['GDPR without a TC string', '/_sid/v1?gdpr=1', { Cookie: `_ga=${ga}; _sid_keep=${saved({ _ga: ga, _gcl_au: au })}` }],
+    ['a TC string without publisher consent', `/_sid/v1?gdpr=1&gdpr_consent=${TC_NO_PUBLISHER_SEGMENT}`, { Cookie: `_ga=${ga}; _sid_keep=${saved({ _ga: ga, _gcl_au: au })}` }]
+  ])('on %s, deletes the keeper but neither restores, reflects nor deletes the originals', async (_, path, headers) => {
+    const { cookies, body } = await call(path, headers);
+    expect(cookies).toEqual([DELETED_KEEPER]);
+    expect(body.ext.modules['reflect']?.status).toBe('empty');
+  });
+
+  it('sets nothing when storage is denied and the browser has no keeper', async () => {
+    expect((await call('/_sid/v1', { 'Sec-GPC': '1', Cookie: `_ga=${ga}` })).cookies).toEqual([]);
+  });
+
+  it('deletes the keeper on /optout, without deleteOnOptOut, even when reflect isn\'t in SID_MODULES', async () => {
+    for (const extra of [{}, { SID_MODULES: '' }]) {
+      const response = await handler(config, extra)(new Request('https://www.example.com/_sid/optout', { headers: { Cookie: `_ga=${ga}; _sid_keep=${saved({ _ga: ga })}` } }));
+      const cookies = response.headers.getSetCookie();
+      expect(cookies.filter(c => c.startsWith('_ga='))).toEqual([]);
+      expect(keeperOf(cookies)).toBe(DELETED_KEEPER);
+    }
+    // the default name is deleted even with no restore cookies configured
+    const plain = await handler({ reflect: { cookies: [UID1] } })(new Request('https://www.example.com/_sid/optout', { headers: { Cookie: '_sid_keep=x' } }));
+    expect(plain.headers.getSetCookie().some(c => c.startsWith('_sid_keep=; Max-Age=0'))).toBe(true);
+    const notSent = await handler()(new Request('https://www.example.com/_sid/optout', { headers: { Cookie: `_ga=${ga}` } }));
+    expect(notSent.headers.getSetCookie().some(c => c.startsWith('_sid_keep='))).toBe(false);
+  });
+
+  it('reports an error when the keeper uses one of the worker\'s configured cookie names', async () => {
+    const { body, cookies } = await call('/_sid/v1', { Cookie: `_ga=${ga}` }, { reflect: { cookies: [GA], keeper: { cookie: 'myid' } } }, { SID_COOKIE_NAME: 'myid' });
+    expect(body.ext.modules['reflect']?.status).toBe('error');
+    // only the worker's own ID cookie, renamed to myid
+    expect(cookies.filter(c => !c.startsWith('myid='))).toEqual([]);
+  });
+
+  it('doesn\'t restore on /sync', async () => {
+    const response = await handler()(new Request('https://www.example.com/_sid/sync', { headers: { Cookie: `_sid_keep=${saved({ _ga: ga })}` } }));
+    expect(response.headers.getSetCookie().some(c => c.startsWith('_ga=') || c.startsWith('_sid_keep='))).toBe(false);
   });
 });

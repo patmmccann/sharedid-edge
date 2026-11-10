@@ -1,0 +1,117 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The reflect module's keeper (SID_MODULES=reflect): _ga (400 days), _gcl_aw and _gcl_au (90 days each) are configured with domain example.com and restore: true, and no keeper settings, so the keeper is _sid_keep: HttpOnly, 400 days (Max-Age=34560000), Domain=.example.com (the first restore cookie's domain). Its value is base64url without padding of the JSON object of saved values in configured order; the exact values here are Buffer.from(JSON.stringify({ _ga: 'GA1.1.1234567890.1700000000', _gcl_au: '1.1.987654321.1700000000' })).toString('base64url') and the like, as each case name says. The TC string CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA has no publisher TC segment, so it denies storage in publisher mode.",
+  "config": {
+    "SID_MODULES": "reflect",
+    "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"_ga\",\"maxAgeDays\":400,\"domain\":\"example.com\",\"restore\":true},{\"name\":\"_gcl_aw\",\"maxAgeDays\":90,\"domain\":\"example.com\",\"restore\":true},{\"name\":\"_gcl_au\",\"maxAgeDays\":90,\"domain\":\"example.com\",\"restore\":true}]}}"
+  },
+  "cases": [
+    {
+      "name": "saves present cookies in the keeper, {_ga, _gcl_au} in configured order, and refreshes them",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "_gcl_au=1.1.987654321.1700000000; _ga=GA1.1.1234567890.1700000000" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "_ga", "value": "GA1.1.1234567890.1700000000", "maxAge": 34560000, "domain": ".example.com", "httpOnly": false, "sameSite": "Lax", "path": "/" },
+          { "name": "_gcl_au", "value": "1.1.987654321.1700000000", "maxAge": 7776000, "domain": ".example.com", "httpOnly": false },
+          { "name": "_sid_keep", "value": "eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0", "maxAge": 34560000, "domain": ".example.com", "httpOnly": true, "sameSite": "Lax", "path": "/" }
+        ],
+        "onlyListedCookies": true,
+        "jsonIncludes": { "ext": { "modules": { "reflect": { "status": "empty" } } } }
+      }
+    },
+    {
+      "name": "restores missing _ga and _gcl_aw from a keeper of {_ga, _gcl_aw, _gcl_au}; the present _gcl_au wins and is saved",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "_sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F3IjoiR0NMLjE3MDAwMDAwMDAuQ2owS0NRaUFhYmMiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0; _gcl_au=1.1.new.1" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "_ga", "value": "GA1.1.1234567890.1700000000", "maxAge": 34560000, "domain": ".example.com", "httpOnly": false, "sameSite": "Lax", "path": "/" },
+          { "name": "_gcl_aw", "value": "GCL.1700000000.Cj0KCQiAabc", "maxAge": 7776000, "domain": ".example.com", "httpOnly": false },
+          { "name": "_gcl_au", "value": "1.1.new.1", "maxAge": 7776000 },
+          { "name": "_sid_keep", "value": "eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F3IjoiR0NMLjE3MDAwMDAwMDAuQ2owS0NRaUFhYmMiLCJfZ2NsX2F1IjoiMS4xLm5ldy4xIn0", "maxAge": 34560000, "domain": ".example.com", "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "overwrites a malformed keeper with {_ga}",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "_sid_keep=not-base64-json; _ga=GA1.1.1234567890.1700000000" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid" },
+          { "name": "_pubcid_sv" },
+          { "name": "_ga", "value": "GA1.1.1234567890.1700000000" },
+          { "name": "_sid_keep", "value": "eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAifQ", "maxAge": 34560000, "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "deletes a keeper with nothing to keep",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "_sid_keep=not-base64-json" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }, { "name": "_sid_keep", "value": "", "maxAge": 0, "domain": ".example.com", "httpOnly": true }],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "doesn't restore on /sync",
+      "request": { "path": "/_sid/sync", "headers": { "cookie": "_sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0" } },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }], "onlyListedCookies": true }
+    },
+    {
+      "name": "with Global Privacy Control, deletes the keeper and neither restores, refreshes nor deletes the originals",
+      "request": { "path": "/_sid/v1", "headers": { "sec-gpc": "1", "cookie": "_ga=GA1.1.1234567890.1700000000; _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "_sid_keep", "value": "", "maxAge": 0, "domain": ".example.com", "httpOnly": true }],
+        "onlyListedCookies": true,
+        "jsonIncludes": { "ext": { "modules": { "reflect": { "status": "empty" } } } }
+      }
+    },
+    {
+      "name": "with a TC string that denies storage, deletes the keeper only",
+      "request": { "path": "/_sid/v1?gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "headers": { "cookie": "_ga=GA1.1.1234567890.1700000000; _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "_sid_keep", "value": "", "maxAge": 0, "domain": ".example.com", "httpOnly": true }],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "with the opt-out cookie, deletes the keeper only",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "_pubcid_optout=1; _ga=GA1.1.1234567890.1700000000; _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "_sid_keep", "value": "", "maxAge": 0, "domain": ".example.com", "httpOnly": true }],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "sets nothing when storage is denied and there's no keeper",
+      "request": { "path": "/_sid/v1", "headers": { "sec-gpc": "1", "cookie": "_ga=GA1.1.1234567890.1700000000" } },
+      "expect": { "status": 200, "noCookies": true }
+    },
+    {
+      "name": "deletes the keeper on /optout, but not _ga (no deleteOnOptOut)",
+      "request": { "path": "/_sid/optout", "headers": { "cookie": "_ga=GA1.1.1234567890.1700000000; _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0" } },
+      "expect": {
+        "status": 204,
+        "cookies": [
+          { "name": "_pubcid_optout", "value": "1" },
+          { "name": "_pubcid", "maxAge": 0 },
+          { "name": "_pubcid_sv", "maxAge": 0 },
+          { "name": "_sid_keep", "value": "", "maxAge": 0, "domain": ".example.com", "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    }
+  ]
+}
