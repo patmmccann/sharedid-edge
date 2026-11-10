@@ -1,6 +1,6 @@
 # @sharedid-edge/module-geo
 
-The `geo` module for [SharedID Edge](../../README.md): the visitor's location, as your CDN sees it, in the `/_sid/v1` payload as OpenRTB 2.6 `ortb2.device.geo`.
+The `geo` module for [SharedID Edge](../../../README.md): the visitor's location, as your CDN sees it, in the `/_sid/v1` payload as OpenRTB 2.6 `ortb2.device.geo`.
 
 Cloudflare geolocates every request, on every plan. With this module the page can give bidders that location without a geolocation script or a call to a geo service: merge the payload's `ortb2` into Prebid.js and the auction gets `device.geo`. Coarse fields (country, region, metro, UTC offset) are always sent; precise ones (city, postal code, coordinates) only when consent allows, and never rounded.
 
@@ -19,7 +19,7 @@ Cloudflare geolocates every request, on every plan. With this module the page ca
 
 The module is built into the Cloudflare Worker, the Node.js server and the AWS Lambda adapter. It does nothing until you list it in `SID_MODULES`.
 
-1. **Enable it** in `packages/cloudflare/wrangler.jsonc`:
+1. **Enable it** in `packages/adapters/cloudflare/wrangler.jsonc`:
 
    ```jsonc
    "vars": {
@@ -119,7 +119,7 @@ TCF treats precise geolocation (within about 500 metres) as a special feature th
 
 **Coarse fields** (`type`, `country`, `region`, `metro`, `utcoffset`) are always sent when known.
 
-**Precise fields** (`city`, `zip`, `lat`, `lon`) are sent **in full or not at all**. A rounded coordinate or a truncated postal code still looks real but is wrong, so they're never coarsened. They're left out when any of these apply, the same rules as the [`ip` module](../module-ip/README.md)'s address:
+**Precise fields** (`city`, `zip`, `lat`, `lon`) are sent **in full or not at all**. A rounded coordinate or a truncated postal code still looks real but is wrong, so they're never coarsened. They're left out when any of these apply, the same rules as the [`ip` module](../ip/README.md)'s address:
 - the visitor sends Global Privacy Control (`Sec-GPC: 1`), or the request has `coppa=1`;
 - a `us_privacy` string opts out of sale (third character `Y`);
 - a TCF TC string is invalid, or doesn't opt in to **Special Feature 1** (use precise geolocation data);
@@ -140,7 +140,7 @@ Anything else in `geo`'s settings, including a misspelt key (`{"geo":{"precison"
 
 ## On AWS Lambda behind CloudFront
 
-The Lambda adapter reads CloudFront’s geolocation headers (`CloudFront-Viewer-Country`, `-Country-Region`, `-City`, `-Postal-Code`, `-Metro-Code`, `-Latitude`, `-Longitude`, `-Time-Zone`). The SAM template’s origin request policy forwards them. CloudFront has no continent header. See [`packages/aws-lambda/README.md`](../aws-lambda/README.md#platform-information).
+The Lambda adapter reads CloudFront’s geolocation headers (`CloudFront-Viewer-Country`, `-Country-Region`, `-City`, `-Postal-Code`, `-Metro-Code`, `-Latitude`, `-Longitude`, `-Time-Zone`). The SAM template’s origin request policy forwards them. CloudFront has no continent header. See [`packages/adapters/aws-lambda/README.md`](../../adapters/aws-lambda/README.md#platform-information).
 
 ## With the Node.js server
 
@@ -160,7 +160,7 @@ The Node.js server has no geolocation of its own. Behind Cloudflare, it can use 
 The server reads them **only with `SID_TRUST_PROXY=true`**, the same setting that makes it trust `X-Forwarded-For`. Otherwise anyone could send them. Set it only when your server is reachable solely through Cloudflare (or a proxy that removes these headers from client requests):
 
 ```sh
-SID_MODULES=geo SID_TRUST_PROXY=true SID_PUBLIC_ORIGIN=https://www.example.com node packages/node/dist/cli.js
+SID_MODULES=geo SID_TRUST_PROXY=true SID_PUBLIC_ORIGIN=https://www.example.com node packages/adapters/node/dist/cli.js
 ```
 
 `cf-ipcity` is decoded as UTF-8, so city names like `Zürich` come through intact.

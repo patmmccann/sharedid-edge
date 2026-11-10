@@ -1,6 +1,6 @@
 # Agent guidelines
 
-SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edge worker on the publisher's own domain. Read [README.md](README.md) for what it does and [spec/SPEC.md](spec/SPEC.md) for the exact behaviour. Folders with their own `AGENTS.md` add rules for that folder; read it before changing files there.
+SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edge worker on the publisher's own domain. Read [README.md](README.md) for what it does and [spec/SPEC.md](spec/SPEC.md) for the exact behaviour. Folders with their own `AGENTS.md` add rules for that folder; read it, and those of its parent folders, before changing files there.
 
 ## Layout
 
@@ -8,20 +8,16 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | --- | --- | --- |
 | `spec/` | The specification | Behaviour changes start here. |
 | `conformance/` | HTTP cases and their runner | The contract; every implementation must pass. |
-| `packages/core/` | Platform-neutral handler, consent, cookies, module interface | Published as `@sharedid-edge/core`. |
-| `packages/cloudflare/` | The Cloudflare Worker | |
-| `packages/module-ip/` | The `ip` module: client IP in `ortb2.device` | Published as `@sharedid-edge/module-ip`; the pattern for module packages. |
-| `packages/module-ec/` | The `ec` module: Trusted Server Edge Cookies (`ts-ec`) | Opt-in; its ID prefix is derived from the client IP. |
-| `packages/module-geo/` | The `geo` module: the CDN's location in `ortb2.device.geo` | Published as `@sharedid-edge/module-geo`; precise fields only with consent. |
-| `packages/module-reflect/` | The `reflect` module: re-sets other first-party cookies (such as `uid1`) as server-set cookies | Opt-in; follows the SharedID's storage decision, never alters values. |
-| `packages/node/` | Node.js server | Local development, self-hosting, conformance target. |
-| `packages/aws-lambda/` | AWS Lambda adapter behind CloudFront, its bundle and SAM template | Published as `@sharedid-edge/aws-lambda`; conformance target via a local CloudFront stand-in. |
+| `packages/core/` | Platform-neutral handler, consent, cookies, module interface | Published as `@sharedid-edge/core`. Depends on no module. |
+| `packages/adapters/` | Deployable platform packages: `cloudflare/` (the Worker), `node/` (Node.js server), `aws-lambda/` (Lambda behind CloudFront, its bundle and SAM template) | Rules for every adapter in [`packages/adapters/AGENTS.md`](packages/adapters/AGENTS.md). Each is a conformance target. |
+| `packages/modules/` | Modules this project maintains: `ip/` (client IP), `ec/` (Trusted Server Edge Cookies, IP-derived, opt-in), `geo/` (`ortb2.device.geo`), `reflect/` (re-sets other first-party cookies), and `all/` (`@sharedid-edge/modules`, the built-in list) | Rules and how to write a module in [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). Published as `@sharedid-edge/module-<name>`; built into every adapter. |
+| `packages/vendor-modules/` | Modules contributed and maintained by vendors (none yet) | Extra rules in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md). Opt-in at build time; tested in their own CI job. |
 | `e2e/` | Unmodified Prebid.js against the worker in three browsers | Separate install. |
-| `scripts/` | Type-check helpers and `verify-deployment` | |
+| `scripts/` | Type-check helpers, the repo checks (`check-projects`, `check-links`) and `verify-deployment` | `projects.mjs` derives the project list from the workspace folders. |
 
 ## TypeScript is strict, everywhere
 
-- Every project extends [`tsconfig.base.json`](tsconfig.base.json): `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature`, `noImplicitOverride`, `noImplicitReturns`, `noUnusedLocals`/`Parameters`, `verbatimModuleSyntax`, `isolatedDeclarations` (published packages) and `skipLibCheck: false`. **Don't relax these, per file or per project.** The only exception is `skipLibCheck` in `packages/cloudflare/test`, for Vitest's own declarations; don't spread it.
+- Every project extends [`tsconfig.base.json`](tsconfig.base.json): `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noPropertyAccessFromIndexSignature`, `noImplicitOverride`, `noImplicitReturns`, `noUnusedLocals`/`Parameters`, `verbatimModuleSyntax`, `isolatedDeclarations` (published packages) and `skipLibCheck: false`. **Don't relax these, per file or per project.** The only exception is `skipLibCheck` in `packages/adapters/cloudflare/test`, for Vitest's own declarations; don't spread it.
 - No `any`, no `as any`, no non-null assertions (`!`), no `@ts-ignore`. Use `@ts-expect-error` only in type tests, with a reason. Narrow `unknown` with type guards; cast only where a guard has already checked the shape, and say why.
 - Exported functions and constants have explicit types (`isolatedDeclarations` enforces it for published packages).
 - Tests are type-checked too: each package's `test/` folder is its own project in the `tsc -b` build.
@@ -41,9 +37,11 @@ npm test                                        # unit tests; the Worker's run i
 npm run conformance                             # conformance suite against the Node.js server
 npm run consumer-types                          # packed @sharedid-edge/core, strict consumers, each module resolution
 npm run attw                                    # published types resolve
+npm run check:projects                          # tsconfig.json references every workspace project
+npm run check:links                             # relative Markdown links and anchors resolve
 ```
 
-`npm run check` runs them in order. `npm run conformance:wrangler` runs the conformance suite against `wrangler dev` (slower), `npm run conformance:lambda` (also in `check`) against the bundled Lambda handler, and `e2e/` has the browser tests. None of this needs a Cloudflare or AWS account; never add steps that do to pull-request CI.
+`npm run check` runs them in order. `npm run test:vendor-modules` runs vendor modules' tests, in their own CI job. `npm run conformance:wrangler` runs the conformance suite against `wrangler dev` (slower), `npm run conformance:lambda` (also in `check`) against the bundled Lambda handler, and `e2e/` has the browser tests. None of this needs a Cloudflare or AWS account; never add steps that do to pull-request CI.
 
 TypeScript 6.0 is the main compiler because `typescript-eslint` doesn't support 7 yet; `typecheck:ts7` keeps the code working on 7. Call TypeScript 7 as `node node_modules/typescript7/bin/tsc`, since both packages install a `tsc` command.
 
@@ -52,7 +50,7 @@ TypeScript 6.0 is the main compiler because `typescript-eslint` doesn't support 
 Every pull request that adds or changes something users touch ships its documentation in the same PR. Reviewers should treat missing docs as a blocking gap.
 
 - **Every package has its own `README.md`** (also its npm page). This covers modules, adapters and platform packages alike.
-  - **A module's README** covers: turning it on, the response shape with JSON examples (when it returns data, and when it doesn't), consent rules, settings and secrets, and troubleshooting. Models: `packages/module-ip/README.md` and `packages/module-ec/README.md`.
+  - **A module's README** covers: turning it on, the response shape with JSON examples (when it returns data, and when it doesn't), consent rules, settings and secrets, and troubleshooting. Models: `packages/modules/ip/README.md` and `packages/modules/ec/README.md`. Vendor modules add the disclosures in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md).
   - **An adapter's README** covers: architecture, build, deploy, configuration and secrets, how platform data maps to `PlatformInfo`, verifying, and troubleshooting.
 - **Link it from the main [README.md](README.md):**
   - modules in the built-in modules table and the Modules section;
@@ -73,7 +71,7 @@ Behaviour that must not regress, each covered by tests:
 - An existing valid ID is never replaced; the `HttpOnly` recovery copy restores a re-minted one.
 - The worker answers only its own routes and never forwards requests to the origin.
 - Opt-out, Global Privacy Control, COPPA and denied consent delete existing ID cookies and set none.
-- The SharedID is random; nothing is derived from the IP address or other request data, and nothing about requests is logged. The one exception is the opt-in `ec` module (`packages/module-ec`), which implements Trusted Server Edge Cookies as specified: its ID prefix is an HMAC of the client IP. Don't add other IP-derived IDs, and don't make `ec` the default.
+- The SharedID is random; nothing is derived from the IP address or other request data, and nothing about requests is logged. The one exception is the opt-in `ec` module (`packages/modules/ec`), which implements Trusted Server Edge Cookies as specified: its ID prefix is an HMAC of the client IP. Don't add other IP-derived IDs, and don't make `ec` the default.
 - `Access-Control-Allow-Origin` is never `*`.
 
 ## Conventions

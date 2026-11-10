@@ -1,6 +1,6 @@
 # @sharedid-edge/cloudflare
 
-SharedID Edge as a **Cloudflare Worker**: the `/_sid/*` routes on your own site, answered at Cloudflare's edge, never reaching your origin. The main [README](../../README.md#deploy-on-cloudflare) has the short deployment walkthrough. This page is the adapter's full reference.
+SharedID Edge as a **Cloudflare Worker**: the `/_sid/*` routes on your own site, answered at Cloudflare's edge, never reaching your origin. The main [README](../../../README.md#deploy-on-cloudflare) has the short deployment walkthrough. This page is the adapter's full reference.
 
 ## Contents
 
@@ -24,7 +24,7 @@ Browser ──► www.example.com (proxied by Cloudflare)
 
 - **Routing:** the Worker runs on a **route** of your own zone, so it answers on your site's hostname and Cloudflare's IP addresses, the same ones that serve your pages. That's what lets Safari treat its cookies as first-party server-set cookies. A `workers.dev` hostname or a CNAME to another domain won't do.
 - **Statelessness:** the Worker keeps nothing between requests (no KV, Durable Objects or logs). Workers observability is off in `wrangler.jsonc`.
-- **Contents:** `src/index.ts` (the fetch handler, one handler per `env`), `src/platform.ts` (request data into `PlatformInfo`), `src/modules.ts` (the modules built in) and `wrangler.jsonc` (the route and every `SID_*` setting).
+- **Contents:** `src/index.ts` (the fetch handler, one handler per `env`), `src/platform.ts` (request data into `PlatformInfo`) and `wrangler.jsonc` (the route and every `SID_*` setting).
 
 ## Build
 
@@ -59,11 +59,11 @@ Wrangler bundles `src/index.ts` with the workspace packages at deploy time. The 
    ```
 
    An API token for CI needs **Account → Workers Scripts → Edit** and **Zone → Workers Routes → Edit**.
-4. **Staging:** use a Wrangler environment on a staging hostname of your own zone (`--env staging`). See the main README's [Staging and previews](../../README.md#staging-and-previews) and [Deploying for many publishers](../../README.md#deploying-for-many-publishers).
+4. **Staging:** use a Wrangler environment on a staging hostname of your own zone (`--env staging`). See the main README's [Staging and previews](../../../README.md#staging-and-previews) and [Deploying for many publishers](../../../README.md#deploying-for-many-publishers).
 
 ## Configuration and secrets
 
-- **Settings:** every setting is a `SID_*` variable, listed in [`wrangler.jsonc`](wrangler.jsonc) and described in the main README's [Configuration reference](../../README.md#configuration-reference). An empty string means "use the default".
+- **Settings:** every setting is a `SID_*` variable, listed in [`wrangler.jsonc`](wrangler.jsonc) and described in the main README's [Configuration reference](../../../README.md#configuration-reference). An empty string means "use the default".
 - **Invalid settings** make every request return `500 SharedID Edge is misconfigured`, rather than setting wrong cookies. The reason is written to the Worker's logs (`wrangler tail`).
 - **Secrets** (the `ec` module's passphrase) go in `SID_MODULE_SECRETS`, set as a Worker secret, never in `vars`:
 
@@ -71,7 +71,7 @@ Wrangler bundles `src/index.ts` with the workspace packages at deploy time. The 
   npm exec -w @sharedid-edge/cloudflare -- wrangler secret put SID_MODULE_SECRETS
   ```
 
-  For local development, put it in `packages/cloudflare/.dev.vars` (git-ignored).
+  For local development, put it in `packages/adapters/cloudflare/.dev.vars` (git-ignored).
 
 ## Platform data: what the Worker knows about each request
 
@@ -91,7 +91,7 @@ Core's `locationInfo` validates every location value the same way for all adapte
 
 ## Built-in modules
 
-[`src/modules.ts`](src/modules.ts) builds in `ip`, `ec`, `geo` and `reflect`. They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../README.md#modules) and each module's README. To add a module, import it there, and in `packages/node/src/cli.ts` and any other adapter.
+The Worker builds in `ip`, `ec`, `geo` and `reflect`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../../README.md#modules) and each module's README. To add your own or a vendor module, import it in `src/index.ts` and pass `[...builtInModules, yourModule]`.
 
 ## Verify
 

@@ -1,6 +1,6 @@
 # @sharedid-edge/module-ec
 
-The `ec` module for [SharedID Edge](../../README.md): IAB Tech Lab [Trusted Server Edge Cookies](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html) (`ts-ec`).
+The `ec` module for [SharedID Edge](../../../README.md): IAB Tech Lab [Trusted Server Edge Cookies](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html) (`ts-ec`).
 
 It sets the `ts-ec` cookie on the publisher's domain and returns the Edge Cookie as `ortb2.user.id` in the `/_sid/v1` payload. Publishers who use Trusted Server, or want its identifier, can then run one edge worker for both the SharedID and the EC.
 
@@ -38,9 +38,9 @@ The module is built into the Cloudflare Worker, the Node.js server and the AWS L
    # paste: {"ec":{"passphrase":"<your passphrase>"}}
    ```
 
-   For local development, put the same line in `packages/cloudflare/.dev.vars` (which git ignores) as `SID_MODULE_SECRETS={"ec":{"passphrase":"…"}}`. With the Node.js server, set the `SID_MODULE_SECRETS` environment variable. On AWS Lambda, pass it as the SAM template's `SidModuleSecrets` parameter (see [the Lambda adapter's README](../aws-lambda/README.md#secrets)).
+   For local development, put the same line in `packages/adapters/cloudflare/.dev.vars` (which git ignores) as `SID_MODULE_SECRETS={"ec":{"passphrase":"…"}}`. With the Node.js server, set the `SID_MODULE_SECRETS` environment variable. On AWS Lambda, pass it as the SAM template's `SidModuleSecrets` parameter (see [the Lambda adapter's README](../../adapters/aws-lambda/README.md#secrets)).
 
-3. **Enable the module, and set your domain**, in `packages/cloudflare/wrangler.jsonc`:
+3. **Enable the module, and set your domain**, in `packages/adapters/cloudflare/wrangler.jsonc`:
 
    ```jsonc
    "vars": {

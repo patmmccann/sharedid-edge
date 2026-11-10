@@ -1,6 +1,6 @@
 # @sharedid-edge/module-ip
 
-The `ip` module for [SharedID Edge](../../README.md): the visitor's real IP address, in the `/_sid/v1` payload as OpenRTB `ortb2.device.ip` or `ortb2.device.ipv6`.
+The `ip` module for [SharedID Edge](../../../README.md): the visitor's real IP address, in the `/_sid/v1` payload as OpenRTB `ortb2.device.ip` or `ortb2.device.ipv6`.
 
 Bid requests made from the page, or relayed through Prebid Server, don't always carry the user's own address; bidders may see a proxy's or a server's instead. The worker sees the connecting address, so it can hand it back to the page for the auction's first-party data.
 
@@ -20,7 +20,7 @@ Bid requests made from the page, or relayed through Prebid Server, don't always 
 The module is built into the Cloudflare Worker, the Node.js server and the AWS Lambda adapter, and does nothing until you list it. It has no settings.
 
 ```jsonc
-// packages/cloudflare/wrangler.jsonc
+// packages/adapters/cloudflare/wrangler.jsonc
 "vars": {
   "SID_MODULES": "ip",                  // with other modules: "ip,ec"
   "SID_ALLOWED_ORIGINS": ""             // only if a page on another origin fetches /_sid/v1

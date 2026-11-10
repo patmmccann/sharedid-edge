@@ -1,6 +1,6 @@
 # @sharedid-edge/module-reflect
 
-The `reflect` module for [SharedID Edge](../../README.md): it keeps other first-party cookies on your site durable, the way SharedID Edge keeps `_pubcid` durable.
+The `reflect` module for [SharedID Edge](../../../README.md): it keeps other first-party cookies on your site durable, the way SharedID Edge keeps `_pubcid` durable.
 
 Scripts on your pages write first-party cookies with `document.cookie`, such as an ID vendor's `uid1` or Google's `_ga`. Safari caps cookies written by script at 7 days. The worker already sees those cookies on every request to `/_sid/*` on your site. With this module, each `/_sid/v1` call sets them again in a `Set-Cookie` header with the **same value** and a **new expiry**. They become server-set cookies, which Safari doesn't cap the same way, and their lifetime is refreshed on each visit.
 
@@ -25,11 +25,11 @@ The module never changes, returns or logs the values. It only sets cookies, and 
 
 ## Turning it on
 
-The module is built into the Cloudflare Worker and the Node.js server. It does nothing until you list it in `SID_MODULES` and name the cookies to reflect.
+The module is built into the Cloudflare Worker, the Node.js server and the AWS Lambda adapter. It does nothing until you list it in `SID_MODULES` and name the cookies to reflect.
 
 1. **Find out how each cookie is set now.** In your browser's developer tools (Application, then Cookies), note each cookie's name and its **Domain** column, and whether **HttpOnly** is ticked. A Domain starting with a dot, such as `.example.com`, means it was set for the whole site; one without a dot, such as `www.example.com`, means host-only. See [Match the original cookie's attributes](#match-the-original-cookies-attributes) for why this matters.
 
-2. **Enable the module and list the cookies**, in `packages/cloudflare/wrangler.jsonc`:
+2. **Enable the module and list the cookies**, in `packages/adapters/cloudflare/wrangler.jsonc`:
 
    ```jsonc
    "vars": {
