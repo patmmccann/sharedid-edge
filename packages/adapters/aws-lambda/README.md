@@ -1,6 +1,6 @@
 # @sharedid-edge/aws-lambda
 
-[SharedID Edge](../../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `ec`, `geo` and `reflect`, and it passes the same conformance suite.
+[SharedID Edge](../../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `ec`, `geo`, `reflect` and `bot`, and it passes the same conformance suite.
 
 The main README has a [quick start](../../../README.md#deploy-on-aws-lambda-and-cloudfront). This is the full guide.
 
@@ -37,7 +37,7 @@ CloudFront: your site's distribution (www.example.com)
                      │
                      ▼
 Lambda function URL (AuthType AWS_IAM: only your distribution may invoke it)
-   └─ Node.js 22 function, handler lambda.handler (deploy/lambda.mjs)
+   └─ Node.js 24 function, handler lambda.handler (deploy/lambda.mjs)
         event (payload format 2.0) → Request → SharedID Edge handler → Response → result with cookies[]
 ```
 
@@ -49,7 +49,7 @@ Lambda function URL (AuthType AWS_IAM: only your distribution may invoke it)
 
 - A CloudFront distribution serving your site over https, and its ID (like `E2ABCDEFGHIJKL`). Or, to try it out, let the template create one ([A new distribution](#a-new-distribution)).
 - The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html), configured with credentials (`aws configure`) that can create CloudFormation stacks, Lambda functions and permissions, IAM roles, CloudWatch log groups, and CloudFront origin access controls and origin request policies.
-- Node.js 22 or later and npm, to build.
+- Node.js 24 or later and npm, to build.
 
 ## Build
 
@@ -61,7 +61,7 @@ npm run build                                  # compiles core and the modules
 npm run bundle -w @sharedid-edge/aws-lambda    # bundles the function into packages/adapters/aws-lambda/deploy/lambda.mjs
 ```
 
-The bundle is a single ESM file with no dependencies (about 11 KB gzipped; CI fails it over 20 KB). There's no `sam build` step: the template's `CodeUri` is `dist/`, and `sam deploy` zips it as it is. Rebuild and bundle after updating the code.
+The bundle is a single ESM file with no dependencies (about 11 KB gzipped; minified; CI fails it over 32 KB). There's no `sam build` step: the template's `CodeUri` is `dist/`, and `sam deploy` zips it as it is. Rebuild and bundle after updating the code.
 
 ## Deploy
 
@@ -206,6 +206,10 @@ The handler takes Lambda function URL events, which use the API Gateway HTTP API
 | Body | `body`. Text and JSON as UTF-8 with `isBase64Encoded: false`; anything else (the 43-byte sync GIF) as base64 with `isBase64Encoded: true`. HEAD gets an empty body. |
 
 Unexpected errors return a generic `500 Internal error`; only the error's name is logged, never request data.
+
+## Base path
+
+`SID_BASE_PATH` (the template's `SidBasePath`) sets both the worker's routes and the CloudFront behaviour's path pattern (`<base path>/*`), so the two always match. The root base path, `/`, isn't supported here: a CloudFront behaviour for it would match the whole site, so the template's parameter pattern rejects it. Use a path such as `/_sid` (the default) or `/identity`.
 
 ## Platform information
 

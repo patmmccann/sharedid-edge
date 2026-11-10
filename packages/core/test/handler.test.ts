@@ -152,6 +152,12 @@ describe('routes', () => {
   it('accepts a trailing slash, like the WordPress endpoint requires', async () => {
     expect((await handler()(get('/_sid/sync/'))).status).toBe(200);
   });
+  it('stays fast on a path with a long run of slashes', async () => {
+    const started = Date.now();
+    expect((await handler()(get(`/_sid/${'/'.repeat(100_000)}x`))).status).toBe(404);
+    expect((await handler()(get(`/_sid/sync${'/'.repeat(100_000)}`))).status).toBe(200);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
   it('rejects other methods', async () => {
     const response = await handler()(new Request('https://www.example.com/_sid/sync', { method: 'POST' }));
     expect(response.status).toBe(405);
@@ -296,5 +302,143 @@ describe('v1 payload', () => {
     expect(() => createHandler({ modules: [m, m] })).toThrow(/registered twice/);
     expect(() => defineModule({ name: 'Bad Name', run: () => undefined })).toThrow(/Invalid module name/);
     expect(() => defineModule({ name: 'p', purposes: [25], run: () => undefined })).toThrow(/purpose/);
+  });
+});
+
+describe('modules on /sync', () => {
+  const cookie = (name: string, value = 'x'): { name: string; value: string; maxAgeSeconds: number; httpOnly: boolean } => ({ name, value, maxAgeSeconds: 60, httpOnly: false });
+
+  it('runs only modules whose routes include sync, in SID_MODULES order, and v1-only modules only on /v1', async () => {
+    const ran: string[] = [];
+    const v1Only = defineModule({ name: 'v1only', run: () => { ran.push('v1only'); return { cookies: [cookie('a')] }; } });
+    const both = defineModule({ name: 'both', routes: ['v1', 'sync'], run: () => { ran.push('both'); return { cookies: [cookie('b')] }; } });
+    const syncOnly = defineModule({ name: 'synconly', routes: ['sync'], run: () => { ran.push('synconly'); return { cookies: [cookie('c')] }; } });
+    const h = handler({ SID_MODULES: 'synconly,v1only,both' }, { modules: [v1Only, both, syncOnly] });
+
+    const sync = await h(get('/_sid/sync'));
+    expect(ran).toEqual(['synconly', 'both']);
+    expect(setCookies(sync).map(c => c.name)).toEqual(['c', 'b', '_pubcid', '_pubcid_sv']);
+    expect(sync.headers.get('X-SharedID-Modules')).toBe('synconly=empty, both=empty');
+
+    ran.length = 0;
+    const v1 = await h(get('/_sid/v1'));
+    expect(ran).toEqual(['v1only', 'both']);
+    expect(((await v1.json()) as PayloadV1).ext.modules['synconly']).toEqual({ ms: 0, status: 'skipped', reason: 'not on /v1' });
+  });
+
+  it('sets only the cookies: eids and ortb2 are ignored, and the pixel response is otherwise unchanged', async () => {
+    const mixed = defineModule({
+      name: 'mixed',
+      routes: ['v1', 'sync'],
+      run: () => ({
+        eids: [{ source: 'example.com', uids: [{ id: 'eid-value', atype: 1 }] }],
+        ortb2: { user: { id: 'ortb2-value' } },
+        cookies: [{ ...cookie('kept', 'cookie-value'), httpOnly: true }]
+      })
+    });
+    const plain = await handler()(get(`/_sid/sync?id=pubcid:${UUID}`));
+    const response = await handler({ SID_MODULES: 'mixed' }, { modules: [mixed] })(get(`/_sid/sync?id=pubcid:${UUID}`));
+    expect(response.status).toBe(200);
+    const body = new Uint8Array(await response.arrayBuffer());
+    expect(body).toEqual(new Uint8Array(await plain.arrayBuffer()));
+    expect(body.byteLength).toBe(43);
+    for (const header of ['Content-Type', 'Content-Length', 'Cache-Control', 'X-Robots-Tag', 'X-SharedID-Source']) {
+      expect(response.headers.get(header)).toBe(plain.headers.get(header));
+    }
+    expect(response.headers.get('Cache-Control')).toBe('private, max-age=86400');
+    expect(response.headers.get('X-SharedID-Modules')).toBe('mixed=ok');
+    expect(setCookies(response)).toContainEqual(expect.objectContaining({ name: 'kept', value: 'cookie-value' }));
+    const all = [...response.headers.entries()].map(([k, v]) => `${k}: ${v}`).join('\n');
+    expect(all).not.toMatch(/eid-value|ortb2-value/);
+  });
+
+  it('adds no X-SharedID-Modules header when no module is selected for /sync', async () => {
+    const v1Only = defineModule({ name: 'v1only', run: () => ({ cookies: [cookie('a')] }) });
+    expect((await handler()(get('/_sid/sync'))).headers.has('X-SharedID-Modules')).toBe(false);
+    expect((await handler({ SID_MODULES: 'v1only' }, { modules: [v1Only] })(get('/_sid/sync'))).headers.has('X-SharedID-Modules')).toBe(false);
+  });
+
+  it('follows SID_SYNC_MODULES: none, a subset in SID_MODULES order, and listed modules that are missing or v1-only skipped', async () => {
+    const ran: string[] = [];
+    const make = (name: string, routes?: readonly ('v1' | 'sync')[]): ReturnType<typeof defineModule> =>
+      defineModule({ name, ...(routes === undefined ? {} : { routes }), run: () => { ran.push(name); return { cookies: [cookie(name)] }; } });
+    const modules = [make('one', ['v1', 'sync']), make('two', ['v1', 'sync']), make('three', ['v1', 'sync']), make('v1only')];
+
+    const none = await handler({ SID_MODULES: 'one,two', SID_SYNC_MODULES: 'none' }, { modules })(get('/_sid/sync'));
+    expect(ran).toEqual([]);
+    expect(none.headers.has('X-SharedID-Modules')).toBe(false);
+    expect(setCookies(none).map(c => c.name)).toEqual(['_pubcid', '_pubcid_sv']);
+
+    const subset = await handler(
+      { SID_MODULES: 'one,two,three,v1only,missing', SID_SYNC_MODULES: 'three,one,v1only,missing' },
+      { modules }
+    )(get('/_sid/sync'));
+    expect(ran).toEqual(['one', 'three']);
+    expect(setCookies(subset).map(c => c.name)).toEqual(['one', 'three', '_pubcid', '_pubcid_sv']);
+    expect(subset.headers.get('X-SharedID-Modules')).toBe('one=empty, three=empty, v1only=skipped, missing=skipped');
+  });
+
+  it('contains failures and timeouts as on /v1: a failed module sets nothing, the rest still do', async () => {
+    const bad = defineModule({ name: 'bad', routes: ['sync'], run: () => { throw new Error('secret request data'); } });
+    const slow = defineModule({
+      name: 'slow',
+      routes: ['sync'],
+      run: () => new Promise(resolve => { setTimeout(() => { resolve({ cookies: [cookie('late')] }); }, 200); })
+    });
+    const reserved = defineModule({ name: 'reserved', routes: ['sync'], run: () => ({ cookies: [cookie('fine'), cookie('_pubcid', 'stolen')] }) });
+    const ok = defineModule({ name: 'ok', routes: ['sync'], run: () => ({ cookies: [cookie('good')] }) });
+    const h = handler({ SID_MODULES: 'bad,slow,reserved,ok', SID_MODULE_TIMEOUT_MS: '20' }, { modules: [bad, slow, reserved, ok] });
+    const response = await h(get(`/_sid/sync?id=pubcid:${UUID}`));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('X-SharedID-Modules')).toBe('bad=error, slow=timeout, reserved=error, ok=empty');
+    expect(setCookies(response).map(c => `${c.name}=${c.value}`)).toEqual(['good=x', `_pubcid=${UUID}`, `_pubcid_sv=${UUID}`]);
+    expect([...response.headers.values()].join('\n')).not.toContain('secret');
+  });
+
+  it('gives modules the same context as /v1', async () => {
+    const seen: Record<string, unknown>[] = [];
+    const probe = defineModule({
+      name: 'probe',
+      routes: ['v1', 'sync'],
+      run: ({ sharedId, storage, optedOut, consent, cookies, platform, config, secrets }) => {
+        seen.push({ sharedId, storage, optedOut, gdprApplies: consent.gdprApplies, gpc: consent.gpc, cookie: cookies.get('other'), platform, config, secrets });
+        return undefined;
+      }
+    });
+    const h = handler({ SID_MODULES: 'probe', SID_MODULE_CONFIG: '{"probe":{"a":1}}', SID_MODULE_SECRETS: '{"probe":{"key":"k"}}' }, { modules: [probe] });
+    const headers = { Cookie: `_pubcid=${UUID}; other=1`, 'Sec-GPC': '1' };
+    await h(get('/_sid/v1?gdpr=0', headers), { clientIp: '192.0.2.1', country: 'US' });
+    await h(get('/_sid/sync?gdpr=0', headers), { clientIp: '192.0.2.1', country: 'US' });
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).toEqual(seen[0]);
+    expect(seen[0]).toMatchObject({ storage: { allowed: false, reason: 'gpc' }, optedOut: false, gdprApplies: false, cookie: '1', config: { a: 1 }, secrets: { key: 'k' } });
+
+    seen.length = 0;
+    await h(get('/_sid/v1', { Cookie: `_pubcid=${UUID}` }));
+    await h(get('/_sid/sync', { Cookie: `_pubcid=${UUID}` }));
+    expect(seen[1]).toEqual(seen[0]);
+    expect(seen[0]).toMatchObject({ sharedId: UUID, storage: { allowed: true } });
+  });
+
+  it('applies deletions when storage is denied, on a response that stays uncached', async () => {
+    const owned = defineModule({
+      name: 'owned',
+      routes: ['v1', 'sync'],
+      run: ({ storage, cookies }) => (storage.allowed || !cookies.has('owned') ? undefined : { cookies: [{ name: 'owned', value: '', maxAgeSeconds: 0, httpOnly: true }] })
+    });
+    const h = handler({ SID_MODULES: 'owned' }, { modules: [owned] });
+    const response = await h(get('/_sid/sync', { Cookie: `_pubcid=${UUID}; owned=abc; _pubcid_optout=1` }));
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('X-SharedID-Status')).toBe('denied: opt-out');
+    expect(setCookies(response).find(c => c.name === 'owned')?.attributes.get('max-age')).toBe('0');
+  });
+
+  it('validates routes', () => {
+    expect(defineModule({ name: 'r', routes: ['sync', 'v1'], run: () => undefined }).routes).toEqual(['sync', 'v1']);
+    expect(defineModule({ name: 'r', run: () => undefined }).routes).toBeUndefined();
+    expect(() => defineModule({ name: 'r', routes: [], run: () => undefined })).toThrow(/routes/);
+    expect(() => defineModule({ name: 'r', routes: ['v1', 'v1'], run: () => undefined })).toThrow(/routes/);
+    // @ts-expect-error: an unknown route, as plain JavaScript could pass
+    expect(() => defineModule({ name: 'r', routes: ['optout'], run: () => undefined })).toThrow(/routes/);
   });
 });

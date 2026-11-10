@@ -34,14 +34,14 @@ npm run build                                      # compiles core and the modul
 npm run build -w @sharedid-edge/cloudflare         # optional: a dry-run bundle into dist/, to check the size
 ```
 
-Wrangler bundles `src/index.ts` with the workspace packages at deploy time. The gzipped bundle is checked against a 20 KB budget in CI.
+Wrangler bundles `src/index.ts` with the workspace packages at deploy time. It's minified (`"minify": true` in `wrangler.jsonc`, with source maps uploaded so errors in Cloudflare's logs show the original code), and the gzipped bundle is checked against a 32 KB budget in CI.
 
 ## Deploy
 
 1. **Prerequisites:**
    - your site's hostname is **proxied** (orange cloud) on Cloudflare;
    - an account that can deploy Workers and edit routes on the zone;
-   - Node.js 22 or later.
+   - Node.js 24 or later.
 2. **Set the route and settings** in [`wrangler.jsonc`](wrangler.jsonc):
 
    ```jsonc

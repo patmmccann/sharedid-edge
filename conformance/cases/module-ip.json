@@ -4,6 +4,11 @@
   "config": { "SID_MODULES": "ip", "SID_TRUST_PROXY": "true" },
   "cases": [
     {
+      "name": "doesn't run on /sync",
+      "request": { "path": "/_sid/sync", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
+      "expect": { "status": 200, "headers": { "content-type": "image/gif" }, "bodyLength": 43, "absentHeaders": ["x-sharedid-modules"] }
+    },
+    {
       "name": "adds an IPv4 client address as device.ip",
       "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
       "expect": { "status": 200, "headers": { "cache-control": "no-store" }, "jsonIncludes": { "ortb2": { "device": { "ip": "192.0.2.77" } }, "ext": { "modules": { "ip": { "status": "ok" } } } } }

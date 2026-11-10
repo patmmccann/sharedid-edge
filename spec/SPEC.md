@@ -29,7 +29,8 @@ Implementations read these settings, normally as environment variables. Defaults
 | `SID_VENDOR_ID` | [publisher mode] | The publisher's own TCF vendor ID (1 to 65535), for vendor mode; see [Consent](#consent). |
 | `SID_ALLOWED_ORIGINS` | [none] | Comma-separated origins allowed to read `/v1` with credentials. |
 | `SID_SYNC_CACHE_SECONDS` | [`86400`] | Private browser cache lifetime of a successful sync response. |
-| `SID_MODULES` | [none] | Comma-separated module names to run for `/v1`, in order. |
+| `SID_MODULES` | [none] | Comma-separated module names to run, in order; see [Modules](#modules). |
+| `SID_SYNC_MODULES` | [the modules in `SID_MODULES` that run on `/sync`] | Comma-separated names of the modules to run on `/sync`, or `none`; see [Modules on `/sync`](#modules-on-sync). |
 | `SID_MODULE_CONFIG` | [`{}`] | JSON object of per-module settings, keyed by module name. |
 | `SID_MODULE_SECRETS` | [`{}`] | JSON object of per-module secrets (strings), keyed by module name. Set as a platform secret; MUST NOT appear in responses, errors or logs. |
 | `SID_MODULE_TIMEOUT_MS` | [`50`] | Time limit for each module. |
@@ -44,12 +45,12 @@ All routes are under `SID_BASE_PATH`; a trailing slash is accepted. Any other pa
 
 | Route | Response |
 | --- | --- |
-| `GET /sync?id=pubcid:<id>` | `200`, the 43-byte 1×1 GIF (`Content-Type: image/gif`), with the ID cookies. |
+| `GET /sync?id=pubcid:<id>` | `200`, the 43-byte 1×1 GIF (`Content-Type: image/gif`), with the ID cookies and the cookies of the [modules that run on `/sync`](#modules-on-sync). |
 | `GET /v1` | `200`, JSON payload v1, with the ID cookies. |
 | `GET /optout` | `204`. Sets the opt-out cookie (`1`, script-readable, `SID_MAX_AGE_DAYS`) and expires the ID cookies. |
 | `GET /optin` | `204`. Expires the opt-out cookie. |
 
-Every response carries `Cache-Control`: `no-store`, except a successful sync that set an ID, which MAY be `private, max-age=SID_SYNC_CACHE_SECONDS` so a browser doesn't re-sync on every page view.
+Every response carries `Cache-Control`: `no-store`, except a successful sync that set an ID, which MAY be `private, max-age=SID_SYNC_CACHE_SECONDS` so a browser doesn't re-sync on every page view. Module cookies don't change this; the cache also limits how often modules run on `/sync` (see [Modules on `/sync`](#modules-on-sync)).
 
 ### The `id` parameter
 
@@ -160,7 +161,7 @@ A relay MUST NOT make the request a bot: `proxy` never sets `bot`. Fields are wr
 
 `internal` and `proxy` never qualify. Skipping MUST NOT delete existing ID cookies, so a misclassified visitor keeps their ID; they're neither refreshed nor restored either. Consent decides first: when storage isn't allowed, the response is as in [Opt-out and consent](#opt-out-and-consent), with its `denied` status. Other modules' output and cookies follow their own rules.
 
-The verdict is the merged signal of the platform and the modules that run on the route: on `/v1`, the platform and the modules in `SID_MODULES`; on `/sync`, where modules don't run, the platform alone. When the platform's verdict alone qualifies, modules get no SharedID in their context; when a module's report makes it qualify, modules have already run with it, but it's still neither set nor returned.
+The verdict is the merged signal of the platform and the modules that run on the route: on `/v1`, the platform and the modules in `SID_MODULES`; on `/sync`, the platform and the [modules that run on `/sync`](#modules-on-sync), whose reports count only for this decision. When the platform's verdict alone qualifies, modules get no SharedID in their context; when a module's report makes it qualify, modules have already run with it, but it's still neither set nor returned.
 
 ### CORS
 
@@ -172,32 +173,41 @@ A module has:
 
 - a `name` (`^[a-z][a-z0-9-]{0,63}$`), used in `SID_MODULES` and `SID_MODULE_CONFIG`;
 - optionally `purposes` (TCF purposes it needs publisher consent for when GDPR applies) and `gvlid` (its IAB vendor ID);
+- optionally `routes`, the routes it runs on: a non-empty list of `v1` and `sync` without repeats, defaulting to `v1` only (see [Modules on `/sync`](#modules-on-sync));
 - a `run(context)` function returning `{ eids?, ortb2?, cookies?, traffic? }` or nothing (`traffic`: see [Traffic signal](#traffic-signal)).
 
 The context has the request, its URL and cookies, the platform information (see [Platform information](#platform-information)), the SharedID (when storage is allowed), whether the browser opted out, the consent signals, and the module's configuration and secrets.
 
 The context also has the worker's **storage decision** for the request, `storage`: `{ allowed: true }`, or `{ allowed: false, reason }` with the same reason as `X-SharedID-Status` (`opt-out`, `gpc`, `coppa` or `tcf: …`; see [Opt-out and consent](#opt-out-and-consent)). A module that stores or extends an identifier SHOULD do so only when `storage.allowed` is true.
 
-A module's `cookies` are set on the `/v1` response with `Path=/`, `SameSite=Lax`, `Secure` over https, the module's `Domain` (else `SID_COOKIE_DOMAIN`), `Max-Age` (0 deletes) and `HttpOnly` as given. A module MUST NOT set the worker's own cookie names; a malformed or reserved cookie makes the module an `error`, and none of its output is used. A module that returns only cookies reports `empty`.
+A module's `cookies` are set on the response (of `/v1`, or `/sync`) with `Path=/`, `SameSite=Lax`, `Secure` over https, the module's `Domain` (else `SID_COOKIE_DOMAIN`), `Max-Age` (0 deletes) and `HttpOnly` as given. A module MUST NOT set the worker's own cookie names; a malformed or reserved cookie makes the module an `error`, and none of its output is used. A module that returns only cookies reports `empty`.
 
 A module that sets cookies SHOULD also declare the deletions for opt-out. `{basePath}/optout` deletes the ones the browser sent along with the ID cookies, for every installed module (whether or not it's in `SID_MODULES`), so an opt-out takes effect at once and not only on the next `/v1` call.
 
 Modules work only from what the worker has; by default they make no network calls. The worker:
 
-- runs the modules listed in `SID_MODULES`, in order, reporting unknown names as `skipped`;
+- on `/v1`, runs the modules listed in `SID_MODULES`, in order, reporting unknown names, and modules whose `routes` leave out `v1`, as `skipped`;
 - when GDPR applies, skips a module whose `purposes` don't all have publisher consent, and (until vendor consent is decoded) any module with a `gvlid`;
 - stops waiting for a module after `SID_MODULE_TIMEOUT_MS`;
 - isolates failures: a module that throws or times out is reported and left out, and the rest of the payload is returned.
 
-Modules run on `/v1` only; `/sync` is unchanged by them.
+### Modules on `/sync`
+
+Prebid.js calls `/sync` (its `pixelUrl`) on page views without any page code, so modules that only maintain cookies, like [`reflect`](#the-reflect-module) and [`ec`](#the-ec-module), or report to the [traffic signal](#traffic-signal), like [`bot`](#the-bot-module), also run there. Modules that return data (`ip`, `geo`) don't, since `/sync` returns an image.
+
+- **Which modules:** without `SID_SYNC_MODULES`, every installed module in `SID_MODULES` whose `routes` include `sync`. With it, the modules it lists, which MUST all be in `SID_MODULES` (otherwise the configuration is invalid); `none` runs none. A listed module that isn't installed, or whose `routes` leave out `sync`, is reported `skipped` and doesn't run. Modules run in `SID_MODULES` order, whatever the order in `SID_SYNC_MODULES`.
+- **The same context as on `/v1`:** the request, its cookies, the platform information, the SharedID, whether the browser opted out, the consent signals, the storage decision, and the module's configuration and secrets. Consent skips, the time limit and failure isolation work as on `/v1`.
+- **Cookies and traffic reports only:** the cookies of each module that succeeded are set, after the same checks as on `/v1`, and its traffic report joins the platform's verdict for [Skipping bots](#skipping-bots); its `eids` and `ortb2` (apart from a traffic report in `ortb2.device.ext.traffic`) are ignored, and the merged signal isn't returned. A module that fails, times out or returns a bad cookie or report sets and reports nothing.
+- **Otherwise the response is unchanged:** status `200`, the GIF, and the same headers and `Cache-Control`, plus the module cookies and, when any module was selected to run, `X-SharedID-Modules`: each module's name and status (as in `ext.modules`, without reasons), in order, such as `X-SharedID-Modules: reflect=empty, ec=ok, bot=empty`. It MUST NOT contain cookie names, values or error details.
+- **Caching:** a successful sync that set an ID is still cached privately for `SID_SYNC_CACHE_SECONDS` (one day by default), so from `/sync` a browser runs these modules about once per cache lifetime at most. A response served from the browser's cache sets no cookies. A lower `SID_SYNC_CACHE_SECONDS` runs them more often, for more requests; `0` runs them on every call.
 
 ### Platform information
 
-Each platform adapter fills the platform information from values the platform itself sets, which visitors can't forge: on Cloudflare `CF-Connecting-IP` and `request.cf`; behind CloudFront the `CloudFront-Viewer-Address` (`ip:port`), `CloudFront-Viewer-Country` and `CloudFront-Viewer-Country-Region` headers, accepted only when the origin can be reached through CloudFront alone. A value the platform doesn't provide is left out, never guessed. The EU flag means the country is one of the 27 EU member states (the meaning of Cloudflare's `isEUCountry`), and is unknown when the country is.
+Each platform adapter fills the platform information from values the platform itself sets, which visitors can't forge: on Cloudflare `CF-Connecting-IP` and `request.cf`; behind CloudFront the `CloudFront-Viewer-Address` (`ip:port`), `CloudFront-Viewer-Country` and `CloudFront-Viewer-Country-Region` headers, accepted only when the origin can be reached through CloudFront alone. On Vercel, `x-real-ip` (else the first `x-forwarded-for` entry) and the `x-vercel-ip-*` geolocation headers, which Vercel's proxy sets and overwrites; they're trusted only on Vercel (the same code run elsewhere is configured to ignore them). Vercel reports no metro code. A value the platform doesn't provide is left out, never guessed. The EU flag means the country is one of the 27 EU member states (the meaning of Cloudflare's `isEUCountry`), and is unknown when the country is.
 
 ### The `ip` module
 
-Name `ip`; no `purposes`, no `gvlid`, no settings. It runs only when listed in `SID_MODULES`.
+Name `ip`; no `purposes`, no `gvlid`, no settings. It runs only when listed in `SID_MODULES`, and on `/v1` only.
 
 - It returns the platform's full client IP address as `ortb2.device.ip` (IPv4) or `ortb2.device.ipv6` (IPv6). An IPv4-mapped IPv6 address (`::ffff:192.0.2.1`) is IPv4. IPv6 is written in RFC 5952 form.
 - It returns **nothing** (status `empty`) when:
@@ -220,7 +230,7 @@ Name `ec`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`,
 - **Consent:**
   - opt-out, `Sec-GPC: 1`, `coppa=1`, a `us_privacy` opt-out of sale, or a TC string without consent for Purpose 1 (core segment) **withdraws**: an existing `ts-ec` is deleted and nothing is returned. `{basePath}/optout` deletes `ts-ec` too;
   - an undecodable TC string, or GDPR applying without a TC string, fails closed: nothing is set, returned or deleted.
-- It runs on `/v1` only, so an EC is set only when the page calls `/v1`.
+- Its `routes` are `v1` and `sync`: an EC is set (or withdrawn) when Prebid.js calls `/sync` on a page view, as well as on `/v1`, which is closer to Trusted Server setting it on page loads. `/sync` doesn't return it.
 
 ### Platform information
 
@@ -253,7 +263,7 @@ Without Bot Management the object is absent, or has no score and false flags, an
 
 ### The `geo` module
 
-Name `geo`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`.
+Name `geo`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`, and on `/v1` only.
 
 It returns the platform's location as the OpenRTB 2.6 `ortb2.device.geo` object:
 
@@ -288,34 +298,47 @@ Name `reflect`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODU
   - `domain` (optional): a registrable domain without a leading dot, such as `example.com`; the cookie gets `Domain=.<domain>`. Without it, `SID_COOKIE_DOMAIN` applies, else the cookie is host-only;
   - `httpOnly` (optional, default `false`);
   - `deleteOnOptOut` (optional, default `false`);
-  - `restore` (optional, default `false`): save the cookie in the keeper cookie and restore it from there (below).
+  - `restore` (optional, default `false`): save the cookie in the keeper cookie and restore it from there (below);
+  - `prefer` (optional, default `"browser"`; only with `restore: true`): which value wins when the request carries the cookie and the keeper also has a value for it: `"browser"`, `"backup"` or `"older"` (below);
+  - `format` (optional; only with `prefer: "older"`): the value's format, `"ga"`, `"gcl_au"` or `"gcl_aw"`. Without it, the format comes from the name: `_ga` is `"ga"`, `_gcl_au` is `"gcl_au"` and `_gcl_aw` is `"gcl_aw"`. `prefer: "older"` on any other name without `format` is invalid.
 
   `keeper` (optional; its defaults apply when it's omitted) configures the keeper cookie:
   - `cookie` (default `_sid_keep`): a cookie name, with the same rules as `name`, and MUST NOT be one of the configured `cookies`;
   - `maxAgeDays` (default `400`): an integer from 1 to 400;
   - `domain` (optional): as for a cookie. Without it, the first `restore` cookie's `domain` applies; without that, `SID_COOKIE_DOMAIN`, else host-only.
 
-  Any other key, a wrong type or an out-of-range value makes the module an `error` on every `/v1` call, with no details.
+  Any other key, a wrong type or an out-of-range value makes the module an `error` on every call, with no details.
 - **Reflection:** for each configured cookie the request carries, in configuration order, the module sets `<name>=<value>; Max-Age=<maxAgeDays × 86400>; Expires=…; Path=/; [Domain=.<domain>;] SameSite=Lax; [Secure;] [HttpOnly]`. The value MUST be the request's value byte for byte: not decoded, re-encoded, trimmed beyond the `Cookie` header's own whitespace, or otherwise changed. When the name repeats in the `Cookie` header, the first is used.
 - A cookie is **not reflected** when its value is empty, longer than 1024 characters, quoted, or contains a character that isn't a cookie-octet (RFC 6265). The other cookies are still reflected.
 - **The keeper cookie** holds the last known value of each `restore` cookie. Its value is the base64url encoding (RFC 4648 section 5, without padding) of a JSON object mapping cookie names to values, with keys in configuration order. It's set `HttpOnly`, with the keeper's `maxAgeDays` and `Domain`, and with `Path=/`, `SameSite=Lax` and `Secure` (over https) like the others. Its name and value together MUST NOT exceed 4096 bytes: entries are added in configuration order, and one that would take it over is left out (that cookie is still reflected) while later ones are still tried.
 - **Reading the keeper:** its value is read byte for byte, like the other cookies. A value that isn't base64url without padding, isn't a JSON object, or is over 4096 characters counts as empty, and so does each entry whose value isn't a string that could be reflected. It's never an error.
-- **Restoring,** on each `/v1` request where storage is allowed, for each `restore` cookie in configuration order:
+- **Restoring,** on each `/v1` or `/sync` request where storage is allowed, for each `restore` cookie in configuration order:
+  - the request carries it, the keeper has a value for it, and the **backup wins** (below): it's **restored** over the request's value, set with the saved value and its own configured attributes as if reflected, and the saved value stays saved;
   - the request carries it with a value that can be reflected: it's reflected, and that value is saved;
   - the request doesn't carry it, and the keeper has a value for it: it's **restored**, set with that value and its own configured attributes as if reflected, and the value stays saved;
   - the request carries it with a value that can't be reflected: it's left alone, and its saved value is dropped;
   - otherwise nothing is saved for it.
 
+  Whether the backup wins over a value the request carries depends on `prefer`:
+  - `"browser"`: never. The request's value is current (the behaviour above).
+  - `"backup"`: always, whatever the request's value is, including one that can't be reflected.
+  - `"older"`: when both values parse in the cookie's `format` and the saved value's creation time is strictly earlier than the request's. On equal times, or when either value doesn't parse, the request's value wins, as with `"browser"`. A value parses when it matches its format exactly, with the creation time `<t>` as exactly 10 decimal digits (Unix seconds) no later than 86400 seconds after the worker's current time:
+    - `"ga"`: `GA1.<d>.<n>.<t>`, where `<d>` is 1 or 2 digits not starting with `0` and `<n>` is 1 to 20 digits (the Google Analytics `_ga` cookie, `GA1.1.…` or `GA1.2.…`);
+    - `"gcl_au"`: `1.<d>.<n>.<t>`, with `<d>` and `<n>` as for `"ga"` (the Google conversion linker's `_gcl_au`);
+    - `"gcl_aw"`: `GCL.<t>.<c>`, where `<c>` is one or more of `A`–`Z`, `a`–`z`, `0`–`9`, `_` and `-` (the Google Ads click cookie `_gcl_aw`; `<t>` is the click's time).
+
+  Values are compared and copied, never changed: a restored value is the saved value byte for byte.
+
   The keeper is then set with the saved values on every such request, which refreshes its expiry. When nothing is left to save and the request carried a keeper, it's deleted. With no `restore` cookie configured, no keeper is set, and one the request carries is deleted.
 - **Output:** cookies only, so the status is `empty`. Nothing is added to `eids` or `ortb2`, and neither names nor values are reported.
-- **Consent:** the module reflects only when `storage.allowed` is true: not on opt-out, `Sec-GPC: 1`, `coppa=1`, a TC string that doesn't give the SharedID's consent, or GDPR applying without a TC string. It then reflects and restores nothing, and on `/v1` deletes none of the configured cookies, which belong to other scripts. It deletes the keeper cookie, this worker's own store of identifiers, when the request carries it.
+- **Consent:** the module reflects only when `storage.allowed` is true: not on opt-out, `Sec-GPC: 1`, `coppa=1`, a TC string that doesn't give the SharedID's consent, or GDPR applying without a TC string. It then reflects and restores nothing, and deletes none of the configured cookies, which belong to other scripts. It deletes the keeper cookie, this worker's own store of identifiers, when the request carries it.
 - **Opt-out:** `{basePath}/optout` deletes a configured cookie the browser sent only when its `deleteOnOptOut` is `true`, with the configured `Domain` and `HttpOnly`. It always deletes the keeper cookie the browser sent, whatever `deleteOnOptOut` says, and also when `reflect` isn't in `SID_MODULES` or no cookie has `restore` (then at the configured or default name).
 - **Attributes:** the worker can't see a cookie's original attributes. If they differ (for example the original is host-only and `domain` is set), the browser keeps two cookies of that name. Configuration SHOULD match the original's `Domain` and `HttpOnly`.
-- It runs on `/v1` only, so cookies are reflected and restored only when the page calls `/v1`.
+- Its `routes` are `v1` and `sync`: Prebid.js's `/sync` call on page views reflects, saves and restores cookies without the page calling `/v1`, as often as the sync response's browser cache allows (see [Modules on `/sync`](#modules-on-sync)).
 
 ### The `bot` module
 
-Name `bot`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`, and reports to the [traffic signal](#traffic-signal) (status `ok` when it reports something, else `empty`). It doesn't repeat the [platform's verdict](#platform-traffic-verdict), which is merged on its own, and doesn't recognize crawlers by user agent.
+Name `bot`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`, on `v1` and `sync` (its `routes`), and reports to the [traffic signal](#traffic-signal) (status `ok` when it reports something, else `empty`). It doesn't repeat the [platform's verdict](#platform-traffic-verdict), which is merged on its own, and doesn't recognize crawlers by user agent.
 
 - **Settings,** `SID_MODULE_CONFIG.bot`, both optional:
   - `missingHeaders` (boolean, default `false`): report `bot: true, botKind: likely` when the user agent claims to be a browser (it starts with `Mozilla/5.0 (`) and the request lacks headers browsers send:
@@ -326,6 +349,7 @@ Name `bot`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`
   Any other key, or a wrong type, makes the module an `error`.
 - **Secret,** `SID_MODULE_SECRETS.bot.internalToken` (optional, at least 16 characters): the internal cookie then counts only when its value is the token. Any other key, or a shorter token, makes the module an `error`.
 - **Consent:** as for every traffic report, it runs and reports whatever the consent signals say.
+- On `/sync`, its report counts towards [Skipping bots](#skipping-bots), so a likely bot gets no ID from Prebid.js's `pixelUrl` call when `SID_SKIP_BOTS` would deny it one on `/v1`.
 - It MUST NOT store or log anything about the request.
 
 ## Versioning

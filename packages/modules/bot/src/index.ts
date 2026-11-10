@@ -107,6 +107,12 @@ function run({ request, url, cookies, config, secrets }: ModuleContext): ModuleR
  *
  * The signal describes the traffic, not the person, so it's sent whatever the consent signals say. Nothing is stored
  * or logged. Declared crawlers (user agent lists) are the `ua` module's job; the platform's verdict is merged by core,
- * not here. It runs only when listed in `SID_MODULES`.
+ * not here. It runs only when listed in `SID_MODULES`, on `/v1` and `/sync`.
  */
-export const botModule: EdgeModule = defineModule({ name: 'bot', run });
+export const botModule: EdgeModule = defineModule({
+  name: 'bot',
+  // Also on /sync: its report is a traffic verdict, not payload, so there it counts towards SID_SKIP_BOTS, and a
+  // likely bot doesn't get an ID from Prebid.js's pixelUrl call that it wouldn't get from /v1.
+  routes: ['v1', 'sync'],
+  run
+});

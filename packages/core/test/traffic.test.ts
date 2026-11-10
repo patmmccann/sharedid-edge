@@ -306,7 +306,7 @@ describe('SID_SKIP_BOTS', () => {
     expect(setCookies(response).length).toBeGreaterThan(0);
   });
 
-  it('uses the platform verdict on /sync, where modules do not run', async () => {
+  it('uses the platform verdict on /sync, with no module running there', async () => {
     const h = handler({ SID_MODULES: 'ua', SID_SKIP_BOTS: 'declared' }, [declared]);
     const bot = await h(new Request(`https://www.example.com/_sid/sync?id=pubcid:${UUID}`), { traffic: { bot: true, botKind: 'verified' } });
     expect(bot.headers.get('X-SharedID-Status')).toBe('skipped: bot');
@@ -315,5 +315,74 @@ describe('SID_SKIP_BOTS', () => {
     const human = await h(new Request(`https://www.example.com/_sid/sync?id=pubcid:${UUID}`), { traffic: { score: 90 } });
     expect(human.headers.get('X-SharedID-Status')).toBeNull();
     expect(setCookies(human).map(c => c.name)).toEqual(['_pubcid', '_pubcid_sv']);
+  });
+
+  describe('on /sync', () => {
+    const syncDeclared = defineModule({ name: 'ua', routes: ['v1', 'sync'], run: () => ({ traffic: { bot: true, botKind: 'declared' } }) });
+    const sync = (h: ReturnType<typeof createHandler>, platform: PlatformInfo = {}, cookie?: string): Promise<Response> =>
+      h(new Request(`https://www.example.com/_sid/sync?id=pubcid:${UUID}`, cookie === undefined ? {} : { headers: { Cookie: cookie } }), platform);
+
+    it('skips on the report of a module that runs there', async () => {
+      const response = await sync(handler({ SID_MODULES: 'ua', SID_SKIP_BOTS: 'declared' }, [syncDeclared]));
+      expect(response.headers.get('X-SharedID-Status')).toBe('skipped: bot');
+      expect(response.headers.get('X-SharedID-Source')).toBeNull();
+      expect(response.headers.get('X-SharedID-Modules')).toBe('ua=ok');
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(setCookies(response)).toEqual([]);
+    });
+
+    it('merges the platform verdict with the modules that run there', async () => {
+      const h = handler({ SID_MODULES: 'ua', SID_SKIP_BOTS: 'verified' }, [syncDeclared]);
+      // The module alone (declared) isn't sure enough for verified; the platform's verdict is.
+      expect((await sync(h)).headers.get('X-SharedID-Status')).toBeNull();
+      expect((await sync(h, { traffic: { bot: true, botKind: 'verified' } })).headers.get('X-SharedID-Status')).toBe('skipped: bot');
+      const scored = handler({ SID_MODULES: 'ua,internal', SID_SKIP_BOTS_SCORE: '10' }, [
+        defineModule({ name: 'ua', routes: ['v1', 'sync'], run: () => ({ traffic: { score: 50 } }) }),
+        defineModule({ name: 'internal', routes: ['v1', 'sync'], run: () => ({ traffic: { internal: true } }) })
+      ]);
+      expect((await sync(scored, { traffic: { score: 5 } })).headers.get('X-SharedID-Status')).toBe('skipped: bot');
+      expect((await sync(scored, { traffic: { score: 20 } })).headers.get('X-SharedID-Status')).toBeNull();
+    });
+
+    it("ignores the reports of modules that don't run there", async () => {
+      const v1Only = await sync(handler({ SID_MODULES: 'ua', SID_SKIP_BOTS: 'likely' }, [declared]));
+      expect(v1Only.headers.get('X-SharedID-Status')).toBeNull();
+      expect(v1Only.headers.get('X-SharedID-Modules')).toBeNull();
+      const none = await sync(handler({ SID_MODULES: 'ua', SID_SYNC_MODULES: 'none', SID_SKIP_BOTS: 'likely' }, [syncDeclared]));
+      expect(none.headers.get('X-SharedID-Status')).toBeNull();
+      expect(setCookies(none).map(c => c.name)).toEqual(['_pubcid', '_pubcid_sv']);
+    });
+
+    it('reads a module-written ortb2.device.ext.traffic there as its report too', async () => {
+      const h = handler({ SID_MODULES: 'ua', SID_SKIP_BOTS: 'likely' }, [
+        defineModule({ name: 'ua', routes: ['v1', 'sync'], run: () => ({ ortb2: { device: { ext: { traffic: { bot: true } } } } }) })
+      ]);
+      expect((await sync(h)).headers.get('X-SharedID-Status')).toBe('skipped: bot');
+    });
+
+    it('never deletes an existing ID, and still sets the modules\' cookies', async () => {
+      const h = handler({ SID_MODULES: 'ua', SID_SKIP_BOTS: 'likely' }, [
+        defineModule({ name: 'ua', routes: ['v1', 'sync'], run: () => ({ traffic: { bot: true, botKind: 'likely' }, cookies: [{ name: 'other', value: 'x', maxAgeSeconds: 60, httpOnly: false }] }) })
+      ]);
+      const response = await sync(h, {}, `_pubcid=${UUID}; _pubcid_sv=${UUID}`);
+      expect(response.headers.get('X-SharedID-Status')).toBe('skipped: bot');
+      expect(setCookies(response).map(c => c.name)).toEqual(['other']);
+    });
+
+    it('makes a module with an invalid report an error there, and it counts for nothing', async () => {
+      const h = handler({ SID_MODULES: 'ua', SID_SKIP_BOTS: 'likely' }, [
+        defineModule({ name: 'ua', routes: ['v1', 'sync'], run: () => ({ traffic: { bot: false, botKind: 'likely' } }) })
+      ]);
+      const response = await sync(h);
+      expect(response.headers.get('X-SharedID-Modules')).toBe('ua=error');
+      expect(response.headers.get('X-SharedID-Status')).toBeNull();
+    });
+
+    it('lets consent decide first', async () => {
+      const h = handler({ SID_MODULES: 'ua', SID_SKIP_BOTS: 'likely' }, [syncDeclared]);
+      const response = await h(new Request(`https://www.example.com/_sid/sync?id=pubcid:${UUID}`, { headers: { 'Sec-GPC': '1', Cookie: `_pubcid=${UUID}` } }), {});
+      expect(response.headers.get('X-SharedID-Status')).toBe('denied: gpc');
+      expect(setCookies(response).every(c => c.value === '')).toBe(true);
+    });
   });
 });

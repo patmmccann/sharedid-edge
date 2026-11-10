@@ -3,6 +3,7 @@ import { readConsent, storageDecision, type StorageDecision } from './consent.js
 import { parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
 import { idFromSyncParam, isValidId, mintId } from './id.js';
 import { deepMerge, ModuleRegistry, optOutCookies, runModules, type EdgeModule, type ModuleCookie, type ModuleRunOutput } from './modules.js';
+import { trimEnd } from './text.js';
 import { mergeTraffic, skipsBot, trafficReport, type TrafficEntry, type TrafficSignal } from './traffic.js';
 import type { Eid, PayloadV1, PlatformInfo } from './types.js';
 
@@ -101,14 +102,11 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
           state = resolveId(config, cookies, route === ROUTES.sync ? idFromSyncParam(url.searchParams.get('id')) : undefined, newId);
         }
 
-        // Modules run on /v1 only. Their traffic reports join the platform's; on /sync the platform's verdict is all
-        // there is.
-        let modules: ModuleRunOutput | undefined;
-        if (route === ROUTES.v1) {
-          const base = { request, url, platform, sharedId: state.id, consent, cookies, optedOut, storage: decision };
-          modules = await runModules(registry, config, base, () => now().getTime());
-        }
-        const traffic = mergeTraffic([...platformTraffic, ...(modules?.traffic ?? [])]);
+        // Modules run on both routes (on /sync, those configured for it). Their traffic reports join the platform's, so
+        // SID_SKIP_BOTS sees the same merged verdict on /sync as on /v1.
+        const context = { request, url, platform, sharedId: state.id, consent, cookies, optedOut, storage: decision };
+        const modules = await runModules(registry, config, context, () => now().getTime(), route === ROUTES.sync ? 'sync' : 'v1');
+        const traffic = mergeTraffic([...platformTraffic, ...modules.traffic]);
         if (decision.allowed && !skipped && skipsBot(config, traffic)) {
           // SID_SKIP_BOTS: set and return no ID, but delete nothing, so a misclassified visitor keeps theirs.
           skipped = true;
@@ -122,8 +120,8 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
           setCookies.push(...expireIdCookies(config, secure, date));
         }
 
-        const response = modules === undefined
-          ? syncResponse(config, state, decision.allowed)
+        const response = route === ROUTES.sync
+          ? syncResponse({ modules, state, allowed: decision.allowed, config, secure, date })
           : payloadResponse({ request, modules, traffic, state, config, secure, date });
         if (!decision.allowed) response.headers.set('X-SharedID-Status', `denied: ${decision.reason}`);
         else if (skipped) response.headers.set('X-SharedID-Status', 'skipped: bot');
@@ -139,7 +137,7 @@ const ROUTE_LIST: readonly Route[] = Object.values(ROUTES);
 function routeOf(pathname: string, basePath: string): Route | undefined {
   const prefix = basePath === '/' ? '' : basePath;
   if (!pathname.startsWith(prefix + '/')) return undefined;
-  const rest = pathname.slice(prefix.length).replace(/\/+$/, '');
+  const rest = trimEnd(pathname.slice(prefix.length), '/');
   return ROUTE_LIST.find(route => route === rest);
 }
 
@@ -196,11 +194,24 @@ const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 
 /**
  * The `pixelUrl` response: a 1x1 GIF, like the WordPress and Drupal plugins. When an ID was set, the browser may cache
- * it privately for `syncCacheSeconds`, which limits how often it re-syncs; otherwise it isn't cached.
+ * it privately for `syncCacheSeconds`, which limits how often it re-syncs (and so how often modules run here);
+ * otherwise it isn't cached. Modules that run on `/sync` add only their cookies, and `X-SharedID-Modules` gives each
+ * one's name and status, never cookie names, values or reasons. Their traffic reports count only towards
+ * `SID_SKIP_BOTS`: there's no payload to return the signal in.
  */
-function syncResponse(config: SharedIdEdgeConfig, state: IdState, allowed: boolean): Response {
+interface SyncInputs {
+  readonly modules: ModuleRunOutput;
+  readonly state: IdState;
+  readonly allowed: boolean;
+  readonly config: SharedIdEdgeConfig;
+  readonly secure: boolean;
+  readonly date: Date;
+}
+
+function syncResponse(inputs: SyncInputs): Response {
+  const { modules, state, allowed, config, secure, date } = inputs;
   const cacheable = allowed && state.id !== undefined && config.syncCacheSeconds > 0;
-  return new Response(PIXEL, {
+  const response = new Response(PIXEL, {
     status: 200,
     headers: {
       'Content-Type': 'image/gif',
@@ -209,6 +220,11 @@ function syncResponse(config: SharedIdEdgeConfig, state: IdState, allowed: boole
       'X-Robots-Tag': 'noindex'
     }
   });
+  const statuses = Object.entries(modules.reports).map(([name, report]) => `${name}=${report.status}`);
+  if (statuses.length > 0) response.headers.set('X-SharedID-Modules', statuses.join(', '));
+  // Cookies only: there's no payload for eids, ortb2 or the traffic signal.
+  for (const cookie of modules.cookies) response.headers.append('Set-Cookie', serializeModuleCookie(cookie, config, secure, date));
+  return response;
 }
 
 interface PayloadInputs {

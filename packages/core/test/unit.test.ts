@@ -3,6 +3,7 @@ import {
   ConfigError,
   decodeTcf,
   deepMerge,
+  EU_COUNTRY_CODES,
   idFromSyncParam,
   isValidId,
   parseCookies,
@@ -92,6 +93,7 @@ describe('resolveConfig', () => {
       SID_ALLOWED_ORIGINS: 'https://example.com, https://www.example.com',
       SID_SYNC_CACHE_SECONDS: '0',
       SID_MODULES: 'ip, geo',
+      SID_SYNC_MODULES: 'geo',
       SID_MODULE_CONFIG: '{"ip":{"field":"ipv6"}}',
       SID_MODULE_SECRETS: '{"ec":{"passphrase":"p"}}',
       SID_MODULE_TIMEOUT_MS: '20',
@@ -110,12 +112,26 @@ describe('resolveConfig', () => {
       allowedOrigins: ['https://example.com', 'https://www.example.com'],
       syncCacheSeconds: 0,
       modules: ['ip', 'geo'],
+      syncModules: ['geo'],
       moduleConfig: { ip: { field: 'ipv6' } },
       moduleSecrets: { ec: { passphrase: 'p' } },
       moduleTimeoutMs: 20,
       skipBots: 'declared',
       skipBotsScore: 10
     } satisfies SharedIdEdgeConfig);
+  });
+  it('reads SID_SYNC_MODULES: omitted by default, none for an empty list, names from SID_MODULES', () => {
+    expect(resolveConfig({ SID_MODULES: 'reflect' })).not.toHaveProperty('syncModules');
+    expect(resolveConfig({ SID_MODULES: 'reflect', SID_SYNC_MODULES: '' })).not.toHaveProperty('syncModules');
+    expect(resolveConfig({ SID_MODULES: 'reflect', SID_SYNC_MODULES: 'none' }).syncModules).toEqual([]);
+    expect(resolveConfig({ SID_MODULES: 'ec, reflect', SID_SYNC_MODULES: 'reflect,ec' }).syncModules).toEqual(['reflect', 'ec']);
+  });
+  it.each([
+    ['a name not in SID_MODULES', 'reflect', 'reflect,ec'],
+    ['a name with SID_MODULES unset', '', 'reflect'],
+    ['none with other names', 'reflect', 'none,reflect']
+  ])('rejects SID_SYNC_MODULES with %s', (_, modules, sync) => {
+    expect(() => resolveConfig({ SID_MODULES: modules, SID_SYNC_MODULES: sync })).toThrow(ConfigError);
   });
   it('never echoes SID_MODULE_SECRETS in errors', () => {
     expect(() => resolveConfig({ SID_MODULE_SECRETS: 'hunter2-not-json' })).toThrow(/^(?!.*hunter2)/);
@@ -281,5 +297,13 @@ describe('deepMerge', () => {
     const merged = deepMerge({ device: { geo: { country: 'USA' } } }, JSON.parse('{"device":{"geo":{"region":"NY"},"ip":"1.2.3.4"},"__proto__":{"polluted":true}}') as Record<string, unknown>);
     expect(merged).toEqual({ device: { geo: { country: 'USA', region: 'NY' }, ip: '1.2.3.4' } });
     expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+  });
+});
+
+describe('EU_COUNTRY_CODES', () => {
+  it('lists the 27 EU member states, not the wider EEA or the UK', () => {
+    expect(EU_COUNTRY_CODES.size).toBe(27);
+    for (const code of ['DE', 'FR', 'IE', 'HR', 'CY']) expect(EU_COUNTRY_CODES.has(code)).toBe(true);
+    for (const code of ['GB', 'NO', 'IS', 'LI', 'CH', 'US']) expect(EU_COUNTRY_CODES.has(code)).toBe(false);
   });
 });

@@ -164,4 +164,25 @@ describe('the bot module', () => {
     const human = await v1(h, { 'User-Agent': CHROME, ...BROWSER_HEADERS, Cookie: 'its_me=1' });
     expect(human.body.sharedid).toBe(MINTED);
   });
+
+  it('runs on /v1 and /sync', () => {
+    expect(botModule.routes).toEqual(['v1', 'sync']);
+  });
+
+  it('on /sync, with SID_SKIP_BOTS=likely, a likely bot gets no ID from Prebid.js\'s pixel call', async () => {
+    const h = handler(ALL, { SID_SKIP_BOTS: 'likely' });
+    const sync = (headers: Record<string, string>): Promise<Response> =>
+      h(new Request('https://www.example.com/_sid/sync?id=pubcid:c29cb2ae-769d-42f6-891a-f53cadee823d', { headers }));
+    const bot = await sync({ 'User-Agent': CHROME });
+    expect(bot.headers.get('X-SharedID-Status')).toBe('skipped: bot');
+    expect(bot.headers.get('X-SharedID-Modules')).toBe('bot=ok');
+    expect(bot.headers.getSetCookie()).toEqual([]);
+    const human = await sync({ 'User-Agent': CHROME, ...BROWSER_HEADERS });
+    expect(human.headers.get('X-SharedID-Status')).toBeNull();
+    expect(human.headers.get('X-SharedID-Modules')).toBe('bot=empty');
+    expect(human.headers.get('X-SharedID-Source')).toBe('param');
+    const staff = await sync({ 'User-Agent': CHROME, ...BROWSER_HEADERS, Cookie: 'its_me=1' });
+    expect(staff.headers.get('X-SharedID-Status')).toBeNull();
+    expect(staff.headers.get('X-SharedID-Modules')).toBe('bot=ok');
+  });
 });

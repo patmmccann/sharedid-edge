@@ -15,7 +15,7 @@ export {
   type PreciseLocationDenial,
   type StorageDecision
 } from './consent.js';
-export { locationInfo, type LocationSource, type PlatformLocation } from './location.js';
+export { EU_COUNTRY_CODES, locationInfo, type LocationSource, type PlatformLocation } from './location.js';
 export { decodeTcf, type TcfConsents } from './tcf.js';
 export { parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
 export { idFromSyncParam, isValidId, mintId } from './id.js';
@@ -29,6 +29,7 @@ export {
   type ModuleContext,
   type ModuleCookie,
   type ModuleResult,
+  type ModuleRoute,
   type ModuleRunOutput
 } from './modules.js';
 export {

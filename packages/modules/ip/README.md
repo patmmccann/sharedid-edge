@@ -2,6 +2,8 @@
 
 The `ip` module for [SharedID Edge](../../../README.md): the visitor's real IP address, in the `/_sid/v1` payload as OpenRTB `ortb2.device.ip` or `ortb2.device.ipv6`.
 
+It runs on `/_sid/v1` only: `/_sid/sync` returns an image, so there's nowhere to put the address.
+
 Bid requests made from the page, or relayed through Prebid Server, don't always carry the user's own address; bidders may see a proxy's or a server's instead. The worker sees the connecting address, so it can hand it back to the page for the auction's first-party data.
 
 ## Contents
@@ -91,6 +93,7 @@ Otherwise it sends the full address.
 | --- | --- | --- |
 | Cloudflare Worker | `CF-Connecting-IP`, set by Cloudflare | No: Cloudflare overwrites it. |
 | AWS Lambda behind CloudFront | `CloudFront-Viewer-Address`, set by CloudFront (forwarded by the template's origin request policy) | No, as long as only CloudFront can call the function URL (origin access control). |
+| Vercel | `x-real-ip` (else the first `x-forwarded-for` entry), set by Vercel's proxy | No on Vercel: Vercel overwrites both. Off Vercel, set `SID_BEHIND_VERCEL=false`, which ignores them. |
 | Node.js server | The socket's remote address | No. Behind a proxy, though, it's the proxy's address. |
 | Node.js server with `SID_TRUST_PROXY=true` | The first `X-Forwarded-For` entry | Only safe behind a proxy that overwrites the header. Otherwise visitors can set it. |
 

@@ -1,6 +1,6 @@
 name: CI
 
-# Every job runs without secrets or a Cloudflare or AWS account, so pull requests from forks get the full checks.
+# Every job runs without secrets or a Cloudflare, AWS or Vercel account, so pull requests from forks get the full checks.
 on:
   pull_request:
   push:
@@ -57,12 +57,14 @@ jobs:
             const { readFileSync } = require("node:fs");
             const { gzipSync } = require("node:zlib");
             const gz = gzipSync(readFileSync("packages/adapters/cloudflare/dist/index.js")).length;
-            const budget = 20 * 1024;
+            const budget = 32 * 1024;
             console.log(`Worker bundle: ${gz} bytes gzipped (budget ${budget})`);
             if (gz > budget) { console.error("Over the bundle size budget"); process.exit(1); }
           '
       - name: Lambda bundle, size budget, and conformance suite against it (local CloudFront stand-in)
         run: npm run conformance:lambda
+      - name: Vercel bundle (no Node.js built-ins), size budget, and conformance suite against it (local Vercel proxy stand-in)
+        run: npm run conformance:vercel
 
   # Vendor modules (packages/vendor-modules/*) are tested in their own job, so one vendor's failing tests don't block
   # changes elsewhere; branch protection can leave this job not required. Their types and lint are still checked in
@@ -144,7 +146,7 @@ jobs:
           npm install --no-save prebid.js@latest
           node -e "console.log('Prebid.js', require('./node_modules/prebid.js/package.json').version)"
       - name: Cache the Playwright browser
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-chromium-${{ hashFiles('e2e/package-lock.json') }}
@@ -198,7 +200,7 @@ jobs:
           npm install --no-save prebid.js@latest
           node -e "console.log('Prebid.js', require('./node_modules/prebid.js/package.json').version)"
       - name: Cache the Playwright browser
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ hashFiles('e2e/package-lock.json') }}

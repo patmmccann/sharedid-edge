@@ -31,9 +31,18 @@ export interface ModuleContext {
 }
 
 /**
- * A cookie a module sets on the `/v1` response. The worker adds `Path=/`, `SameSite=Lax`, `Secure` (over https) and
- * `Expires`. Names must be valid cookie names and differ from the worker's own cookies; values must be cookie-octets.
- * `maxAgeSeconds: 0` deletes the cookie.
+ * A route a module can run on: `v1` (`{basePath}/v1`, the JSON payload) or `sync` (`{basePath}/sync`, Prebid.js's
+ * `pixelUrl`, where only the module's cookies are used).
+ */
+export type ModuleRoute = 'v1' | 'sync';
+
+/** The routes a module runs on when it doesn't declare `routes`. */
+const DEFAULT_MODULE_ROUTES: readonly ModuleRoute[] = Object.freeze(['v1']);
+
+/**
+ * A cookie a module sets on the response (`/v1`, or `/sync` for modules that run there). The worker adds `Path=/`,
+ * `SameSite=Lax`, `Secure` (over https) and `Expires`. Names must be valid cookie names and differ from the worker's own
+ * cookies; values must be cookie-octets. `maxAgeSeconds: 0` deletes the cookie.
  */
 export interface ModuleCookie {
   readonly name: string;
@@ -70,6 +79,12 @@ export interface EdgeModule {
   readonly gvlid?: number;
   /** TCF purposes the module needs when GDPR applies. */
   readonly purposes?: readonly number[];
+  /**
+   * The routes the module runs on; `['v1']` when omitted. Modules that only maintain cookies can add `'sync'`, so they
+   * also run when Prebid.js calls `pixelUrl` on page views. On `/sync` only their cookies are used: `eids` and
+   * `ortb2` are ignored.
+   */
+  readonly routes?: readonly ModuleRoute[];
   run(context: ModuleContext): ModuleResult | undefined | Promise<ModuleResult | undefined>;
   /**
    * The cookies to delete when the browser opts out at `{basePath}/optout`, given the module's `SID_MODULE_CONFIG`
@@ -87,7 +102,33 @@ export function defineModule(module: EdgeModule): EdgeModule {
   for (const purpose of module.purposes ?? []) {
     if (!Number.isInteger(purpose) || purpose < 1 || purpose > 24) throw new TypeError(`Module ${module.name}: invalid TCF purpose ${String(purpose)}`);
   }
+  if (module.routes !== undefined) {
+    const routes: readonly unknown[] = module.routes;
+    if (routes.length === 0 || new Set(routes).size !== routes.length || !routes.every(r => r === 'v1' || r === 'sync')) {
+      throw new TypeError(`Module ${module.name}: routes must be a non-empty list of "v1" and "sync" without repeats`);
+    }
+    return Object.freeze({ ...module, routes: Object.freeze([...module.routes]) });
+  }
   return Object.freeze({ ...module });
+}
+
+/** Whether a module runs on a route. */
+function runsOn(module: EdgeModule, route: ModuleRoute): boolean {
+  return (module.routes ?? DEFAULT_MODULE_ROUTES).includes(route);
+}
+
+/**
+ * The names of the modules to run on a route, in `SID_MODULES` order. On `v1`, every name in `SID_MODULES`. On
+ * `sync`, the names in `SID_SYNC_MODULES` when it's set, else the installed modules whose `routes` include `sync`.
+ */
+function moduleNamesFor(registry: ModuleRegistry, config: SharedIdEdgeConfig, route: ModuleRoute): readonly string[] {
+  if (route === 'v1') return config.modules;
+  const { syncModules } = config;
+  if (syncModules !== undefined) return config.modules.filter(name => syncModules.includes(name));
+  return config.modules.filter(name => {
+    const module = registry.get(name);
+    return module !== undefined && runsOn(module, 'sync');
+  });
 }
 
 /** The registry of modules a worker is built with. */
@@ -149,14 +190,16 @@ export interface ModuleRunOutput {
 }
 
 /**
- * Runs the configured modules in order. A module that's missing, not allowed by consent, throws or runs past
- * `moduleTimeoutMs` is reported and left out; the others still contribute.
+ * Runs the modules configured for a route (`v1` by default; see {@link moduleNamesFor}) in order. A module that's
+ * missing, doesn't run on the route, isn't allowed by consent, throws or runs past `moduleTimeoutMs` is reported and
+ * left out; the others still contribute. On `sync` the caller uses only the cookies.
  */
 export async function runModules(
   registry: ModuleRegistry,
   config: SharedIdEdgeConfig,
   base: Omit<ModuleContext, 'config' | 'secrets'>,
-  now: () => number
+  now: () => number,
+  route: ModuleRoute = 'v1'
 ): Promise<ModuleRunOutput> {
   const eids: Eid[] = [];
   const cookies: ModuleCookie[] = [];
@@ -164,10 +207,14 @@ export async function runModules(
   const traffic: TrafficEntry[] = [];
   const reports: Record<string, ModuleReport> = {};
 
-  for (const name of config.modules) {
+  for (const name of moduleNamesFor(registry, config, route)) {
     const module = registry.get(name);
     if (module === undefined) {
       reports[name] = { ms: 0, status: 'skipped', reason: 'not installed' };
+      continue;
+    }
+    if (!runsOn(module, route)) {
+      reports[name] = { ms: 0, status: 'skipped', reason: `not on /${route}` };
       continue;
     }
     const denied = consentDenial(module, base.consent);

@@ -9,8 +9,8 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | `spec/` | The specification | Behaviour changes start here. |
 | `conformance/` | HTTP cases and their runner | The contract; every implementation must pass. |
 | `packages/core/` | Platform-neutral handler, consent, cookies, module interface | Published as `@sharedid-edge/core`. Depends on no module. |
-| `packages/adapters/` | Deployable platform packages: `cloudflare/` (the Worker), `node/` (Node.js server), `aws-lambda/` (Lambda behind CloudFront, its bundle and SAM template) | Rules for every adapter in [`packages/adapters/AGENTS.md`](packages/adapters/AGENTS.md). Each is a conformance target. |
-| `packages/modules/` | Modules this project maintains: `ip/` (client IP), `ec/` (Trusted Server Edge Cookies, IP-derived, opt-in), `geo/` (`ortb2.device.geo`), `reflect/` (re-sets other first-party cookies), and `all/` (`@sharedid-edge/modules`, the built-in list) | Rules and how to write a module in [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). Published as `@sharedid-edge/module-<name>`; built into every adapter. |
+| `packages/adapters/` | Deployable platform packages: `cloudflare/` (the Worker), `node/` (Node.js server), `aws-lambda/` (Lambda behind CloudFront, its bundle and SAM template), `vercel/` (a Next.js route handler or Routing Middleware on the site's Vercel project, its bundle and a Next.js example) | Rules for every adapter in [`packages/adapters/AGENTS.md`](packages/adapters/AGENTS.md). Each is a conformance target. |
+| `packages/modules/` | Modules this project maintains: `ip/` (client IP), `ec/` (Trusted Server Edge Cookies, IP-derived, opt-in), `geo/` (`ortb2.device.geo`), `reflect/` (re-sets other first-party cookies), `bot/` (bot and staff-traffic signals), and `all/` (`@sharedid-edge/modules`, the built-in list) | Rules and how to write a module in [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). Published as `@sharedid-edge/module-<name>`; built into every adapter. |
 | `packages/vendor-modules/` | Modules contributed and maintained by vendors (none yet) | Extra rules in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md). Opt-in at build time; tested in their own CI job. |
 | `e2e/` | Unmodified Prebid.js against the worker in three browsers | Separate install. |
 | `scripts/` | Type-check helpers, the repo checks (`check-projects`, `check-links`) and `verify-deployment` | `projects.mjs` derives the project list from the workspace folders. |
@@ -41,7 +41,7 @@ npm run check:projects                          # tsconfig.json references every
 npm run check:links                             # relative Markdown links and anchors resolve
 ```
 
-`npm run check` runs them in order. `npm run test:vendor-modules` runs vendor modules' tests, in their own CI job. `npm run conformance:wrangler` runs the conformance suite against `wrangler dev` (slower), `npm run conformance:lambda` (also in `check`) against the bundled Lambda handler, and `e2e/` has the browser tests. None of this needs a Cloudflare or AWS account; never add steps that do to pull-request CI.
+`npm run check` runs them in order. `npm run test:vendor-modules` runs vendor modules' tests, in their own CI job. `npm run conformance:wrangler` runs the conformance suite against `wrangler dev` (slower), `npm run conformance:lambda` and `npm run conformance:vercel` (both also in `check`) against the bundled Lambda handler and Vercel adapter, behind local stand-ins for their platforms, and `e2e/` has the browser tests. None of this needs a Cloudflare, AWS or Vercel account; never add steps that do to pull-request CI.
 
 TypeScript 6.0 is the main compiler because `typescript-eslint` doesn't support 7 yet; `typecheck:ts7` keeps the code working on 7. Call TypeScript 7 as `node node_modules/typescript7/bin/tsc`, since both packages install a `tsc` command.
 
@@ -76,7 +76,7 @@ Behaviour that must not regress, each covered by tests:
 
 ## Conventions
 
-- ESM only, Node.js 22 or later. Platform-neutral code uses only web-standard APIs (`Request`, `Response`, `URL`, `crypto.randomUUID`).
+- ESM only, Node.js 24 or later. Platform-neutral code uses only web-standard APIs (`Request`, `Response`, `URL`, `crypto.randomUUID`).
 - Keep the worker small: no runtime dependencies in `@sharedid-edge/core`. Check `npm run build -w @sharedid-edge/cloudflare` (a dry-run bundle) for size when adding code.
 - Errors returned to clients never include request data.
 - Commit messages: an imperative summary line, then why. Pull requests describe the motivation and the checks run.

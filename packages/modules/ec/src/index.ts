@@ -128,7 +128,9 @@ async function run({ platform, consent, cookies, optedOut, config, secrets }: Mo
  */
 export const ecModule: EdgeModule = defineModule({
   name: 'ec',
+  // Also on /sync, so ts-ec is set on page views (as Trusted Server does), not only when the page calls /v1.
+  routes: ['v1', 'sync'],
   run,
-  // An opt-out at /optout deletes ts-ec straight away, not only on the next /v1 call.
+  // An opt-out at /optout deletes ts-ec straight away, not only on the next /v1 or /sync call.
   optOutCookies: config => [ecCookie('', 0, ecModuleConfig(config))]
 });

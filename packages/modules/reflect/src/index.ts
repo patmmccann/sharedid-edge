@@ -40,7 +40,19 @@ export interface ReflectedCookie {
   readonly deleteOnOptOut: boolean;
   /** Whether it's saved in the keeper cookie and set again from it when the browser has deleted it. */
   readonly restore: boolean;
+  /** Which value wins when the browser sends the cookie and the keeper has one too; always `browser` without `restore`. */
+  readonly prefer: KeeperPreference;
+  /** The value's format, for `prefer: 'older'`; undefined otherwise. */
+  readonly format: TimestampFormat | undefined;
 }
+
+/**
+ * Which value wins when the request carries a `restore` cookie and the keeper also has a value for it: the browser's
+ * (the default), the keeper's, or whichever was created first (for values that carry their creation time).
+ */
+export type KeeperPreference = 'browser' | 'backup' | 'older';
+/** Value formats that carry a creation time: Google's `_ga`, `_gcl_au` and `_gcl_aw`. */
+export type TimestampFormat = 'ga' | 'gcl_au' | 'gcl_aw';
 
 /** The keeper cookie, from `SID_MODULE_CONFIG.reflect.keeper`, with defaults applied. */
 export interface KeeperSettings {
@@ -61,7 +73,23 @@ const COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,64}$/;
 const COOKIE_VALUE = /^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]+$/;
 const DOMAIN = /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
-const ENTRY_KEYS: ReadonlySet<string> = new Set(['name', 'maxAgeDays', 'domain', 'httpOnly', 'deleteOnOptOut', 'restore']);
+const ENTRY_KEYS: ReadonlySet<string> = new Set(['name', 'maxAgeDays', 'domain', 'httpOnly', 'deleteOnOptOut', 'restore', 'prefer', 'format']);
+const PREFERENCES: readonly KeeperPreference[] = ['browser', 'backup', 'older'];
+const FORMATS: readonly TimestampFormat[] = ['ga', 'gcl_au', 'gcl_aw'];
+/** The format `prefer: 'older'` assumes from a cookie's exact name when `format` isn't set. */
+const FORMAT_BY_NAME: ReadonlyMap<string, TimestampFormat> = new Map([['_ga', 'ga'], ['_gcl_au', 'gcl_au'], ['_gcl_aw', 'gcl_aw']]);
+/**
+ * Each format's pattern; the capture is the creation time, exactly 10 digits of Unix seconds (2001 to 2286), so a
+ * negative, short or overlong time doesn't parse. `GA1.<d>` and `1.<d>` carry the cookie domain's depth (`GA1.1`,
+ * `GA1.2`); a path depth suffix (`GA1.2-2`) doesn't parse, since this module only sets `Path=/`.
+ */
+const TIMESTAMP_PATTERNS: Readonly<Record<TimestampFormat, RegExp>> = {
+  ga: /^GA1\.[1-9][0-9]?\.[0-9]{1,20}\.([0-9]{10})$/,
+  gcl_au: /^1\.[1-9][0-9]?\.[0-9]{1,20}\.([0-9]{10})$/,
+  gcl_aw: /^GCL\.([0-9]{10})\.[A-Za-z0-9_-]+$/
+};
+/** Creation times more than this after the worker's clock (a day, for clock skew) don't parse. */
+const MAX_TIMESTAMP_SKEW_SECONDS = 86_400;
 const KEEPER_KEYS: ReadonlySet<string> = new Set(['cookie', 'maxAgeDays', 'domain']);
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -95,18 +123,39 @@ function cookieName(value: unknown, key: string): string {
   return value;
 }
 
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], key: string): T {
+  const match = allowed.find(a => a === value);
+  if (match === undefined) throw new TypeError(`reflect: "${key}" must be one of ${allowed.join(', ')}`);
+  return match;
+}
+
 function reflectedCookie(entry: unknown): ReflectedCookie {
   if (!isRecord(entry)) throw new TypeError('reflect: each entry in "cookies" must be an object');
   for (const key of Object.keys(entry)) {
     if (!ENTRY_KEYS.has(key)) throw new TypeError('reflect: unknown key in a "cookies" entry');
   }
+  const name = cookieName(entry['name'], 'name');
+  const restore = optionalBoolean(entry, 'restore');
+  const prefer = entry['prefer'] === undefined ? 'browser' : oneOf(entry['prefer'], PREFERENCES, 'prefer');
+  // Without the keeper there's no backup to prefer.
+  if (prefer !== 'browser' && !restore) throw new TypeError('reflect: "prefer" needs "restore": true');
+  let format: TimestampFormat | undefined;
+  if (entry['format'] !== undefined) {
+    if (prefer !== 'older') throw new TypeError('reflect: "format" applies only to "prefer": "older"');
+    format = oneOf(entry['format'], FORMATS, 'format');
+  } else if (prefer === 'older') {
+    format = FORMAT_BY_NAME.get(name);
+    if (format === undefined) throw new TypeError('reflect: "prefer": "older" needs "format" for this cookie name');
+  }
   return {
-    name: cookieName(entry['name'], 'name'),
+    name,
     maxAgeDays: ageDays(entry['maxAgeDays']),
     domain: optionalDomain(entry['domain']),
     httpOnly: optionalBoolean(entry, 'httpOnly'),
     deleteOnOptOut: optionalBoolean(entry, 'deleteOnOptOut'),
-    restore: optionalBoolean(entry, 'restore')
+    restore,
+    prefer,
+    format
   };
 }
 
@@ -154,13 +203,49 @@ export function rawCookieValue(header: string | null, name: string): string | un
   return undefined;
 }
 
+/**
+ * `text` without leading or trailing HTTP whitespace (space and tab). A loop rather than `/^[ \t]+|[ \t]+$/`, which
+ * backtracks polynomially on a long run of whitespace in a hostile Cookie header.
+ */
 function trimHttpWhitespace(text: string): string {
-  return text.replace(/^[ \t]+|[ \t]+$/g, '');
+  let start = 0;
+  let end = text.length;
+  while (start < end && (text.charCodeAt(start) === 0x20 || text.charCodeAt(start) === 0x09)) start++;
+  while (end > start && (text.charCodeAt(end - 1) === 0x20 || text.charCodeAt(end - 1) === 0x09)) end--;
+  return text.slice(start, end);
 }
 
 /** Whether a value can be set again unchanged: non-empty, at most 1024 characters, and only cookie-octets. */
 export function isReflectable(value: string | undefined): value is string {
   return value !== undefined && value.length <= MAX_REFLECTED_VALUE_LENGTH && COOKIE_VALUE.test(value);
+}
+
+/**
+ * The creation time, in Unix seconds, that a value in `format` carries; undefined when the value doesn't match the
+ * format exactly, or the time is more than a day after `nowSeconds`. Never throws, and never changes the value.
+ */
+export function cookieTimestamp(format: TimestampFormat, value: string, nowSeconds: number): number | undefined {
+  const digits = TIMESTAMP_PATTERNS[format].exec(value)?.[1];
+  if (digits === undefined) return undefined;
+  const seconds = Number(digits);
+  return seconds > nowSeconds + MAX_TIMESTAMP_SKEW_SECONDS ? undefined : seconds;
+}
+
+/** Whether the keeper's saved value wins over the value the browser sent, under the cookie's `prefer`. */
+function backupWins(cookie: ReflectedCookie, value: string, stored: string, nowSeconds: number): boolean {
+  switch (cookie.prefer) {
+    case 'browser':
+      return false;
+    case 'backup':
+      return true;
+    case 'older': {
+      if (cookie.format === undefined) return false;
+      const current = cookieTimestamp(cookie.format, value, nowSeconds);
+      const kept = cookieTimestamp(cookie.format, stored, nowSeconds);
+      // On a tie, or when either doesn't parse, the browser's value wins, as with `browser`.
+      return current !== undefined && kept !== undefined && kept < current;
+    }
+  }
 }
 
 function base64url(text: string): string {
@@ -226,15 +311,15 @@ function run({ request, storage, config }: ModuleContext): ModuleResult | undefi
   const saved = restoring ? decodeKeeper(kept) : new Map<string, string>();
   const cookies: ModuleCookie[] = [];
   const save: [string, string][] = [];
+  const nowSeconds = Math.floor(Date.now() / 1000);
   for (const cookie of configured) {
     const value = rawCookieValue(header, cookie.name);
-    const stored = saved.get(cookie.name);
-    if (value === undefined) {
-      // Missing (Safari deleted or expired it): restored from the keeper, and kept there.
-      if (cookie.restore && stored !== undefined) {
-        cookies.push(moduleCookie(cookie, stored, cookie.maxAgeDays * 86_400));
-        save.push([cookie.name, stored]);
-      }
+    const stored = cookie.restore ? saved.get(cookie.name) : undefined;
+    if (stored !== undefined && (value === undefined || backupWins(cookie, value, stored, nowSeconds))) {
+      // Missing (Safari deleted or expired it), or present but `prefer` picks the backup (the page re-minted it):
+      // restored from the keeper byte for byte, and kept there.
+      cookies.push(moduleCookie(cookie, stored, cookie.maxAgeDays * 86_400));
+      save.push([cookie.name, stored]);
     } else if (isReflectable(value)) {
       cookies.push(moduleCookie(cookie, value, cookie.maxAgeDays * 86_400));
       if (cookie.restore) save.push([cookie.name, value]);
@@ -255,6 +340,8 @@ function run({ request, storage, config }: ModuleContext): ModuleResult | undefi
  */
 export const reflectModule: EdgeModule = defineModule({
   name: 'reflect',
+  // Also on /sync, so Prebid.js's pixelUrl call refreshes and restores cookies on page views without a /v1 call.
+  routes: ['v1', 'sync'],
   run,
   // Only cookies the publisher marked: by default, opting out of the SharedID leaves other parties' cookies alone. The
   // keeper is this worker's own, so it's always deleted (core deletes only cookies the browser sent).
