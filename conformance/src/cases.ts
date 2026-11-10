@@ -28,6 +28,8 @@ export interface Case {
     readonly json?: unknown;
     /** The JSON body contains these values: objects match on the listed keys only, recursively; arrays and scalars exactly. */
     readonly jsonIncludes?: unknown;
+    /** Dot-separated paths of object keys the JSON body must not have, e.g. `ortb2.device.geo.lat`. */
+    readonly jsonAbsent?: readonly string[];
     readonly cookies?: readonly ExpectedCookie[];
     /** No other cookies than those listed may be set. */
     readonly onlyListedCookies?: boolean;
@@ -85,6 +87,7 @@ const EXPECT_FIELDS: Readonly<Record<string, Check>> = {
   bodyLength: isInteger,
   json: isAnything,
   jsonIncludes: isAnything,
+  jsonAbsent: isStringArray,
   cookies: v => Array.isArray(v),
   onlyListedCookies: isBoolean,
   noCookies: isBoolean

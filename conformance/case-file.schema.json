@@ -38,6 +38,7 @@
               "bodyLength": { "type": "integer" },
               "json": {},
               "jsonIncludes": { "description": "The JSON body contains these values: objects match on the listed keys only, recursively; arrays and scalars exactly" },
+              "jsonAbsent": { "type": "array", "items": { "type": "string" }, "description": "Dot-separated paths of object keys the JSON body must not have, e.g. ortb2.device.geo.lat" },
               "onlyListedCookies": { "type": "boolean" },
               "noCookies": { "type": "boolean" },
               "cookies": {
