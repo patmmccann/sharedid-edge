@@ -5,10 +5,13 @@ import {
   deepMerge,
   EU_COUNTRY_CODES,
   handlerOrMisconfigured,
+  headerValue,
   idFromSyncParam,
   isValidId,
+  locationWithEU,
   logRequestFailure,
   parseCookies,
+  publicOriginFromEnv,
   readConsent,
   resolveConfig,
   serializeCookie,
@@ -99,7 +102,9 @@ describe('resolveConfig', () => {
       SID_SYNC_MODULES: 'geo',
       SID_MODULE_CONFIG: '{"ip":{"field":"ipv6"}}',
       SID_MODULE_SECRETS: '{"ec":{"passphrase":"p"}}',
-      SID_MODULE_TIMEOUT_MS: '20'
+      SID_MODULE_TIMEOUT_MS: '20',
+      SID_SKIP_BOTS: 'Declared',
+      SID_SKIP_BOTS_SCORE: '10'
     });
     expect(config).toEqual({
       basePath: '/id',
@@ -116,7 +121,9 @@ describe('resolveConfig', () => {
       syncModules: ['geo'],
       moduleConfig: { ip: { field: 'ipv6' } },
       moduleSecrets: { ec: { passphrase: 'p' } },
-      moduleTimeoutMs: 20
+      moduleTimeoutMs: 20,
+      skipBots: 'declared',
+      skipBotsScore: 10
     } satisfies SharedIdEdgeConfig);
   });
   it('reads SID_SYNC_MODULES: omitted by default, none for an empty list, names from SID_MODULES', () => {
@@ -149,7 +156,12 @@ describe('resolveConfig', () => {
     ['SID_MODULE_SECRETS', '{"ec":{"passphrase":1}}'],
     ['SID_MODULE_SECRETS', 'not json'],
     ['SID_RECOVERY_COOKIE', '_pubcid'],
-    ['SID_RECOVERY_COOKIE', '_pubcid_optout']
+    ['SID_RECOVERY_COOKIE', '_pubcid_optout'],
+    ['SID_SKIP_BOTS', 'yes'],
+    ['SID_SKIP_BOTS', 'all'],
+    ['SID_SKIP_BOTS_SCORE', '0'],
+    ['SID_SKIP_BOTS_SCORE', '100'],
+    ['SID_SKIP_BOTS_SCORE', 'low']
   ])('rejects %s=%s', (key, value) => {
     expect(() => resolveConfig({ [key]: value })).toThrow(ConfigError);
   });
@@ -336,5 +348,26 @@ describe('adapter helpers', () => {
     expect(log).toHaveBeenCalledOnce();
     expect(String(log.mock.calls[0]?.[0])).toMatch(/^sharedid-edge: SID_MAX_AGE_DAYS/);
     expect(() => handlerOrMisconfigured(() => { throw new RangeError('bug'); }, () => 'fallback')).toThrow(RangeError);
+  });
+});
+
+describe('more adapter helpers', () => {
+  it('headerValue trims, and treats a blank header as missing', () => {
+    const headers = new Headers({ 'x-a': '  DE ', 'x-b': '   ' });
+    expect(headerValue(headers, 'x-a')).toBe('DE');
+    expect(headerValue(headers, 'x-b')).toBeUndefined();
+    expect(headerValue(headers, 'x-c')).toBeUndefined();
+  });
+
+  it('publicOriginFromEnv leaves out an unset or empty SID_PUBLIC_ORIGIN', () => {
+    expect(publicOriginFromEnv({ SID_PUBLIC_ORIGIN: 'https://www.example.com' })).toEqual({ publicOrigin: 'https://www.example.com' });
+    expect(publicOriginFromEnv({ SID_PUBLIC_ORIGIN: '' })).toEqual({});
+    expect(publicOriginFromEnv({})).toEqual({});
+  });
+
+  it('locationWithEU adds isEU from a valid country only', () => {
+    expect(locationWithEU({ country: 'de', city: 'Berlin' })).toEqual({ country: 'DE', city: 'Berlin', isEU: true });
+    expect(locationWithEU({ country: 'GB' })).toEqual({ country: 'GB', isEU: false });
+    expect(locationWithEU({ country: 'XX', city: 'Nowhere' })).toEqual({ city: 'Nowhere' });
   });
 });

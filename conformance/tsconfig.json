@@ -8,6 +8,11 @@
   },
   "include": ["src"],
   // The emulators use core's splitHeaders and their adapter's types: lambda-emulator.ts the Lambda events,
-  // vercel-emulator.ts the handler.
-  "references": [{ "path": "../packages/core" }, { "path": "../packages/adapters/aws-lambda" }, { "path": "../packages/adapters/vercel" }]
+  // vercel-emulator.ts and azure-emulator.ts the handlers.
+  "references": [
+    { "path": "../packages/core" },
+    { "path": "../packages/adapters/aws-lambda" },
+    { "path": "../packages/adapters/vercel" },
+    { "path": "../packages/adapters/azure-functions" }
+  ]
 }

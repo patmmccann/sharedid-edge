@@ -1,4 +1,4 @@
-import { handlerOrMisconfigured, resolveConfig, type EdgeModule } from '@sharedid-edge/core';
+import { handlerOrMisconfigured, publicOriginFromEnv, resolveConfig, type EdgeModule } from '@sharedid-edge/core';
 import { createLambdaHandler, internalError, type LambdaHandler } from './handler.js';
 import { builtInModules } from '@sharedid-edge/modules';
 
@@ -12,17 +12,13 @@ export function handlerFromEnv(
   env: Readonly<Record<string, string | undefined>>,
   modules: readonly EdgeModule[] = builtInModules
 ): LambdaHandler {
-  const publicOrigin = env['SID_PUBLIC_ORIGIN'];
   return handlerOrMisconfigured(
     () => createLambdaHandler({
       config: resolveConfig(env),
       modules,
       behindCloudFront: !/^(0|false|no|off)$/i.test(env['SID_BEHIND_CLOUDFRONT'] ?? ''),
-      ...(publicOrigin === undefined || publicOrigin === '' ? {} : { publicOrigin })
+      ...publicOriginFromEnv(env)
     }),
-    () => {
-      const misconfigured = internalError('SharedID Edge is misconfigured');
-      return () => Promise.resolve(misconfigured);
-    }
+    () => () => Promise.resolve(internalError('SharedID Edge is misconfigured'))
   );
 }

@@ -1,4 +1,4 @@
-import { EU_COUNTRY_CODES, locationInfo, type PlatformInfo } from '@sharedid-edge/core';
+import { EU_COUNTRY_CODES, locationWithEU, type PlatformInfo } from '@sharedid-edge/core';
 import type { LambdaEventV2 } from './event.js';
 
 /** The 27 EU member states, from core: the meaning of Cloudflare's `request.cf.isEUCountry`. */
@@ -54,9 +54,9 @@ export function platformInfo(event: LambdaEventV2, options: PlatformOptions = {}
     return sourceIp === undefined || sourceIp === '' ? {} : { clientIp: sourceIp };
   }
   const clientIp = parseViewerAddress(header(event, 'cloudfront-viewer-address'));
-  // CloudFront's geolocation headers, checked by core's locationInfo like every adapter's. CloudFront has no
-  // continent header.
-  const location = locationInfo({
+  // CloudFront's geolocation headers, checked by core's locationInfo like every adapter's, with isEU from the country.
+  // CloudFront has no continent header.
+  const location = locationWithEU({
     country: header(event, 'cloudfront-viewer-country'),
     regionCode: header(event, 'cloudfront-viewer-country-region'),
     city: header(event, 'cloudfront-viewer-city'),
@@ -68,7 +68,6 @@ export function platformInfo(event: LambdaEventV2, options: PlatformOptions = {}
   });
   return {
     ...(clientIp === undefined ? {} : { clientIp }),
-    ...location,
-    ...(location.country === undefined ? {} : { isEU: EU_COUNTRY_CODES.has(location.country) })
+    ...location
   };
 }

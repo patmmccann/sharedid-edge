@@ -10,6 +10,7 @@ It also has a **module** interface for IDs and signals that are best computed at
 - [Deploy on Cloudflare](#deploy-on-cloudflare)
 - [Deploy on AWS (Lambda and CloudFront)](#deploy-on-aws-lambda-and-cloudfront)
 - [Deploy on Vercel](#deploy-on-vercel)
+- [Deploy on Azure (Functions and Front Door)](#deploy-on-azure-functions-and-front-door)
 - [Configure Prebid.js](#configure-prebidjs)
 - [Migrate from the WordPress or Drupal plugin](#migrate-from-the-wordpress-or-drupal-plugin)
 - [Consent and opt-out](#consent-and-opt-out)
@@ -246,6 +247,63 @@ npm run verify-deployment -- --site https://www.example.com
 
 It checks that `/_sid/*` shares the site's IP addresses, sets the cookies correctly, isn't cached, and returns the JSON payload. Then [turn it on in Prebid.js](#configure-prebidjs). The client IP and location come from headers Vercel's proxy sets (`x-real-ip`, `x-vercel-ip-country` and the rest); see [Platform information](packages/adapters/vercel/README.md#platform-information).
 
+## Deploy on Azure (Functions and Front Door)
+
+If your site is served through Azure Front Door (Standard or Premium), run SharedID Edge as an Azure Functions app behind a `/_sid/*` route of **your site's own Front Door endpoint and custom domain**. Full guide (architecture, the template's parameters, the origin lock, configuration, troubleshooting): [`packages/adapters/azure-functions/README.md`](packages/adapters/azure-functions/README.md).
+
+**Why your own Front Door domain:** since Safari 16.4, cookies set by a server whose IP address doesn't match the website's are capped at 7 days. A route on the domain that serves `www.example.com` shares its IP addresses; the function app's own `*.azurewebsites.net` host name, or another Front Door domain, doesn't.
+
+### Prerequisites
+
+- Your site on Azure Front Door Standard or Premium, on your own custom domain, over https.
+- The [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az login`) and [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local) 4.x.
+- Node.js 24 or later and npm.
+
+### 1. Build
+
+```sh
+git clone https://github.com/patmmccann/sharedid-edge.git
+cd sharedid-edge
+npm ci
+npm run build
+npm run bundle -w @sharedid-edge/azure-functions          # the function app, in packages/adapters/azure-functions/deploy/
+(cd packages/adapters/azure-functions/deploy && npm install --omit=dev)
+```
+
+### 2. Create the function app and the Front Door route
+
+```sh
+az deployment group create --resource-group sharedid-edge \
+  --template-file packages/adapters/azure-functions/infra/main.bicep \
+  --parameters frontDoorProfileName=my-front-door frontDoorResourceGroup=my-site-rg \
+               frontDoorEndpointName=my-endpoint 'customDomainNames=["www-example-com"]'
+```
+
+This creates a Flex Consumption function app (Node.js 24) that accepts traffic only from your Front Door profile (an access restriction on the `AzureFrontDoor.Backend` service tag with your `X-Azure-FDID`, which the function checks too), and adds to your profile an origin for it, a route for `/_sid` and `/_sid/*` on your custom domains with caching off, and a rule that passes the visitor's country (`{geo_country}`) to the function.
+
+### 3. Publish the code
+
+```sh
+cd packages/adapters/azure-functions/deploy
+func azure functionapp publish <functionAppName>      # the template's functionAppName output
+```
+
+### 4. Configure
+
+Settings are the function app's `SID_*` app settings (the [Configuration reference](#configuration-reference)), set through the template's parameters (`sidModules=ip,geo`, `sidCookieDomain=.example.com`). `SID_MODULE_SECRETS` goes in the secure `sidModuleSecrets` parameter, or as a Key Vault reference (see the [package README](packages/adapters/azure-functions/README.md#secrets)). Invalid settings make every request return a 500; the reason is in the function app's logs.
+
+**Location and GDPR:** Front Door gives only the visitor's country (through the template's rule), not the region or city, so the `geo` module sends the country alone. Without that rule, GDPR applies only when the page sends `gdpr=1`.
+
+**Cookie values:** Azure Functions percent-encodes cookie values, so the `reflect` module leaves out a cookie whose value has characters other than letters, digits, `-`, `.`, `_` and `~` rather than corrupt it (see the [package README](packages/adapters/azure-functions/README.md#cookie-values)). SharedID Edge's own cookies aren't affected.
+
+### 5. Verify
+
+```sh
+npm run verify-deployment -- --site https://www.example.com
+```
+
+It checks that `/_sid/*` shares the site's IP addresses, sets the cookies correctly, isn't cached, and returns the JSON payload. Then [turn it on in Prebid.js](#configure-prebidjs).
+
 ## Configure Prebid.js
 
 SharedID Edge works with the unmodified `sharedIdSystem` module. Build Prebid.js with `userId` and `sharedIdSystem`, and set `pixelUrl` to the sync route on your own host:
@@ -292,7 +350,7 @@ Set-Cookie: _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; E
 X-SharedID-Source: param
 ```
 
-Modules that only set cookies (`reflect`, `ec`) also run here, and add their cookies and an `X-SharedID-Modules` header with each one's status; anything else they return is ignored. With `SID_COOKIE_DOMAIN=.example.com`, `SID_MODULES=reflect` configured for `uid1` and for `_ga` with `restore`, and a request carrying `_pubcid`, `uid1` and `_ga`:
+Modules that only set cookies (`reflect`, `ec`) or report to the [traffic signal](#bot-bot-and-staff-traffic-signals) (`bot`) also run here, and add their cookies and an `X-SharedID-Modules` header with each one's status. Traffic reports count towards [`SID_SKIP_BOTS`](#no-sharedid-for-bots), as on `/_sid/v1`; anything else they return is ignored. With `SID_COOKIE_DOMAIN=.example.com`, `SID_MODULES=reflect` configured for `uid1` and for `_ga` with `restore`, and a request carrying `_pubcid`, `uid1` and `_ga`:
 
 ```http
 HTTP/1.1 200 OK
@@ -367,12 +425,23 @@ With `SID_MODULES=ip,geo`, `geo` still returns the coarse location, without city
 }
 ```
 
+With the [`bot` module](#bot-bot-and-staff-traffic-signals) (`SID_MODULES=bot`), a request whose browser user agent comes without `Accept-Language` is a likely bot. The **traffic signal** is returned even with `Sec-GPC: 1`, which still rules out the ID:
+
+```json
+{
+  "v": 1,
+  "eids": [],
+  "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "likely", "sources": ["bot"] } } } },
+  "ext": { "modules": { "bot": { "ms": 0, "status": "ok" } } }
+}
+```
+
 | Field | |
 | --- | --- |
 | `v` | Payload version, `1`. |
-| `sharedid` | The SharedID. Absent when storage isn't allowed (opt-out, GPC, COPPA, consent). |
+| `sharedid` | The SharedID. Absent when storage isn't allowed (opt-out, GPC, COPPA, consent), or for a bot with `SID_SKIP_BOTS`. |
 | `eids` | OpenRTB `user.ext.eids`: the SharedID as `pubcid.org` (`atype` 1), then any IDs from modules. `[]` when there are none. |
-| `ortb2` | An OpenRTB 2.x first-party data fragment, merged from every module's output in `SID_MODULES` order. Absent when no module returned anything. Pass it to `pbjs.mergeConfig({ ortb2 })`. |
+| `ortb2` | An OpenRTB 2.x first-party data fragment, merged from every module's output in `SID_MODULES` order, plus the traffic signal in `device.ext.traffic` (which the worker writes from every module's report and, on Cloudflare with Bot Management, the platform's verdict). Absent when there's nothing to return. Pass it to `pbjs.mergeConfig({ ortb2 })`. |
 | `ext.modules` | One entry per module in `SID_MODULES`: `ms` (time taken) and `status`: `ok` (it returned data), `empty` (nothing to add, for example consent rules out the IP), `skipped` (with a `reason`, such as `not installed` for a name the worker doesn't have), `error` or `timeout`. Error details are never returned. |
 
 To read `/v1` from a page on another origin, list that origin in `SID_ALLOWED_ORIGINS` and fetch with `credentials: 'include'`. The response then carries `Access-Control-Allow-Origin: <origin>` and `Access-Control-Allow-Credentials: true`; it never carries `*`.
@@ -385,7 +454,8 @@ To read `/v1` from a page on another origin, list that origin in `SID_ALLOWED_OR
 
 - `X-SharedID-Source`: where the ID came from: `cookie`, `recovery` (restored from the `HttpOnly` copy), `param` (adopted from Prebid.js's `?id=`) or `minted`.
 - `X-SharedID-Status: denied: <reason>`: why no ID was set. The reason is `opt-out`, `gpc`, `coppa` or `tcf: …`.
-- `X-SharedID-Modules` (on `/sync` only): each module that ran there, with its status, as in `ext.modules`: `reflect=empty, ec=ok`. Never cookie names, values or error details. `empty` is the normal status for a module that only sets cookies.
+- `X-SharedID-Status: skipped: bot`: [`SID_SKIP_BOTS`](#no-sharedid-for-bots) ruled the ID out. Nothing was set, and nothing deleted.
+- `X-SharedID-Modules` (on `/sync` only): each module that ran there, with its status, as in `ext.modules`: `reflect=empty, ec=ok, bot=ok`. Never cookie names, values or error details. `empty` is the normal status for a module that only sets cookies; `bot` is `ok` when it reported something to the traffic signal, which on `/sync` counts only towards `SID_SKIP_BOTS`.
 
 ## Migrate from the WordPress or Drupal plugin
 
@@ -412,7 +482,7 @@ Existing visitors keep their IDs: the worker adopts the cookie the plugin set. T
 - **Publisher mode** (the default). SharedID is your own first-party ID, so the worker reads the **publisher** consents (the TC string's publisher TC segment): it needs consent for Purpose 1 (store and access information on a device), and consent or legitimate interest for at least one of Purposes 2 to 10. Configure your CMP to ask for publisher consent for these purposes, or it won't include a publisher TC segment and no one gets a server cookie.
 - **Vendor mode.** If your company is registered as a TCF vendor, set `SID_VENDOR_ID` to your vendor ID. The worker then needs consent for that vendor, consent for Purpose 1, and consent or legitimate interest for at least one of Purposes 2 to 10, all from the vendor part of the TC string instead of the publisher segment.
 
-When GDPR applies and there's no TC string, that counts as no consent: the worker sets nothing and deletes the ID cookies. GDPR applies when Cloudflare places the request in the EU (`request.cf.isEUCountry`; behind CloudFront, `CloudFront-Viewer-Country` is one of the 27 EU member states; on Vercel, `x-vercel-ip-country` is), or when the request says so with `gdpr=1`.
+When GDPR applies and there's no TC string, that counts as no consent: the worker sets nothing and deletes the ID cookies. GDPR applies when Cloudflare places the request in the EU (`request.cf.isEUCountry`; behind CloudFront, `CloudFront-Viewer-Country` is one of the 27 EU member states; on Vercel, `x-vercel-ip-country` is; behind Azure Front Door, the country its rule passes on is), or when the request says so with `gdpr=1`.
 
 The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` parameter. Prebid.js doesn't add consent parameters to `pixelUrl`, so for the sync route **your CMP must store the TC string in the `euconsent-v2` cookie** (check yours: some keep it only in local storage). Without it, EU visitors get no server cookie, which is the safe failure. Sending the consent strings from Prebid.js to the worker is planned.
 
@@ -455,9 +525,10 @@ Prebid.js calls `/_sid/sync` (its `pixelUrl`) on page views with `extend: true`,
 | --- | --- |
 | `reflect` | yes: refreshes the cookies you name, and restores them from the keeper |
 | `ec` | yes: sets `ts-ec` (or deletes it when consent is withdrawn), as Trusted Server does on page loads |
+| `bot` | yes: its report joins the platform's verdict for [`SID_SKIP_BOTS`](#no-sharedid-for-bots), so a likely bot gets no ID from Prebid.js's pixel call either |
 | `ip`, `geo` | no: they return data, and `/_sid/sync` returns an image |
 
-- **Same rules as `/_sid/v1`:** the same consent, opt-out, time limit and failure handling. Only the modules' cookies are used; the GIF, status and other headers Prebid.js gets are unchanged, apart from `X-SharedID-Modules` (see [Debugging headers](#debugging-headers)).
+- **Same rules as `/_sid/v1`:** the same consent, opt-out, time limit and failure handling. Only the modules' cookies and traffic reports are used; the GIF, status and other headers Prebid.js gets are unchanged, apart from `X-SharedID-Modules` (see [Debugging headers](#debugging-headers)).
 - **Choosing:** by default, every module in `SID_MODULES` that supports it runs on `/_sid/sync`. `SID_SYNC_MODULES` overrides that with a list (`"SID_SYNC_MODULES": "reflect"`), or `none`. Each name must also be in `SID_MODULES`, or every request fails with a 500 (a configuration error), so a typo can't go unnoticed; a listed module that doesn't run on `/_sid/sync`, such as `ip`, is reported `skipped`.
 - **Daily by default:** the browser caches a successful sync response for `SID_SYNC_CACHE_SECONDS` (`86400`, a day), so these modules run there about once a day per browser. That keeps cookies from expiring, and a visitor whose cookies Safari deleted after 7 days away gets them back on the first page view, since the cache has expired by then. Lower `SID_SYNC_CACHE_SECONDS` to run them more often (`0`: every page view), at the cost of a worker request each time.
 
@@ -469,6 +540,7 @@ Built-in modules:
 | [`ec`](packages/modules/ec/README.md) | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**; see below | `domain`; secret `passphrase` |
 | [`geo`](packages/modules/geo/README.md) | `ortb2.device.geo`: country, region, metro and UTC offset, plus city, postal code and coordinates when consent allows | `precision`: `precise` (default) or `coarse` |
 | [`reflect`](packages/modules/reflect/README.md) | Nothing in the payload: re-sets first-party cookies other scripts wrote (such as `uid1` or `_ga`) with the same value and a new expiry, so Safari doesn't cap them, and with `restore`, sets them again from an `HttpOnly` keeper cookie after Safari deletes them | `cookies`, `keeper` |
+| [`bot`](packages/modules/bot/README.md) | `ortb2.device.ext.traffic`: a likely bot when a browser lacks headers browsers send, and `internal` for your own staff, merged with other modules' reports and Cloudflare Bot Management. Sent whatever the consent | `missingHeaders`, `internalCookie`; secret `internalToken` |
 
 To build your own, see [Adding a module](#adding-a-module). Modules from vendors (in [`packages/vendor-modules/`](packages/vendor-modules/README.md); none yet) aren't built in: you add them to your build, and any that forwards data to another service says so at the top of its README and is marked "⚠ forwards data to `<host>`" here.
 
@@ -502,7 +574,7 @@ fetch('/_sid/v1', { credentials: 'include' })
 - a TCF TC string doesn't opt in to Special Feature 1 (precise geolocation);
 - GDPR applies and there's no TC string.
 
-**Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. Behind CloudFront it's the address in `CloudFront-Viewer-Address`, which CloudFront sets itself. On Vercel it's `x-real-ip`, which Vercel's proxy sets itself. With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
+**Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. Behind CloudFront it's the address in `CloudFront-Viewer-Address`, which CloudFront sets itself. On Vercel it's `x-real-ip`, which Vercel's proxy sets itself. Behind Azure Front Door it's `X-Azure-ClientIP`, which Front Door sets itself. With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
 
 The address is only returned to the browser that sent the request. The worker doesn't store or log it, and SharedIDs are never derived from it. `/_sid/v1` responses are `Cache-Control: no-store`.
 
@@ -624,6 +696,41 @@ Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2
 - **Call `/_sid/v1` before gtag.js loads** to keep the client ID on the current page view too; otherwise a deleted `_ga` is replaced by a new one before the worker can restore it. Prebid.js's pixel call usually comes after gtag.js: it keeps everything refreshed and restores `_gcl_aw`, and with `"older"` it brings a re-minted `_ga` back from the next page view, but it's too late for the current one. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/modules/reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/modules/reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
 - **Consent:** when storage isn't allowed the keeper is deleted (the original cookies are left alone), and `/_sid/optout` always deletes it.
 
+### `bot`: bot and staff-traffic signals
+
+Full documentation: [`packages/modules/bot/README.md`](packages/modules/bot/README.md).
+
+The edge sees each request before any script runs, so it can tell the page whether the traffic looks automated, and the page can skip or flag the auction. Several sources report to one **traffic signal**, `ortb2.device.ext.traffic`, which the worker merges, most cautious first:
+
+- **the platform:** on Cloudflare with Bot Management (an Enterprise add-on), its verified-bot flag, score and corporate-proxy flag, as source `platform`. This needs no module;
+- **the `bot` module:** a `likely` bot when a "browser" lacks `Accept-Language` or the `Sec-Fetch-*` headers it always sends (`missingHeaders`), and `internal: true` for your own staff, marked by a cookie (`internalCookie`);
+- **other modules,** such as a user agent module reporting crawlers that name themselves (`declared`), or IP intelligence reporting VPNs and data centres.
+
+It's off until you enable it, and each of its signals is opt-in:
+
+```jsonc
+"vars": {
+  "SID_MODULES": "bot",
+  "SID_MODULE_CONFIG": "{\"bot\":{\"missingHeaders\":true,\"internalCookie\":\"its_me\"}}"
+}
+```
+
+A browser user agent without `Accept-Language` then gets:
+
+```json
+{ "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "likely", "sources": ["bot"] } } } } }
+```
+
+and Googlebot, on a zone with Bot Management, `{ "bot": true, "botKind": "verified", "score": 1, "sources": ["platform", "bot"] }`.
+
+- **Fields:** `bot`; `botKind` (`verified`, `declared` or `likely`, the strongest claim wins); `proxy` (`datacenter`, `vpn`, `residential`, `tor` or `relay`, the most specific wins; a privacy relay such as iCloud Private Relay is never a bot); `score` (1 bot to 99 human, the lowest wins); `internal`; and `sources`.
+- **Consent:** the signal describes the traffic, not the person, so it's returned with GPC, COPPA, opt-out and denied consent too, while the SharedID follows its usual rules. It's never stored or logged.
+- **Staff:** set the cookie from an internal page; the page can then skip auctions or mark them as tests. Set `SID_MODULE_SECRETS={"bot":{"internalToken":"…"}}` so only that value counts.
+
+#### No SharedID for bots
+
+`SID_SKIP_BOTS` (off by default) stops the worker setting or returning a SharedID for bots, which inflate ID counts and pollute frequency capping. `verified` skips verified bots, `declared` verified and declared ones, `likely` every bot; `SID_SKIP_BOTS_SCORE=10` also skips scores of 10 or less. A skipped request carries `X-SharedID-Status: skipped: bot`. **Existing IDs are never deleted,** so a misclassified visitor keeps theirs, and internal traffic is never skipped. On `/_sid/sync` the decision is the same: the platform's verdict merged with the reports of the modules that run there (`bot`, and any other in `SID_SYNC_MODULES` that reports traffic).
+
 ## Self-host with Node.js
 
 Full reference: [`packages/adapters/node/README.md`](packages/adapters/node/README.md).
@@ -657,7 +764,7 @@ Make sure no cache in front of it (a CDN or nginx's `proxy_cache`) stores `/_sid
 
 ## Configuration reference
 
-All settings are strings, set as Worker `vars` (Cloudflare) or environment variables (Node.js, AWS Lambda, Vercel). Empty means the default. Invalid values make every request fail with a 500 and log the reason, rather than set wrong cookies.
+All settings are strings, set as Worker `vars` (Cloudflare), environment variables (Node.js, AWS Lambda, Vercel) or app settings (Azure Functions). Empty means the default. Invalid values make every request fail with a 500 and log the reason, rather than set wrong cookies.
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -671,11 +778,13 @@ All settings are strings, set as Worker `vars` (Cloudflare) or environment varia
 | `SID_VENDOR_ID` | (empty: publisher mode) | Your TCF vendor ID, for vendor mode. |
 | `SID_ALLOWED_ORIGINS` | none | Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin. |
 | `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. Also limits how often modules run on `/_sid/sync`. |
-| `SID_MODULES` | none | Comma-separated modules to run, in order. Built in: `ip`, `ec`, `geo`, `reflect`. |
-| `SID_SYNC_MODULES` | the modules in `SID_MODULES` that run on `/_sid/sync` (`reflect`, `ec`) | Comma-separated modules to run on `/_sid/sync`, each also in `SID_MODULES`, or `none`. See [Modules on `/_sid/sync`](#modules-on-_sidsync). |
+| `SID_MODULES` | none | Comma-separated modules to run, in order. Built in: `ip`, `ec`, `geo`, `reflect`, `bot`. |
+| `SID_SYNC_MODULES` | the modules in `SID_MODULES` that run on `/_sid/sync` (`reflect`, `ec`, `bot`) | Comma-separated modules to run on `/_sid/sync`, each also in `SID_MODULES`, or `none`. See [Modules on `/_sid/sync`](#modules-on-_sidsync). |
 | `SID_MODULE_CONFIG` | `{}` | JSON settings per module, keyed by module name. |
 | `SID_MODULE_SECRETS` | `{}` | JSON secrets per module, e.g. the `ec` passphrase. Set it as a secret (`wrangler secret put SID_MODULE_SECRETS`), not in `vars`. |
 | `SID_MODULE_TIMEOUT_MS` | `50` | Time limit for each module. |
+| `SID_SKIP_BOTS` | off | `verified`, `declared` or `likely`: set no SharedID for bots this sure or surer, from the [traffic signal](#bot-bot-and-staff-traffic-signals). Existing IDs are never deleted. |
+| `SID_SKIP_BOTS_SCORE` | off | 1 to 99: set no SharedID when the traffic score (Cloudflare Bot Management) is at or below it. |
 
 Routes, under `SID_BASE_PATH`:
 
@@ -698,7 +807,7 @@ Responses carry two debug headers: `X-SharedID-Source` (`cookie`, `recovery`, `p
 | No `set-cookie` in the response | See `X-SharedID-Status`. In `tcf` mode, check the `euconsent-v2` cookie exists. |
 | Cookie set but gone after a week in Safari | Run `verify-deployment`: the endpoint's IP addresses probably don't match the site's. |
 | Cookie not readable by Prebid.js | The cookie name or domain doesn't match Prebid.js's `storage` config, or the page and the route are on hosts the cookie's domain doesn't cover. |
-| A 500 with "misconfigured" | A setting is invalid: `npm exec -w @sharedid-edge/cloudflare -- wrangler tail` shows the reason (on AWS, the function's CloudWatch logs; on Vercel, the project's logs). |
+| A 500 with "misconfigured" | A setting is invalid: `npm exec -w @sharedid-edge/cloudflare -- wrangler tail` shows the reason (on AWS, the function's CloudWatch logs; on Vercel, the project's logs; on Azure, the function app's logs). |
 | `getUserIdsAsync()` never resolves | The known Prebid.js issue under [Configure Prebid.js](#configure-prebidjs). |
 
 ## Development
@@ -713,8 +822,9 @@ packages/
     node/                      the Node.js server (local development, self-hosting, conformance target)
     aws-lambda/                the AWS Lambda adapter, its bundle and SAM template
     vercel/                    the Vercel adapter (Next.js route handler or middleware), its bundle and an example
+    azure-functions/           the Azure Functions adapter (behind Front Door), its bundle and Bicep templates
   modules/                     modules maintained by this project, built into every adapter
-    ip/  ec/  geo/  reflect/   the built-in modules
+    ip/ ec/ geo/ reflect/ bot/ the built-in modules
     all/                       @sharedid-edge/modules: the built-in list the adapters import
   vendor-modules/              modules contributed and maintained by vendors, opt-in at build time
 e2e/                           unmodified Prebid.js against the worker, in Chromium, Firefox and WebKit
@@ -742,10 +852,10 @@ TypeScript is strict from the start, and CI checks types several ways:
 Tests:
 
 - `npm test`: unit tests, including the Worker's tests inside workerd, the Workers runtime. Vendor modules' tests run separately, with `npm run test:vendor-modules`.
-- `npm run conformance`: the conformance suite against the Node.js server; `npm run conformance:wrangler` runs it against the Worker under `wrangler dev`, `npm run conformance:lambda` against the bundled Lambda handler behind a local stand-in for CloudFront, and `npm run conformance:vercel` against the bundled Vercel adapter behind a local stand-in for Vercel's proxy.
+- `npm run conformance`: the conformance suite against the Node.js server; `npm run conformance:wrangler` runs it against the Worker under `wrangler dev`, `npm run conformance:lambda` against the bundled Lambda handler behind a local stand-in for CloudFront, `npm run conformance:vercel` against the bundled Vercel adapter behind a local stand-in for Vercel's proxy, and `npm run conformance:azure` against the bundled Azure Functions app behind a local stand-in for Front Door and the Functions host.
 - In `e2e/`: `npm ci && npx playwright install && npm test` runs unmodified Prebid.js against the worker in three browsers.
 
-None of this needs a Cloudflare, AWS or Vercel account.
+None of this needs a Cloudflare, AWS, Vercel or Azure account.
 
 ### Adding a module
 
@@ -767,9 +877,9 @@ Publish it as its own package like [`packages/modules/ip`](packages/modules/ip),
 
 ## Roadmap
 
-1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, AWS Lambda and Vercel adapters, and the `ip`, `ec`, `geo` and `reflect` modules.
+1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, AWS Lambda, Vercel and Azure Functions adapters, and the `ip`, `ec`, `geo`, `reflect` and `bot` modules, with a shared traffic signal any module can report bots to.
 2. **Next:** Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
-3. A Prebid.js RTD module that reads `/_sid/v1`, plus first-party modules for bot scores and device type, a Fastly adapter, and Lambda@Edge.
+3. A Prebid.js RTD module that reads `/_sid/v1`, plus a device type module (`ua`, which also reports declared crawlers to the traffic signal), IP intelligence modules, a Fastly adapter, and Lambda@Edge.
 4. Vendor modules, a Rust implementation, and inline mode.
 
 ## License

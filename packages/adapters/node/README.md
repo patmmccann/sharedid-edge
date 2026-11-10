@@ -78,12 +78,13 @@ Invalid settings stop the server at start-up with `Configuration error: …`.
 | `latitude`, `longitude` | none | `cf-iplatitude`, `cf-iplongitude` |
 | `timezone`, `continent` | none | `cf-timezone`, `cf-ipcontinent` |
 | `isEU` | none | none: GDPR scope then comes from the `gdpr` parameter |
+| `traffic` | none | none: there is no platform bot verdict; the `bot` module and other modules still report to the traffic signal |
 
 Core's `locationInfo` validates the values the same way for every adapter, dropping empty, `XX`/`T1` and out-of-range ones. IPv4 clients on a dual-stack socket appear as `::ffff:192.0.2.1`, which the `ip` module reports as IPv4.
 
 ## Built-in modules
 
-The CLI builds in `ip`, `ec`, `geo` and `reflect`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../../README.md#modules).
+The CLI builds in `ip`, `ec`, `geo`, `reflect` and `bot`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../../README.md#modules).
 
 ## Using it as a library
 

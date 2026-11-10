@@ -1,4 +1,4 @@
-import { EU_COUNTRY_CODES, locationInfo, type PlatformInfo } from '@sharedid-edge/core';
+import { headerValue as header, locationWithEU, type PlatformInfo } from '@sharedid-edge/core';
 
 /** Whether Vercel's proxy sits in front of the handler and sets the client IP and `x-vercel-ip-*` headers. */
 export interface PlatformOptions {
@@ -12,11 +12,6 @@ export interface PlatformOptions {
 }
 
 const ADDRESS = /^[0-9A-Fa-f:.]+$/;
-
-function header(headers: Headers, name: string): string | undefined {
-  const value = headers.get(name)?.trim();
-  return value === undefined || value === '' ? undefined : value;
-}
 
 /**
  * The client IP Vercel's proxy reports: `x-real-ip`, else the first `x-forwarded-for` entry. Vercel overwrites both
@@ -49,7 +44,9 @@ function decodeCity(value: string | undefined): string | undefined {
 export function platformInfo(headers: Headers, options: PlatformOptions = {}): PlatformInfo {
   if (options.behindVercel === false) return {};
   const ip = clientIp(headers);
-  const location = locationInfo({
+  return {
+    ...(ip === undefined ? {} : { clientIp: ip }),
+    ...locationWithEU({
     country: header(headers, 'x-vercel-ip-country'),
     regionCode: header(headers, 'x-vercel-ip-country-region'),
     city: decodeCity(header(headers, 'x-vercel-ip-city')),
@@ -58,10 +55,6 @@ export function platformInfo(headers: Headers, options: PlatformOptions = {}): P
     longitude: header(headers, 'x-vercel-ip-longitude'),
     timezone: header(headers, 'x-vercel-ip-timezone'),
     continent: header(headers, 'x-vercel-ip-continent')
-  });
-  return {
-    ...(ip === undefined ? {} : { clientIp: ip }),
-    ...location,
-    ...(location.country === undefined ? {} : { isEU: EU_COUNTRY_CODES.has(location.country) })
+    })
   };
 }

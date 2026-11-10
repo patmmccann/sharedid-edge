@@ -16,10 +16,16 @@ export interface RunningTarget {
    * platform genuinely doesn't provide, and document it in the adapter's README.
    */
   readonly unavailable: readonly string[];
+  /**
+   * Cases the platform can't pass, by `file#case name`, with the reason. The runner reports them as TODO instead of
+   * failures, and fails if one passes. Only for a documented limitation of the platform itself, never to skip a
+   * failure of the adapter; the adapter's README says what it means for publishers.
+   */
+  readonly limitations: Readonly<Record<string, string>>;
   stop(): Promise<void>;
 }
 
-export type TargetName = 'node' | 'wrangler' | 'lambda' | 'vercel';
+export type TargetName = 'node' | 'wrangler' | 'lambda' | 'vercel' | 'azure';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -78,11 +84,12 @@ const LOCATION_HEADERS: Readonly<Record<string, string>> = {
 };
 
 /**
- * For `wrangler dev`: when a case sends visitor location headers, passes the same values to the worker as
- * `request.cf`. Locally, workerd fills `request.cf` from Cloudflare's view of the machine running the suite, and the
- * only way to replace it per request is Miniflare's `MF-CF-Blob` header (the JSON `cf` object Miniflare itself sends
- * with `dispatchFetch`). `clientAcceptEncoding` is kept empty, as in Miniflare's default, so responses aren't
- * compressed.
+ * For `wrangler dev`: passes the case's visitor location headers to the worker as `request.cf`, and nothing else.
+ * Locally, workerd fills `request.cf` from Cloudflare's view of the machine running the suite (or, offline,
+ * Miniflare's placeholder, which includes a Bot Management score), and the only way to replace it per request is
+ * Miniflare's `MF-CF-Blob` header (the JSON `cf` object Miniflare itself sends with `dispatchFetch`). It's sent on
+ * every request, so results don't depend on where the suite runs. `clientAcceptEncoding` is kept empty, as in
+ * Miniflare's default, so responses aren't compressed.
  */
 function asRequestCf(headers: Readonly<Record<string, string>>): Record<string, string> {
   const cf: Record<string, string> = {};
@@ -90,7 +97,6 @@ function asRequestCf(headers: Readonly<Record<string, string>>): Record<string, 
     const field = LOCATION_HEADERS[name.toLowerCase()];
     if (field !== undefined) cf[field] = value;
   }
-  if (Object.keys(cf).length === 0) return { ...headers };
   return { ...headers, 'MF-CF-Blob': JSON.stringify({ ...cf, clientAcceptEncoding: '' }) };
 }
 
@@ -100,7 +106,38 @@ const UNAVAILABLE: Readonly<Record<TargetName, readonly string[]>> = {
   wrangler: [],
   lambda: [],
   // Vercel's geolocation headers have no metro (DMA) code.
-  vercel: ['ortb2.device.geo.metro']
+  vercel: ['ortb2.device.geo.metro'],
+  // The stand-in's rule set passes every location field, so nothing is missing here; the real Front Door template
+  // passes only the country (see the adapter's README).
+  azure: []
+};
+
+/** The Front Door profile ID the Azure stand-in sends as X-Azure-FDID, and the function app accepts. */
+const AZURE_FRONT_DOOR_ID = '0f1e2d3c-4b5a-4978-8a7b-6c5d4e3f2a1b';
+
+/** The headers the Azure stand-in's "rule set" adds, by location field (SID_LOCATION_HEADERS). */
+const AZURE_LOCATION_HEADERS: Readonly<Record<string, string>> = {
+  country: 'x-sid-country',
+  regionCode: 'x-sid-region',
+  city: 'x-sid-city',
+  postalCode: 'x-sid-postal-code',
+  metroCode: 'x-sid-metro-code',
+  latitude: 'x-sid-latitude',
+  longitude: 'x-sid-longitude',
+  timezone: 'x-sid-timezone',
+  continent: 'x-sid-continent'
+};
+
+const PERCENT_ENCODED = 'the Functions host percent-encodes cookie values, so the adapter leaves out a cookie whose value it would change';
+
+/**
+ * What Azure Functions can't do; see `RunningTarget.limitations`. The reflect module re-sets cookies byte for byte, and
+ * these cases' uid1 has `%`, `+`, `/` and `=` in its value.
+ */
+const AZURE_LIMITATIONS: Readonly<Record<string, string>> = {
+  'module-reflect.json#reflects uid1 byte for byte with Domain=.example.com and a new Max-Age': PERCENT_ENCODED,
+  "module-reflect.json#reflects on /sync (Prebid.js's pixelUrl call), with the pixel response otherwise unchanged": PERCENT_ENCODED,
+  'module-reflect-prefer.json#backup: restores the saved uid1 byte for byte over the present one, restores the missing _ga, and keeps {_ga, uid1}': PERCENT_ENCODED
 };
 
 /** Starts a target configured with `config` (SID_* environment variables). */
@@ -127,6 +164,22 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
+  } else if (target === 'azure') {
+    // The bundled function app behind a local stand-in for Front Door and the Functions host (azure-emulator.ts). The
+    // handler checks X-Azure-FDID against a fixed profile ID the stand-in sends, and reads every location field from
+    // the headers a Front Door rule set would add. Plain http, so cookies aren't Secure, as for the other targets.
+    child = spawn(process.execPath, [join(ROOT, 'conformance/dist/azure-emulator.js')], {
+      env: {
+        PATH: process.env['PATH'] ?? '',
+        PORT: String(port),
+        SID_PUBLIC_ORIGIN: baseUrl,
+        AZURE_FRONT_DOOR_ID: AZURE_FRONT_DOOR_ID,
+        SID_FRONT_DOOR_ID: AZURE_FRONT_DOOR_ID,
+        SID_LOCATION_HEADERS: JSON.stringify(AZURE_LOCATION_HEADERS),
+        ...config
+      },
+      stdio: ['ignore', 'ignore', 'inherit']
+    });
   } else {
     // `wrangler dev` runs the worker in workerd, the Workers runtime, locally; no Cloudflare account needed.
     const vars = Object.entries(config).flatMap(([key, value]) => ['--var', `${key}:${value}`]);
@@ -148,6 +201,7 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
     baseUrl,
     stop,
     requestHeaders: target === 'wrangler' ? asRequestCf : headers => ({ ...headers }),
-    unavailable: UNAVAILABLE[target]
+    unavailable: UNAVAILABLE[target],
+    limitations: target === 'azure' ? AZURE_LIMITATIONS : {}
   };
 }

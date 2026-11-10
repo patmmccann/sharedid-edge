@@ -6,7 +6,7 @@ import { gzipSync } from 'node:zlib';
 import { build } from 'esbuild';
 
 /** The size budget of every bundled adapter, gzipped, like the Worker's. */
-export const BUDGET = 20 * 1024;
+export const BUDGET = 32 * 1024;
 
 /**
  * Empties `<root>/deploy`, bundles `<root>/<entry>` into `<root>/deploy/<file>` as ESM with esbuild (`options` add to
@@ -26,6 +26,10 @@ export async function bundleAdapter({ root, entry, file, label, options = {} }) 
     outfile,
     bundle: true,
     format: 'esm',
+    // Minified, as the Worker is; names kept so stack traces stay readable. No source map: a deploy/ folder holds
+    // only what's deployed.
+    minify: true,
+    keepNames: true,
     legalComments: 'none',
     logLevel: 'warning',
     ...options

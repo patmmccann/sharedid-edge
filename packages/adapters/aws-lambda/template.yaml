@@ -80,13 +80,13 @@ Parameters:
   SidModules:
     Type: String
     Default: ''
-    Description: SID_MODULES, comma-separated modules to run (built in, ip, ec, geo and reflect).
+    Description: SID_MODULES, comma-separated modules to run (built in, ip, ec, geo, reflect and bot).
   SidSyncModules:
     Type: String
     Default: ''
     Description: >-
       SID_SYNC_MODULES, comma-separated modules from SidModules to run on /sync, or none (default every module in
-      SidModules that runs on /sync, reflect and ec).
+      SidModules that runs on /sync, reflect, ec and bot).
   SidModuleConfig:
     Type: String
     Default: ''
@@ -102,6 +102,15 @@ Parameters:
     Type: String
     Default: ''
     Description: SID_MODULE_TIMEOUT_MS (default 50).
+  SidSkipBots:
+    Type: String
+    Default: ''
+    AllowedValues: ['', verified, declared, likely]
+    Description: SID_SKIP_BOTS, set no SharedID for bots this sure or surer (default off; see the README).
+  SidSkipBotsScore:
+    Type: String
+    Default: ''
+    Description: SID_SKIP_BOTS_SCORE, 1 to 99, set no SharedID when the traffic score is at or below it (default off).
 
 Conditions:
   CreateDistribution: !Equals [!Ref CreateDistribution, 'true']
@@ -145,6 +154,8 @@ Resources:
           SID_MODULE_CONFIG: !Ref SidModuleConfig
           SID_MODULE_SECRETS: !Ref SidModuleSecrets
           SID_MODULE_TIMEOUT_MS: !Ref SidModuleTimeoutMs
+          SID_SKIP_BOTS: !Ref SidSkipBots
+          SID_SKIP_BOTS_SCORE: !Ref SidSkipBotsScore
 
   SharedIdLogGroup:
     Type: AWS::Logs::LogGroup

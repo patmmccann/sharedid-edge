@@ -5,11 +5,17 @@ import {
   defineModule,
   EU_COUNTRY_CODES,
   handlerOrMisconfigured,
+  headerValue,
   locationInfo,
+  locationWithEU,
   logRequestFailure,
+  mergeTraffic,
   preciseLocationDenial,
+  publicOriginFromEnv,
   resolveConfig,
+  skipsBot,
   splitHeaders,
+  type BotKind,
   type EdgeModule,
   type LocationSource,
   type ModuleContext,
@@ -22,7 +28,9 @@ import {
   type SharedIdEdgeConfig,
   type SharedIdEdgeHandler,
   type SplitHeaders,
-  type StorageDecision
+  type StorageDecision,
+  type TrafficReport,
+  type TrafficSignal
 } from '@sharedid-edge/core';
 
 const geo: EdgeModule = defineModule({
@@ -68,6 +76,17 @@ export async function payload(request: Request): Promise<PayloadV1> {
   return await response.json() as PayloadV1;
 }
 
+// A module reporting to the shared traffic signal, and an adapter passing the platform's verdict.
+const kind: BotKind = 'declared';
+const report: TrafficReport = { bot: true, botKind: kind, proxy: 'relay', score: 12, internal: false };
+export const crawler: EdgeModule = defineModule({ name: 'crawler', run: () => ({ traffic: report }) });
+export const verified: PlatformInfo = { traffic: { bot: true, botKind: 'verified', score: 1 } };
+const merged: TrafficSignal | undefined = mergeTraffic([{ source: 'platform', report }]);
+export const skipped: boolean = skipsBot(config, merged);
+const sources: readonly string[] = merged?.sources ?? [];
+// @ts-expect-error - the merged signal's sources are read-only
+sources.push('forged');
+
 // @ts-expect-error - the handler's platform info is read-only
 platform.country = 'US';
 
@@ -86,4 +105,9 @@ export async function platformResponse(request: Request): Promise<{ status: numb
     logRequestFailure(error);
     return { status: 500, headers: {}, cookies: [] };
   }
+}
+export function platformFromHeaders(headers: Headers, env: Readonly<Record<string, string | undefined>>): PlatformInfo {
+  const origin: { readonly publicOrigin?: string } = publicOriginFromEnv(env);
+  const ip: string | undefined = headerValue(headers, 'x-client-ip');
+  return { ...(ip === undefined || origin.publicOrigin === '' ? {} : { clientIp: ip }), ...locationWithEU({ country: headerValue(headers, 'x-country') }) };
 }

@@ -19,6 +19,18 @@ export function splitHeaders(headers: Headers): SplitHeaders {
   return { headers: rest, cookies: headers.getSetCookie() };
 }
 
+/** A request header's value, trimmed, or undefined when it's missing or blank. */
+export function headerValue(headers: Headers, name: string): string | undefined {
+  const value = headers.get(name)?.trim();
+  return value === undefined || value === '' ? undefined : value;
+}
+
+/** `SID_PUBLIC_ORIGIN` as an adapter option: `{ publicOrigin }`, or nothing when it's unset or empty. */
+export function publicOriginFromEnv(env: Readonly<Record<string, string | undefined>>): { readonly publicOrigin?: string } {
+  const publicOrigin = env['SID_PUBLIC_ORIGIN'];
+  return publicOrigin === undefined || publicOrigin === '' ? {} : { publicOrigin };
+}
+
 /** Logs that a request failed, naming only the error's type: its message may contain request data. */
 export function logRequestFailure(error: unknown): void {
   console.error('sharedid-edge: request failed', error instanceof Error ? error.name : 'unknown error');

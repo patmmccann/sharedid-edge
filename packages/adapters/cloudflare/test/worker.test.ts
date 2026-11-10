@@ -2,7 +2,7 @@ import { exports } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import { utcOffsetMinutes } from '@sharedid-edge/module-geo';
 import { builtInModules as modules } from '@sharedid-edge/modules';
-import { platformInfo } from '../src/platform.js';
+import { botManagementTraffic, platformInfo } from '../src/platform.js';
 
 const UUID = 'c29cb2ae-769d-42f6-891a-f53cadee823d';
 
@@ -65,6 +65,39 @@ describe('platformInfo', () => {
   it('ignores Tor and unknown countries, empty values and invalid coordinates', () => {
     expect(platformInfo({ headers: new Headers(), cf: { country: 'T1', city: '', latitude: 'NaN', longitude: '1' } })).toEqual({ isEU: false });
     expect(platformInfo({ headers: new Headers(), cf: { country: 'XX', regionCode: '', postalCode: ' ', timezone: '' } })).toEqual({ isEU: false });
+  });
+});
+
+describe('Bot Management', () => {
+  // As request.cf has it on a zone with Bot Management (Enterprise), with fields the adapter doesn't read.
+  const botManagement = { score: 1, verifiedBot: true, corporateProxy: false, staticResource: false, detectionIds: [], ja3Hash: 'x' };
+
+  it('maps a verified bot, its score, and a corporate proxy to the platform traffic verdict', () => {
+    expect(botManagementTraffic(botManagement)).toEqual({ bot: true, botKind: 'verified', score: 1 });
+    expect(botManagementTraffic({ ...botManagement, score: 87, verifiedBot: false, corporateProxy: true })).toEqual({ proxy: 'relay', score: 87 });
+    expect(platformInfo({ headers: new Headers(), cf: { country: 'US', botManagement } })).toEqual({
+      country: 'US', isEU: false, traffic: { bot: true, botKind: 'verified', score: 1 }
+    });
+  });
+
+  it('adds nothing when Bot Management is absent or says nothing', () => {
+    expect(platformInfo({ headers: new Headers(), cf: { country: 'US' } })).toEqual({ country: 'US', isEU: false });
+    // A zone without Bot Management's scoring: the flags are false and there is no score.
+    expect(botManagementTraffic({ corporateProxy: false, verifiedBot: false, staticResource: false, detectionIds: {} })).toBeUndefined();
+    expect(botManagementTraffic(undefined)).toBeUndefined();
+    expect(botManagementTraffic('yes')).toBeUndefined();
+  });
+
+  it('ignores scores outside 1 to 99, including 0 (not computed)', () => {
+    for (const score of [0, 100, 1.5, '5', Number.NaN]) {
+      expect(botManagementTraffic({ score, verifiedBot: false, corporateProxy: false })).toBeUndefined();
+    }
+  });
+
+  it('returns the verdict as ortb2.device.ext.traffic from the Worker', async () => {
+    const request = new Request('https://www.example.com/_sid/v1', { cf: { botManagement } });
+    const body: unknown = await (await exports.default.fetch(request)).json();
+    expect(body).toMatchObject({ ortb2: { device: { ext: { traffic: { bot: true, botKind: 'verified', score: 1, sources: ['platform'] } } } } });
   });
 });
 
