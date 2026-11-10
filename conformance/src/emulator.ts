@@ -27,13 +27,13 @@ export function trustProxyFromEnv(): boolean {
 }
 
 /**
- * The function `exportName` of the adapter bundle at `bundle`. Throws, saying how to build it, when the bundle doesn't
- * export one. The caller casts it to the bundle's own type.
+ * The function `exportName` of the adapter bundle at `bundle`. Throws, naming `command` (which builds the bundle),
+ * when the bundle doesn't export one. The caller casts it to the bundle's own type.
  */
-export async function loadBundleExport(bundle: string, exportName: string, workspace: string): Promise<(...args: never[]) => unknown> {
+export async function loadBundleExport(bundle: string, exportName: string, command: string): Promise<(...args: never[]) => unknown> {
   const loaded: unknown = await import(pathToFileURL(bundle).href);
   const value: unknown = typeof loaded === 'object' && loaded !== null && exportName in loaded ? Reflect.get(loaded, exportName) : undefined;
-  if (typeof value !== 'function') throw new Error(`${bundle} doesn't export ${exportName}; run npm run bundle -w ${workspace}`);
+  if (typeof value !== 'function') throw new Error(`${bundle} doesn't export ${exportName}; run ${command} from the repository root`);
   // Checked to be a function above.
   return value as (...args: never[]) => unknown;
 }

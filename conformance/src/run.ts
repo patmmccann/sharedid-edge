@@ -4,8 +4,8 @@ import { runCase, type HeaderAdapter } from './check.js';
 import { startTarget, type TargetName } from './targets.js';
 
 const USAGE = `Usage:
-  conformance --target node|wrangler|lambda|vercel|azure  start each configuration locally and run every case
-  conformance --base-url https://...                       run the default-configuration cases against a deployment`;
+  conformance --target node|wrangler|lambda|vercel|azure|gcp  start each configuration locally and run every case
+  conformance --base-url https://...                           run the default-configuration cases against a deployment`;
 
 interface FileResult {
   readonly failed: number;
@@ -61,14 +61,14 @@ async function main(): Promise<number> {
 
   if (values['base-url'] !== undefined) {
     // A deployment has one configuration; run the files that use the defaults.
-    for (const file of files.filter(f => Object.keys(f.config).length === 0)) {
+    for (const file of files.filter(f => Object.keys(f.config).length === 0 && f.build.length === 0)) {
       total += file.cases.length;
       failed += (await runFile(values['base-url'], file)).failed;
     }
-  } else if (values.target === 'node' || values.target === 'wrangler' || values.target === 'lambda' || values.target === 'vercel' || values.target === 'azure') {
+  } else if (values.target === 'node' || values.target === 'wrangler' || values.target === 'lambda' || values.target === 'vercel' || values.target === 'azure' || values.target === 'gcp') {
     const target: TargetName = values.target;
     for (const file of files) {
-      const running = await startTarget(target, file.config);
+      const running = await startTarget(target, file.config, file.build);
       try {
         total += file.cases.length;
         const result = await runFile(running.baseUrl, file, running.requestHeaders, running);

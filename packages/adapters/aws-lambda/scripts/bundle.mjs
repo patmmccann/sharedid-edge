@@ -7,22 +7,22 @@
 // aren't in the archive, and the function would fail to start. So deploy/ is emptied first and must end up holding
 // lambda.mjs alone.
 //
-// Fails if the bundle is over its size budget, like the Worker's. Run `npm run build` first: core and the modules
-// resolve to their dist/.
+// Options: --bowser (Bowser in the ua module) and --outdir <deploy* dir>; see scripts/bundle-adapter.mjs.
 import { readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname } from 'node:path';
 import { bundleAdapter } from '../../../../scripts/bundle-adapter.mjs';
 
-const bundle = await bundleAdapter({
-  root: join(import.meta.dirname, '..'),
+const { outdir } = await bundleAdapter({
+  root: dirname(import.meta.dirname),
   entry: 'src/lambda.ts',
   file: 'lambda.mjs',
   label: 'Lambda bundle',
   options: { platform: 'node', target: 'node24' }
 });
 
-const files = readdirSync(dirname(bundle));
+const files = readdirSync(outdir);
 if (files.length !== 1 || files[0] !== 'lambda.mjs') {
-  console.error(`deploy/ must contain only lambda.mjs, found: ${files.join(', ')}`);
+  console.error(`${basename(outdir)}/ must contain only lambda.mjs, found: ${files.join(', ')}`);
   process.exitCode = 1;
 }
+

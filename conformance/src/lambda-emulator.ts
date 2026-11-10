@@ -4,17 +4,19 @@
 // handler's result is written back the way the function URL would.
 //
 // Started by targets.ts with the case file's configuration as environment variables (read by the handler at
-// "cold start", when the bundle is imported), plus PORT and SID_PUBLIC_ORIGIN.
+// "cold start", when the bundle is imported), plus PORT, SID_PUBLIC_ORIGIN and CONFORMANCE_LAMBDA_BUNDLE (the bundle's
+// directory: deploy, or deploy-bowser for case files that need Bowser).
 import type { IncomingMessage } from 'node:http';
 import { join } from 'node:path';
 import type { LambdaEventV2, LambdaHandler } from '@sharedid-edge/aws-lambda';
 import { caseClientIp, caseLocation, emulatorPort, loadBundleExport, readBody, serve, trustProxyFromEnv, type CaseLocationHeader } from './emulator.js';
 
-const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/aws-lambda/deploy/lambda.mjs');
+const BUNDLE_DIR = process.env['CONFORMANCE_LAMBDA_BUNDLE'] === 'deploy-bowser' ? 'deploy-bowser' : 'deploy';
+const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/aws-lambda', BUNDLE_DIR, 'lambda.mjs');
 
 async function loadHandler(): Promise<LambdaHandler> {
   // A function, checked by loadBundleExport; the bundle is built from src/lambda.ts, whose `handler` is a LambdaHandler.
-  return (await loadBundleExport(BUNDLE, 'handler', '@sharedid-edge/aws-lambda')) as LambdaHandler;
+  return (await loadBundleExport(BUNDLE, 'handler', 'npm run conformance:lambda')) as LambdaHandler;
 }
 
 /**

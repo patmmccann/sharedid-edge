@@ -5,13 +5,15 @@
 // Vercel's Edge runtime creeps in, and it fails over its size budget, like the Worker's and the Lambda function's.
 // Run `npm run build` first: core and the modules resolve to their dist/, and the declarations come from
 // dist/bundle.d.ts.
+//
+// Options: --bowser (Bowser in the ua module) and --outdir <deploy* dir>; see scripts/bundle-adapter.mjs.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { bundleAdapter } from '../../../../scripts/bundle-adapter.mjs';
 
 const root = join(import.meta.dirname, '..');
 
-await bundleAdapter({
+const { outdir } = await bundleAdapter({
   root,
   entry: 'src/bundle.ts',
   file: 'sharedid-edge.mjs',
@@ -31,4 +33,5 @@ if (/^\s*import\b/m.test(types)) {
   console.error('dist/bundle.d.ts imports other declarations; src/bundle.ts must spell out its types');
   process.exitCode = 1;
 }
-writeFileSync(join(root, 'deploy/sharedid-edge.d.mts'), types.replace(/^\/\/# sourceMappingURL=.*$/m, '').trimEnd() + '\n');
+writeFileSync(join(outdir, 'sharedid-edge.d.mts'), types.replace(/^\/\/# sourceMappingURL=.*$/m, '').trimEnd() + '\n');
+

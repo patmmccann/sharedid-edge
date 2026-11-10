@@ -8,20 +8,19 @@
 // only the worker provides, so it stays an ordinary dependency, installed with `npm install --omit=dev` in deploy/
 // (or by a remote build). Fails if the bundle is over its size budget, like the Worker's. Run `npm run build` first:
 // core and the modules resolve to their dist/.
-import { readFileSync, writeFileSync } from 'node:fs';
+//
+// Options: --bowser (Bowser in the ua module) and --outdir <deploy* dir>; see scripts/bundle-adapter.mjs.
+import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { bundleAdapter } from '../../../../scripts/bundle-adapter.mjs';
 
-const root = join(import.meta.dirname, '..');
-const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-
-const outdir = dirname(await bundleAdapter({
-  root,
+const { outdir, pkg } = await bundleAdapter({
+  root: dirname(import.meta.dirname),
   entry: 'src/functions.ts',
   file: 'sharedid-edge.mjs',
   label: 'Azure Functions bundle',
   options: { platform: 'node', target: 'node24', external: ['@azure/functions'] }
-}));
+});
 
 writeFileSync(join(outdir, 'host.json'), JSON.stringify({
   version: '2.0',
@@ -42,3 +41,4 @@ writeFileSync(join(outdir, 'package.json'), JSON.stringify({
   engines: { node: '>=24' },
   dependencies: { '@azure/functions': pkg.devDependencies['@azure/functions'] }
 }, null, 2) + '\n');
+

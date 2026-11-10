@@ -1,6 +1,8 @@
 node_modules/
 dist/
 packages/adapters/*/deploy/
+packages/adapters/*/deploy-bowser/
+packages/adapters/*/dist-bowser/
 .tsbuild/
 .wrangler/
 coverage/
@@ -9,4 +11,7 @@ coverage/
 .env
 test-results/
 playwright-report/
+.terraform/
+.terraform.lock.hcl
+packages/adapters/gcp-functions/terraform/.build/
 .jscpd-report/

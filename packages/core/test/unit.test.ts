@@ -6,11 +6,13 @@ import {
   EU_COUNTRY_CODES,
   handlerOrMisconfigured,
   headerValue,
+  isHeaderName,
   idFromSyncParam,
   isValidId,
   locationWithEU,
   logRequestFailure,
   parseCookies,
+  parseHeaderMap,
   publicOriginFromEnv,
   readConsent,
   resolveConfig,
@@ -369,5 +371,22 @@ describe('more adapter helpers', () => {
     expect(locationWithEU({ country: 'de', city: 'Berlin' })).toEqual({ country: 'DE', city: 'Berlin', isEU: true });
     expect(locationWithEU({ country: 'GB' })).toEqual({ country: 'GB', isEU: false });
     expect(locationWithEU({ country: 'XX', city: 'Nowhere' })).toEqual({ city: 'Nowhere' });
+  });
+});
+
+describe('parseHeaderMap', () => {
+  const fields = ['country', 'city'] as const;
+  it('maps known fields to lowercase header names', () => {
+    expect(parseHeaderMap('{"country":"X-Geo-Country"}', 'SID_LOCATION_HEADERS', fields, '{}')).toEqual({ country: 'x-geo-country' });
+    expect(parseHeaderMap(undefined, 'SID_LOCATION_HEADERS', fields, '{}')).toEqual({});
+    expect(parseHeaderMap('  ', 'SID_LOCATION_HEADERS', fields, '{}')).toEqual({});
+    expect(isHeaderName('x-geo-country')).toBe(true);
+    expect(isHeaderName('x geo')).toBe(false);
+  });
+
+  it('throws a ConfigError for anything else', () => {
+    for (const value of ['not json', '[]', '"x"', '{"region":"x-r"}', '{"city":"bad header"}', '{"city":1}']) {
+      expect(() => parseHeaderMap(value, 'SID_LOCATION_HEADERS', fields, '{"country":"x-c"}')).toThrow(ConfigError);
+    }
   });
 });

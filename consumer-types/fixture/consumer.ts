@@ -6,9 +6,11 @@ import {
   EU_COUNTRY_CODES,
   handlerOrMisconfigured,
   headerValue,
+  isHeaderName,
   locationInfo,
   locationWithEU,
   logRequestFailure,
+  parseHeaderMap,
   mergeTraffic,
   preciseLocationDenial,
   publicOriginFromEnv,
@@ -111,3 +113,5 @@ export function platformFromHeaders(headers: Headers, env: Readonly<Record<strin
   const ip: string | undefined = headerValue(headers, 'x-client-ip');
   return { ...(ip === undefined || origin.publicOrigin === '' ? {} : { clientIp: ip }), ...locationWithEU({ country: headerValue(headers, 'x-country') }) };
 }
+export const geoHeaders: Partial<Record<'country' | 'city', string>> = parseHeaderMap('{"country":"x-geo"}', 'SID_LOCATION_HEADERS', ['country', 'city'], '{"country":"x-geo"}');
+export const validName: boolean = isHeaderName('x-geo');

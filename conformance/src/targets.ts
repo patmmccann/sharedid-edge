@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import type { BuildOption } from './cases.js';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 
@@ -25,7 +26,7 @@ export interface RunningTarget {
   stop(): Promise<void>;
 }
 
-export type TargetName = 'node' | 'wrangler' | 'lambda' | 'vercel' | 'azure';
+export type TargetName = 'node' | 'wrangler' | 'lambda' | 'vercel' | 'azure' | 'gcp';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -109,7 +110,18 @@ const UNAVAILABLE: Readonly<Record<TargetName, readonly string[]>> = {
   vercel: ['ortb2.device.geo.metro'],
   // The stand-in's rule set passes every location field, so nothing is missing here; the real Front Door template
   // passes only the country (see the adapter's README).
-  azure: []
+  azure: [],
+  // The load balancer's location variables are the country, subdivision, city and coordinates: no metro code, postal
+  // code or time zone (so no utcoffset).
+  gcp: ['ortb2.device.geo.metro', 'ortb2.device.geo.zip', 'ortb2.device.geo.utcoffset']
+};
+
+/** The custom request headers the Google Cloud stand-in's load balancer adds, by location field. */
+const GCP_LOCATION_HEADERS: Readonly<Record<string, string>> = {
+  country: 'x-client-region',
+  region: 'x-client-region-subdivision',
+  city: 'x-client-city',
+  latLong: 'x-client-city-lat-long'
 };
 
 /** The Front Door profile ID the Azure stand-in sends as X-Azure-FDID, and the function app accepts. */
@@ -140,11 +152,20 @@ const AZURE_LIMITATIONS: Readonly<Record<string, string>> = {
   'module-reflect-prefer.json#backup: restores the saved uid1 byte for byte over the present one, restores the missing _ga, and keeps {_ga, uid1}': PERCENT_ENCODED
 };
 
-/** Starts a target configured with `config` (SID_* environment variables). */
-export async function startTarget(target: TargetName, config: Readonly<Record<string, string>>): Promise<RunningTarget> {
+/**
+ * Starts a target configured with `config` (SID_* environment variables) and built with `build`. With `bowser`, the
+ * Worker runs its Bowser entry point (src/bowser.ts), and the Lambda, Vercel, Azure and Google Cloud targets load the
+ * bundles `npm run conformance:lambda`, `conformance:vercel`, `conformance:azure` and `conformance:gcp` build into
+ * deploy-bowser/. The Node.js
+ * server always has Bowser.
+ */
+export async function startTarget(target: TargetName, config: Readonly<Record<string, string>>, build: readonly BuildOption[] = []): Promise<RunningTarget> {
+  const bowser = build.includes('bowser');
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${String(port)}`;
   let child: ChildProcess;
+  // A process the target needs besides `child`, stopped with it.
+  let upstream: { readonly child: ChildProcess; readonly url: string } | undefined;
   if (target === 'node') {
     child = spawn(process.execPath, [join(ROOT, 'packages/adapters/node/dist/cli.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), HOST: '127.0.0.1', ...config },
@@ -154,14 +175,14 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
     // The bundled Lambda handler behind a local CloudFront and function URL stand-in (lambda-emulator.ts). The
     // public origin is the emulator's own http URL, so cookies aren't Secure, as for the other local targets.
     child = spawn(process.execPath, [join(ROOT, 'conformance/dist/lambda-emulator.js')], {
-      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_LAMBDA_BUNDLE: bowser ? 'deploy-bowser' : 'deploy', ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else if (target === 'vercel') {
     // The bundled Vercel adapter behind a local stand-in for Vercel's proxy (vercel-emulator.ts), which sets the
     // x-real-ip and x-vercel-ip-* headers. Plain http, so cookies aren't Secure, as for the other local targets.
     child = spawn(process.execPath, [join(ROOT, 'conformance/dist/vercel-emulator.js')], {
-      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_VERCEL_BUNDLE: bowser ? 'deploy-bowser' : 'deploy', ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else if (target === 'azure') {
@@ -173,6 +194,7 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
         PATH: process.env['PATH'] ?? '',
         PORT: String(port),
         SID_PUBLIC_ORIGIN: baseUrl,
+        CONFORMANCE_AZURE_BUNDLE: bowser ? 'deploy-bowser' : 'deploy',
         AZURE_FRONT_DOOR_ID: AZURE_FRONT_DOOR_ID,
         SID_FRONT_DOOR_ID: AZURE_FRONT_DOOR_ID,
         SID_LOCATION_HEADERS: JSON.stringify(AZURE_LOCATION_HEADERS),
@@ -180,18 +202,43 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
       },
       stdio: ['ignore', 'ignore', 'inherit']
     });
+  } else if (target === 'gcp') {
+    // The real Functions Framework running the bundled function from its deploy/ directory, as Cloud Run functions
+    // does, behind a local stand-in for the external Application Load Balancer (gcp-emulator.ts) that appends to
+    // X-Forwarded-For and adds the location as custom request headers. Plain http, so cookies aren't Secure.
+    const functionPort = await freePort();
+    const location = JSON.stringify(GCP_LOCATION_HEADERS);
+    const framework = join(ROOT, 'node_modules/@google-cloud/functions-framework/build/src/main.js');
+    upstream = {
+      url: `http://127.0.0.1:${String(functionPort)}`,
+      child: spawn(process.execPath, [framework, '--target=sharedidEdge', `--source=${join(ROOT, 'packages/adapters/gcp-functions', bowser ? 'deploy-bowser' : 'deploy')}`, `--port=${String(functionPort)}`], {
+        env: { PATH: process.env['PATH'] ?? '', SID_PUBLIC_ORIGIN: baseUrl, SID_LOCATION_HEADERS: location, ...config },
+        stdio: ['ignore', 'ignore', 'inherit']
+      })
+    };
+    child = spawn(process.execPath, [join(ROOT, 'conformance/dist/gcp-emulator.js')], {
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), UPSTREAM_PORT: String(functionPort), SID_LOCATION_HEADERS: location, ...config },
+      stdio: ['ignore', 'ignore', 'inherit']
+    });
   } else {
     // `wrangler dev` runs the worker in workerd, the Workers runtime, locally; no Cloudflare account needed.
     const vars = Object.entries(config).flatMap(([key, value]) => ['--var', `${key}:${value}`]);
+    // The Bowser build is its own entry point, src/bowser.ts, as in the Worker's dev:bowser and deploy:bowser scripts.
+    const entry = bowser ? ['src/bowser.ts'] : [];
     const wrangler = join(ROOT, 'node_modules/wrangler/bin/wrangler.js');
-    child = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'error', '--show-interactive-dev-session=false', ...vars], {
+    child = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'error', '--show-interactive-dev-session=false', ...entry, ...vars], {
       cwd: join(ROOT, 'packages/adapters/cloudflare'),
       env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   }
-  const stop = stopper(child);
+  const stopChild = stopper(child);
+  const stopUpstream = upstream === undefined ? () => Promise.resolve() : stopper(upstream.child);
+  const stop = async (): Promise<void> => {
+    await Promise.all([stopChild(), stopUpstream()]);
+  };
   try {
+    if (upstream !== undefined) await waitUntilUp(upstream.url, upstream.child, 15_000);
     await waitUntilUp(baseUrl, child, target === 'wrangler' ? 60_000 : 15_000);
   } catch (error) {
     await stop();

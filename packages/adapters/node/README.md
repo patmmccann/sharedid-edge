@@ -84,7 +84,9 @@ Core's `locationInfo` validates the values the same way for every adapter, dropp
 
 ## Built-in modules
 
-The CLI builds in `ip`, `ec`, `geo`, `reflect` and `bot`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../../README.md#modules).
+The CLI builds in `ip`, `ec`, `geo`, `reflect`, `bot` and `ua`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the main README's [Modules](../../../README.md#modules).
+
+The server isn't bundled, so its `ua` module always has [Bowser](../../modules/ua/README.md#full-parsing-with-bowser) (from `@sharedid-edge/modules/bowser`): `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` turns on full `User-Agent` parsing with no build step.
 
 ## Using it as a library
 
@@ -102,6 +104,8 @@ createNodeServer({
 ```
 
 `createNodeServer` returns a plain `node:http` `Server`. Repeated `Set-Cookie` headers are sent separately.
+
+The conversion is exported too, for platforms that hand you Node.js requests (or Express's, like Google Cloud's Functions Framework, which [`@sharedid-edge/gcp-functions`](../gcp-functions/README.md) uses): `toWebRequest(req, origin)` builds a `Request` with that origin, `sendWebResponse(res, response, method)` writes a `Response` with each `Set-Cookie` separate, and `utf8(value)` re-decodes a header value Node.js read as Latin-1.
 
 ## Verify
 

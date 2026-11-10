@@ -12,11 +12,13 @@ import { splitHeaders } from '@sharedid-edge/core';
 import type { Env, VercelHandler } from '@sharedid-edge/vercel';
 import { caseClientIp, caseLocation, emulatorPort, loadBundleExport, readBody, serve, trustProxyFromEnv, type CaseLocationHeader } from './emulator.js';
 
-const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/vercel/deploy/sharedid-edge.mjs');
+// CONFORMANCE_VERCEL_BUNDLE is the bundle's directory: deploy, or deploy-bowser for case files that need Bowser.
+const BUNDLE_DIR = process.env['CONFORMANCE_VERCEL_BUNDLE'] === 'deploy-bowser' ? 'deploy-bowser' : 'deploy';
+const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/vercel', BUNDLE_DIR, 'sharedid-edge.mjs');
 
 async function loadHandler(env: Env): Promise<VercelHandler> {
   // A function, checked by loadBundleExport; the bundle is built from src/bundle.ts, whose handlerFromEnv returns a handler.
-  const fromEnv = (await loadBundleExport(BUNDLE, 'handlerFromEnv', '@sharedid-edge/vercel')) as (env: Env) => VercelHandler;
+  const fromEnv = (await loadBundleExport(BUNDLE, 'handlerFromEnv', 'npm run conformance:vercel')) as (env: Env) => VercelHandler;
   return fromEnv(env);
 }
 

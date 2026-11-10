@@ -1,6 +1,6 @@
 # @sharedid-edge/modules
 
-The list of modules built into every [SharedID Edge](../../../README.md) adapter: [`ip`](../ip/README.md), [`ec`](../ec/README.md), [`geo`](../geo/README.md), [`reflect`](../reflect/README.md) and [`bot`](../bot/README.md). The Cloudflare Worker, the Node.js server, the AWS Lambda function, the Vercel adapter and the Azure Functions app all import it, so a module added here is available on every platform at once.
+The list of modules built into every [SharedID Edge](../../../README.md) adapter: [`ip`](../ip/README.md), [`ec`](../ec/README.md), [`geo`](../geo/README.md), [`reflect`](../reflect/README.md), [`bot`](../bot/README.md) and [`ua`](../ua/README.md). The Cloudflare Worker, the Node.js server, the AWS Lambda function, the Vercel adapter, the Azure Functions app and the Google Cloud function all import it, so a module added here is available on every platform at once.
 
 Being built in doesn't turn a module on. Each one does nothing until it's listed in `SID_MODULES`; see the main README's [Modules](../../../README.md#modules) section.
 
@@ -23,3 +23,7 @@ const modules = [...builtInModules, myModule];
 ```
 
 Vendor modules (in [`packages/vendor-modules/`](../../vendor-modules/README.md)) are never in this list: a deployer opts in to each one when building.
+
+## With Bowser
+
+`@sharedid-edge/modules/bowser` exports the same `builtInModules`, with `uaModuleWithBowser` in place of `uaModule`, so `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` can parse User-Agents fully. It's what the adapters' Bowser builds alias in (`deploy:bowser`, `bundle:bowser`) and what the Node.js server uses. It adds about 8 to 8.7 KB gzipped to a bundle; see [Full parsing with Bowser](../ua/README.md#full-parsing-with-bowser).

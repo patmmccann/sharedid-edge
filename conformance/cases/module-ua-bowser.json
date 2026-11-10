@@ -1,0 +1,146 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The ua module's Bowser option (SID_MODULE_CONFIG={\"ua\":{\"parser\":\"bowser\"}}), on a target built with Bowser (\"build\": [\"bowser\"]: the Bowser builds of the Worker, Lambda, Vercel and Azure Functions; the Node.js server always has it). Without Client Hints the User-Agent fills every device field Bowser can give: sua with source 3, devicetype, make, model, os and osv. Values browsers freeze (macOS 10.15.7, the .0.0.0 of reduced Chromium versions) are left out. Client Hints still win where both give a value. With GPC only low-entropy fields are sent (no model, osv, sua.platform.version or full versions); devicetype, make, os and major versions stay.",
+  "config": { "SID_MODULES": "ua", "SID_MODULE_CONFIG": "{\"ua\":{\"parser\":\"bowser\"}}" },
+  "build": ["bowser"],
+  "cases": [
+    {
+      "name": "Safari on iPhone: browser, OS and version, phone, maker and model",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "sua": { "browsers": [{ "brand": "Safari", "version": ["18", "1"] }], "platform": { "brand": "iOS", "version": ["18", "1"] }, "mobile": 1, "source": 3 },
+              "devicetype": 4,
+              "make": "Apple",
+              "model": "iPhone",
+              "os": "iOS",
+              "osv": "18.1"
+            }
+          },
+          "ext": { "modules": { "ua": { "status": "ok" } } }
+        },
+        "jsonAbsent": ["ortb2.device.ua", "ortb2.device.ext"]
+      }
+    },
+    {
+      "name": "Safari on iPad: tablet",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (iPad; CPU OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "sua": { "browsers": [{ "brand": "Safari", "version": ["17", "6"] }], "platform": { "brand": "iOS", "version": ["17", "6"] }, "mobile": 0, "source": 3 },
+              "devicetype": 5,
+              "make": "Apple",
+              "model": "iPad",
+              "os": "iOS",
+              "osv": "17.6"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Firefox on Android: phone, with the Android version",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Android 14; Mobile; rv:133.0) Gecko/133.0 Firefox/133.0" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "sua": { "browsers": [{ "brand": "Firefox", "version": ["133", "0"] }], "platform": { "brand": "Android", "version": ["14"] }, "mobile": 1, "source": 3 },
+              "devicetype": 4,
+              "os": "Android",
+              "osv": "14"
+            }
+          }
+        },
+        "jsonAbsent": ["ortb2.device.make", "ortb2.device.model"]
+      }
+    },
+    {
+      "name": "Safari on a Mac: no OS version, since the User-Agent freezes it at 10.15.7",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "sua": { "browsers": [{ "brand": "Safari", "version": ["18", "1"] }], "platform": { "brand": "macOS" }, "mobile": 0, "source": 3 },
+              "devicetype": 2,
+              "make": "Apple",
+              "os": "macOS"
+            }
+          }
+        },
+        "jsonAbsent": ["ortb2.device.osv", "ortb2.device.model"]
+      }
+    },
+    {
+      "name": "a Samsung smart TV: connected TV",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.5) AppleWebKit/537.36 (KHTML, like Gecko) 85.0.4183.93/6.5 TV Safari/537.36" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "sua": { "browsers": [{ "brand": "Tizen" }], "platform": { "brand": "Tizen", "version": ["6", "5"] }, "mobile": 0, "source": 3 },
+              "devicetype": 3,
+              "os": "Tizen",
+              "osv": "6.5"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Chrome on a Mac with Client Hints: sua, os and osv from the hints, make from the User-Agent",
+      "request": {
+        "path": "/_sid/v1",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"macOS\"",
+          "sec-ch-ua-platform-version": "\"15.1.0\""
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "sua": { "browsers": [{ "brand": "Google Chrome", "version": ["131"] }, { "brand": "Chromium", "version": ["131"] }], "platform": { "brand": "macOS", "version": ["15", "1", "0"] }, "mobile": 0, "source": 2 },
+              "devicetype": 2,
+              "make": "Apple",
+              "os": "macOS",
+              "osv": "15.1.0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Safari on iPad with GPC: only low-entropy fields",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (iPad; CPU OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1", "sec-gpc": "1" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "sua": { "browsers": [{ "brand": "Safari", "version": ["17"] }], "platform": { "brand": "iOS" }, "mobile": 0, "source": 3 },
+              "devicetype": 5,
+              "make": "Apple",
+              "os": "iOS"
+            }
+          }
+        },
+        "jsonAbsent": ["ortb2.device.model", "ortb2.device.osv", "ortb2.device.sua.platform.version"]
+      }
+    }
+  ]
+}

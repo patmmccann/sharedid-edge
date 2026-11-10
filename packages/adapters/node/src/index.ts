@@ -26,19 +26,29 @@ export function createNodeServer(options: NodeServerOptions = {}): Server {
 }
 
 async function handle(handler: SharedIdEdgeHandler, options: NodeServerOptions, req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const request = toRequest(req, options.publicOrigin);
-  const response = await handler(request, platformInfo(req, options.trustProxy === true));
+  const request = toWebRequest(req, options.publicOrigin ?? `http://${req.headers.host ?? 'localhost'}`);
+  await sendWebResponse(res, await handler(request, platformInfo(req, options.trustProxy === true)), req.method ?? 'GET');
+}
+
+/**
+ * Writes a `Response` to a Node.js `ServerResponse` (or Express's `res`), each `Set-Cookie` its own header. HEAD gets
+ * no body. Shared with adapters whose platform hands them Node.js requests, like Google Cloud's Functions Framework.
+ */
+export async function sendWebResponse(res: ServerResponse, response: Response, method: string): Promise<void> {
   const { headers, cookies } = splitHeaders(response.headers);
   res.writeHead(response.status, cookies.length > 0 ? { ...headers, 'set-cookie': cookies } : headers);
-  if (req.method === 'HEAD' || response.body === null) {
+  if (method.toUpperCase() === 'HEAD' || response.body === null) {
     res.end();
     return;
   }
   res.end(Buffer.from(await response.arrayBuffer()));
 }
 
-function toRequest(req: IncomingMessage, publicOrigin: string | undefined): Request {
-  const origin = publicOrigin ?? `http://${req.headers.host ?? 'localhost'}`;
+/**
+ * Converts a Node.js `IncomingMessage` (or Express's `req`) to a `Request` whose URL has `origin`, keeping repeated
+ * headers. Shared with adapters whose platform hands them Node.js requests, like Google Cloud's Functions Framework.
+ */
+export function toWebRequest(req: IncomingMessage, origin: string): Request {
   const headers = new Headers();
   for (const [name, value] of Object.entries(req.headers)) {
     if (value === undefined) continue;
@@ -87,8 +97,11 @@ function header(req: IncomingMessage, name: string): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-/** Re-decodes a Latin-1-decoded header value as UTF-8, keeping it as is when it isn't valid UTF-8. */
-function utf8(latin1: string): string {
+/**
+ * Re-decodes a header value Node.js decoded as Latin-1 as UTF-8 (proxies send city names as UTF-8 bytes), keeping it
+ * as is when it isn't valid UTF-8.
+ */
+export function utf8(latin1: string): string {
   const bytes = Buffer.from(latin1, 'latin1');
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes);

@@ -31,6 +31,41 @@ export function publicOriginFromEnv(env: Readonly<Record<string, string | undefi
   return publicOrigin === undefined || publicOrigin === '' ? {} : { publicOrigin };
 }
 
+const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/;
+
+/** Whether `value` is an HTTP header name (an RFC 9110 token). */
+export function isHeaderName(value: string): boolean {
+  return HEADER_NAME.test(value);
+}
+
+/**
+ * Parses a setting that maps fields to request header names, such as `SID_LOCATION_HEADERS`: a JSON object whose keys
+ * are among `fields` and whose values are header names, which come back lowercase. Unset or blank gives `{}`. Throws a
+ * `ConfigError` naming `setting` (and showing `example`, a JSON object) for anything else, so a typo can't silently
+ * turn the mapping off.
+ */
+export function parseHeaderMap<F extends string>(value: string | undefined, setting: string, fields: readonly F[], example: string): Partial<Record<F, string>> {
+  if (value === undefined || value.trim() === '') return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    parsed = undefined;
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new ConfigError(`${setting} must be a JSON object, like ${example}`);
+  }
+  const known: readonly string[] = fields;
+  const headers: Partial<Record<F, string>> = {};
+  for (const [field, name] of Object.entries(parsed)) {
+    if (!known.includes(field)) throw new ConfigError(`${setting}: unknown field "${field}"; use ${fields.join(', ')}`);
+    if (typeof name !== 'string' || !isHeaderName(name)) throw new ConfigError(`${setting}: the header for "${field}" must be a header name`);
+    // Checked to be one of `fields` above.
+    headers[field as F] = name.toLowerCase();
+  }
+  return headers;
+}
+
 /** Logs that a request failed, naming only the error's type: its message may contain request data. */
 export function logRequestFailure(error: unknown): void {
   console.error('sharedid-edge: request failed', error instanceof Error ? error.name : 'unknown error');

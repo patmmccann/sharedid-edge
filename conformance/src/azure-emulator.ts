@@ -19,7 +19,9 @@ import { pathToFileURL } from 'node:url';
 import type { AzureHandler } from '@sharedid-edge/azure-functions';
 import { caseClientIp, caseLocation, emulatorPort, readBody, trustProxyFromEnv, type CaseLocationHeader } from './emulator.js';
 
-const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/azure-functions/deploy/sharedid-edge.mjs');
+// CONFORMANCE_AZURE_BUNDLE is the bundle's directory: deploy, or deploy-bowser for case files that need Bowser.
+const BUNDLE_DIR = process.env['CONFORMANCE_AZURE_BUNDLE'] === 'deploy-bowser' ? 'deploy-bowser' : 'deploy';
+const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/azure-functions', BUNDLE_DIR, 'sharedid-edge.mjs');
 
 interface FunctionApp {
   readonly handler: AzureHandler;
