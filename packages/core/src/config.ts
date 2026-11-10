@@ -164,6 +164,10 @@ export function resolveConfig(env: Env): SharedIdEdgeConfig {
   if (recoveryCookieName === cookie || optOut === cookie) {
     throw new ConfigError('SID_RECOVERY_COOKIE and SID_OPTOUT_COOKIE must differ from SID_COOKIE_NAME');
   }
+  if (recoveryCookieName === optOut) {
+    // The recovery copy would be read as an opt-out, and /optout would expire its own cookie.
+    throw new ConfigError('SID_RECOVERY_COOKIE must differ from SID_OPTOUT_COOKIE');
+  }
 
   return Object.freeze({
     basePath: trimTrailingSlashes(basePath),

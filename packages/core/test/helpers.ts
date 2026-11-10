@@ -29,6 +29,8 @@ export function tcString(purposes: readonly number[], options: TcStringOptions =
   pushPurposes(bits, options.legitimateInterests ?? []);
   while (bits.length < 213) bits.push(0);
   pushVendors(bits, options.vendors ?? [], options.vendorEncoding ?? 'bitfield');
+  pushVendors(bits, [], 'bitfield'); // vendor legitimate interest section: none
+  pushInt(bits, 0, 12); // NumPubRestrictions
   if (options.publisher === undefined && options.publisherLegitimateInterests === undefined) return encode(bits);
   const publisher: number[] = [];
   pushInt(publisher, 3, 3); // SegmentType: publisher TC

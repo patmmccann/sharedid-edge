@@ -3,6 +3,7 @@
   "title": "SharedID Edge conformance case file",
   "type": "object",
   "required": ["description", "config", "cases"],
+  "additionalProperties": false,
   "properties": {
     "$schema": { "type": "string" },
     "description": { "type": "string" },

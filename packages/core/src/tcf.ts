@@ -7,10 +7,11 @@
  * IsServiceSpecific 138, UseNonStandardTexts 139, SpecialFeatureOptIns 140-151, PurposesConsent 152-175,
  * PurposesLITransparency 176-199, PurposeOneTreatment 200, PublisherCC 201-212, then the vendor consent section:
  * MaxVendorId 213-228, IsRangeEncoding 229, then either a bit field (one bit per vendor, 1 to MaxVendorId) or NumEntries
- * (12 bits) followed by entries of IsARange (1 bit), StartOrOnlyVendorId (16) and, for a range, EndVendorId (16).
+ * (12 bits) followed by entries of IsARange (1 bit), StartOrOnlyVendorId (16) and, for a range, EndVendorId (16); then
+ * the vendor legitimate interest section in the same format, and the publisher restrictions.
  *
  * Publisher TC segment layout: SegmentType 0-2 (3 for this segment), PubPurposesConsent 3-26,
- * PubPurposesLITransparency 27-50, then custom purposes.
+ * PubPurposesLITransparency 27-50, NumCustomPurposes 51-56, then two bits per custom purpose.
  */
 export interface TcfConsents {
   readonly version: number;
@@ -43,57 +44,104 @@ const PURPOSES_LENGTH = 24;
 const MAX_LENGTH = 8192;
 const BASE64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
-/** The purpose consents in a TC string, or undefined if the string isn't a valid TCF v2 TC string. */
+/**
+ * The consents in a TC string, or undefined if it isn't a complete TCF v2 TC string. The core segment must run to the
+ * end of its publisher restrictions, and a publisher TC segment to the end of its custom purposes: a truncated string
+ * fails closed rather than authorising storage.
+ */
 export function decodeTcf(tcString: string): TcfConsents | undefined {
   if (tcString.length > MAX_LENGTH) return undefined;
   const [core, ...segments] = tcString.split('.');
   const coreBits = core === undefined ? undefined : toBits(core);
-  if (coreBits === undefined || coreBits.length < CORE_LI_OFFSET + PURPOSES_LENGTH) return undefined;
+  if (coreBits === undefined || coreBits.length < VENDOR_SECTION_OFFSET) return undefined;
   const version = readInt(coreBits, 0, 6);
   if (version !== 2) return undefined;
+  const vendorConsents = readVendorSection(coreBits, VENDOR_SECTION_OFFSET);
+  if (vendorConsents === undefined) return undefined;
+  const vendorLegitimateInterests = readVendorSection(coreBits, vendorConsents.end);
+  if (vendorLegitimateInterests === undefined) return undefined;
+  if (readPublisherRestrictions(coreBits, vendorLegitimateInterests.end) === undefined) return undefined;
 
   let publisherPurposeConsents: ReadonlySet<number> | undefined;
   let publisherPurposeLegitimateInterests: ReadonlySet<number> | undefined;
   for (const segment of segments) {
     const bits = toBits(segment);
-    if (bits === undefined) return undefined;
-    if (bits.length >= PUBLISHER_LI_OFFSET + PURPOSES_LENGTH && readInt(bits, 0, 3) === PUBLISHER_SEGMENT_TYPE) {
-      publisherPurposeConsents = readPurposes(bits, PUBLISHER_PURPOSES_OFFSET);
-      publisherPurposeLegitimateInterests = readPurposes(bits, PUBLISHER_LI_OFFSET);
-    }
+    if (bits === undefined || bits.length < 3) return undefined;
+    if (readInt(bits, 0, 3) !== PUBLISHER_SEGMENT_TYPE) continue;
+    // SegmentType, consents, legitimate interests, NumCustomPurposes (6 bits), then two bits per custom purpose.
+    const fixed = PUBLISHER_LI_OFFSET + PURPOSES_LENGTH + 6;
+    if (bits.length < fixed || bits.length < fixed + 2 * readInt(bits, fixed - 6, 6)) return undefined;
+    publisherPurposeConsents = readPurposes(bits, PUBLISHER_PURPOSES_OFFSET);
+    publisherPurposeLegitimateInterests = readPurposes(bits, PUBLISHER_LI_OFFSET);
   }
   return {
     version,
     specialFeatureOptIns: readPurposes(coreBits, SPECIAL_FEATURES_OFFSET, SPECIAL_FEATURES_LENGTH),
     purposeConsents: readPurposes(coreBits, CORE_PURPOSES_OFFSET),
     purposeLegitimateInterests: readPurposes(coreBits, CORE_LI_OFFSET),
-    vendorConsent: readVendorConsents(coreBits),
+    vendorConsent: vendorConsents.has,
     publisherPurposeConsents,
     publisherPurposeLegitimateInterests
   };
 }
 
-/** The vendor consent section as a lookup. A missing or truncated section consents to no vendor it doesn't cover. */
-function readVendorConsents(bits: readonly number[]): (vendorId: number) => boolean {
-  let offset = VENDOR_SECTION_OFFSET;
-  const maxVendorId = readInt(bits, offset, 16);
-  const isRangeEncoding = bits[offset + 16] === 1;
-  offset += 17;
-  if (!isRangeEncoding) {
-    const start = offset;
-    return vendorId => Number.isInteger(vendorId) && vendorId >= 1 && vendorId <= maxVendorId && bits[start + vendorId - 1] === 1;
+interface VendorSection {
+  readonly has: (vendorId: number) => boolean;
+  /** The bit offset just after the section. */
+  readonly end: number;
+}
+
+/**
+ * A vendor consent or vendor legitimate interest section: MaxVendorId (16 bits), IsRangeEncoding (1), then a bit field
+ * of MaxVendorId bits, or NumEntries (12) and range entries. Undefined if the bits run out first.
+ */
+function readVendorSection(bits: readonly number[], start: number): VendorSection | undefined {
+  if (bits.length < start + 17) return undefined;
+  const maxVendorId = readInt(bits, start, 16);
+  const offset = start + 17;
+  if (bits[start + 16] !== 1) {
+    if (bits.length < offset + maxVendorId) return undefined;
+    return {
+      has: vendorId => Number.isInteger(vendorId) && vendorId >= 1 && vendorId <= maxVendorId && bits[offset + vendorId - 1] === 1,
+      end: offset + maxVendorId
+    };
   }
-  const ranges: (readonly [number, number])[] = [];
-  const entries = readInt(bits, offset, 12);
-  offset += 12;
-  for (let i = 0; i < entries && offset < bits.length; i++) {
+  const ranges = readRanges(bits, offset);
+  if (ranges === undefined) return undefined;
+  return {
+    has: vendorId => vendorId <= maxVendorId && ranges.entries.some(([first, last]) => vendorId >= first && vendorId <= last),
+    end: ranges.end
+  };
+}
+
+/** NumEntries (12 bits), then entries of IsARange (1), StartOrOnlyVendorId (16) and, for a range, EndVendorId (16). */
+function readRanges(bits: readonly number[], start: number): { readonly entries: (readonly [number, number])[]; readonly end: number } | undefined {
+  if (bits.length < start + 12) return undefined;
+  const count = readInt(bits, start, 12);
+  let offset = start + 12;
+  const entries: (readonly [number, number])[] = [];
+  for (let i = 0; i < count; i++) {
     const isRange = bits[offset] === 1;
+    const length = isRange ? 33 : 17;
+    if (bits.length < offset + length) return undefined;
     const first = readInt(bits, offset + 1, 16);
-    const last = isRange ? readInt(bits, offset + 17, 16) : first;
-    offset += isRange ? 33 : 17;
-    ranges.push([first, last]);
+    entries.push([first, isRange ? readInt(bits, offset + 17, 16) : first]);
+    offset += length;
   }
-  return vendorId => vendorId <= maxVendorId && ranges.some(([first, last]) => vendorId >= first && vendorId <= last);
+  return { entries, end: offset };
+}
+
+/** NumPubRestrictions (12 bits), then PurposeId (6), RestrictionType (2) and ranges for each. Returns the end offset. */
+function readPublisherRestrictions(bits: readonly number[], start: number): number | undefined {
+  if (bits.length < start + 12) return undefined;
+  const count = readInt(bits, start, 12);
+  let offset = start + 12;
+  for (let i = 0; i < count; i++) {
+    const ranges = readRanges(bits, offset + 8);
+    if (ranges === undefined) return undefined;
+    offset = ranges.end;
+  }
+  return offset;
 }
 
 function toBits(segment: string): number[] | undefined {
