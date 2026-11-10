@@ -48,8 +48,8 @@ function setTopBox(ua: string): { readonly vendor: string; readonly model: strin
 /**
  * Full User-Agent parsing with [Bowser](https://github.com/bowser-js/bowser) (browser, OS, device class, maker and
  * model, plus Apple TV and Fire TV as set-top boxes) and [isbot](https://github.com/omrilotan/isbot) (self-identified
- * crawlers and automated clients). Values browsers freeze are left out rather than reported wrong. Adds about 10 KB
- * gzipped to a bundle.
+ * crawlers and automated clients). Values browsers freeze are left out rather than reported wrong. Adds about 8.5 KB
+ * gzipped to a minified bundle.
  */
 export const bowserParser: UserAgentParser = userAgent => {
   const ua = userAgent.slice(0, MAX_UA_LENGTH);
@@ -75,8 +75,8 @@ export const bowserParser: UserAgentParser = userAgent => {
 };
 
 /**
- * The `ua` module with Bowser built in, to use in place of the built-in `uaModule`: the setting
- * `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` then parses the User-Agent with `bowserParser`. Without the setting it
- * behaves exactly like `uaModule`. `@sharedid-edge/modules/bowser` is the built-in list with this module.
+ * The `ua` module with Bowser built in, the one every adapter uses (through `@sharedid-edge/modules`): the setting
+ * `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` parses the User-Agent with `bowserParser`. Without the setting it
+ * behaves exactly like `uaModule`.
  */
 export const uaModuleWithBowser: EdgeModule = createUaModule({ bowser: bowserParser });

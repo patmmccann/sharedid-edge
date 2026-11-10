@@ -70,7 +70,13 @@ npm run build                               # compiles core and the modules
 npm run bundle -w @sharedid-edge/vercel     # packages/adapters/vercel/deploy/sharedid-edge.mjs and .d.mts
 ```
 
-The bundle is a single ESM file with no dependencies and no Node.js built-ins (about 15 KB gzipped; minified; the bundle step fails it over 32 KB), with a declaration file next to it. Copy both into your site's repository, for example as `lib/sharedid-edge.mjs` and `lib/sharedid-edge.d.mts`, and commit them. To update, rebuild and copy them again.
+The bundle is a single ESM file with no dependencies and no Node.js built-ins (about 17 KB gzipped, minified; the bundle step fails it over 32 KB), with a declaration file next to it. Copy both into your site's repository, for example as `lib/sharedid-edge.mjs` and `lib/sharedid-edge.d.mts`, and commit them. To update, rebuild and copy them again.
+
+**Bowser (opt-in).** The `ua` module's [full `User-Agent` parsing](../../modules/ua/README.md#full-parsing-with-bowser) fills `device` (`sua`, `devicetype`, `make`, `model`, `os`, `osv`) for Safari, Firefox, TVs and other browsers that send no Client Hints. It isn't in the default bundle, to keep it small. `npm run bundle:bowser -w @sharedid-edge/vercel` (in place of `bundle`; same output files) builds it in, then `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` turns it on. The cost, minified and gzipped, against the 32 KB budget CI checks for both builds:
+
+| Bundle | Default (no Bowser) | With Bowser |
+| --- | --- | --- |
+| Vercel (`deploy/sharedid-edge.mjs`) | 17.0 KB | 25.5 KB |
 
 The packages aren't on npm yet. Once they are, `npm install @sharedid-edge/vercel` replaces the copy, with the same `handlerFromEnv` and `middlewareFromEnv`.
 

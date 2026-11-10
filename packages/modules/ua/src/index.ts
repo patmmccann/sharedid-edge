@@ -22,9 +22,9 @@ export {
 export { botParser, MAX_UA_LENGTH, type ParsedUserAgent, type UserAgentParser } from './parse.js';
 
 /**
- * The built-in `ua` module (`createUaModule()` with `botParser`): device data from User-Agent Client Hints, and the
- * traffic signal for clients whose User-Agent identifies them as bots. It runs only when listed in `SID_MODULES`;
- * nothing is stored or logged. For full User-Agent parsing, use `uaModuleWithBowser` from
- * `@sharedid-edge/module-ua/bowser` instead.
+ * The `ua` module without Bowser (`createUaModule()` with `botParser`): device data from User-Agent Client Hints, and
+ * the traffic signal for clients whose User-Agent identifies them as bots. It runs only when listed in `SID_MODULES`;
+ * nothing is stored or logged. The setting `"parser": "bowser"` makes it an `error`: the adapters use
+ * `uaModuleWithBowser` from `@sharedid-edge/module-ua/bowser`, which supports it.
  */
 export const uaModule: EdgeModule = createUaModule();

@@ -37,11 +37,19 @@ export interface Case {
   };
 }
 
+/**
+ * A build option the target must be built with. `bowser`: Bowser in the ua module (the Worker's and Lambda's Bowser
+ * builds; the Node.js server always has it).
+ */
+export type BuildOption = 'bowser';
+
 export interface CaseFile {
   readonly file: string;
   readonly description: string;
   /** Environment variables the target must be configured with. */
   readonly config: Readonly<Record<string, string>>;
+  /** Build options the target must be built with; empty for the default build. */
+  readonly build: readonly BuildOption[];
   readonly cases: readonly Case[];
 }
 
@@ -73,6 +81,7 @@ const isInteger: Check = v => Number.isInteger(v);
 const isStringArray: Check = v => Array.isArray(v) && v.every(isString);
 const isStringRecord: Check = v => isObject(v) && Object.values(v).every(isString);
 const isAnything: Check = () => true;
+const isBuildOption = (v: unknown): v is BuildOption => v === 'bowser';
 
 /** Each field the schema allows, with the type check it must pass. Keep in step with case-file.schema.json. */
 const REQUEST_FIELDS: Readonly<Record<string, Check>> = {
@@ -117,10 +126,11 @@ function checkFields(file: string, where: string, value: unknown, fields: Readon
 /** Checks a case file's shape, so a typo in a fixture fails loudly instead of skipping an assertion. */
 export function validateCaseFile(file: string, value: unknown): CaseFile {
   if (!isObject(value)) fail(file, 'must be a JSON object');
-  for (const key of Object.keys(value)) if (!['$schema', 'description', 'config', 'cases'].includes(key)) fail(file, `unknown key "${key}"`);
-  const { description, config, cases } = value;
+  for (const key of Object.keys(value)) if (!['$schema', 'description', 'config', 'build', 'cases'].includes(key)) fail(file, `unknown key "${key}"`);
+  const { description, config, build = [], cases } = value;
   if (typeof description !== 'string') fail(file, '"description" must be a string');
   if (!isStringRecord(config)) fail(file, '"config" must be an object of strings');
+  if (!Array.isArray(build) || !build.every(isBuildOption)) fail(file, '"build" must be an array of build options ("bowser")');
   if (!Array.isArray(cases) || cases.length === 0) fail(file, '"cases" must be a non-empty array');
   cases.forEach((c: unknown, i) => {
     const where = `cases[${String(i)}]`;
@@ -136,5 +146,5 @@ export function validateCaseFile(file: string, value: unknown): CaseFile {
     }
   });
   // Every field has now been checked against the schema.
-  return { file, description, config: config as Record<string, string>, cases: cases as Case[] };
+  return { file, description, config: config as Record<string, string>, build, cases: cases as Case[] };
 }

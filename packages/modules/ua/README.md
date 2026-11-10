@@ -15,7 +15,7 @@ The worker sees the request headers before any script on the page runs. Prebid.j
 - [Consent](#consent)
 - [Settings](#settings)
 - [Getting high-entropy hints](#getting-high-entropy-hints)
-- [Full User-Agent parsing](#full-user-agent-parsing)
+- [Full parsing with Bowser](#full-parsing-with-bowser)
 - [On AWS Lambda behind CloudFront](#on-aws-lambda-behind-cloudfront)
 - [Using it in code](#using-it-in-code)
 - [Credits and licences](#credits-and-licences)
@@ -23,7 +23,7 @@ The worker sees the request headers before any script on the page runs. Prebid.j
 
 ## Turning it on
 
-The module is built into the Cloudflare Worker, the Node.js server and the AWS Lambda adapter. It does nothing until you list it in `SID_MODULES`.
+The module is built into the Cloudflare Worker, the Node.js server, the AWS Lambda adapter and the Vercel adapter. It does nothing until you list it in `SID_MODULES`.
 
 1. **Enable it** in `packages/adapters/cloudflare/wrangler.jsonc`:
 
@@ -64,12 +64,12 @@ Nothing is stored or logged, and no network call is made: the headers are alread
 | `sua.mobile` | `Sec-CH-UA-Mobile` | `0` |
 | `sua.architecture`, `sua.bitness` | `Sec-CH-UA-Arch`, `Sec-CH-UA-Bitness` | `"x86"`, `"64"` |
 | `sua.model` | `Sec-CH-UA-Model` (Android; desktops send `""`, which is left out) | `"Pixel 8"` |
-| `sua.source` | `1`: low-entropy hints only. `2`: high-entropy hints included. `3`: parsed from the `User-Agent` (with [full parsing](#full-user-agent-parsing)). | `1` |
-| `devicetype` | `Sec-CH-UA-Mobile: ?1` is a phone (`4`); `?0` on Windows, macOS, Linux or Chrome OS is a PC (`2`). With full parsing, also tablets (`5`) and connected TVs (`3`). | `2` |
-| `os` | `Sec-CH-UA-Platform` | `"Windows"` |
+| `sua.source` | `1`: low-entropy hints only. `2`: high-entropy hints included. `3`: parsed from the `User-Agent` (with [Bowser](#full-parsing-with-bowser)). | `1` |
+| `devicetype` | `Sec-CH-UA-Mobile: ?1` is a phone (`4`); `?0` on Windows, macOS, Linux or Chrome OS is a PC (`2`). With Bowser, also tablets (`5`), connected TVs (`3`) and set-top boxes (`7`). | `2` |
+| `os` | `Sec-CH-UA-Platform`, else (with Bowser) the `User-Agent` | `"Windows"` |
 | `osv` | `Sec-CH-UA-Platform-Version`. On Windows that's an API version, so `13` and up becomes `"11"` and `1` to `12` becomes `"10"`. | `"11"` |
-| `model` | `Sec-CH-UA-Model` | `"Pixel 8"` |
-| `make` | Only with full parsing | `"Apple"` |
+| `model` | `Sec-CH-UA-Model`, else (with Bowser) the `User-Agent` | `"Pixel 8"` |
+| `make` | Only with Bowser | `"Apple"` |
 | `ua` | The `User-Agent` header, with the `ua` setting | |
 | `ext.traffic` | `{ "bot": true, "botKind": "declared", "sources": ["ua"] }` for a crawler or automated client | |
 
@@ -128,7 +128,7 @@ Nothing is stored or logged, and no network call is made: the headers are alread
 }
 ```
 
-**Safari on iPhone** sends no Client Hints. The built-in module only checks its `User-Agent` for bots, so there's nothing to add:
+**Safari on iPhone** sends no Client Hints. With the default parser the module only checks its `User-Agent` for bots, so there's nothing to add:
 
 ```json
 {
@@ -139,7 +139,7 @@ Nothing is stored or logged, and no network call is made: the headers are alread
 }
 ```
 
-With [full User-Agent parsing](#full-user-agent-parsing), the same request gets device data parsed from the `User-Agent` (`sua.source` 3):
+With [Bowser](#full-parsing-with-bowser) (`"parser": "bowser"`), the same request gets device data parsed from the `User-Agent` (`sua.source` 3):
 
 ```json
 {
@@ -247,9 +247,10 @@ The module has no TCF `purposes`, like `ip` and `geo`: it runs under GDPR too, a
 | Where | Key | | |
 | --- | --- | --- | --- |
 | `SID_MODULES` | `ua` | required | Turns the module on. |
+| `SID_MODULE_CONFIG` | `ua.parser` | optional | `"bowser"` parses the `User-Agent` with Bowser, filling every `device` field it can; it needs a build with Bowser (see [Full parsing with Bowser](#full-parsing-with-bowser)). `"isbot"` (the default) uses Client Hints, and the `User-Agent` only for the bot check. |
 | `SID_MODULE_CONFIG` | `ua.ua` | optional | `true` adds the raw `User-Agent` as `device.ua` (when consent allows high-entropy data). `false` (the default) leaves it out, since Prebid.js sends it already. |
 
-Anything else in `ua`'s settings, including a misspelt key or a string `"true"`, makes the module fail with status `error` on every request. `acceptCh`, proposed in #11, isn't a setting: see the next section.
+Anything else in `ua`'s settings, including a misspelt key, a string `"true"` or another parser name, makes the module fail with status `error` on every request. `acceptCh`, proposed in #11, isn't a setting: see the next section.
 
 ## Getting high-entropy hints
 
@@ -267,23 +268,92 @@ or a meta tag in the page's `<head>`:
 
 The browser then sends those hints with its later requests to your origin, including `/_sid/v1`, which is on the same origin. The first page view of a session doesn't carry them. If `/_sid/v1` is on another origin (a different subdomain, allowed through `SID_ALLOWED_ORIGINS`), the page must also delegate the hints to it with `Permissions-Policy`, for example `Permissions-Policy: ch-ua-model=(self "https://id.example.com")`.
 
-## Full User-Agent parsing
+## Full parsing with Bowser
 
-The built-in module reads device data from Client Hints only, which Chromium browsers send and Safari and Firefox don't. For those, `@sharedid-edge/module-ua/bowser` parses the `User-Agent` with [Bowser](https://github.com/bowser-js/bowser): browser, OS and version, device class (phone, tablet, desktop, TV), maker and model. It isn't built in because it adds about **12 KB gzipped** to the bundle, and the Cloudflare Worker, Lambda and Vercel bundles have a 22 KB budget. To use it, replace the built-in module in your adapter's entry point, for example `packages/adapters/cloudflare/src/index.ts`:
+By default the module reads device data from Client Hints, which Chromium browsers send and Safari and Firefox don't; it only checks the `User-Agent` for bots. [Bowser](https://github.com/bowser-js/bowser) parses the `User-Agent` itself, so Safari, Firefox, smart TVs and requests without hints get device data too. It's **off by default and not in the default bundles**, to keep them small: you build it in, then choose it with a setting.
 
-```ts
-import { builtInModules } from '@sharedid-edge/modules';
-import { uaModuleWithBowser } from '@sharedid-edge/module-ua/bowser';
+**Bundle size.** Bowser adds about 8.5 KB gzipped to each bundle. Minified and gzipped, against the 32 KB budget CI checks for both builds:
 
-const modules = builtInModules.map(module => (module.name === 'ua' ? uaModuleWithBowser : module));
+| Bundle | Default (no Bowser) | With Bowser |
+| --- | --- | --- |
+| Cloudflare Worker | 16.2 KB | 24.8 KB |
+| AWS Lambda | 17.2 KB | 25.6 KB |
+| Vercel | 17.0 KB | 25.5 KB |
+
+The Node.js server isn't bundled, and always has Bowser.
+
+**Turning it on** takes two steps:
+
+1. **Build with Bowser,** one command per adapter. Each swaps in `@sharedid-edge/modules/bowser`, the built-in list with `uaModuleWithBowser`, through a bundler alias; no code changes.
+
+   | Adapter | Build with Bowser |
+   | --- | --- |
+   | Cloudflare Worker | `npm run deploy:bowser -w @sharedid-edge/cloudflare` in place of `deploy` (also `dev:bowser`, and `build:bowser` for a dry run into `dist-bowser/`) |
+   | AWS Lambda | `npm run bundle:bowser -w @sharedid-edge/aws-lambda` in place of `bundle`; it writes `deploy/lambda.mjs` as usual, so `sam deploy` is unchanged |
+   | Vercel | `npm run bundle:bowser -w @sharedid-edge/vercel` in place of `bundle`; copy `deploy/sharedid-edge.mjs` into your site as usual |
+   | Node.js server | Nothing: it always has Bowser |
+
+2. **Choose it** with the `parser` setting, wherever the adapter takes its settings (the Worker's `vars` in `wrangler.jsonc`, the Node.js server's environment, the Lambda function's or the Vercel project's environment variables):
+
+   ```jsonc
+   "vars": {
+     "SID_MODULES": "ua",
+     "SID_MODULE_CONFIG": "{\"ua\":{\"parser\":\"bowser\"}}"   // add \"ua\":true to also send device.ua
+   }
+   ```
+
+   `"parser": "isbot"`, or leaving it out, goes back to Client Hints and the bot check. With `"parser": "bowser"` on a build without Bowser, the module reports `status: "error"` on every request rather than quietly sending less, so a missed build step shows in `ext.modules.ua`.
+
+**What it adds,** each field only when Bowser recognizes it. All are native OpenRTB 2.6 `device` fields. The browser goes in `sua.browsers`, OpenRTB's place for it, so nothing is added under `device.ext`: OpenRTB has no field for the rendering engine, and bidders don't read one.
+
+| `device` | From Bowser | Example |
+| --- | --- | --- |
+| `sua` | Only when the browser sent no Client Hints, with `source` `3`: `browsers` (the browser's name and version), `platform` (the OS and version), `mobile` (`1` for a phone) | `{ "browsers": [{ "brand": "Firefox", "version": ["133", "0"] }], "platform": { "brand": "Android", "version": ["14"] }, "mobile": 1, "source": 3 }` |
+| `devicetype` | Bowser's device class: phone `4`, tablet `5`, desktop `2`, smart TV `3`. An Apple TV or Amazon Fire TV, which Bowser doesn't classify, is a set-top box, `7` | `5` |
+| `make` | The device maker, when the `User-Agent` names it (Apple, Amazon, Huawei, Nokia, …) | `"Apple"` |
+| `model` | The device model, when the `User-Agent` names it (`iPhone`, `iPad`, a Fire TV's `AFT…` code) | `"iPad"` |
+| `os`, `osv` | The OS and its version. Versions browsers freeze (macOS `10.15.7`, `Windows NT 10.0`, Android `10; K`) are left out | `"iOS"`, `"17.6"` |
+
+**Client Hints still win** where both give a value: `sua`, `os`, `osv` and `model` come from the hints when the browser sent them, and the mobile hint decides phone or not (a tablet the `User-Agent` reports stays a tablet). Bowser fills what the hints don't give, typically `make`. Its OS version is used only when it describes the hinted OS.
+
+**Consent** works as for hints (see [Consent](#consent)). `model`, `osv`, `sua.platform.version`, browser versions beyond the major one, and `ua` are high-entropy: they're left out under GPC, COPPA, a US privacy opt-out, an invalid TC string, or GDPR without a TC string. `devicetype`, `make`, `os`, the browser's name with its major version, and `sua.mobile` are always sent, like the low-entropy hints every Chromium browser sends. The traffic signal is unchanged, and always sent.
+
+**Safari 17.6 on iPad**, with `{"ua":{"parser":"bowser","ua":true}}`:
+
+```json
+{
+  "v": 1,
+  "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+  "eids": [{ "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }],
+  "ortb2": {
+    "device": {
+      "ua": "Mozilla/5.0 (iPad; CPU OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1",
+      "sua": {
+        "browsers": [{ "brand": "Safari", "version": ["17", "6"] }],
+        "platform": { "brand": "iOS", "version": ["17", "6"] },
+        "mobile": 0,
+        "source": 3
+      },
+      "devicetype": 5,
+      "make": "Apple",
+      "model": "iPad",
+      "os": "iOS",
+      "osv": "17.6"
+    }
+  },
+  "ext": { "modules": { "ua": { "ms": 0, "status": "ok" } } }
+}
 ```
 
-The settings and consent rules are the same. Hints still come first; the parsed `User-Agent` fills what they don't give, and `sua` comes from it (`source` 3) only when the browser sent no hints. Things to know:
+With GPC the same request gets only `{ "sua": { "browsers": [{ "brand": "Safari", "version": ["17"] }], "platform": { "brand": "iOS" }, "mobile": 0, "source": 3 }, "devicetype": 5, "make": "Apple", "os": "iOS" }`. Firefox 133 on Android gets `sua` as in the table, `devicetype` `4`, `os` `"Android"` and `osv` `"14"`, and no maker or model, which Firefox leaves out of its `User-Agent`.
+
+Things to know:
 
 - **iPads** ask for desktop sites by default, with a Mac's `User-Agent`, so they're reported as a Mac (`devicetype` 2). Nothing in the request tells them apart.
-- **Android WebViews** (in-app browsers) are reported as Chrome on Android.
-- Bowser doesn't recognize every TV and console (an Amazon Fire TV is reported as an Android phone, a PlayStation 5 not at all).
+- **Android WebViews** (in-app browsers) are reported as Chrome on Android. Android phone models (`SM-S918B`) aren't read: Bowser doesn't, and Chrome's reduced `User-Agent` hides them. `Sec-CH-UA-Model` gives them.
+- **Roku** devices are reported as TVs (`3`): Roku TVs and Roku players send the same `User-Agent`. A PlayStation 5 gets only its browser.
 - Bowser also recognizes some crawlers; either it or isbot sets the bot flag.
+- **In your own entry point,** import `uaModuleWithBowser` from `@sharedid-edge/module-ua/bowser` in place of `uaModule`, or `builtInModules` from `@sharedid-edge/modules/bowser` in place of `@sharedid-edge/modules`. `uaModule` leaves Bowser out, and reports `error` if the setting asks for it.
 
 ## On AWS Lambda behind CloudFront
 
@@ -307,22 +377,22 @@ uaDevice(hints, undefined, { highEntropy: true, includeUa: false });
 // { sua: { platform: { brand: 'Android' }, mobile: 1, source: 1 }, devicetype: 4, os: 'Android' }
 ```
 
-Other exports: `createUaModule({ parser })` (the module with any `UserAgentParser`), `botParser` (the built-in parser), the header parsers `parseBrandList`, `parseStringHeader` and `parseBooleanHeader`, `deviceType`, `hintOsVersion`, `versionComponents`, `highEntropyDenial(consent)`, `uaSettings(config)`, and the types. `@sharedid-edge/module-ua/bowser` exports `bowserParser` and `uaModuleWithBowser`.
+Other exports: `createUaModule({ parser, bowser })` (the module with any `UserAgentParser`, and the one the `"bowser"` setting picks), `botParser` (the default parser), the header parsers `parseBrandList`, `parseStringHeader` and `parseBooleanHeader`, `deviceType`, `hintOsVersion`, `versionComponents`, `highEntropyDenial(consent)`, `uaSettings(config)`, and the types. `@sharedid-edge/module-ua/bowser` exports `bowserParser` and `uaModuleWithBowser`.
 
 ## Credits and licences
 
 This package is Apache-2.0. It depends on:
 
 - **[isbot](https://github.com/omrilotan/isbot)** by Omri Lotan, released under [the Unlicense](https://github.com/omrilotan/isbot/blob/main/LICENSE) (public domain). Built into every adapter. No attribution is required; we credit it anyway.
-- **[Bowser](https://github.com/bowser-js/bowser)**, © 2015 Dustin Diaz and contributors, [MIT licence](https://github.com/bowser-js/bowser/blob/master/LICENSE). Used only by `@sharedid-edge/module-ua/bowser`. If you distribute a bundle built with it, the MIT licence asks you to include Bowser's copyright and licence notice.
+- **[Bowser](https://github.com/bowser-js/bowser)**, © 2015 Dustin Diaz and contributors, [MIT licence](https://github.com/bowser-js/bowser/blob/master/LICENSE). Used by `@sharedid-edge/module-ua/bowser`, in the adapters' Bowser builds and the Node.js server. If you distribute a bundle built with it, the MIT licence asks you to include Bowser's copyright and licence notice.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 | --- | --- |
 | `ext.modules.ua` is missing | `ua` isn't in `SID_MODULES`. |
-| `status` is `error` | `SID_MODULE_CONFIG.ua` has a key other than `ua`, or `ua` isn't `true` or `false`. |
-| `status` is `empty` in Safari or Firefox | They send no Client Hints, and the built-in module only checks their `User-Agent` for bots. Use [full parsing](#full-user-agent-parsing) for device data. |
+| `status` is `error` | `SID_MODULE_CONFIG.ua` has a key other than `ua` and `parser`, `ua` isn't `true` or `false`, or `parser` isn't `"isbot"` or `"bowser"`. Or `parser` is `"bowser"` and the bundle was built without Bowser: use the adapter's Bowser build (see [Full parsing with Bowser](#full-parsing-with-bowser)). |
+| `status` is `empty` in Safari or Firefox | They send no Client Hints, and with the default parser the module only checks their `User-Agent` for bots. Build with Bowser and set `"parser": "bowser"` for device data (see [Full parsing with Bowser](#full-parsing-with-bowser)). |
 | `status` is `empty` on AWS Lambda | The origin request policy doesn't forward `User-Agent` and the hints (see [above](#on-aws-lambda-behind-cloudfront)). |
 | `sua.source` is always `1` | The browser hasn't been asked for high-entropy hints (see [Getting high-entropy hints](#getting-high-entropy-hints)), or consent limits them: check `Sec-GPC`, `coppa`, `us_privacy`, `gdpr` and `gdpr_consent`. |
 | No `osv` for a Mac, or for Windows | The `User-Agent` freezes them (macOS `10.15.7`, `Windows NT 10.0`). With `Sec-CH-UA-Platform-Version`, Chromium sends the real version. |

@@ -8,6 +8,12 @@
     "$schema": { "type": "string" },
     "description": { "type": "string" },
     "config": { "type": "object", "additionalProperties": { "type": "string" } },
+    "build": {
+      "description": "Build options the target must be built with. bowser: Bowser in the ua module (the Worker's and Lambda's Bowser builds; the Node.js server always has it).",
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["bowser"] }
+    },
     "cases": {
       "type": "array",
       "minItems": 1,

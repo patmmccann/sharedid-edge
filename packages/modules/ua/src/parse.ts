@@ -19,9 +19,9 @@ export type UserAgentParser = (userAgent: string) => ParsedUserAgent;
 export const MAX_UA_LENGTH = 512;
 
 /**
- * The built-in parser: only whether the client identifies itself as a bot, with
+ * The default parser (setting `"isbot"`): only whether the client identifies itself as a bot, with
  * [isbot](https://github.com/omrilotan/isbot). Device data comes from Client Hints. For full User-Agent parsing
- * (browser, OS, device class, maker and model for browsers that send no hints), use `bowserParser` from
- * `@sharedid-edge/module-ua/bowser`.
+ * (browser, OS, device class, maker and model for browsers that send no hints), the setting `"bowser"` uses
+ * `bowserParser` from `@sharedid-edge/module-ua/bowser`.
  */
 export const botParser: UserAgentParser = userAgent => ({ bot: isbot(userAgent.slice(0, MAX_UA_LENGTH)) });

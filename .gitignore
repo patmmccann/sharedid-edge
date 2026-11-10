@@ -1,6 +1,8 @@
 node_modules/
 dist/
 packages/adapters/*/deploy/
+packages/adapters/*/deploy-bowser/
+packages/adapters/*/dist-bowser/
 .tsbuild/
 .wrangler/
 coverage/

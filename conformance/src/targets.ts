@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import type { BuildOption } from './cases.js';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 
@@ -103,8 +104,14 @@ const UNAVAILABLE: Readonly<Record<TargetName, readonly string[]>> = {
   vercel: ['ortb2.device.geo.metro']
 };
 
-/** Starts a target configured with `config` (SID_* environment variables). */
-export async function startTarget(target: TargetName, config: Readonly<Record<string, string>>): Promise<RunningTarget> {
+/**
+ * Starts a target configured with `config` (SID_* environment variables) and built with `build`. With `bowser`, the
+ * Worker is built with the alias its `build:bowser` script uses, and the Lambda and Vercel targets load the bundles
+ * `npm run conformance:lambda` and `conformance:vercel` build into deploy-bowser/. The Node.js server always has
+ * Bowser.
+ */
+export async function startTarget(target: TargetName, config: Readonly<Record<string, string>>, build: readonly BuildOption[] = []): Promise<RunningTarget> {
+  const bowser = build.includes('bowser');
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${String(port)}`;
   let child: ChildProcess;
@@ -117,21 +124,22 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
     // The bundled Lambda handler behind a local CloudFront and function URL stand-in (lambda-emulator.ts). The
     // public origin is the emulator's own http URL, so cookies aren't Secure, as for the other local targets.
     child = spawn(process.execPath, [join(ROOT, 'conformance/dist/lambda-emulator.js')], {
-      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_LAMBDA_BUNDLE: bowser ? 'deploy-bowser' : 'deploy', ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else if (target === 'vercel') {
     // The bundled Vercel adapter behind a local stand-in for Vercel's proxy (vercel-emulator.ts), which sets the
     // x-real-ip and x-vercel-ip-* headers. Plain http, so cookies aren't Secure, as for the other local targets.
     child = spawn(process.execPath, [join(ROOT, 'conformance/dist/vercel-emulator.js')], {
-      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_VERCEL_BUNDLE: bowser ? 'deploy-bowser' : 'deploy', ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else {
     // `wrangler dev` runs the worker in workerd, the Workers runtime, locally; no Cloudflare account needed.
     const vars = Object.entries(config).flatMap(([key, value]) => ['--var', `${key}:${value}`]);
+    const alias = bowser ? ['--alias', '@sharedid-edge/modules:@sharedid-edge/modules/bowser'] : [];
     const wrangler = join(ROOT, 'node_modules/wrangler/bin/wrangler.js');
-    child = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'error', '--show-interactive-dev-session=false', ...vars], {
+    child = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'error', '--show-interactive-dev-session=false', ...alias, ...vars], {
       cwd: join(ROOT, 'packages/adapters/cloudflare'),
       env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
       stdio: ['ignore', 'ignore', 'inherit']
