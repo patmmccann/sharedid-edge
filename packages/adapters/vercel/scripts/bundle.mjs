@@ -9,7 +9,7 @@
 // Options:
 //   --bowser        build Bowser into the ua module (`npm run bundle:bowser`), so SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}
 //                   parses User-Agents fully. It aliases @sharedid-edge/modules to @sharedid-edge/modules/bowser, the
-//                   same list with uaModuleWithBowser, as the Worker's Bowser build does. Same 32 KB budget.
+//                   same list with uaModuleWithBowser, as the Worker's src/bowser.ts entry point imports. Same 32 KB budget.
 //   --outdir <dir>  write to another deploy* directory than deploy/ (the conformance suite builds the Bowser bundle
 //                   into deploy-bowser/, next to the default one).
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
