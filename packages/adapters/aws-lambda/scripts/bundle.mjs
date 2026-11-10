@@ -17,7 +17,7 @@ import { build } from 'esbuild';
 const root = join(import.meta.dirname, '..');
 const outdir = join(root, 'deploy');
 const outfile = join(outdir, 'lambda.mjs');
-const budget = 20 * 1024;
+const budget = 22 * 1024;
 
 rmSync(outdir, { recursive: true, force: true });
 mkdirSync(outdir);

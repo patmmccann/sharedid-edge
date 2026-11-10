@@ -269,7 +269,7 @@ The browser then sends those hints with its later requests to your origin, inclu
 
 ## Full User-Agent parsing
 
-The built-in module reads device data from Client Hints only, which Chromium browsers send and Safari and Firefox don't. For those, `@sharedid-edge/module-ua/bowser` parses the `User-Agent` with [Bowser](https://github.com/bowser-js/bowser): browser, OS and version, device class (phone, tablet, desktop, TV), maker and model. It isn't built in because it adds about **12 KB gzipped** to the bundle, and the Cloudflare Worker and Lambda bundles have a 20 KB budget. To use it, replace the built-in module in your adapter's entry point, for example `packages/adapters/cloudflare/src/index.ts`:
+The built-in module reads device data from Client Hints only, which Chromium browsers send and Safari and Firefox don't. For those, `@sharedid-edge/module-ua/bowser` parses the `User-Agent` with [Bowser](https://github.com/bowser-js/bowser): browser, OS and version, device class (phone, tablet, desktop, TV), maker and model. It isn't built in because it adds about **12 KB gzipped** to the bundle, and the Cloudflare Worker, Lambda and Vercel bundles have a 22 KB budget. To use it, replace the built-in module in your adapter's entry point, for example `packages/adapters/cloudflare/src/index.ts`:
 
 ```ts
 import { builtInModules } from '@sharedid-edge/modules';
