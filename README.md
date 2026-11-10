@@ -292,13 +292,15 @@ Built-in modules:
 
 | Name | Adds | Settings |
 | --- | --- | --- |
-| `ip` | `ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out | none |
-| `ec` | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**; see below | `domain`; secret `passphrase` |
-| `geo` | `ortb2.device.geo`: country, region, metro and UTC offset, plus city, postal code and coordinates when consent allows | `precision`: `precise` (default) or `coarse` |
+| [`ip`](packages/module-ip/README.md) | `ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out | none |
+| [`ec`](packages/module-ec/README.md) | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**; see below | `domain`; secret `passphrase` |
+| [`geo`](packages/module-geo/README.md) | `ortb2.device.geo`: country, region, metro and UTC offset, plus city, postal code and coordinates when consent allows | `precision`: `precise` (default) or `coarse` |
 
 To build your own, see [Adding a module](#adding-a-module).
 
 ### `ip`: the real client IP
+
+Full documentation: [`packages/module-ip/README.md`](packages/module-ip/README.md).
 
 Bid requests made from the page, or relayed by Prebid Server, don't always carry the user's own IP address. The `ip` module returns the address the worker sees, so you can add it to the auction's first-party data. It's built into the worker but **off until you enable it**:
 
