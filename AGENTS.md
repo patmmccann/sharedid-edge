@@ -61,13 +61,26 @@ TypeScript 6.0 is the main compiler because `typescript-eslint` doesn't support 
 Every pull request that adds or changes something users touch ships its documentation in the same PR. Reviewers should treat missing docs as a blocking gap.
 
 - **Every package has its own `README.md`** (also its npm page). This covers modules, adapters and platform packages alike.
-  - **A module's README** covers: turning it on, the response shape with JSON examples (when it returns data, and when it doesn't), consent rules, settings and secrets, and troubleshooting. Models: `packages/modules/ip/README.md` and `packages/modules/ec/README.md`. Vendor modules add the disclosures in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md).
-  - **An adapter's README** covers: architecture, build, deploy, configuration and secrets, how platform data maps to `PlatformInfo`, verifying, and troubleshooting.
-- **Link it from the main [README.md](README.md):**
-  - modules in the built-in modules table and the Modules section;
-  - adapters as a self-contained quick start under a "Deploy on …" section.
-- **Update the [README.md](README.md) "Responses" section** whenever the shape of a response changes, with real output.
-- **Update [spec/SPEC.md](spec/SPEC.md) and the folder's `AGENTS.md`** for behaviour and conventions.
+  - **A module's README** covers: turning it on, the response shape with JSON examples (when it returns data, and when it doesn't), consent rules, settings and secrets, and troubleshooting. **Per-module response examples live here,** not in `docs/responses.md`. Models: `packages/modules/ip/README.md` and `packages/modules/ec/README.md`. Vendor modules add the disclosures in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md).
+  - **An adapter's README** covers: architecture, build, the deployment walkthrough (prerequisites to verifying, working without reading anything else), configuration and secrets, how platform data maps to `PlatformInfo`, verifying, and troubleshooting.
+- **Where each kind of doc goes:**
+
+  | Doc | Where |
+  | --- | --- |
+  | What SharedID Edge is, how it works, the platform table, the Prebid.js snippet, the docs index | The root [README.md](README.md). Keep it short: no per-module or per-adapter prose. |
+  | Deploying on a platform | That adapter's `README.md` |
+  | A module: settings, responses, consent, troubleshooting | That module's `README.md` |
+  | Configuring Prebid.js | [`docs/prebid.md`](docs/prebid.md) |
+  | Core responses (`/sync`, `/v1`, opt-out, the debugging headers) | [`docs/responses.md`](docs/responses.md) |
+  | Core settings | `SETTINGS` in [`packages/core/src/config.ts`](packages/core/src/config.ts); [`docs/configuration.md`](docs/configuration.md) is generated from it |
+  | Consent, modules in general, migrating, troubleshooting, development | [`docs/consent.md`](docs/consent.md), [`docs/modules.md`](docs/modules.md), [`docs/migrating.md`](docs/migrating.md), [`docs/troubleshooting.md`](docs/troubleshooting.md), [`docs/development.md`](docs/development.md) |
+  | Core behaviour | [spec/SPEC.md](spec/SPEC.md) |
+  | A module's behaviour | `spec/modules/<name>.md` |
+
+- **Indexes are generated:** the root README's platform table and module list, the module index in `docs/modules.md`, the settings table in `docs/configuration.md`, the spec's module list and the package list in this file sit between `<!-- generated:<name>:start -->` and `<!-- generated:<name>:end -->` markers. Don't edit them by hand: change the source (a `package.json`'s `sharedidEdge` block, `SETTINGS`, or a file in `spec/modules/`) and run `node scripts/docs.mjs --write`. `npm run check:docs` fails when they're out of date. See [Generated docs](docs/development.md#generated-docs).
+- **A new module or adapter adds its own folder,** with a `sharedidEdge` block in its `package.json` ([Package metadata](docs/development.md#package-metadata)), its README, and for a project module `spec/modules/<name>.md`. It doesn't edit the root README or shared tables; the generator lists it.
+- **Update the core docs** when core behaviour changes: [`docs/responses.md`](docs/responses.md) whenever the shape of a core response changes, with real output, and `SETTINGS` for a new or changed setting.
+- **Update [spec/SPEC.md](spec/SPEC.md) (or `spec/modules/<name>.md`) and the folder's `AGENTS.md`** for behaviour and conventions.
 - **Write docs for publishers and their engineers:** what to set, what they'll see, and why. Don't write internal notes.
 
 ## Changing behaviour
@@ -75,7 +88,7 @@ Every pull request that adds or changes something users touch ships its document
 1. Update [spec/SPEC.md](spec/SPEC.md).
 2. Add or change conformance cases in `conformance/cases/` (see [conformance/AGENTS.md](conformance/AGENTS.md)).
 3. Implement in `packages/core`, with unit tests.
-4. Update the docs: the package's own README.md, [README.md](README.md) (configuration, Responses, Modules), and folder AGENTS.md files. See [Documentation is part of the change](#documentation-is-part-of-the-change).
+4. Update the docs: the package's own README.md, the topic doc in [`docs/`](docs) (configuration, responses, consent, modules), and folder AGENTS.md files. See [Documentation is part of the change](#documentation-is-part-of-the-change).
 
 Behaviour that must not regress, each covered by tests:
 
