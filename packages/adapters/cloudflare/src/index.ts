@@ -1,4 +1,4 @@
-import { ConfigError, createHandler, resolveConfig, type SharedIdEdgeHandler } from '@sharedid-edge/core';
+import { createHandler, handlerOrMisconfigured, resolveConfig, type SharedIdEdgeHandler } from '@sharedid-edge/core';
 import { builtInModules as modules } from '@sharedid-edge/modules';
 import { platformInfo } from './platform.js';
 
@@ -14,17 +14,14 @@ function handlerFor(env: Env): SharedIdEdgeHandler {
   return handler;
 }
 
+const misconfigured: SharedIdEdgeHandler = () =>
+  Promise.resolve(new Response('SharedID Edge is misconfigured', { status: 500, headers: { 'Cache-Control': 'no-store' } }));
+
 export default {
   async fetch(request, env): Promise<Response> {
-    let handler: SharedIdEdgeHandler;
-    try {
-      handler = handlerFor(env);
-    } catch (error) {
-      if (!(error instanceof ConfigError)) throw error;
-      // A deployment mistake: fail every request clearly rather than set wrong cookies.
-      console.error(`sharedid-edge: ${error.message}`);
-      return new Response('SharedID Edge is misconfigured', { status: 500, headers: { 'Cache-Control': 'no-store' } });
-    }
+    // A deployment mistake (invalid settings) fails every request clearly rather than set wrong cookies. Not cached,
+    // so it's logged on each request until the settings are fixed.
+    const handler = handlerOrMisconfigured(() => handlerFor(env), () => misconfigured);
     return handler(request, platformInfo(request));
   }
 } satisfies ExportedHandler<Env>;

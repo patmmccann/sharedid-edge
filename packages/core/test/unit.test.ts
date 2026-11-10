@@ -1,15 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ConfigError,
   decodeTcf,
   deepMerge,
   EU_COUNTRY_CODES,
+  handlerOrMisconfigured,
   idFromSyncParam,
   isValidId,
+  logRequestFailure,
   parseCookies,
   readConsent,
   resolveConfig,
   serializeCookie,
+  splitHeaders,
   storageDecision,
   type SharedIdEdgeConfig,
   type StorageDecision
@@ -296,5 +299,42 @@ describe('EU_COUNTRY_CODES', () => {
     expect(EU_COUNTRY_CODES.size).toBe(27);
     for (const code of ['DE', 'FR', 'IE', 'HR', 'CY']) expect(EU_COUNTRY_CODES.has(code)).toBe(true);
     for (const code of ['GB', 'NO', 'IS', 'LI', 'CH', 'US']) expect(EU_COUNTRY_CODES.has(code)).toBe(false);
+  });
+});
+
+describe('adapter helpers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('splitHeaders keeps each Set-Cookie separate and the other headers by name', () => {
+    const headers = new Headers({ 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
+    headers.append('Set-Cookie', 'a=1; Path=/');
+    headers.append('Set-Cookie', 'b=2; Path=/; Expires=Thu, 01 Jan 2099 00:00:00 GMT');
+    expect(splitHeaders(headers)).toEqual({
+      headers: { 'content-type': 'text/plain', 'cache-control': 'no-store' },
+      cookies: ['a=1; Path=/', 'b=2; Path=/; Expires=Thu, 01 Jan 2099 00:00:00 GMT']
+    });
+    expect(splitHeaders(new Headers())).toEqual({ headers: {}, cookies: [] });
+  });
+
+  it('logRequestFailure logs the error type, never its message', () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    logRequestFailure(new TypeError('203.0.113.1 sent a bad cookie'));
+    logRequestFailure('a string');
+    expect(log.mock.calls).toEqual([
+      ['sharedid-edge: request failed', 'TypeError'],
+      ['sharedid-edge: request failed', 'unknown error']
+    ]);
+  });
+
+  it('handlerOrMisconfigured falls back on a ConfigError only, and logs its message', () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(handlerOrMisconfigured(() => 'built', () => 'fallback')).toBe('built');
+    expect(log).not.toHaveBeenCalled();
+    expect(handlerOrMisconfigured<unknown>(() => resolveConfig({ SID_MAX_AGE_DAYS: 'x' }), () => 'fallback')).toBe('fallback');
+    expect(log).toHaveBeenCalledOnce();
+    expect(String(log.mock.calls[0]?.[0])).toMatch(/^sharedid-edge: SID_MAX_AGE_DAYS/);
+    expect(() => handlerOrMisconfigured(() => { throw new RangeError('bug'); }, () => 'fallback')).toThrow(RangeError);
   });
 });

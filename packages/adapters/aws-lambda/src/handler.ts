@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { createHandler, type HandlerOptions } from '@sharedid-edge/core';
+import { createHandler, logRequestFailure, splitHeaders, type HandlerOptions } from '@sharedid-edge/core';
 import type { LambdaEventV2, LambdaResultV2 } from './event.js';
 import { platformInfo, type PlatformOptions } from './platform.js';
 
@@ -23,8 +23,7 @@ export function createLambdaHandler(options: LambdaHandlerOptions = {}): LambdaH
       const request = toRequest(event, options.publicOrigin);
       return await toResult(await handler(request, platformInfo(event, options)), request.method);
     } catch (error) {
-      // Don't echo or log the error's message: it may contain request data.
-      console.error('sharedid-edge: request failed', error instanceof Error ? error.name : 'unknown error');
+      logRequestFailure(error);
       return internalError('Internal error');
     }
   };
@@ -69,11 +68,7 @@ function toRequest(event: LambdaEventV2, publicOrigin: string | undefined): Requ
 }
 
 async function toResult(response: Response, method: string): Promise<LambdaResultV2> {
-  const headers: Record<string, string> = {};
-  response.headers.forEach((value, name) => {
-    if (name !== 'set-cookie') headers[name] = value;
-  });
-  const cookies = response.headers.getSetCookie();
+  const { headers, cookies } = splitHeaders(response.headers);
   const bytes = method === 'HEAD' || response.body === null ? new Uint8Array() : new Uint8Array(await response.arrayBuffer());
   // Text stays text, so it's readable in logs and tests; anything else (the sync GIF) is base64.
   const text = bytes.byteLength === 0 || isText(response.headers.get('content-type'));

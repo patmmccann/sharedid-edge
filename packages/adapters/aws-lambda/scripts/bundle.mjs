@@ -9,39 +9,20 @@
 //
 // Fails if the bundle is over its size budget, like the Worker's. Run `npm run build` first: core and the modules
 // resolve to their dist/.
-import { mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { gzipSync } from 'node:zlib';
-import { build } from 'esbuild';
+import { readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { bundleAdapter } from '../../../../scripts/bundle-adapter.mjs';
 
-const root = join(import.meta.dirname, '..');
-const outdir = join(root, 'deploy');
-const outfile = join(outdir, 'lambda.mjs');
-const budget = 20 * 1024;
-
-rmSync(outdir, { recursive: true, force: true });
-mkdirSync(outdir);
-
-await build({
-  entryPoints: [join(root, 'src/lambda.ts')],
-  outfile,
-  bundle: true,
-  platform: 'node',
-  target: 'node24',
-  format: 'esm',
-  legalComments: 'none',
-  logLevel: 'warning'
+const bundle = await bundleAdapter({
+  root: join(import.meta.dirname, '..'),
+  entry: 'src/lambda.ts',
+  file: 'lambda.mjs',
+  label: 'Lambda bundle',
+  options: { platform: 'node', target: 'node24' }
 });
 
-const files = readdirSync(outdir);
+const files = readdirSync(dirname(bundle));
 if (files.length !== 1 || files[0] !== 'lambda.mjs') {
   console.error(`deploy/ must contain only lambda.mjs, found: ${files.join(', ')}`);
-  process.exitCode = 1;
-}
-
-const gzipped = gzipSync(readFileSync(outfile)).length;
-console.log(`Lambda bundle: deploy/lambda.mjs, ${String(gzipped)} bytes gzipped (budget ${String(budget)})`);
-if (gzipped > budget) {
-  console.error('Over the bundle size budget');
   process.exitCode = 1;
 }

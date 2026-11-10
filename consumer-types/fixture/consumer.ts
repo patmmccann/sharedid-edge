@@ -4,9 +4,12 @@ import {
   createHandler,
   defineModule,
   EU_COUNTRY_CODES,
+  handlerOrMisconfigured,
   locationInfo,
+  logRequestFailure,
   preciseLocationDenial,
   resolveConfig,
+  splitHeaders,
   type EdgeModule,
   type LocationSource,
   type ModuleContext,
@@ -18,6 +21,7 @@ import {
   type PreciseLocationDenial,
   type SharedIdEdgeConfig,
   type SharedIdEdgeHandler,
+  type SplitHeaders,
   type StorageDecision
 } from '@sharedid-edge/core';
 
@@ -66,3 +70,20 @@ export async function payload(request: Request): Promise<PayloadV1> {
 
 // @ts-expect-error - the handler's platform info is read-only
 platform.country = 'US';
+
+// An adapter's plumbing: a handler that answers with a 500 on invalid settings, and a response for a platform that
+// keeps one value per header name.
+export const guarded: SharedIdEdgeHandler = handlerOrMisconfigured<SharedIdEdgeHandler>(
+  () => createHandler({ config: resolveConfig({}) }),
+  () => () => Promise.resolve(new Response('misconfigured', { status: 500 }))
+);
+export async function platformResponse(request: Request): Promise<{ status: number; headers: Record<string, string>; cookies: readonly string[] }> {
+  try {
+    const response = await guarded(request);
+    const split: SplitHeaders = splitHeaders(response.headers);
+    return { status: response.status, headers: split.headers, cookies: split.cookies };
+  } catch (error) {
+    logRequestFailure(error);
+    return { status: 500, headers: {}, cookies: [] };
+  }
+}

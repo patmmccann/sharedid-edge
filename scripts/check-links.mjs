@@ -19,8 +19,8 @@ function markdownFiles(dir) {
   return files;
 }
 
-/** The lines outside fenced code blocks, with inline code removed. */
-function prose(text) {
+/** The lines outside fenced code blocks, with their line numbers. */
+function outsideFences(text) {
   const lines = [];
   let fence;
   for (const [index, line] of text.split(/\r?\n/).entries()) {
@@ -30,9 +30,14 @@ function prose(text) {
       else if (marker[1].startsWith(fence)) fence = undefined;
       continue;
     }
-    if (fence === undefined) lines.push({ number: index + 1, text: line.replace(/(`+)[^`]*?\1/g, '') });
+    if (fence === undefined) lines.push({ number: index + 1, text: line });
   }
   return lines;
+}
+
+/** The lines outside fenced code blocks, with inline code removed. */
+function prose(text) {
+  return outsideFences(text).map(({ number, text: line }) => ({ number, text: line.replace(/(`+)[^`]*?\1/g, '') }));
 }
 
 /** GitHub's heading anchors: lowercase, punctuation dropped, spaces to hyphens, `-1`, `-2` … for repeats. */
@@ -42,15 +47,7 @@ function anchors(file) {
   if (set !== undefined) return set;
   set = new Set();
   const counts = new Map();
-  let fence;
-  for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
-    const marker = /^\s*(```+|~~~+)/.exec(line);
-    if (marker !== null) {
-      if (fence === undefined) fence = marker[1];
-      else if (marker[1].startsWith(fence)) fence = undefined;
-      continue;
-    }
-    if (fence !== undefined) continue;
+  for (const { text: line } of outsideFences(readFileSync(file, 'utf8'))) {
     for (const match of line.matchAll(/<a\s+(?:name|id)="([^"]+)"/g)) set.add(match[1]);
     const heading = /^#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
     if (heading === null) continue;
