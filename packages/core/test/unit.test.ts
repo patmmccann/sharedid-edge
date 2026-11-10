@@ -122,7 +122,8 @@ describe('resolveConfig', () => {
     ['SID_VENDOR_ID', 'abc'],
     ['SID_ALLOWED_ORIGINS', 'https://example.com/path'],
     ['SID_MODULE_CONFIG', '[1]'],
-    ['SID_RECOVERY_COOKIE', '_pubcid']
+    ['SID_RECOVERY_COOKIE', '_pubcid'],
+    ['SID_RECOVERY_COOKIE', '_pubcid_optout']
   ])('rejects %s=%s', (key, value) => {
     expect(() => resolveConfig({ [key]: value })).toThrow(ConfigError);
   });
@@ -153,6 +154,23 @@ describe('decodeTcf', () => {
       expect([1, 2, 3, 4, 754, 755, 756, 757, 758, 999, 1000, 1001].filter(v => decoded?.vendorConsent(v) === true)).toEqual([3, 755, 756, 757, 1000]);
     }
     expect(decodeTcf(tcString([1]))?.vendorConsent(1)).toBe(false);
+  });
+  it('rejects truncated strings, so malformed CMP data fails closed', () => {
+    const full = tcString([1, 2], { publisher: [1, 2], vendors: [755] });
+    const [core = '', publisher = ''] = full.split('.');
+    expect(decodeTcf(full)).toBeDefined();
+    // cut inside the vendor consent bit field, the vendor legitimate interest section and the publisher restrictions
+    for (let length = 30; length < core.length; length++) {
+      expect(decodeTcf(`${core.slice(0, length)}.${publisher}`)).toBeUndefined();
+    }
+    expect(decodeTcf(`${core}.${publisher.slice(0, 8)}`)).toBeUndefined();
+    // the example from review: consent bits, but no vendor section
+    expect(decodeTcf('CAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAA')).toBeUndefined();
+  });
+  it('rejects a range-encoded vendor section with missing entries', () => {
+    const full = tcString([1], { vendors: [3, 755, 756, 757], vendorEncoding: 'range' });
+    expect(decodeTcf(full)?.vendorConsent(756)).toBe(true);
+    expect(decodeTcf(full.slice(0, -8))).toBeUndefined();
   });
   it('rejects other versions, short strings and bad characters', () => {
     expect(decodeTcf(tcString([1], { version: 1 }))).toBeUndefined();

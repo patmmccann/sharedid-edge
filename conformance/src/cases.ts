@@ -61,41 +61,74 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function stringRecord(file: string, where: string, value: unknown): Record<string, string> {
-  if (value === undefined) return {};
-  if (!isObject(value) || !Object.values(value).every(v => typeof v === 'string')) fail(file, `${where} must be an object of strings`);
-  return value as Record<string, string>;
+type Check = (value: unknown) => boolean;
+
+const isString: Check = v => typeof v === 'string';
+const isBoolean: Check = v => typeof v === 'boolean';
+const isInteger: Check = v => Number.isInteger(v);
+const isStringArray: Check = v => Array.isArray(v) && v.every(isString);
+const isStringRecord: Check = v => isObject(v) && Object.values(v).every(isString);
+const isAnything: Check = () => true;
+
+/** Each field the schema allows, with the type check it must pass. Keep in step with case-file.schema.json. */
+const REQUEST_FIELDS: Readonly<Record<string, Check>> = {
+  method: isString,
+  path: v => isString(v) && (v as string).startsWith('/'),
+  headers: isStringRecord
+};
+const EXPECT_FIELDS: Readonly<Record<string, Check>> = {
+  status: isInteger,
+  headers: isStringRecord,
+  absentHeaders: isStringArray,
+  bodyLength: isInteger,
+  json: isAnything,
+  cookies: v => Array.isArray(v),
+  onlyListedCookies: isBoolean,
+  noCookies: isBoolean
+};
+const COOKIE_FIELDS: Readonly<Record<string, Check>> = {
+  name: isString,
+  value: isString,
+  valuePattern: isString,
+  maxAge: isInteger,
+  sameSite: v => v === 'Lax' || v === 'Strict' || v === 'None',
+  path: isString,
+  domain: isString,
+  httpOnly: isBoolean
+};
+
+/** Fails on unknown keys, missing required keys and values of the wrong type. */
+function checkFields(file: string, where: string, value: unknown, fields: Readonly<Record<string, Check>>, required: readonly string[]): void {
+  if (!isObject(value)) fail(file, `${where} must be an object`);
+  for (const key of required) if (!(key in value)) fail(file, `${where}.${key} is required`);
+  for (const [key, field] of Object.entries(value)) {
+    const check = fields[key];
+    if (check === undefined) fail(file, `${where} has unknown key "${key}"`);
+    if (!check(field)) fail(file, `${where}.${key} has the wrong type or value: ${JSON.stringify(field)}`);
+  }
 }
 
 /** Checks a case file's shape, so a typo in a fixture fails loudly instead of skipping an assertion. */
 export function validateCaseFile(file: string, value: unknown): CaseFile {
   if (!isObject(value)) fail(file, 'must be a JSON object');
+  for (const key of Object.keys(value)) if (!['$schema', 'description', 'config', 'cases'].includes(key)) fail(file, `unknown key "${key}"`);
   const { description, config, cases } = value;
   if (typeof description !== 'string') fail(file, '"description" must be a string');
+  if (!isStringRecord(config)) fail(file, '"config" must be an object of strings');
   if (!Array.isArray(cases) || cases.length === 0) fail(file, '"cases" must be a non-empty array');
-  const known = new Set(['name', 'request', 'expect']);
-  const expectKeys = new Set(['status', 'headers', 'absentHeaders', 'bodyLength', 'json', 'cookies', 'onlyListedCookies', 'noCookies']);
-  const cookieKeys = new Set(['name', 'value', 'valuePattern', 'maxAge', 'sameSite', 'path', 'domain', 'httpOnly']);
   cases.forEach((c: unknown, i) => {
     const where = `cases[${String(i)}]`;
-    if (!isObject(c)) fail(file, `${where} must be an object`);
-    for (const key of Object.keys(c)) if (!known.has(key)) fail(file, `${where} has unknown key "${key}"`);
-    if (typeof c['name'] !== 'string') fail(file, `${where}.name must be a string`);
-    const request = c['request'];
-    if (!isObject(request) || typeof request['path'] !== 'string' || !request['path'].startsWith('/')) fail(file, `${where}.request.path must start with /`);
-    stringRecord(file, `${where}.request.headers`, request['headers']);
-    const expect = c['expect'];
-    if (!isObject(expect) || typeof expect['status'] !== 'number') fail(file, `${where}.expect.status must be a number`);
-    for (const key of Object.keys(expect)) if (!expectKeys.has(key)) fail(file, `${where}.expect has unknown key "${key}"`);
-    stringRecord(file, `${where}.expect.headers`, expect['headers']);
-    const cookies = expect['cookies'];
-    if (cookies !== undefined) {
-      if (!Array.isArray(cookies)) fail(file, `${where}.expect.cookies must be an array`);
+    checkFields(file, where, c, { name: isString, request: isObject, expect: isObject }, ['name', 'request', 'expect']);
+    const { request, expect } = c as Record<string, unknown>;
+    checkFields(file, `${where}.request`, request, REQUEST_FIELDS, ['path']);
+    checkFields(file, `${where}.expect`, expect, EXPECT_FIELDS, ['status']);
+    const cookies = (expect as Record<string, unknown>)['cookies'];
+    if (Array.isArray(cookies)) {
       cookies.forEach((cookie: unknown, j) => {
-        if (!isObject(cookie) || typeof cookie['name'] !== 'string') fail(file, `${where}.expect.cookies[${String(j)}].name must be a string`);
-        for (const key of Object.keys(cookie)) if (!cookieKeys.has(key)) fail(file, `${where}.expect.cookies[${String(j)}] has unknown key "${key}"`);
+        checkFields(file, `${where}.expect.cookies[${String(j)}]`, cookie, COOKIE_FIELDS, ['name']);
       });
     }
   });
-  return { file, description, config: stringRecord(file, 'config', config), cases: cases as Case[] };
+  // Every field has now been checked against the schema.
+  return { file, description, config: config as Record<string, string>, cases: cases as Case[] };
 }

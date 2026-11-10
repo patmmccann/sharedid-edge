@@ -33,7 +33,7 @@ Implementations read these settings, normally as environment variables. Defaults
 | `SID_MODULE_CONFIG` | [`{}`] | JSON object of per-module settings, keyed by module name. |
 | `SID_MODULE_TIMEOUT_MS` | [`50`] | Time limit for each module. |
 
-Invalid configuration MUST fail every request with a 5xx rather than set cookies.
+The three cookie names (`SID_COOKIE_NAME`, `SID_RECOVERY_COOKIE`, `SID_OPTOUT_COOKIE`) MUST all differ. Invalid configuration MUST fail every request with a 5xx rather than set cookies.
 
 ## Routes
 
