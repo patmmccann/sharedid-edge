@@ -294,7 +294,7 @@ Built-in modules:
 | --- | --- | --- |
 | [`ip`](packages/module-ip/README.md) | `ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out | none |
 | [`ec`](packages/module-ec/README.md) | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**; see below | `domain`; secret `passphrase` |
-| [`reflect`](packages/module-reflect/README.md) | Nothing in the payload: re-sets first-party cookies other scripts wrote (such as `uid1`) with the same value and a new expiry, so Safari doesn't cap them | `cookies` |
+| [`reflect`](packages/module-reflect/README.md) | Nothing in the payload: re-sets first-party cookies other scripts wrote (such as `uid1` or `_ga`) with the same value and a new expiry, so Safari doesn't cap them, and with `restore`, sets them again from an `HttpOnly` keeper cookie after Safari deletes them | `cookies`, `keeper` |
 
 To build your own, see [Adding a module](#adding-a-module).
 
@@ -396,6 +396,27 @@ The payload is unchanged apart from `"reflect": { "ms": 0, "status": "empty" }` 
 - **Consent:** it reflects only when the worker would set the SharedID: not on opt-out, GPC, `coppa=1`, denied TCF consent, or GDPR without a TC string. It never deletes these cookies on `/_sid/v1`, and on `/_sid/optout` only those you mark `deleteOnOptOut`.
 - **Only on `/_sid/v1`.** Prebid.js's `pixelUrl` calls `/_sid/sync`, where modules don't run, so the page has to call `/_sid/v1` (for example with the `fetch` snippet under [`ip`](#ip-the-real-client-ip)).
 - Up to 10 cookies, 1 to 400 days each. The SharedID cookies, `ts-ec` and `euconsent-v2` can't be reflected.
+
+**Restoring deleted cookies.** A cookie marked `"restore": true` is also saved in one `HttpOnly` cookie the worker owns, the keeper (`_sid_keep`, base64url of a JSON object, at most 4096 bytes). When Safari has deleted the cookie, the next `/_sid/v1` call sets it again from the keeper, as `_pubcid_sv` does for `_pubcid`. For Google Analytics and Ads:
+
+```json
+{
+  "reflect": {
+    "cookies": [
+      { "name": "_ga", "maxAgeDays": 400, "domain": "example.com", "restore": true },
+      { "name": "_gcl_aw", "maxAgeDays": 90, "domain": "example.com", "restore": true },
+      { "name": "_gcl_au", "maxAgeDays": 90, "domain": "example.com", "restore": true }
+    ]
+  }
+}
+```
+
+```http
+Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAiLCJfZ2NsX2F1IjoiMS4xLjk4NzY1NDMyMS4xNzAwMDAwMDAwIn0; Max-Age=34560000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
+```
+
+- **Call `/_sid/v1` before gtag.js loads,** or a deleted `_ga` is replaced by a new one before the worker can restore it. The module's README has the page snippet, and walks through [making `uid1` sticky](packages/module-reflect/README.md#make-uid1-sticky-and-server-set) and [restoring `_ga`, `_gcl_aw` and `_gcl_au`](packages/module-reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au).
+- **Consent:** when storage isn't allowed the keeper is deleted (the original cookies are left alone), and `/_sid/optout` always deletes it.
 
 
 ## Self-host with Node.js
