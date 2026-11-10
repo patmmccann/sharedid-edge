@@ -202,7 +202,6 @@ Bid requests made from the page, or relayed by Prebid Server, don't always carry
 ```jsonc
 "vars": {
   "SID_MODULES": "ip",
-  "SID_MODULE_CONFIG": "{}",            // or "{\"ip\":{\"truncate\":true}}" to always truncate
   "SID_ALLOWED_ORIGINS": ""             // only needed if the page fetching /_sid/v1 is on another origin
 }
 ```
@@ -218,7 +217,11 @@ fetch('/_sid/v1', { credentials: 'include' })
   .catch(() => {});
 ```
 
-**Truncation.** The module sends a truncated address (IPv4 /24, so `192.0.2.0`; IPv6 /56) instead of the full one when the visitor sends Global Privacy Control, a US privacy string opts out of sale, a TCF TC string doesn't opt in to Special Feature 1 (precise geolocation), or GDPR applies and there's no TC string. This matches how Prebid Server masks addresses.
+**Full address or nothing.** The module never sends a truncated address, which would look real but place the user in the wrong network. It sends nothing (`ext.modules.ip.status` is `empty`) when:
+- the visitor sends Global Privacy Control;
+- a US privacy string opts out of sale;
+- a TCF TC string doesn't opt in to Special Feature 1 (precise geolocation);
+- GDPR applies and there's no TC string.
 
 **Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
 
@@ -270,7 +273,7 @@ All settings are strings, set as Worker `vars` (Cloudflare) or environment varia
 | `SID_ALLOWED_ORIGINS` | none | Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin. |
 | `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. |
 | `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`. |
-| `SID_MODULE_CONFIG` | `{}` | JSON settings per module, e.g. `{"ip":{"truncate":true}}`. |
+| `SID_MODULE_CONFIG` | `{}` | JSON settings per module, keyed by module name. |
 | `SID_MODULE_TIMEOUT_MS` | `50` | Time limit for each module. |
 
 Routes, under `SID_BASE_PATH`:

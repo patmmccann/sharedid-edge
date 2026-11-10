@@ -3,10 +3,6 @@ export type ParsedIp =
   | { readonly version: 4; readonly octets: readonly number[] }
   | { readonly version: 6; readonly hextets: readonly number[] };
 
-/** Bits kept when truncating, as Prebid Server masks by default: a /24 for IPv4 and a /56 for IPv6. */
-export const IPV4_PREFIX_BITS = 24;
-export const IPV6_PREFIX_BITS = 56;
-
 const IPV4_OCTET = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
 const HEXTET = /^[0-9a-fA-F]{1,4}$/;
 
@@ -76,22 +72,4 @@ export function formatIpv6(hextets: readonly number[]): string {
   const hex = hextets.map(h => h.toString(16));
   if (bestStart < 0) return hex.join(':');
   return `${hex.slice(0, bestStart).join(':')}::${hex.slice(bestStart + bestLength).join(':')}`;
-}
-
-/** Zeroes the bits after the first {@link IPV4_PREFIX_BITS}. */
-export function truncateIpv4(octets: readonly number[]): number[] {
-  return maskBits(octets, 8, IPV4_PREFIX_BITS);
-}
-
-/** Zeroes the bits after the first {@link IPV6_PREFIX_BITS}. */
-export function truncateIpv6(hextets: readonly number[]): number[] {
-  return maskBits(hextets, 16, IPV6_PREFIX_BITS);
-}
-
-function maskBits(groups: readonly number[], bitsPerGroup: number, keep: number): number[] {
-  return groups.map((group, i) => {
-    const kept = Math.min(Math.max(keep - i * bitsPerGroup, 0), bitsPerGroup);
-    const mask = ((1 << kept) - 1) << (bitsPerGroup - kept);
-    return group & mask;
-  });
 }

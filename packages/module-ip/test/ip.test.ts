@@ -1,6 +1,6 @@
 import { createHandler, resolveConfig, type ConsentContext, type PayloadV1, type PlatformInfo, type SharedIdEdgeHandler, type TcfConsents } from '@sharedid-edge/core';
 import { describe, expect, it } from 'vitest';
-import { deviceFields, formatIpv6, ipModule, ipModuleConfig, parseIp, truncationReason, type IpModuleConfig } from '../src/index.js';
+import { deviceFields, formatIpv6, ipModule, omissionReason, parseIp } from '../src/index.js';
 
 describe('parseIp', () => {
   it('parses IPv4', () => {
@@ -40,18 +40,14 @@ describe('formatIpv6', () => {
 
 describe('deviceFields', () => {
   const ip = (text: string): NonNullable<ReturnType<typeof parseIp>> => parseIp(text) ?? expect.unreachable(text);
-  it('uses ip for IPv4 and ipv6 for IPv6', () => {
-    expect(deviceFields(ip('192.0.2.77'), false)).toEqual({ ip: '192.0.2.77' });
-    expect(deviceFields(ip('2001:DB8:abcd:12ff:1:2:3:4'), false)).toEqual({ ipv6: '2001:db8:abcd:12ff:1:2:3:4' });
-  });
-  it('truncates IPv4 to a /24 and IPv6 to a /56', () => {
-    expect(deviceFields(ip('192.0.2.77'), true)).toEqual({ ip: '192.0.2.0' });
-    expect(deviceFields(ip('2001:db8:abcd:12ff:1:2:3:4'), true)).toEqual({ ipv6: '2001:db8:abcd:1200::' });
+  it('uses ip for IPv4 and ipv6 for IPv6, in full', () => {
+    expect(deviceFields(ip('192.0.2.77'))).toEqual({ ip: '192.0.2.77' });
+    expect(deviceFields(ip('::ffff:192.0.2.77'))).toEqual({ ip: '192.0.2.77' });
+    expect(deviceFields(ip('2001:DB8:abcd:12ff:1:2:3:4'))).toEqual({ ipv6: '2001:db8:abcd:12ff:1:2:3:4' });
   });
 });
 
-describe('truncationReason', () => {
-  const off: IpModuleConfig = { truncate: false };
+describe('omissionReason', () => {
   const tcf = (specialFeatures: readonly number[]): TcfConsents => ({
     version: 2,
     specialFeatureOptIns: new Set(specialFeatures),
@@ -73,32 +69,21 @@ describe('truncationReason', () => {
   });
 
   it('sends the full address without restrictions', () => {
-    expect(truncationReason(off, consent())).toBeUndefined();
-    expect(truncationReason(off, consent({ gdprApplies: false }))).toBeUndefined();
-    expect(truncationReason(off, consent({ usPrivacy: '1YNN' }))).toBeUndefined();
-    expect(truncationReason(off, consent({ gdprApplies: true, tcString: 'x', tcf: tcf([1]) }))).toBeUndefined();
+    expect(omissionReason(consent())).toBeUndefined();
+    expect(omissionReason(consent({ gdprApplies: false }))).toBeUndefined();
+    expect(omissionReason(consent({ usPrivacy: '1YNN' }))).toBeUndefined();
+    expect(omissionReason(consent({ gdprApplies: true, tcString: 'x', tcf: tcf([1]) }))).toBeUndefined();
   });
-  it('truncates when configured to', () => {
-    expect(truncationReason({ truncate: true }, consent())).toBe('configured');
+  it('omits the address with Global Privacy Control or a US privacy opt-out', () => {
+    expect(omissionReason(consent({ gpc: true }))).toBe('gpc');
+    expect(omissionReason(consent({ usPrivacy: '1YYN' }))).toBe('us-privacy');
+    expect(omissionReason(consent({ usPrivacy: '1nyn' }))).toBe('us-privacy');
   });
-  it('truncates with Global Privacy Control or a US privacy opt-out', () => {
-    expect(truncationReason(off, consent({ gpc: true }))).toBe('gpc');
-    expect(truncationReason(off, consent({ usPrivacy: '1YYN' }))).toBe('us-privacy');
-    expect(truncationReason(off, consent({ usPrivacy: '1nyn' }))).toBe('us-privacy');
-  });
-  it('truncates without opt-in to precise geolocation (TCF Special Feature 1)', () => {
-    expect(truncationReason(off, consent({ gdprApplies: true, tcString: 'x', tcf: tcf([2]) }))).toBe('tcf: no opt-in to precise geolocation');
-    expect(truncationReason(off, consent({ gdprApplies: false, tcString: 'x', tcf: tcf([]) }))).toBe('tcf: no opt-in to precise geolocation');
-    expect(truncationReason(off, consent({ tcString: 'x' }))).toBe('tcf: invalid TC string');
-    expect(truncationReason(off, consent({ gdprApplies: true }))).toBe('tcf: no TC string');
-  });
-});
-
-describe('ipModuleConfig', () => {
-  it('defaults to not truncating, and rejects a non-boolean', () => {
-    expect(ipModuleConfig({})).toEqual({ truncate: false });
-    expect(ipModuleConfig({ truncate: true })).toEqual({ truncate: true });
-    expect(() => ipModuleConfig({ truncate: 'yes' })).toThrow(TypeError);
+  it('omits the address without opt-in to precise geolocation (TCF Special Feature 1)', () => {
+    expect(omissionReason(consent({ gdprApplies: true, tcString: 'x', tcf: tcf([2]) }))).toBe('tcf: no opt-in to precise geolocation');
+    expect(omissionReason(consent({ gdprApplies: false, tcString: 'x', tcf: tcf([]) }))).toBe('tcf: no opt-in to precise geolocation');
+    expect(omissionReason(consent({ tcString: 'x' }))).toBe('tcf: invalid TC string');
+    expect(omissionReason(consent({ gdprApplies: true }))).toBe('tcf: no TC string');
   });
 });
 
@@ -118,21 +103,21 @@ describe('the ip module in the handler', () => {
     expect(body.ext.modules['ip']?.status).toBe('ok');
     expect((await payload({ SID_MODULES: 'ip' }, '/_sid/v1', { clientIp: '2001:db8::7' })).ortb2).toEqual({ device: { ipv6: '2001:db8::7' } });
   });
-  it('truncates when GDPR applies without a TC string, with GPC, or when configured', async () => {
-    expect((await payload({ SID_MODULES: 'ip' }, '/_sid/v1?gdpr=1', { clientIp: '192.0.2.77' })).ortb2).toEqual({ device: { ip: '192.0.2.0' } });
-    expect((await payload({ SID_MODULES: 'ip' }, '/_sid/v1', { clientIp: '192.0.2.77', isEU: true })).ortb2).toEqual({ device: { ip: '192.0.2.0' } });
-    expect((await payload({ SID_MODULES: 'ip' }, '/_sid/v1', { clientIp: '192.0.2.77' }, { 'Sec-GPC': '1' })).ortb2).toEqual({ device: { ip: '192.0.2.0' } });
-    const configured = { SID_MODULES: 'ip', SID_MODULE_CONFIG: '{"ip":{"truncate":true}}' };
-    expect((await payload(configured, '/_sid/v1', { clientIp: '2001:db8:abcd:12ff::1' })).ortb2).toEqual({ device: { ipv6: '2001:db8:abcd:1200::' } });
+  it('sends nothing, rather than a truncated address, when GDPR applies without a TC string or with GPC', async () => {
+    for (const [path, platform, headers] of [
+      ['/_sid/v1?gdpr=1', { clientIp: '192.0.2.77' }, {}],
+      ['/_sid/v1', { clientIp: '192.0.2.77', isEU: true }, {}],
+      ['/_sid/v1', { clientIp: '192.0.2.77' }, { 'Sec-GPC': '1' }],
+      ['/_sid/v1?us_privacy=1YYN', { clientIp: '2001:db8::7' }, {}]
+    ] as const) {
+      const body = await payload({ SID_MODULES: 'ip' }, path, platform, headers);
+      expect(body.ortb2).toBeUndefined();
+      expect(body.ext.modules['ip']?.status).toBe('empty');
+    }
   });
   it('reports empty when the platform has no valid client IP', async () => {
     expect((await payload({ SID_MODULES: 'ip' }, '/_sid/v1', {})).ext.modules['ip']?.status).toBe('empty');
     expect((await payload({ SID_MODULES: 'ip' }, '/_sid/v1', { clientIp: 'not-an-ip' })).ext.modules['ip']?.status).toBe('empty');
-  });
-  it('reports an error for invalid settings, without details', async () => {
-    const body = await payload({ SID_MODULES: 'ip', SID_MODULE_CONFIG: '{"ip":{"truncate":"yes"}}' }, '/_sid/v1', { clientIp: '192.0.2.77' });
-    expect(body.ext.modules['ip']).toEqual({ ms: expect.any(Number) as number, status: 'error' });
-    expect(body.ortb2).toBeUndefined();
   });
   it('adds nothing to the sync pixel', async () => {
     const response = await handler({ SID_MODULES: 'ip' })(new Request('https://www.example.com/_sid/sync'), { clientIp: '192.0.2.77' });

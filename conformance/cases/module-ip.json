@@ -1,6 +1,6 @@
 {
   "$schema": "../case-file.schema.json",
-  "description": "The ip module (SID_MODULES=ip): the client IP in the v1 payload's ortb2.device, truncated (IPv4 /24, IPv6 /56) with GPC, a US privacy opt-out, or under GDPR without opt-in to TCF Special Feature 1. Requests carry the client IP as both X-Forwarded-For (the Node.js target runs with SID_TRUST_PROXY) and CF-Connecting-IP (the Workers runtime). TC strings: CAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAA opts in to Special Feature 1 and nothing else; CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA has no special features.",
+  "description": "The ip module (SID_MODULES=ip): the full client IP in the v1 payload's ortb2.device, or nothing (status empty) with GPC, a US privacy opt-out, or under GDPR without opt-in to TCF Special Feature 1. It never sends a truncated address. Requests carry the client IP as both X-Forwarded-For (the Node.js target runs with SID_TRUST_PROXY) and CF-Connecting-IP (the Workers runtime). TC strings: CAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAA opts in to Special Feature 1 and nothing else; CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA has no special features.",
   "config": { "SID_MODULES": "ip", "SID_TRUST_PROXY": "true" },
   "cases": [
     {
@@ -14,28 +14,28 @@
       "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "ipv6": "2001:db8::abcd:0:0:1" } } } }
     },
     {
-      "name": "truncates with Global Privacy Control",
+      "name": "sends nothing with Global Privacy Control",
       "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "sec-gpc": "1" } },
-      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "ip": "192.0.2.0" } } } }
+      "expect": { "status": 200, "jsonIncludes": { "ext": { "modules": { "ip": { "status": "empty" } } } } }
     },
     {
-      "name": "truncates with a US privacy opt-out of sale",
+      "name": "sends nothing with a US privacy opt-out of sale",
       "request": { "path": "/_sid/v1?us_privacy=1YYN", "headers": { "x-forwarded-for": "2001:db8:abcd:12ff::1", "cf-connecting-ip": "2001:db8:abcd:12ff::1" } },
-      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "ipv6": "2001:db8:abcd:1200::" } } } }
+      "expect": { "status": 200, "jsonIncludes": { "ext": { "modules": { "ip": { "status": "empty" } } } } }
     },
     {
-      "name": "truncates when GDPR applies and there is no TC string",
+      "name": "sends nothing when GDPR applies and there is no TC string",
       "request": { "path": "/_sid/v1?gdpr=1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
-      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "ip": "192.0.2.0" } } } }
+      "expect": { "status": 200, "jsonIncludes": { "ext": { "modules": { "ip": { "status": "empty" } } } } }
     },
     {
-      "name": "truncates without opt-in to precise geolocation",
-      "request": { "path": "/_sid/v1?gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
-      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "ip": "192.0.2.0" } } } }
+      "name": "sends nothing without opt-in to precise geolocation",
+      "request": { "path": "/_sid/v1?gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
+      "expect": { "status": 200, "jsonIncludes": { "ext": { "modules": { "ip": { "status": "empty" } } } } }
     },
     {
       "name": "sends the full address with opt-in to precise geolocation",
-      "request": { "path": "/_sid/v1?gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAA", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
+      "request": { "path": "/_sid/v1?gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAA", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
       "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "ip": "192.0.2.77" } } } }
     }
   ]

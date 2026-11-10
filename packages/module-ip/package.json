@@ -1,7 +1,7 @@
 {
   "name": "@sharedid-edge/module-ip",
   "version": "0.1.0",
-  "description": "SharedID Edge module: the connecting client's IP address in ortb2.device, truncated when consent requires",
+  "description": "SharedID Edge module: the connecting client's full IP address in ortb2.device, or nothing when consent rules it out",
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
