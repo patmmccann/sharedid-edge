@@ -80,7 +80,12 @@ export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtI
  * prefix must be empty (`host.json`), so the route is the URL path. The catch-all also matches the base path itself.
  */
 export function routeFor(basePath: string): string {
-  const trimmed = basePath.replace(/^\/+|\/+$/g, '');
+  // Leading and trailing slashes off, without a regular expression (a `\/+$` backtracks on long runs of slashes).
+  let start = 0;
+  let end = basePath.length;
+  while (start < end && basePath[start] === '/') start++;
+  while (end > start && basePath[end - 1] === '/') end--;
+  const trimmed = basePath.slice(start, end);
   return trimmed === '' ? '{*path}' : `${trimmed}/{*path}`;
 }
 

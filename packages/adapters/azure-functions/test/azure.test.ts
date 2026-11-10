@@ -237,6 +237,7 @@ describe('settings', () => {
     expect(routeFor('/_sid')).toBe('_sid/{*path}');
     expect(routeFor('/identity/sync-v2')).toBe('identity/sync-v2/{*path}');
     expect(routeFor('/')).toBe('{*path}');
+    expect(routeFor('//identity//')).toBe('identity/{*path}');
     expect(routeFromEnv({})).toBe('_sid/{*path}');
     expect(routeFromEnv({ SID_BASE_PATH: '/identity/' })).toBe('identity/{*path}');
     expect(routeFromEnv({ SID_BASE_PATH: '/' })).toBe('{*path}');
