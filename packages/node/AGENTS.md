@@ -1,5 +1,7 @@
 # packages/node
 
+User documentation is in [README.md](README.md); keep it in step with behaviour changes.
+
 A Node.js HTTP server around the core handler (`src/index.ts`, `createNodeServer`) and its CLI (`src/cli.ts`, configured by environment variables). Used for local development, self-hosting behind a reverse proxy, and as a conformance target.
 
 - Keep it a thin adapter: convert `IncomingMessage` to `Request` and the `Response` back, and fill `PlatformInfo`. Behaviour belongs in core.

@@ -37,6 +37,8 @@ The worker never replaces an existing ID: when you turn it on, it adopts the IDs
 
 ## Deploy on Cloudflare
 
+Full reference: [`packages/cloudflare/README.md`](packages/cloudflare/README.md).
+
 ### Prerequisites
 
 - Your site's DNS is on Cloudflare, and the hostname you serve pages from (for example `www.example.com`) is **proxied** (orange cloud). Workers routes only run on proxied hostnames.
@@ -433,6 +435,8 @@ Cloudflare geolocates every request, and the Worker already has the result. The 
 Like the IP address, the location is only returned to the browser that sent the request, and is never stored or logged.
 
 ## Self-host with Node.js
+
+Full reference: [`packages/node/README.md`](packages/node/README.md).
 
 If your site isn't on Cloudflare, you can run the same handler as a Node.js server behind the web server or load balancer that serves your site. It must answer on your site's own hostname and IP addresses, for the same reason as above.
 
