@@ -1,11 +1,12 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
-import { createHandler, type HandlerOptions, type PlatformInfo, type SharedIdEdgeHandler } from '@sharedid-edge/core';
+import { createHandler, locationInfo, type HandlerOptions, type LocationSource, type PlatformInfo, type SharedIdEdgeHandler } from '@sharedid-edge/core';
 
 export interface NodeServerOptions extends HandlerOptions {
   /**
-   * Take the client IP from the first `X-Forwarded-For` entry. Only enable this behind a proxy you control,
-   * which overwrites the header: otherwise clients can set it.
+   * Take the client IP from the first `X-Forwarded-For` entry, and the location from Cloudflare's visitor location
+   * headers (`cf-ipcountry`, `cf-region-code`, `cf-ipcity`, …). Only enable this behind a proxy you control, which
+   * overwrites these headers: otherwise clients can set them.
    */
   readonly trustProxy?: boolean;
   /** Origin used to build request URLs, e.g. `https://www.example.com`. Defaults to `http://<Host header>`. */
@@ -59,8 +60,45 @@ function toRequest(req: IncomingMessage, publicOrigin: string | undefined): Requ
 }
 
 function platformInfo(req: IncomingMessage, trustProxy: boolean): PlatformInfo {
-  const forwarded = req.headers['x-forwarded-for'];
-  const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim();
+  const first = header(req, 'x-forwarded-for')?.split(',')[0]?.trim();
   const clientIp = trustProxy && first !== undefined && first !== '' ? first : req.socket.remoteAddress;
-  return clientIp === undefined ? {} : { clientIp };
+  return {
+    ...(clientIp === undefined ? {} : { clientIp }),
+    // Cloudflare's visitor location headers, like X-Forwarded-For, can be trusted only behind a proxy that sets them.
+    ...(trustProxy ? locationInfo(cloudflareLocation(req)) : {})
+  };
+}
+
+/**
+ * The location from Cloudflare's "add visitor location headers" managed transform. Node.js decodes header values as
+ * Latin-1; Cloudflare sends city names as UTF-8, so `cf-ipcity` is decoded again.
+ */
+function cloudflareLocation(req: IncomingMessage): LocationSource {
+  const city = header(req, 'cf-ipcity');
+  return {
+    country: header(req, 'cf-ipcountry'),
+    regionCode: header(req, 'cf-region-code'),
+    city: city === undefined ? undefined : utf8(city),
+    postalCode: header(req, 'cf-postal-code'),
+    metroCode: header(req, 'cf-metro-code'),
+    latitude: header(req, 'cf-iplatitude'),
+    longitude: header(req, 'cf-iplongitude'),
+    timezone: header(req, 'cf-timezone'),
+    continent: header(req, 'cf-ipcontinent')
+  };
+}
+
+function header(req: IncomingMessage, name: string): string | undefined {
+  const value = req.headers[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/** Re-decodes a Latin-1-decoded header value as UTF-8, keeping it as is when it isn't valid UTF-8. */
+function utf8(latin1: string): string {
+  const bytes = Buffer.from(latin1, 'latin1');
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return latin1;
+  }
 }

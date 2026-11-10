@@ -38,6 +38,8 @@ The worker never replaces an existing ID: when you turn it on, it adopts the IDs
 
 ## Deploy on Cloudflare
 
+Full reference: [`packages/cloudflare/README.md`](packages/cloudflare/README.md).
+
 ### Prerequisites
 
 - Your site's DNS is on Cloudflare, and the hostname you serve pages from (for example `www.example.com`) is **proxied** (orange cloud). Workers routes only run on proxied hostnames.
@@ -256,6 +258,25 @@ JSON (`Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store`
 
 An IPv6 visitor gets `"ortb2": { "device": { "ipv6": "2001:db8::7" } }` instead.
 
+With `SID_MODULES=ip,geo`, both modules' output is merged into one `device` object. A visitor in Austin, in winter:
+
+```json
+{
+  "v": 1,
+  "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+  "eids": [
+    { "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }
+  ],
+  "ortb2": {
+    "device": {
+      "ip": "192.0.2.77",
+      "geo": { "type": 2, "country": "USA", "region": "TX", "metro": "635", "utcoffset": -360, "city": "Austin", "zip": "78701", "lat": 30.2713, "lon": -97.7426 }
+    }
+  },
+  "ext": { "modules": { "ip": { "ms": 1, "status": "ok" }, "geo": { "ms": 0, "status": "ok" } } }
+}
+```
+
 The same request with `Sec-GPC: 1` gets no ID, deletes the ID cookies, and returns no IP:
 
 ```json
@@ -263,6 +284,17 @@ The same request with `Sec-GPC: 1` gets no ID, deletes the ID cookies, and retur
   "v": 1,
   "eids": [],
   "ext": { "modules": { "ip": { "ms": 0, "status": "empty" } } }
+}
+```
+
+With `SID_MODULES=ip,geo`, `geo` still returns the coarse location, without city, postal code or coordinates:
+
+```json
+{
+  "v": 1,
+  "eids": [],
+  "ortb2": { "device": { "geo": { "type": 2, "country": "USA", "region": "TX", "metro": "635", "utcoffset": -360 } } },
+  "ext": { "modules": { "ip": { "ms": 1, "status": "empty" }, "geo": { "ms": 0, "status": "ok" } } }
 }
 ```
 
@@ -328,7 +360,7 @@ Set `SID_MODULES` to a comma-separated list of module names, in the order their 
 
 ```jsonc
 "vars": {
-  "SID_MODULES": "ip",                  // e.g. "ip,geo" once more modules exist
+  "SID_MODULES": "ip,geo",              // names, in merge order
   "SID_MODULE_CONFIG": "{}",            // e.g. "{\"geo\":{\"precision\":\"coarse\"}}"
   "SID_MODULE_TIMEOUT_MS": "50"         // each module's time limit
 }
@@ -338,7 +370,7 @@ Then deploy, and check `ext.modules` in the `/_sid/v1` response:
 
 ```sh
 curl -s https://www.example.com/_sid/v1 | jq .ext.modules
-# { "ip": { "ms": 0, "status": "ok" } }
+# { "ip": { "ms": 0, "status": "ok" }, "geo": { "ms": 0, "status": "ok" } }
 ```
 
 - **Unknown names** are reported as `skipped` with reason `not installed`: check the spelling, or that your build includes the module.
@@ -351,6 +383,7 @@ Built-in modules:
 | --- | --- | --- |
 | [`ip`](packages/module-ip/README.md) | `ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out | none |
 | [`ec`](packages/module-ec/README.md) | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**; see below | `domain`; secret `passphrase` |
+| [`geo`](packages/module-geo/README.md) | `ortb2.device.geo`: country, region, metro and UTC offset, plus city, postal code and coordinates when consent allows | `precision`: `precise` (default) or `coarse` |
 
 To build your own, see [Adding a module](#adding-a-module).
 
@@ -427,7 +460,40 @@ npm exec -w @sharedid-edge/cloudflare -- wrangler secret put SID_MODULE_SECRETS
 - There's no server-side identity graph, partner sync or `/identify` API.
 - Consent uses this worker's signals (`gdpr`, the TC string, GPC, `us_privacy`, `coppa`), not Trusted Server's per-country and per-state jurisdiction lists, and GPP isn't decoded yet.
 
+### `geo`: the visitor's location as `device.geo`
+
+Full documentation: [`packages/module-geo/README.md`](packages/module-geo/README.md).
+
+Cloudflare geolocates every request, and the Worker already has the result. The `geo` module returns it as OpenRTB 2.6 `ortb2.device.geo`, so the page can give bidders the location the edge sees, without a geolocation script or a call to a geo service. It's **off until you enable it**:
+
+```jsonc
+"vars": {
+  "SID_MODULES": "ip,geo",               // or just "geo"
+  "SID_MODULE_CONFIG": "{}"              // "{\"geo\":{\"precision\":\"coarse\"}}" never sends precise fields
+}
+```
+
+`/_sid/v1` then includes, for a visitor in Austin in winter (merge it into Prebid.js as shown for `ip`):
+
+```json
+{
+  "ortb2": {
+    "device": {
+      "geo": { "type": 2, "country": "USA", "region": "TX", "metro": "635", "utcoffset": -360, "city": "Austin", "zip": "78701", "lat": 30.2713, "lon": -97.7426 }
+    }
+  }
+}
+```
+
+- **Coarse fields** are always sent when known: `type` (`2`, IP address), `country` (ISO 3166-1 alpha-3), `region` (the ISO 3166-2 subdivision code without its country prefix), `metro` (US DMA) and `utcoffset` (minutes from UTC at the time of the request).
+- **Precise fields** (`city`, `zip`, `lat`, `lon`) are sent in full or not at all, never rounded. They're left out under the same rules as the `ip` module's address: GPC, `coppa=1`, a US privacy opt-out, a TC string without opt-in to Special Feature 1 (precise geolocation), or GDPR without a TC string. `"precision": "coarse"` leaves them out always; any other setting makes the module an `error`.
+- **Where the location comes from.** On Cloudflare, `request.cf`. With the Node.js server behind Cloudflare, Cloudflare's visitor location headers (`cf-ipcountry`, `cf-region-code`, `cf-ipcity`, …), read only with `SID_TRUST_PROXY=true`.
+
+Like the IP address, the location is only returned to the browser that sent the request, and is never stored or logged.
+
 ## Self-host with Node.js
+
+Full reference: [`packages/node/README.md`](packages/node/README.md).
 
 If your site isn't on Cloudflare, you can run the same handler as a Node.js server behind the web server or load balancer that serves your site. It must answer on your site's own hostname and IP addresses, for the same reason as above.
 
@@ -440,7 +506,7 @@ node packages/node/dist/cli.js
 ```
 
 - `SID_PUBLIC_ORIGIN` is the public origin. TLS ends at your proxy, and the cookies need to know they're served over https to be `Secure`.
-- `SID_TRUST_PROXY=true` takes the client IP from `X-Forwarded-For`. Only set it when your proxy overwrites that header.
+- `SID_TRUST_PROXY=true` takes the client IP from `X-Forwarded-For`, and the location for the `geo` module from Cloudflare's visitor location headers (`cf-ipcountry` and the rest). Only set it when your proxy overwrites those headers.
 - `HOST` defaults to `127.0.0.1`. All the `SID_*` settings apply.
 
 Then forward `/_sid/` to it. For example, with nginx:
@@ -472,7 +538,7 @@ All settings are strings, set as Worker `vars` (Cloudflare) or environment varia
 | `SID_VENDOR_ID` | (empty: publisher mode) | Your TCF vendor ID, for vendor mode. |
 | `SID_ALLOWED_ORIGINS` | none | Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin. |
 | `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. |
-| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`. |
+| `SID_MODULES` | none | Comma-separated modules to run for `/_sid/v1`, in order. Built in: `ip`, `ec`, `geo`. |
 | `SID_MODULE_CONFIG` | `{}` | JSON settings per module, keyed by module name. |
 | `SID_MODULE_SECRETS` | `{}` | JSON secrets per module, e.g. the `ec` passphrase. Set it as a secret (`wrangler secret put SID_MODULE_SECRETS`), not in `vars`. |
 | `SID_MODULE_TIMEOUT_MS` | `50` | Time limit for each module. |
@@ -508,6 +574,7 @@ spec/                 the specification
 conformance/          HTTP cases every implementation must pass, and their runner
 packages/core/        the platform-neutral handler, consent, cookies and module interface
 packages/cloudflare/  the Cloudflare Worker
+packages/module-*/    the built-in modules: ip, ec, geo
 packages/node/        the Node.js server (local development, self-hosting, conformance target)
 packages/aws-lambda/  the AWS Lambda adapter, its bundle and SAM template
 e2e/                  unmodified Prebid.js against the worker, in Chromium, Firefox and WebKit
@@ -543,22 +610,22 @@ A module adds IDs or signals to `/_sid/v1`:
 ```ts
 import { defineModule } from '@sharedid-edge/core';
 
-export const geo = defineModule({
-  name: 'geo',
+export const continent = defineModule({
+  name: 'continent',
   purposes: [1],              // TCF purposes it needs publisher consent for when GDPR applies
   run({ platform }) {
-    return platform.country === undefined ? undefined : { ortb2: { device: { geo: { country: platform.country } } } };
+    return platform.continent === undefined ? undefined : { ortb2: { device: { geo: { ext: { continent: platform.continent } } } } };
   }
 });
 ```
 
-Publish it as its own package like [`packages/module-ip`](packages/module-ip), register it in [`packages/cloudflare/src/modules.ts`](packages/cloudflare/src/modules.ts) (and the Node.js CLI and [`packages/aws-lambda/src/modules.ts`](packages/aws-lambda/src/modules.ts)), and enable it with `SID_MODULES=geo`. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/core/AGENTS.md`](packages/core/AGENTS.md).
+Publish it as its own package like [`packages/module-ip`](packages/module-ip), register it in [`packages/cloudflare/src/modules.ts`](packages/cloudflare/src/modules.ts) (and the Node.js CLI and [`packages/aws-lambda/src/modules.ts`](packages/aws-lambda/src/modules.ts)), and enable it with `SID_MODULES=continent`. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/core/AGENTS.md`](packages/core/AGENTS.md).
 
 ## Roadmap
 
-1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, and the `ip` module.
+1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, an AWS Lambda adapter, and the `ip`, `ec` and `geo` modules.
 2. **Next:** Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
-3. A Prebid.js RTD module that reads `/_sid/v1`, plus first-party modules for geography, bot scores and device type, a Fastly adapter, and Lambda@Edge.
+3. A Prebid.js RTD module that reads `/_sid/v1`, plus first-party modules for bot scores and device type, a Fastly adapter, and Lambda@Edge.
 4. Vendor modules, a Rust implementation, and inline mode.
 
 ## License

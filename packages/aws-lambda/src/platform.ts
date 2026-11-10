@@ -1,4 +1,4 @@
-import type { PlatformInfo } from '@sharedid-edge/core';
+import { locationInfo, type PlatformInfo } from '@sharedid-edge/core';
 import type { LambdaEventV2 } from './event.js';
 
 /**
@@ -14,8 +14,9 @@ export const EU_COUNTRY_CODES: ReadonlySet<string> = new Set([
 /** Whether CloudFront sits in front of the function and sets the `CloudFront-Viewer-*` headers. */
 export interface PlatformOptions {
   /**
-   * `true` (the default): the client IP and location come from CloudFront's `CloudFront-Viewer-Address`,
-   * `CloudFront-Viewer-Country` and `CloudFront-Viewer-Country-Region` headers, and `sourceIp` (CloudFront's own
+   * `true` (the default): the client IP and location come from CloudFront's `CloudFront-Viewer-Address` and
+   * geolocation headers (`CloudFront-Viewer-Country`, `-Country-Region`, `-City`, `-Postal-Code`, `-Metro-Code`,
+   * `-Latitude`, `-Longitude`, `-Time-Zone`), and `sourceIp` (CloudFront's own
    * address) is ignored. `false`: nothing is in front of the function, so those headers are ignored (anyone could
    * send them) and the client IP is `requestContext.http.sourceIp`; there is no location.
    */
@@ -60,13 +61,21 @@ export function platformInfo(event: LambdaEventV2, options: PlatformOptions = {}
     return sourceIp === undefined || sourceIp === '' ? {} : { clientIp: sourceIp };
   }
   const clientIp = parseViewerAddress(header(event, 'cloudfront-viewer-address'));
-  const countryHeader = header(event, 'cloudfront-viewer-country')?.toUpperCase();
-  const country = countryHeader !== undefined && /^[A-Z]{2}$/.test(countryHeader) ? countryHeader : undefined;
-  const regionHeader = header(event, 'cloudfront-viewer-country-region')?.toUpperCase();
-  const region = regionHeader !== undefined && /^[A-Z0-9]{1,3}$/.test(regionHeader) ? regionHeader : undefined;
+  // CloudFront's geolocation headers, checked by core's locationInfo like every adapter's. CloudFront has no
+  // continent header.
+  const location = locationInfo({
+    country: header(event, 'cloudfront-viewer-country'),
+    regionCode: header(event, 'cloudfront-viewer-country-region'),
+    city: header(event, 'cloudfront-viewer-city'),
+    postalCode: header(event, 'cloudfront-viewer-postal-code'),
+    metroCode: header(event, 'cloudfront-viewer-metro-code'),
+    latitude: header(event, 'cloudfront-viewer-latitude'),
+    longitude: header(event, 'cloudfront-viewer-longitude'),
+    timezone: header(event, 'cloudfront-viewer-time-zone')
+  });
   return {
     ...(clientIp === undefined ? {} : { clientIp }),
-    ...(country === undefined ? {} : { country, isEU: EU_COUNTRY_CODES.has(country) }),
-    ...(region === undefined ? {} : { region })
+    ...location,
+    ...(location.country === undefined ? {} : { isEU: EU_COUNTRY_CODES.has(location.country) })
   };
 }

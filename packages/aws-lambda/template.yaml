@@ -198,6 +198,13 @@ Resources:
             - CloudFront-Viewer-Address
             - CloudFront-Viewer-Country
             - CloudFront-Viewer-Country-Region
+            # The rest of CloudFront's geolocation headers, for the geo module.
+            - CloudFront-Viewer-City
+            - CloudFront-Viewer-Postal-Code
+            - CloudFront-Viewer-Metro-Code
+            - CloudFront-Viewer-Latitude
+            - CloudFront-Viewer-Longitude
+            - CloudFront-Viewer-Time-Zone
             - Origin
             - Sec-GPC
 

@@ -107,7 +107,7 @@ A response where storage was denied SHOULD carry `X-SharedID-Status: denied: <re
   "v": 1,
   "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d",
   "eids": [{ "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }],
-  "ortb2": { "device": { "geo": { "country": "USA" } } },
+  "ortb2": { "device": { "geo": { "type": 2, "country": "USA", "region": "TX" } } },
   "ext": { "modules": { "geo": { "ms": 1, "status": "ok" } } }
 }
 ```
@@ -129,7 +129,7 @@ A module has:
 - optionally `purposes` (TCF purposes it needs publisher consent for when GDPR applies) and `gvlid` (its IAB vendor ID);
 - a `run(context)` function returning `{ eids?, ortb2?, cookies? }` or nothing.
 
-The context has the request, its URL and cookies, the platform information (client IP, country, region, EU flag), the SharedID (when storage is allowed), whether the browser opted out, the consent signals, and the module's configuration and secrets.
+The context has the request, its URL and cookies, the platform information (see [Platform information](#platform-information)), the SharedID (when storage is allowed), whether the browser opted out, the consent signals, and the module's configuration and secrets.
 
 A module's `cookies` are set on the `/v1` response with `Path=/`, `SameSite=Lax`, `Secure` over https, the module's `Domain` (else `SID_COOKIE_DOMAIN`), `Max-Age` (0 deletes) and `HttpOnly` as given. A module MUST NOT set the worker's own cookie names; a malformed or reserved cookie makes the module an `error`, and none of its output is used. A module that returns only cookies reports `empty`.
 
@@ -174,6 +174,50 @@ Name `ec`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`,
   - opt-out, `Sec-GPC: 1`, `coppa=1`, a `us_privacy` opt-out of sale, or a TC string without consent for Purpose 1 (core segment) **withdraws**: an existing `ts-ec` is deleted and nothing is returned. `{basePath}/optout` deletes `ts-ec` too;
   - an undecodable TC string, or GDPR applying without a TC string, fails closed: nothing is set, returned or deleted.
 - It runs on `/v1` only, so an EC is set only when the page calls `/v1`.
+
+### Platform information
+
+What the platform knows about the request beyond the request itself: the client IP, whether it comes from the EU (on Cloudflare, `request.cf.isEUCountry`), and its location. Every field is optional; a platform that doesn't know a value, or gets one that isn't valid, leaves it out. The location fields:
+
+| Field | | Cloudflare `request.cf` | Visitor location header |
+| --- | --- | --- | --- |
+| country | ISO 3166-1 alpha-2, upper case; not `XX` (unknown) or `T1` (Tor) | `country` | `cf-ipcountry` |
+| region | ISO 3166-2 subdivision code, with or without the country prefix | `regionCode` | `cf-region-code` |
+| city | | `city` | `cf-ipcity` |
+| postal code | | `postalCode` | `cf-postal-code` |
+| metro code | Nielsen DMA code, digits | `metroCode` | `cf-metro-code` |
+| latitude, longitude | finite numbers, in range; only as a pair | `latitude`, `longitude` | `cf-iplatitude`, `cf-iplongitude` |
+| time zone | IANA name, e.g. `America/Chicago` | `timezone` | `cf-timezone` |
+| continent | `AF`, `AN`, `AS`, `EU`, `NA`, `OC` or `SA` | `continent` | `cf-ipcontinent` |
+
+An implementation behind Cloudflare that isn't a Worker (for example the Node.js server, with Cloudflare's "add visitor location headers" managed transform) reads the location from the headers in the last column **only** when configured to trust its proxy (`SID_TRUST_PROXY`), as it does for the client IP in `X-Forwarded-For`: otherwise the client can set them.
+
+### The `geo` module
+
+Name `geo`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`.
+
+It returns the platform's location as the OpenRTB 2.6 `ortb2.device.geo` object:
+
+| `device.geo` | From | |
+| --- | --- | --- |
+| `type` | | `2` (IP address), whenever any other field is present. |
+| `country` | country | ISO 3166-1 **alpha-3** (`USA`), from a bundled table of every assigned code. Codes not in the table are left out. |
+| `region` | region | The subdivision code without the country prefix (`US-TX` and `TX` are both `TX`), upper case. |
+| `metro` | metro code | A string, as in OpenRTB. |
+| `utcoffset` | time zone | The zone's offset from UTC in minutes at the time of the request, so it follows daylight saving time. Left out when the zone is unknown to the runtime. |
+| `city` | city | Precise. |
+| `zip` | postal code | Precise. |
+| `lat`, `lon` | latitude, longitude | Precise; numbers. |
+
+- **Coarse** fields (`type`, `country`, `region`, `metro`, `utcoffset`) are always returned when known.
+- **Precise** fields (`city`, `zip`, `lat`, `lon`) are returned in full or not at all; they MUST NOT be rounded or truncated. They're left out under the same conditions as the `ip` module's address:
+  - the request has `Sec-GPC: 1`, or `coppa=1`;
+  - the `us_privacy` string opts out of sale (its third character is `Y`);
+  - there is a TC string that is invalid or doesn't opt in to Special Feature 1 (use precise geolocation data);
+  - GDPR applies and there is no TC string.
+- **Setting:** `SID_MODULE_CONFIG={"geo":{"precision":"coarse"}}` returns only the coarse fields; `"precise"` is the default. Any other value of `precision`, or any other key, is a configuration mistake: the module fails (status `error`) on every request rather than guess.
+- When there's no field to return, it returns nothing (status `empty`).
+- The location MUST NOT be stored, logged or used to derive an ID.
 
 ## Versioning
 

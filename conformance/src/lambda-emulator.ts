@@ -38,6 +38,23 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+/**
+ * The conformance cases describe the visitor's location with Cloudflare's visitor location headers. Like the
+ * workerd runner, which passes them as request.cf, this stand-in passes them the way CloudFront would: as its
+ * CloudFront-Viewer-* geolocation headers (CloudFront has no continent header). Only with SID_TRUST_PROXY, as in the
+ * cases.
+ */
+const LOCATION_HEADERS: Readonly<Record<string, string>> = {
+  'cf-ipcountry': 'cloudfront-viewer-country',
+  'cf-region-code': 'cloudfront-viewer-country-region',
+  'cf-ipcity': 'cloudfront-viewer-city',
+  'cf-postal-code': 'cloudfront-viewer-postal-code',
+  'cf-metro-code': 'cloudfront-viewer-metro-code',
+  'cf-iplatitude': 'cloudfront-viewer-latitude',
+  'cf-iplongitude': 'cloudfront-viewer-longitude',
+  'cf-timezone': 'cloudfront-viewer-time-zone'
+};
+
 async function toEvent(req: IncomingMessage, trustProxy: boolean): Promise<LambdaEventV2> {
   const headers: Record<string, string> = {};
   const cookies: string[] = [];
@@ -53,6 +70,14 @@ async function toEvent(req: IncomingMessage, trustProxy: boolean): Promise<Lambd
   }
   const address = viewerAddress(req, trustProxy);
   if (address !== undefined) headers['cloudfront-viewer-address'] = address;
+  if (trustProxy) {
+    for (const [from, to] of Object.entries(LOCATION_HEADERS)) {
+      const value = headers[from];
+      if (value === undefined) continue;
+      // Node reads header bytes as Latin-1; city names arrive as UTF-8, so decode them back, as the Node.js adapter does.
+      headers[to] = from === 'cf-ipcity' ? Buffer.from(value, 'latin1').toString('utf8') : value;
+    }
+  }
   const url = new URL(req.url ?? '/', 'http://localhost');
   const body = await readBody(req);
   return {

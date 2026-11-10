@@ -31,7 +31,7 @@ Browser ── https://www.example.com/_sid/sync?id=pubcid:<id>
 CloudFront: your site's distribution (www.example.com)
    ├─ /_sid/*  → origin: the function URL, signed with origin access control (SigV4)
    │             cache policy CachingDisabled; origin request policy forwards cookies, query strings,
-   │             CloudFront-Viewer-Address, CloudFront-Viewer-Country, CloudFront-Viewer-Country-Region,
+   │             CloudFront-Viewer-Address, CloudFront-Viewer-Country (and the other geolocation headers),
    │             Origin and Sec-GPC
    └─ *        → your site's origin, unchanged
                      │
@@ -216,7 +216,14 @@ The handler gets the client IP and location (`PlatformInfo`) from headers CloudF
 | `clientIp` | `CloudFront-Viewer-Address` | `ip:port`. IPv4 is `198.51.100.10:46532`; IPv6 is accepted with brackets (`[2001:db8::1]:46532`) or without (`2001:db8::1:46532`, where the last field is the port). Anything else is ignored. |
 | `country` | `CloudFront-Viewer-Country` | ISO 3166-1 alpha-2, like `FR`. |
 | `region` | `CloudFront-Viewer-Country-Region` | The subdivision code without the country, like `WA` or `IDF`. |
+| `city` | `CloudFront-Viewer-City` | For the `geo` module. |
+| `postalCode` | `CloudFront-Viewer-Postal-Code` | For the `geo` module. |
+| `metroCode` | `CloudFront-Viewer-Metro-Code` | US DMA code, for the `geo` module. |
+| `latitude`, `longitude` | `CloudFront-Viewer-Latitude`, `CloudFront-Viewer-Longitude` | For the `geo` module. Both are needed; out-of-range values are dropped. |
+| `timezone` | `CloudFront-Viewer-Time-Zone` | IANA name, for the `geo` module's `utcoffset`. |
 | `isEU` | from `country` | `true` for the 27 EU member states, `false` for other countries, unknown without a country. |
+
+Core's `locationInfo` validates the location values the same way as on the other platforms (dropping empty values, `XX`, and out-of-range coordinates). CloudFront has no continent header, so `continent` is never set on Lambda. The template's origin request policy forwards all these headers. If you use your own policy, forward them too, or the `geo` module only gets what you forward.
 
 - **`requestContext.http.sourceIp` is never used behind CloudFront:** it's CloudFront's address, not the visitor's. Nor is `X-Forwarded-For`.
 - **`isEU`** comes from a bundled list of the 27 EU member states (`EU_COUNTRY_CODES`), the same meaning as Cloudflare's `request.cf.isEUCountry`, so both platforms treat a visitor the same way. It's EU membership, not the EEA (Iceland, Liechtenstein, Norway) or the UK: pages there should send `gdpr=1` (the [consent rules](../../README.md#consent-and-opt-out)). When it's `true`, GDPR applies unless the request says `gdpr=0`. When CloudFront sends no country (the header isn't forwarded, or the location is unknown) `isEU` is unknown, as on the other platforms.

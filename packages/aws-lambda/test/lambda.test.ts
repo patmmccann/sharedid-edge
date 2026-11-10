@@ -141,6 +141,30 @@ describe('platformInfo', () => {
       .toEqual({ clientIp: '198.51.100.23', country: 'FR', region: 'IDF', isEU: true });
   });
 
+  it('reads the rest of CloudFront\'s geolocation headers for the geo module, validated by core', () => {
+    const geo = {
+      'cloudfront-viewer-city': 'Seattle',
+      'cloudfront-viewer-postal-code': '98101',
+      'cloudfront-viewer-metro-code': '819',
+      'cloudfront-viewer-latitude': '47.61000',
+      'cloudfront-viewer-longitude': '-122.33000',
+      'cloudfront-viewer-time-zone': 'America/Los_Angeles'
+    };
+    expect(platformInfo(cloudFrontEvent({ headers: geo }))).toEqual({
+      clientIp: '198.51.100.23', country: 'US', region: 'WA', isEU: false,
+      city: 'Seattle', postalCode: '98101', metroCode: '819', latitude: 47.61, longitude: -122.33, timezone: 'America/Los_Angeles'
+    });
+    // out-of-range coordinates are dropped, as on every adapter
+    expect(platformInfo(cloudFrontEvent({ headers: { ...geo, 'cloudfront-viewer-latitude': '123' } }))).not.toHaveProperty('latitude');
+  });
+
+  it('runs the geo module from CloudFront\'s headers', async () => {
+    const handler = createLambdaHandler({ config: resolveConfig({ SID_MODULES: 'geo' }), modules: builtInModules });
+    const result = await handler(cloudFrontEvent({ path: '/_sid/v1', headers: { 'cloudfront-viewer-city': 'Seattle', 'cloudfront-viewer-time-zone': 'America/Los_Angeles' } }));
+    const body = JSON.parse(result.body) as { ortb2?: { device?: { geo?: Record<string, unknown> } } };
+    expect(body.ortb2?.device?.geo).toMatchObject({ type: 2, country: 'USA', region: 'WA', city: 'Seattle' });
+  });
+
   it('leaves location and isEU undefined when the geo headers are missing', () => {
     const info = platformInfo(cloudFrontEvent({ omitHeaders: ['cloudfront-viewer-country', 'cloudfront-viewer-country-region'] }));
     expect(info).toEqual({ clientIp: '198.51.100.23' });

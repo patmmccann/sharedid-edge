@@ -1,17 +1,17 @@
 import { parseArgs } from 'node:util';
 import { loadCaseFiles, type CaseFile } from './cases.js';
-import { runCase } from './check.js';
+import { runCase, type HeaderAdapter } from './check.js';
 import { startTarget, type TargetName } from './targets.js';
 
 const USAGE = `Usage:
   conformance --target node|wrangler|lambda  start each configuration locally and run every case
   conformance --base-url https://...          run the default-configuration cases against a deployment`;
 
-async function runFile(baseUrl: string, file: CaseFile): Promise<number> {
+async function runFile(baseUrl: string, file: CaseFile, adaptHeaders?: HeaderAdapter): Promise<number> {
   let failed = 0;
   console.log(`# ${file.file}: ${file.description}`);
   for (const testCase of file.cases) {
-    const failures = await runCase(baseUrl, testCase);
+    const failures = await runCase(baseUrl, testCase, adaptHeaders);
     if (failures.length === 0) {
       console.log(`ok - ${testCase.name}`);
     } else {
@@ -41,7 +41,7 @@ async function main(): Promise<number> {
       const running = await startTarget(target, file.config);
       try {
         total += file.cases.length;
-        failed += await runFile(running.baseUrl, file);
+        failed += await runFile(running.baseUrl, file, running.requestHeaders);
       } finally {
         await running.stop();
       }

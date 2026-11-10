@@ -77,6 +77,32 @@ export function storageDecision(config: Pick<SharedIdEdgeConfig, 'vendorId'>, co
   return { allowed: true };
 }
 
+/** Why precise location data is left out; see `preciseLocationDenial`. */
+export type PreciseLocationDenial = 'gpc' | 'coppa' | 'us-privacy' | 'tcf: no TC string' | 'tcf: invalid TC string' | 'tcf: no opt-in to precise geolocation';
+
+/**
+ * Why data that locates the user precisely (a full IP address, coordinates, a postal code) must be left out, or
+ * undefined if it may be sent. It's left out:
+ *
+ * - with Global Privacy Control, for a request subject to COPPA, or with a `us_privacy` string that opts out of sale;
+ * - when there is a TC string that is invalid or doesn't opt in to Special Feature 1 (use precise geolocation data),
+ *   whatever `gdpr` says, or when GDPR applies and there is no TC string.
+ *
+ * Modules send such data in full or not at all: truncating or rounding it isn't a substitute.
+ */
+export function preciseLocationDenial(consent: ConsentContext): PreciseLocationDenial | undefined {
+  if (consent.gpc) return 'gpc';
+  if (consent.coppa) return 'coppa';
+  if (consent.usPrivacy?.charAt(2).toUpperCase() === 'Y') return 'us-privacy';
+  if (consent.tcString !== undefined) {
+    if (consent.tcf === undefined) return 'tcf: invalid TC string';
+    if (!consent.tcf.specialFeatureOptIns.has(1)) return 'tcf: no opt-in to precise geolocation';
+    return undefined;
+  }
+  if (consent.gdprApplies === true) return 'tcf: no TC string';
+  return undefined;
+}
+
 function purposeDecision(consents: ReadonlySet<number>, legitimateInterests: ReadonlySet<number>, kind: 'publisher' | 'vendor'): StorageDecision {
   if (!consents.has(1)) return { allowed: false, reason: `tcf: no ${kind} consent for purpose 1` };
   if (!USE_PURPOSES.some(p => consents.has(p) || legitimateInterests.has(p))) {
