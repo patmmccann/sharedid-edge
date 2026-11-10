@@ -10,7 +10,8 @@ import {
   type PayloadV1,
   type PlatformInfo,
   type SharedIdEdgeConfig,
-  type SharedIdEdgeHandler
+  type SharedIdEdgeHandler,
+  type StorageDecision
 } from '@sharedid-edge/core';
 
 const geo: EdgeModule = defineModule({
@@ -18,6 +19,11 @@ const geo: EdgeModule = defineModule({
   purposes: [1],
   run(context: ModuleContext): ModuleResult | undefined {
     const country: string | undefined = context.platform.country;
+    const storage: StorageDecision = context.storage;
+    if (!storage.allowed) {
+      const reason: string = storage.reason;
+      if (reason === '') return undefined;
+    }
     return country === undefined ? undefined : { ortb2: { device: { geo: { country } } } };
   }
 });

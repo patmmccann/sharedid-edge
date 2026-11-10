@@ -230,22 +230,26 @@ describe('v1 payload', () => {
     const seen: unknown[] = [];
     const cookieModule = defineModule({
       name: 'cookie',
-      run: ({ cookies, secrets, optedOut }) => {
-        seen.push({ existing: cookies.get('mine'), secret: secrets['key'], optedOut });
+      run: ({ cookies, secrets, optedOut, storage }) => {
+        seen.push({ existing: cookies.get('mine'), secret: secrets['key'], optedOut, storage });
         return { cookies: [{ name: 'mine', value: 'v1', maxAgeSeconds: 60, httpOnly: true }, { name: 'gone', value: '', maxAgeSeconds: 0, httpOnly: false, domain: '.example.com' }] };
       }
     });
     const h = handler({ SID_MODULES: 'cookie', SID_MODULE_SECRETS: '{"cookie":{"key":"s3cret"}}' }, { modules: [cookieModule] });
     const response = await h(get('/_sid/v1', { Cookie: 'mine=v0' }));
     const body = await response.json() as PayloadV1;
-    expect(seen).toEqual([{ existing: 'v0', secret: 's3cret', optedOut: false }]);
+    expect(seen).toEqual([{ existing: 'v0', secret: 's3cret', optedOut: false, storage: { allowed: true } }]);
     expect(body.ext.modules['cookie']?.status).toBe('empty');
     expect(JSON.stringify(body)).not.toContain('s3cret');
     expect(cookieNamed(response, 'mine')?.attributes).toEqual(new Map([['max-age', '60'], ['expires', expect.any(String) as string], ['path', '/'], ['samesite', 'Lax'], ['secure', ''], ['httponly', '']]));
     expect(cookieNamed(response, 'gone')?.attributes.get('domain')).toBe('.example.com');
     expect(cookieNamed(response, 'gone')?.attributes.get('max-age')).toBe('0');
     await h(get('/_sid/v1', { Cookie: '_pubcid_optout=1' }));
-    expect(seen[1]).toEqual({ existing: undefined, secret: 's3cret', optedOut: true });
+    expect(seen[1]).toEqual({ existing: undefined, secret: 's3cret', optedOut: true, storage: { allowed: false, reason: 'opt-out' } });
+    await h(get('/_sid/v1', { 'Sec-GPC': '1' }));
+    expect(seen[2]).toMatchObject({ optedOut: false, storage: { allowed: false, reason: 'gpc' } });
+    await h(get('/_sid/v1?gdpr=1'));
+    expect(seen[3]).toMatchObject({ storage: { allowed: false, reason: 'tcf: GDPR applies and there is no TC string' } });
   });
 
   it('deletes installed modules\' cookies on opt-out, listed in SID_MODULES or not, and skips bad hooks', async () => {
