@@ -144,6 +144,10 @@ Anything else in `geo`'s settings, including a misspelt key (`{"geo":{"precison"
 
 The Lambda adapter reads CloudFront’s geolocation headers (`CloudFront-Viewer-Country`, `-Country-Region`, `-City`, `-Postal-Code`, `-Metro-Code`, `-Latitude`, `-Longitude`, `-Time-Zone`). The SAM template’s origin request policy forwards them. CloudFront has no continent header. See [`packages/adapters/aws-lambda/README.md`](../../adapters/aws-lambda/README.md#platform-information).
 
+## On Vercel
+
+The Vercel adapter reads Vercel's geolocation headers (`x-vercel-ip-country`, `-country-region`, `-city`, `-postal-code`, `-latitude`, `-longitude`, `-timezone`, `-continent`), which Vercel's proxy sets on every request. Vercel has no metro code, so `metro` is never sent there. See [`packages/adapters/vercel/README.md`](../../adapters/vercel/README.md#platform-information).
+
 ## With the Node.js server
 
 The Node.js server has no geolocation of its own. Behind Cloudflare, it can use Cloudflare's **visitor location headers**: turn on the **Add visitor location headers** managed transform (in the Cloudflare dashboard, under Rules, Managed Transforms). Cloudflare then adds these headers to requests it forwards to your server:

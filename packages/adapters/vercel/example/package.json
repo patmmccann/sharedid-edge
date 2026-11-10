@@ -1,0 +1,28 @@
+{
+  "name": "sharedid-edge-vercel-example",
+  "private": true,
+  "description": "A minimal Next.js site serving SharedID Edge on /_sid/* from its own Vercel deployment",
+  "type": "module",
+  "scripts": {
+    "sharedid": "node copy-sharedid-edge.mjs",
+    "predev": "npm run sharedid",
+    "prebuild": "npm run sharedid",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "^16.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "~6.0.3"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

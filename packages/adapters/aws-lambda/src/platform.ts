@@ -1,15 +1,8 @@
-import { locationInfo, type PlatformInfo } from '@sharedid-edge/core';
+import { EU_COUNTRY_CODES, locationInfo, type PlatformInfo } from '@sharedid-edge/core';
 import type { LambdaEventV2 } from './event.js';
 
-/**
- * The 27 EU member states (ISO 3166-1 alpha-2), for `PlatformInfo.isEU`. The same set Cloudflare's
- * `request.cf.isEUCountry` covers, so the two adapters agree: EU membership, not the wider EEA (Iceland,
- * Liechtenstein, Norway) or the UK. Pages there should send `gdpr=1` explicitly.
- */
-export const EU_COUNTRY_CODES: ReadonlySet<string> = new Set([
-  'AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'HU',
-  'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK'
-]);
+/** The 27 EU member states, from core: the meaning of Cloudflare's `request.cf.isEUCountry`. */
+export { EU_COUNTRY_CODES };
 
 /** Whether CloudFront sits in front of the function and sets the `CloudFront-Viewer-*` headers. */
 export interface PlatformOptions {

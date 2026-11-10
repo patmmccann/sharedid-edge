@@ -207,6 +207,10 @@ The handler takes Lambda function URL events, which use the API Gateway HTTP API
 
 Unexpected errors return a generic `500 Internal error`; only the error's name is logged, never request data.
 
+## Base path
+
+`SID_BASE_PATH` (the template's `SidBasePath`) sets both the worker's routes and the CloudFront behaviour's path pattern (`<base path>/*`), so the two always match. The root base path, `/`, isn't supported here: a CloudFront behaviour for it would match the whole site, so the template's parameter pattern rejects it. Use a path such as `/_sid` (the default) or `/identity`.
+
 ## Platform information
 
 The handler gets the client IP and location (`PlatformInfo`) from headers CloudFront adds when the origin request policy asks for them:

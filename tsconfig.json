@@ -12,6 +12,8 @@
     { "path": "packages/adapters/aws-lambda/test" },
     { "path": "packages/adapters/node" },
     { "path": "packages/adapters/node/test" },
+    { "path": "packages/adapters/vercel" },
+    { "path": "packages/adapters/vercel/test" },
     { "path": "packages/modules/all" },
     { "path": "packages/modules/all/test" },
     { "path": "packages/modules/ec" },

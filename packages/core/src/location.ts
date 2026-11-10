@@ -66,3 +66,14 @@ function coordinate(value: unknown, limit: number): number | undefined {
   const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : Number.NaN;
   return Number.isFinite(n) && Math.abs(n) <= limit ? n : undefined;
 }
+
+/**
+ * The 27 EU member states (ISO 3166-1 alpha-2), for adapters whose platform reports a country but no EU flag. The
+ * same set Cloudflare's `request.cf.isEUCountry` covers, so every adapter agrees: EU membership, not the wider EEA
+ * (Iceland, Liechtenstein, Norway) or the UK. Pages there should send `gdpr=1` explicitly. Update it if EU
+ * membership changes.
+ */
+export const EU_COUNTRY_CODES: ReadonlySet<string> = new Set([
+  'AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'HU',
+  'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK'
+]);

@@ -1,6 +1,6 @@
 name: CI
 
-# Every job runs without secrets or a Cloudflare or AWS account, so pull requests from forks get the full checks.
+# Every job runs without secrets or a Cloudflare, AWS or Vercel account, so pull requests from forks get the full checks.
 on:
   pull_request:
   push:
@@ -63,6 +63,8 @@ jobs:
           '
       - name: Lambda bundle, size budget, and conformance suite against it (local CloudFront stand-in)
         run: npm run conformance:lambda
+      - name: Vercel bundle (no Node.js built-ins), size budget, and conformance suite against it (local Vercel proxy stand-in)
+        run: npm run conformance:vercel
 
   # Vendor modules (packages/vendor-modules/*) are tested in their own job, so one vendor's failing tests don't block
   # changes elsewhere; branch protection can leave this job not required. Their types and lint are still checked in
