@@ -1,4 +1,4 @@
-import { createHandler, DEFAULT_CONFIG, type HandlerOptions } from '@sharedid-edge/core';
+import { createHandler, DEFAULT_CONFIG, type HandlerOptions, ROUTES } from '@sharedid-edge/core';
 import { platformInfo, type PlatformOptions } from './platform.js';
 
 export interface VercelHandlerOptions extends HandlerOptions, PlatformOptions {
@@ -44,7 +44,11 @@ export function createVercelMiddleware(options: VercelHandlerOptions = {}): Verc
   return middleware(createVercelHandler(options), options.config?.basePath ?? DEFAULT_CONFIG.basePath);
 }
 
-/** Wraps a handler so it answers only requests under `basePath`. */
+/**
+ * Wraps a handler so it answers only requests under `basePath`. With the root base path (`/`), that's exactly
+ * core's routes (`/sync`, `/v1`, `/optout`, `/optin`, with an optional trailing slash): anything else is the
+ * site's, so the middleware passes it on.
+ */
 export function middleware(handler: VercelHandler, basePath: string): VercelMiddleware {
   return async request => {
     let pathname: string;
@@ -53,8 +57,16 @@ export function middleware(handler: VercelHandler, basePath: string): VercelMidd
     } catch {
       return undefined;
     }
-    return pathname === basePath || pathname.startsWith(`${basePath}/`) ? handler(request) : undefined;
+    return ownsPath(pathname, basePath) ? handler(request) : undefined;
   };
+}
+
+const CORE_ROUTES: readonly string[] = Object.values(ROUTES);
+
+/** Whether a path belongs to the worker for `basePath`. */
+export function ownsPath(pathname: string, basePath: string): boolean {
+  if (basePath === '/') return CORE_ROUTES.includes(pathname.replace(/\/+$/, ''));
+  return pathname === basePath || pathname.startsWith(`${basePath}/`);
 }
 
 /** A generic 500, for failures and configuration errors. Never includes request data. */

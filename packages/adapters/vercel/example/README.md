@@ -6,17 +6,16 @@ It isn't part of the repository's build: Next.js is a large install, so it has i
 
 ## Run it locally
 
-Node.js 24 or later. From the repository root:
+Node.js 24 or later. From a fresh clone:
 
 ```sh
-npm ci
-npm run build
-npm run bundle -w @sharedid-edge/vercel     # deploy/sharedid-edge.mjs, which the example copies into lib/
 cd packages/adapters/vercel/example
 npm install
 cp .env.example .env.local                  # optional: SID_* settings
 npm run build && npm start                  # or npm run dev
 ```
+
+`npm run build` and `npm run dev` first build the SharedID Edge bundle from the repository if it isn’t there yet (`npm ci`, `npm run build` and `npm run bundle -w @sharedid-edge/vercel` at the root), then copy it into `lib/`. After changing the adapter, rebuild it with `npm run build && npm run bundle -w @sharedid-edge/vercel` at the root.
 
 Then:
 
@@ -29,4 +28,12 @@ Locally there's no Vercel proxy, so there's no client IP or location unless you 
 
 ## Deploy it
 
-Import the folder as a Vercel project (root directory `packages/adapters/vercel/example`), add the `SID_*` environment variables, and deploy. For a real site, copy `lib/sharedid-edge.mjs`, `lib/sharedid-edge.d.mts` and the route file into the site's own project instead: the endpoint must be served by the project that serves your pages, on your own domain.
+Import the repository as a Vercel project with:
+
+- **Root Directory:** `packages/adapters/vercel/example`.
+- **Include files outside the root directory in the Build Step:** on (Vercel’s default). The build needs the rest of the repository to build the bundle.
+- **Node.js version:** 24.x.
+- **Build command:** the default (`npm run build`). Its `prebuild` step builds the bundle from the repository, as above, so nothing generated needs to be committed.
+- **Environment variables:** the `SID_*` settings, with `SID_MODULE_SECRETS` marked sensitive.
+
+Then deploy. For a real site, copy `lib/sharedid-edge.mjs`, `lib/sharedid-edge.d.mts` and the route file into the site's own project instead: the endpoint must be served by the project that serves your pages, on your own domain.

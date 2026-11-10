@@ -3,6 +3,7 @@ export {
   createVercelMiddleware,
   internalError,
   middleware,
+  ownsPath,
   type VercelHandler,
   type VercelHandlerOptions,
   type VercelMiddleware

@@ -11,6 +11,7 @@ import {
   EU_COUNTRY_CODES,
   handlerFromEnv,
   middlewareFromEnv,
+  ownsPath,
   platformInfo
 } from '../src/index.js';
 import { GEO_HEADERS, vercelRequest } from './requests.js';
@@ -120,6 +121,17 @@ describe('createVercelMiddleware', () => {
     expect(await mw(vercelRequest({ path: '/' }))).toBeUndefined();
     expect(await mw(vercelRequest({ path: '/identityx/v1' }))).toBeUndefined();
     expect(await mw(vercelRequest({ path: '/_sid/v1' }))).toBeUndefined();
+  });
+
+  it('with the root base path, answers exactly the core routes and passes the rest of the site on', async () => {
+    const mw = createVercelMiddleware({ config: resolveConfig({ SID_BASE_PATH: '/' }) });
+    for (const path of ['/sync', '/v1', '/optout', '/optin', '/v1/']) expect((await mw(vercelRequest({ path })))?.status, path).not.toBeUndefined();
+    expect((await mw(vercelRequest({ path: '/v1' })))?.status).toBe(200);
+    for (const path of ['/', '/article', '/sync-later', '/v10', '/_sid/v1']) expect(await mw(vercelRequest({ path })), path).toBeUndefined();
+    expect(ownsPath('/sync', '/')).toBe(true);
+    expect(ownsPath('/blog', '/')).toBe(false);
+    expect(ownsPath('/identity/v1', '/identity')).toBe(true);
+    expect(ownsPath('/identityx', '/identity')).toBe(false);
   });
 
   it('is configured from the environment, and a misconfiguration fails only the base path', async () => {

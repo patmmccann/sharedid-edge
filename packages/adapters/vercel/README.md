@@ -131,6 +131,8 @@ If you already have middleware, call `sharedId(request)` first and fall through 
 
 ## Configuration
 
+**Base path.** The route folder and the middleware follow `SID_BASE_PATH`. With the route handler, put the route at the matching folder (`app/<base path>/[...path]/route.ts`, escaping a leading `_` as `%5F`). With the middleware, the `matcher` must cover the base path; with the root base path (`/`) the middleware answers exactly `/sync`, `/v1`, `/optout` and `/optin` and passes everything else to the site, so a broad matcher is safe.
+
 Settings are the project's environment variables, the same `SID_*` variables as everywhere else (see the [configuration reference](../../../README.md#configuration-reference)): Project Settings → Environment Variables, or the CLI:
 
 ```sh
