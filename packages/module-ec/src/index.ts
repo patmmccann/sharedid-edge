@@ -106,12 +106,14 @@ function ecCookie(value: string, maxAgeSeconds: number, settings: EcModuleConfig
 
 async function run({ platform, consent, cookies, optedOut, config, secrets }: ModuleContext): Promise<ModuleResult | undefined> {
   const settings = ecModuleConfig(config);
-  const passphrase = ecPassphrase(secrets);
   const existing = cookies.get(EC_COOKIE);
   const decision = ecDecision(consent, optedOut);
   if (!decision.allowed) {
+    // Withdrawal needs no HMAC, so it doesn't depend on the passphrase: a missing or short secret must not keep an
+    // existing ts-ec alive after GPC, COPPA, opt-out or withdrawn consent.
     return decision.withdraw && existing !== undefined ? { cookies: [ecCookie('', 0, settings)] } : undefined;
   }
+  const passphrase = ecPassphrase(secrets);
   // An existing EC is used as is; like Trusted Server, it isn't refreshed.
   if (isValidEcId(existing)) return { ortb2: { user: { id: existing } } };
   const ip = platform.clientIp === undefined ? undefined : parseIp(platform.clientIp);

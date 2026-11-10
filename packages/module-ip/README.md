@@ -129,7 +129,7 @@ parseIp('fe80::1%eth0');       // undefined: only plain addresses are accepted
 Exports:
 - `ipModule`
 - `parseIp`, `formatIpv4`, `formatIpv6` (RFC 5952)
-- `omissionReason(consent)` (the consent rules)
+- `omissionReason(consent)` (the consent rules: core's `preciseLocationDenial`, which the `geo` module also uses for its precise fields)
 - `deviceFields(ip)` (the OpenRTB mapping)
 
 ## Troubleshooting

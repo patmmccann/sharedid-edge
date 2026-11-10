@@ -137,4 +137,12 @@ describe('the ec module in the handler', () => {
     expect(ec).toBeUndefined();
     expect(JSON.stringify(body)).not.toContain('short');
   });
+  it('still deletes ts-ec on withdrawal when the passphrase is missing or short', async () => {
+    for (const secrets of ['{"ec":{"passphrase":"short"}}', '{}']) {
+      for (const [path, headers] of [['/_sid/v1', { 'Sec-GPC': '1' }], ['/_sid/v1?coppa=1', {}]] as const) {
+        const { ec } = await call(path, { clientIp: '192.0.2.77' }, { ...headers, Cookie: `ts-ec=${'a'.repeat(64)}.Ab12z9` }, { SID_MODULE_SECRETS: secrets });
+        expect(ec).toMatch(/^ts-ec=; Max-Age=0;/);
+      }
+    }
+  });
 });

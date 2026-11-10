@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { ConfigError, resolveConfig } from '@sharedid-edge/core';
 import { ecModule } from '@sharedid-edge/module-ec';
+import { geoModule } from '@sharedid-edge/module-geo';
 import { ipModule } from '@sharedid-edge/module-ip';
 import { reflectModule } from '@sharedid-edge/module-reflect';
 import { createNodeServer } from './index.js';
@@ -15,7 +16,7 @@ try {
   const publicOrigin = process.env['SID_PUBLIC_ORIGIN'];
   const server = createNodeServer({
     config,
-    modules: [ipModule, ecModule, reflectModule],
+    modules: [ipModule, ecModule, geoModule, reflectModule],
     trustProxy: /^(1|true|yes|on)$/i.test(process.env['SID_TRUST_PROXY'] ?? ''),
     ...(publicOrigin === undefined ? {} : { publicOrigin })
   });

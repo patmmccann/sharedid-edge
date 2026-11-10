@@ -45,6 +45,28 @@ describe('node server', () => {
     expect(proxiedBody.ortb2.ip).toBe('203.0.113.9');
   });
 
+  it("reads Cloudflare's visitor location headers only when the proxy is trusted", async () => {
+    const location = defineModule({ name: 'location', run: ({ platform }) => ({ ortb2: { platform: { ...platform, clientIp: undefined } } }) });
+    const config = resolveConfig({ SID_MODULES: 'location' });
+    const headers = {
+      'cf-ipcountry': 'CH', 'cf-region-code': 'ZH', 'cf-ipcity': Buffer.from('Zürich', 'utf8').toString('latin1'), 'cf-postal-code': '8001',
+      'cf-metro-code': '', 'cf-iplatitude': '47.37690', 'cf-iplongitude': '8.54170', 'cf-timezone': 'Europe/Zurich', 'cf-ipcontinent': 'EU'
+    };
+    const read = async (base: string, h: Record<string, string>): Promise<unknown> =>
+      ((await (await fetch(`${base}/_sid/v1`, { headers: h })).json()) as { ortb2: { platform: unknown } }).ortb2.platform;
+
+    const direct = await start({ config, modules: [location] });
+    expect(await read(direct, headers)).toEqual({});
+    await new Promise<void>(resolve => { server?.close(() => { resolve(); }); });
+
+    const proxied = await start({ config, modules: [location], trustProxy: true });
+    expect(await read(proxied, headers)).toEqual({
+      country: 'CH', region: 'ZH', city: 'Zürich', postalCode: '8001', latitude: 47.3769, longitude: 8.5417, timezone: 'Europe/Zurich', continent: 'EU'
+    });
+    expect(await read(proxied, { 'cf-ipcountry': 'T1', 'cf-iplatitude': 'abc', 'cf-iplongitude': '1' })).toEqual({});
+    expect(await read(proxied, { 'cf-ipcountry': 'XX', 'cf-ipcity': 'Saint-Étienne' })).toEqual({ city: 'Saint-Étienne' });
+  });
+
   it('builds request URLs from the public origin, so cookies are Secure behind TLS termination', async () => {
     const base = await start({ config: resolveConfig({}), publicOrigin: 'https://www.example.com' });
     const response = await fetch(`${base}/_sid/sync`);

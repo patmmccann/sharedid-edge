@@ -3,12 +3,17 @@
 import {
   createHandler,
   defineModule,
+  locationInfo,
+  preciseLocationDenial,
   resolveConfig,
   type EdgeModule,
+  type LocationSource,
   type ModuleContext,
   type ModuleResult,
   type PayloadV1,
   type PlatformInfo,
+  type PlatformLocation,
+  type PreciseLocationDenial,
   type SharedIdEdgeConfig,
   type SharedIdEdgeHandler,
   type StorageDecision
@@ -24,9 +29,16 @@ const geo: EdgeModule = defineModule({
       const reason: string = storage.reason;
       if (reason === '') return undefined;
     }
-    return country === undefined ? undefined : { ortb2: { device: { geo: { country } } } };
+    const denial: PreciseLocationDenial | undefined = preciseLocationDenial(context.consent);
+    const lat: number | undefined = denial === undefined ? context.platform.latitude : undefined;
+    return country === undefined ? undefined : { ortb2: { device: { geo: { country, ...(lat === undefined ? {} : { lat }) } } } };
   }
 });
+
+// An adapter checking its CDN's location data.
+const source: LocationSource = { country: 'US', latitude: '30.2713', longitude: -97.7426, timezone: 'America/Chicago' };
+const location: PlatformLocation = locationInfo(source);
+export const located: PlatformInfo = { clientIp: '203.0.113.1', ...location };
 
 const config: SharedIdEdgeConfig = resolveConfig({ SID_MODULES: 'geo' });
 const handler: SharedIdEdgeHandler = createHandler({ config, modules: [geo] });
