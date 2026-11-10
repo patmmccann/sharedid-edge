@@ -1,0 +1,28 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsStorage": "",
+    "SID_PUBLIC_ORIGIN": "http://localhost:7071",
+    "SID_BEHIND_FRONT_DOOR": "false",
+    "SID_FRONT_DOOR_ID": "",
+    "SID_LOCATION_HEADERS": "",
+    "SID_BASE_PATH": "",
+    "SID_COOKIE_NAME": "",
+    "SID_COOKIE_DOMAIN": "",
+    "SID_MAX_AGE_DAYS": "",
+    "SID_CREATE": "",
+    "SID_RECOVERY_COOKIE": "",
+    "SID_OPTOUT_COOKIE": "",
+    "SID_VENDOR_ID": "",
+    "SID_ALLOWED_ORIGINS": "",
+    "SID_SYNC_CACHE_SECONDS": "",
+    "SID_MODULES": "",
+    "SID_SYNC_MODULES": "",
+    "SID_SKIP_BOTS": "",
+    "SID_SKIP_BOTS_SCORE": "",
+    "SID_MODULE_CONFIG": "",
+    "SID_MODULE_TIMEOUT_MS": "",
+    "SID_MODULE_SECRETS": ""
+  }
+}

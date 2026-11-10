@@ -224,7 +224,7 @@ if (payload.ortb2?.device?.ext?.traffic?.bot) {
 }
 ```
 
-Today the signal is merged with the normal deep merge, so a later module in `SID_MODULES` writing `device.ext.traffic` would replace the fields it sets. When the core traffic-signal merge from #5 lands (most cautious wins), this module will use it.
+Core reads the module's `device.ext.traffic` as its report to the shared [traffic signal](../../../README.md#bot-bot-and-staff-traffic-signals) and merges it with the other reports (the `bot` module's, the platform's), most cautious first, so `sources` lists every contributor. With `SID_SKIP_BOTS=declared` (or `likely`), a crawler `ua` flags gets no SharedID.
 
 ## Consent
 

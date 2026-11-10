@@ -1,6 +1,6 @@
 # @sharedid-edge/aws-lambda
 
-[SharedID Edge](../../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `ec`, `geo`, `reflect` and `ua`, and it passes the same conformance suite.
+[SharedID Edge](../../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `ec`, `geo`, `reflect`, `bot` and `ua`, and it passes the same conformance suite.
 
 The main README has a [quick start](../../../README.md#deploy-on-aws-lambda-and-cloudfront). This is the full guide.
 
@@ -232,6 +232,7 @@ The handler gets the client IP and location (`PlatformInfo`) from headers CloudF
 | `latitude`, `longitude` | `CloudFront-Viewer-Latitude`, `CloudFront-Viewer-Longitude` | For the `geo` module. Both are needed; out-of-range values are dropped. |
 | `timezone` | `CloudFront-Viewer-Time-Zone` | IANA name, for the `geo` module's `utcoffset`. |
 | `isEU` | from `country` | `true` for the 27 EU member states, `false` for other countries, unknown without a country. |
+| `traffic` | none | CloudFront adds no bot verdict, so there is none from the platform; the `bot` module and other modules still report to the traffic signal. |
 
 Core's `locationInfo` validates the location values the same way as on the other platforms (dropping empty values, `XX`, and out-of-range coordinates). CloudFront has no continent header, so `continent` is never set on Lambda. The template's origin request policy forwards all these headers. If you use your own policy, forward them too, or the `geo` module only gets what you forward.
 

@@ -5,8 +5,11 @@ import {
   defineModule,
   EU_COUNTRY_CODES,
   locationInfo,
+  mergeTraffic,
   preciseLocationDenial,
   resolveConfig,
+  skipsBot,
+  type BotKind,
   type EdgeModule,
   type LocationSource,
   type ModuleContext,
@@ -18,7 +21,9 @@ import {
   type PreciseLocationDenial,
   type SharedIdEdgeConfig,
   type SharedIdEdgeHandler,
-  type StorageDecision
+  type StorageDecision,
+  type TrafficReport,
+  type TrafficSignal
 } from '@sharedid-edge/core';
 
 const geo: EdgeModule = defineModule({
@@ -63,6 +68,17 @@ export async function payload(request: Request): Promise<PayloadV1> {
   const response = await handler(request, platform);
   return await response.json() as PayloadV1;
 }
+
+// A module reporting to the shared traffic signal, and an adapter passing the platform's verdict.
+const kind: BotKind = 'declared';
+const report: TrafficReport = { bot: true, botKind: kind, proxy: 'relay', score: 12, internal: false };
+export const crawler: EdgeModule = defineModule({ name: 'crawler', run: () => ({ traffic: report }) });
+export const verified: PlatformInfo = { traffic: { bot: true, botKind: 'verified', score: 1 } };
+const merged: TrafficSignal | undefined = mergeTraffic([{ source: 'platform', report }]);
+export const skipped: boolean = skipsBot(config, merged);
+const sources: readonly string[] = merged?.sources ?? [];
+// @ts-expect-error - the merged signal's sources are read-only
+sources.push('forged');
 
 // @ts-expect-error - the handler's platform info is read-only
 platform.country = 'US';
