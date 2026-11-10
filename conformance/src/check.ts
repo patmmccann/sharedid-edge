@@ -87,7 +87,8 @@ export async function runCase(
     if (want.value !== undefined && got.value !== want.value) failures.push(`cookie ${want.name}: value ${JSON.stringify(got.value)}, expected ${JSON.stringify(want.value)}`);
     if (want.valuePattern !== undefined && !new RegExp(want.valuePattern).test(got.value)) failures.push(`cookie ${want.name}: value ${JSON.stringify(got.value)} doesn't match /${want.valuePattern}/`);
     if (want.maxAge !== undefined && got.attributes.get('max-age') !== String(want.maxAge)) failures.push(`cookie ${want.name}: Max-Age ${String(got.attributes.get('max-age'))}, expected ${String(want.maxAge)}`);
-    if (want.sameSite !== undefined && got.attributes.get('samesite') !== want.sameSite) failures.push(`cookie ${want.name}: SameSite ${String(got.attributes.get('samesite'))}, expected ${want.sameSite}`);
+    // SameSite's value is case-insensitive (ASP.NET Core writes `samesite=lax`).
+    if (want.sameSite !== undefined && got.attributes.get('samesite')?.toLowerCase() !== want.sameSite.toLowerCase()) failures.push(`cookie ${want.name}: SameSite ${String(got.attributes.get('samesite'))}, expected ${want.sameSite}`);
     if (want.path !== undefined && got.attributes.get('path') !== want.path) failures.push(`cookie ${want.name}: Path ${String(got.attributes.get('path'))}, expected ${want.path}`);
     if (want.domain !== undefined && (got.attributes.get('domain') ?? '') !== want.domain) failures.push(`cookie ${want.name}: Domain ${String(got.attributes.get('domain'))}, expected ${JSON.stringify(want.domain)}`);
     if (want.httpOnly !== undefined && got.attributes.has('httponly') !== want.httpOnly) failures.push(`cookie ${want.name}: HttpOnly should be ${String(want.httpOnly)}`);

@@ -1,6 +1,7 @@
 name: CI
 
-# Every job runs without secrets or a Cloudflare, AWS or Vercel account, so pull requests from forks get the full checks.
+# Every job runs without secrets or a Cloudflare, AWS, Vercel or Azure account, so pull requests from forks get the full
+# checks.
 on:
   pull_request:
   push:
@@ -65,6 +66,8 @@ jobs:
         run: npm run conformance:lambda
       - name: Vercel bundle (no Node.js built-ins), size budget, and conformance suite against it (local Vercel proxy stand-in)
         run: npm run conformance:vercel
+      - name: Azure Functions bundle, size budget, and conformance suite against it (local Front Door and Functions host stand-in)
+        run: npm run conformance:azure
 
   # Vendor modules (packages/vendor-modules/*) are tested in their own job, so one vendor's failing tests don't block
   # changes elsewhere; branch protection can leave this job not required. Their types and lint are still checked in
@@ -96,6 +99,22 @@ jobs:
           persist-credentials: false
       - name: Lint packages/adapters/aws-lambda/template.yaml
         run: pipx run --spec 'cfn-lint>=1,<2' cfn-lint packages/adapters/aws-lambda/template.yaml
+
+  azure-template:
+    name: Bicep templates (az bicep build, no Azure account)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # The runner's Azure CLI builds Bicep offline: no login, no subscription. Warnings are printed; errors fail.
+      - name: Build packages/adapters/azure-functions/infra/*.bicep
+        run: |
+          az bicep install
+          az bicep build --file packages/adapters/azure-functions/infra/main.bicep --stdout > /dev/null
+          az bicep build --file packages/adapters/azure-functions/infra/frontdoor.bicep --stdout > /dev/null
+          az bicep build --file packages/adapters/azure-functions/infra/basepath.bicep --stdout > /dev/null
 
   conformance-workerd:
     name: Conformance (Workers runtime, wrangler dev)

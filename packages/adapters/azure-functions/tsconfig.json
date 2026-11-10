@@ -1,0 +1,15 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    // The Azure Functions Node.js 24 runtime: Node's types (process.env, and the fetch types @azure/functions uses).
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../core" },
+    { "path": "../../modules/all" }
+  ]
+}
