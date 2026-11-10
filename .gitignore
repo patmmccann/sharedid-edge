@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.tsbuild/
+.wrangler/
+coverage/
+*.tgz
+.dev.vars
+.env
+test-results/
+playwright-report/
