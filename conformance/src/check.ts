@@ -18,11 +18,14 @@ function parseSetCookie(header: string): SetCookie {
   return { name: eq < 0 ? pair : pair.slice(0, eq), value: eq < 0 ? '' : pair.slice(eq + 1), attributes };
 }
 
+/** Rewrites a case's request headers for a target; see `RunningTarget.requestHeaders`. */
+export type HeaderAdapter = (headers: Readonly<Record<string, string>>) => Record<string, string>;
+
 /** Sends a case's request to `baseUrl` and returns the failures (empty when it passes). */
-export async function runCase(baseUrl: string, testCase: Case): Promise<string[]> {
+export async function runCase(baseUrl: string, testCase: Case, adaptHeaders: HeaderAdapter = headers => ({ ...headers })): Promise<string[]> {
   const { request, expect } = testCase;
   const method = request.method ?? 'GET';
-  const response = await fetch(new URL(request.path, baseUrl), { method, headers: request.headers ?? {}, redirect: 'manual' });
+  const response = await fetch(new URL(request.path, baseUrl), { method, headers: adaptHeaders(request.headers ?? {}), redirect: 'manual' });
   const failures: string[] = [];
   const body = new Uint8Array(await response.arrayBuffer());
 
@@ -37,7 +40,7 @@ export async function runCase(baseUrl: string, testCase: Case): Promise<string[]
   if (expect.bodyLength !== undefined && method !== 'HEAD' && body.byteLength !== expect.bodyLength) {
     failures.push(`body is ${String(body.byteLength)} bytes, expected ${String(expect.bodyLength)}`);
   }
-  if (expect.json !== undefined || expect.jsonIncludes !== undefined) {
+  if (expect.json !== undefined || expect.jsonIncludes !== undefined || expect.jsonAbsent !== undefined) {
     let json: unknown;
     try {
       json = JSON.parse(new TextDecoder().decode(body));
@@ -49,6 +52,9 @@ export async function runCase(baseUrl: string, testCase: Case): Promise<string[]
     }
     if (json !== undefined && expect.jsonIncludes !== undefined && !includes(json, expect.jsonIncludes)) {
       failures.push(`json ${JSON.stringify(json)} doesn't include ${JSON.stringify(expect.jsonIncludes)}`);
+    }
+    for (const path of json === undefined ? [] : expect.jsonAbsent ?? []) {
+      if (hasPath(json, path.split('.'))) failures.push(`json ${JSON.stringify(json)} should not have ${path}`);
     }
   }
 
@@ -92,6 +98,13 @@ function includes(actual: unknown, expected: unknown): boolean {
     return Object.entries(expected).every(([key, value]) => Object.hasOwn(actual, key) && includes(actual[key], value));
   }
   return isDeepStrictEqual(actual, expected);
+}
+
+/** Whether `value` has the nested object keys in `path`. */
+function hasPath(value: unknown, path: readonly string[]): boolean {
+  const [key, ...rest] = path;
+  if (key === undefined) return true;
+  return isPlainObject(value) && Object.hasOwn(value, key) && hasPath(value[key], rest);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

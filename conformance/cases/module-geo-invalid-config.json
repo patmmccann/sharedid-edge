@@ -1,0 +1,8 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The geo module with an invalid precision setting (SID_MODULE_CONFIG={\"geo\":{\"precision\":\"city\"}}): the module fails (status error) rather than guess, and the rest of the payload is returned. Requests describe the visitor's location with Cloudflare's visitor location headers (cf-ipcountry, cf-region-code, cf-ipcity, cf-postal-code, cf-metro-code, cf-iplatitude, cf-iplongitude, cf-timezone, cf-ipcontinent): the Node.js target reads them because it runs with SID_TRUST_PROXY, and the runner gives the Workers runtime the same values as request.cf. The time zones have no daylight saving time, so utcoffset is fixed.",
+  "config": { "SID_MODULES": "geo", "SID_TRUST_PROXY": "true", "SID_MODULE_CONFIG": "{\"geo\":{\"precision\":\"city\"}}" },
+  "cases": [
+    { "name": "reports the module as an error and adds no location", "request": { "path": "/_sid/v1", "headers": { "cf-ipcountry": "US", "cf-region-code": "AZ", "cf-ipcity": "Phoenix", "cf-postal-code": "85004", "cf-metro-code": "753", "cf-iplatitude": "33.44838", "cf-iplongitude": "-112.07404", "cf-timezone": "America/Phoenix", "cf-ipcontinent": "NA" } }, "expect": { "status": 200, "jsonIncludes": { "v": 1, "ext": { "modules": { "geo": { "status": "error" } } } }, "jsonAbsent": ["ortb2"] } }
+  ]
+}
