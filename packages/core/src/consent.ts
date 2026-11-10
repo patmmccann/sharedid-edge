@@ -1,0 +1,81 @@
+import type { SharedIdEdgeConfig } from './config.js';
+import { decodeTcf, type TcfConsents } from './tcf.js';
+import type { PlatformInfo } from './types.js';
+
+/** The consent signals on a request. */
+export interface ConsentContext {
+  /** Whether GDPR applies: from the `gdpr` query parameter, else the platform's location, else unknown. */
+  readonly gdprApplies: boolean | undefined;
+  /** The TC string, from the `gdpr_consent` query parameter or the CMP's `euconsent-v2` cookie. */
+  readonly tcString: string | undefined;
+  /** The decoded TC string; undefined when there is none or it isn't valid. */
+  readonly tcf: TcfConsents | undefined;
+  /** The `us_privacy` (USP) string, if sent. */
+  readonly usPrivacy: string | undefined;
+  /** The GPP string and section IDs, if sent. */
+  readonly gppString: string | undefined;
+  readonly gppSid: readonly number[] | undefined;
+  /** Global Privacy Control (`Sec-GPC: 1`). */
+  readonly gpc: boolean;
+}
+
+export const TCF_COOKIE = 'euconsent-v2';
+
+export function readConsent(url: URL, headers: Headers, cookies: ReadonlyMap<string, string>, platform: PlatformInfo): ConsentContext {
+  const gdprParam = url.searchParams.get('gdpr');
+  const gdprApplies = gdprParam === '1' ? true : gdprParam === '0' ? false : platform.isEU;
+  const tcString = nonEmpty(url.searchParams.get('gdpr_consent')) ?? nonEmpty(cookies.get(TCF_COOKIE));
+  const gppSid = nonEmpty(url.searchParams.get('gpp_sid'))
+    ?.split(',')
+    .map(Number)
+    .filter(n => Number.isInteger(n));
+  return {
+    gdprApplies,
+    tcString,
+    tcf: tcString === undefined ? undefined : decodeTcf(tcString),
+    usPrivacy: nonEmpty(url.searchParams.get('us_privacy')),
+    gppString: nonEmpty(url.searchParams.get('gpp')),
+    gppSid,
+    gpc: headers.get('Sec-GPC')?.trim() === '1'
+  };
+}
+
+export type StorageDecision = { readonly allowed: true } | { readonly allowed: false; readonly reason: string };
+
+/** Purposes 2 to 10: at least one must have consent, or the ID has no consented use. */
+const USE_PURPOSES: readonly number[] = [2, 3, 4, 5, 6, 7, 8, 9, 10];
+
+/**
+ * Whether the SharedID cookie may be set or refreshed. Opt-out is checked separately, before this. Storage is denied:
+ *
+ * - with Global Privacy Control (`Sec-GPC: 1`);
+ * - when there is a TC string, unless it is valid and consents to Purpose 1 and at least one of Purposes 2 to 10:
+ *   - by default (publisher mode), in the publisher TC segment: SharedID is the publisher's own ID;
+ *   - with `vendorId` configured (vendor mode), in the core segment's vendor purposes, and the vendor itself has consent;
+ * - when GDPR applies and there is no TC string.
+ */
+export function storageDecision(config: Pick<SharedIdEdgeConfig, 'vendorId'>, consent: ConsentContext): StorageDecision {
+  if (consent.gpc) return { allowed: false, reason: 'gpc' };
+  if (consent.tcString !== undefined) {
+    const tcf = consent.tcf;
+    if (tcf === undefined) return { allowed: false, reason: 'tcf: invalid TC string' };
+    if (config.vendorId !== undefined) {
+      if (!tcf.vendorConsent(config.vendorId)) return { allowed: false, reason: `tcf: no consent for vendor ${String(config.vendorId)}` };
+      return purposeDecision(tcf.purposeConsents, 'vendor');
+    }
+    if (tcf.publisherPurposeConsents === undefined) return { allowed: false, reason: 'tcf: no publisher TC segment' };
+    return purposeDecision(tcf.publisherPurposeConsents, 'publisher');
+  }
+  if (consent.gdprApplies === true) return { allowed: false, reason: 'tcf: GDPR applies and there is no TC string' };
+  return { allowed: true };
+}
+
+function purposeDecision(purposes: ReadonlySet<number>, kind: 'publisher' | 'vendor'): StorageDecision {
+  if (!purposes.has(1)) return { allowed: false, reason: `tcf: no ${kind} consent for purpose 1` };
+  if (!USE_PURPOSES.some(p => purposes.has(p))) return { allowed: false, reason: `tcf: no ${kind} consent for any of purposes 2-10` };
+  return { allowed: true };
+}
+
+function nonEmpty(value: string | null | undefined): string | undefined {
+  return value === null || value === undefined || value.trim() === '' ? undefined : value.trim();
+}

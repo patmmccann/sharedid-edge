@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    // Platform-neutral: only the web-standard APIs every edge runtime has (fetch Request/Response, URL,
+    // crypto.randomUUID, TextEncoder). No DOM, no Node.
+    "lib": ["ES2023", "WebWorker"]
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,113 @@
+name: CI
+
+# Every job runs without secrets or a Cloudflare account, so pull requests from forks get the full checks.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    name: Lint, types, unit tests, conformance (Node.js)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Lint (typescript-eslint strict type-checked)
+        run: npm run lint
+      - name: Build and type-check every project, including tests (TypeScript 6.0)
+        run: npm run build
+      - name: Type-check every project with TypeScript 7
+        run: npm run typecheck:ts7
+      - name: Type-check the Worker against the Workers runtime types
+        run: npm run typecheck:cloudflare
+      - name: Worker types match wrangler.jsonc
+        run: npm run types:check -w @sharedid-edge/cloudflare
+      - name: Unit tests (the Worker's inside workerd)
+        run: npm test
+      - name: Conformance suite against the Node.js server
+        run: npm run conformance
+      - name: Published types, as strict consumers see them (each module resolution, TypeScript 6.0 and 7)
+        run: npm run consumer-types
+      - name: Published types resolve (attw)
+        run: npm run attw
+      - name: Worker bundle and size budget
+        run: |
+          npm run build -w @sharedid-edge/cloudflare
+          node -e '
+            const { readFileSync } = require("node:fs");
+            const { gzipSync } = require("node:zlib");
+            const gz = gzipSync(readFileSync("packages/cloudflare/dist/index.js")).length;
+            const budget = 20 * 1024;
+            console.log(`Worker bundle: ${gz} bytes gzipped (budget ${budget})`);
+            if (gz > budget) { console.error("Over the bundle size budget"); process.exit(1); }
+          '
+
+  conformance-workerd:
+    name: Conformance (Workers runtime, wrangler dev)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Conformance suite against the Worker in workerd
+        run: npm run conformance:wrangler
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+
+  e2e:
+    name: Prebid.js end to end (Chromium, Firefox, WebKit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            e2e/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Install e2e dependencies and browsers
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Type-check e2e
+        working-directory: e2e
+        run: npm run typecheck
+      - name: Unmodified Prebid.js sharedIdSystem against SharedID Edge
+        working-directory: e2e
+        run: npm test
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: e2e/test-results
+          retention-days: 7

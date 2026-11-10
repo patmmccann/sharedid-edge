@@ -1,0 +1,12 @@
+{
+  "name": "@sharedid-edge/conformance",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The SharedID Edge conformance suite: HTTP cases every implementation must pass",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "conformance": "node dist/run.js --target node",
+    "conformance:wrangler": "node dist/run.js --target wrangler"
+  }
+}

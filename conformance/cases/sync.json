@@ -1,0 +1,96 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The pixelUrl contract with Prebid.js's sharedIdSystem, and the server-set cookie. Default configuration.",
+  "config": {},
+  "cases": [
+    {
+      "name": "adopts the id Prebid.js sends on the first visit (double-encoded, as sharedIdSystem sends it)",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d" },
+      "expect": {
+        "status": 200,
+        "headers": { "content-type": "image/gif", "cache-control": "private, max-age=86400" },
+        "bodyLength": 43,
+        "cookies": [
+          { "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d", "maxAge": 31536000, "sameSite": "Lax", "path": "/", "httpOnly": false },
+          { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d", "maxAge": 31536000, "sameSite": "Lax", "path": "/", "httpOnly": true }
+        ]
+      }
+    },
+    {
+      "name": "adopts a singly encoded id",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d" },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    },
+    {
+      "name": "never replaces an existing valid cookie",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253A0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10",
+        "headers": { "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" }
+      },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    },
+    {
+      "name": "restores the script-readable cookie from the HttpOnly recovery copy",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253A0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10",
+        "headers": { "cookie": "_pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d" }
+      },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    },
+    {
+      "name": "restores the original id when the page re-minted the script cookie after it was capped",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253A0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10",
+        "headers": { "cookie": "_pubcid=0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10; _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d" }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" },
+          { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }
+        ]
+      }
+    },
+    {
+      "name": "mints a UUID when the request has no id",
+      "request": { "path": "/_sid/sync" },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "valuePattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" }] }
+    },
+    {
+      "name": "replaces a cookie value that isn't a valid id",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d",
+        "headers": { "cookie": "_pubcid=\"not valid\"" }
+      },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    },
+    {
+      "name": "ignores an id parameter without the pubcid: prefix",
+      "request": { "path": "/_sid/sync?id=c29cb2ae-769d-42f6-891a-f53cadee823d" },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "valuePattern": "^(?!c29cb2ae-769d-42f6-891a-f53cadee823d$)" }] }
+    },
+    {
+      "name": "accepts a trailing slash, as the WordPress endpoint requires one",
+      "request": { "path": "/_sid/sync/?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d" },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    },
+    {
+      "name": "answers HEAD with the same headers and cookies",
+      "request": { "method": "HEAD", "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d" },
+      "expect": { "status": 200, "headers": { "content-type": "image/gif" }, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    },
+    {
+      "name": "expires both cookies and sets nothing else after an opt-out",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d",
+        "headers": { "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; _pubcid_optout=1" }
+      },
+      "expect": {
+        "status": 200,
+        "headers": { "cache-control": "no-store" },
+        "cookies": [{ "name": "_pubcid", "value": "", "maxAge": 0 }, { "name": "_pubcid_sv", "value": "", "maxAge": 0 }],
+        "onlyListedCookies": true
+      }
+    }
+  ]
+}

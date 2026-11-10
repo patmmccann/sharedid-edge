@@ -1,0 +1,14 @@
+{
+  // Solution file for `tsc -b`: every TypeScript project in the repo, sources and tests.
+  // The Cloudflare package is checked separately (`npm run typecheck -w @sharedid-edge/cloudflare`)
+  // because it compiles against the Workers runtime types rather than Node's.
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/core/test" },
+    { "path": "packages/node" },
+    { "path": "packages/node/test" },
+    { "path": "conformance" },
+    { "path": "scripts" }
+  ]
+}

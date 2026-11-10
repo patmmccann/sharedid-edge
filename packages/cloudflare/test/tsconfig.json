@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "ESNext.Disposable"],
+    "types": ["@cloudflare/vitest-plugin/types"],
+    // Only for this test project: Vitest's own declarations (tinybench) don't compile against the Workers runtime
+    // types. Our test code is still fully checked; the worker source (../tsconfig.json) keeps skipLibCheck off.
+    "skipLibCheck": true
+  },
+  "include": [".", "../src", "../worker-configuration.d.ts"]
+}

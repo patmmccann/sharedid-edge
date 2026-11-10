@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SharedID Edge conformance case file",
+  "type": "object",
+  "required": ["description", "config", "cases"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "description": { "type": "string" },
+    "config": { "type": "object", "additionalProperties": { "type": "string" } },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "request", "expect"],
+        "properties": {
+          "name": { "type": "string" },
+          "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path"],
+            "properties": {
+              "method": { "type": "string" },
+              "path": { "type": "string", "pattern": "^/" },
+              "headers": { "type": "object", "additionalProperties": { "type": "string" } }
+            }
+          },
+          "expect": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status"],
+            "properties": {
+              "status": { "type": "integer" },
+              "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+              "absentHeaders": { "type": "array", "items": { "type": "string" } },
+              "bodyLength": { "type": "integer" },
+              "json": {},
+              "onlyListedCookies": { "type": "boolean" },
+              "noCookies": { "type": "boolean" },
+              "cookies": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name"],
+                  "properties": {
+                    "name": { "type": "string" },
+                    "value": { "type": "string" },
+                    "valuePattern": { "type": "string" },
+                    "maxAge": { "type": "integer" },
+                    "sameSite": { "enum": ["Lax", "Strict", "None"] },
+                    "path": { "type": "string" },
+                    "domain": { "type": "string", "description": "The Domain attribute; an empty string for a host-only cookie" },
+                    "httpOnly": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

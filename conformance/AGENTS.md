@@ -1,0 +1,10 @@
+# conformance
+
+The conformance suite is the contract between the specification and every implementation, including future ports (Rust, other platforms). Cases are JSON so any language can run them; the TypeScript runner is one implementation of the runner.
+
+- **Case files** (`cases/*.json`) each have a `description`, the `config` (`SID_*` variables) the target must run with, and `cases`. The runner starts a target per file with that config. Files with an empty `config` are also run against live deployments (`--base-url`), so keep default-configuration cases there and others in separate files.
+- **Case shape** is defined by `case-file.schema.json` and validated by `src/cases.ts` (unknown keys fail, so a typo can't silently skip an assertion). Keep the schema, the TypeScript types and the validator in step.
+- **Every behaviour in spec/SPEC.md should have a case.** Add cases with the spec change, before or with the implementation. Use fixed IDs (the suite uses `c29cb2ae-769d-42f6-891a-f53cadee823d` and `0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10`) and `valuePattern` only for minted IDs.
+- **`Secure`** is checked generically: present over https targets, absent over http. Don't assert it per case.
+- **TC strings** in cases are generated with `tcString()` from `packages/core/test/helpers.ts`; note in the file's `description` which purposes each consents to.
+- Run with `npm run conformance` (Node.js target) and `npm run conformance:wrangler` (workerd through `wrangler dev`; no account needed). Both must pass. Build first (`npm run build`): the runner and the Node target run from `dist/`.

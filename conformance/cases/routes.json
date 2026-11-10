@@ -1,0 +1,75 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "Routing, methods, opt-out and opt-in, and the JSON payload. CORS allowed for https://www.example.com.",
+  "config": { "SID_ALLOWED_ORIGINS": "https://www.example.com" },
+  "cases": [
+    {
+      "name": "answers nothing outside the base path, so no request reaches the origin",
+      "request": { "path": "/" },
+      "expect": { "status": 404, "noCookies": true }
+    },
+    {
+      "name": "404s unknown routes under the base path",
+      "request": { "path": "/_sid/unknown" },
+      "expect": { "status": 404, "noCookies": true }
+    },
+    {
+      "name": "rejects other methods",
+      "request": { "method": "POST", "path": "/_sid/sync" },
+      "expect": { "status": 405, "headers": { "allow": "GET, HEAD" }, "noCookies": true }
+    },
+    {
+      "name": "opt-out sets the opt-out cookie Prebid.js reads and expires the id cookies",
+      "request": { "path": "/_sid/optout", "headers": { "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 204,
+        "cookies": [
+          { "name": "_pubcid_optout", "value": "1", "maxAge": 31536000, "httpOnly": false },
+          { "name": "_pubcid", "value": "", "maxAge": 0 },
+          { "name": "_pubcid_sv", "value": "", "maxAge": 0 }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "opt-in clears the opt-out cookie",
+      "request": { "path": "/_sid/optin", "headers": { "cookie": "_pubcid_optout=1" } },
+      "expect": { "status": 204, "cookies": [{ "name": "_pubcid_optout", "value": "", "maxAge": 0 }], "onlyListedCookies": true }
+    },
+    {
+      "name": "v1 returns the SharedID and its eid, and refreshes the cookie",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "headers": { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+        "json": {
+          "v": 1,
+          "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+          "eids": [{ "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }],
+          "ext": { "modules": {} }
+        },
+        "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }]
+      }
+    },
+    {
+      "name": "v1 allows credentialed CORS from a configured origin",
+      "request": { "path": "/_sid/v1", "headers": { "origin": "https://www.example.com" } },
+      "expect": { "status": 200, "headers": { "access-control-allow-origin": "https://www.example.com", "access-control-allow-credentials": "true", "vary": "Origin" } }
+    },
+    {
+      "name": "v1 sends no CORS headers for other origins",
+      "request": { "path": "/_sid/v1", "headers": { "origin": "https://evil.example" } },
+      "expect": { "status": 200, "absentHeaders": ["access-control-allow-origin", "access-control-allow-credentials"] }
+    },
+    {
+      "name": "v1 answers a CORS preflight from a configured origin",
+      "request": { "method": "OPTIONS", "path": "/_sid/v1", "headers": { "origin": "https://www.example.com", "access-control-request-method": "GET" } },
+      "expect": { "status": 204, "headers": { "access-control-allow-origin": "https://www.example.com", "access-control-allow-methods": "GET, HEAD" }, "noCookies": true }
+    },
+    {
+      "name": "v1 leaves out the SharedID after an opt-out",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "_pubcid_optout=1" } },
+      "expect": { "status": 200, "json": { "v": 1, "eids": [], "ext": { "modules": {} } }, "noCookies": true }
+    }
+  ]
+}

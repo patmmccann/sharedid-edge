@@ -1,0 +1,71 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "Consent in publisher mode (the default). Global Privacy Control denies storage. A TC string needs publisher consent (the publisher TC segment) for Purpose 1 and at least one of Purposes 2-10, even with gdpr=0. When GDPR applies, no TC string denies storage. Denied requests delete existing ID cookies. TC strings: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA has publisher consent for purposes 1-2; ….cAAAAAAAAA for purpose 1 only; ….aAAAAAAAAA for purpose 2 only; CAAAAAAAAAAAAAAAAAAAAAAAAPAAAAAAAAAAAAA has vendor consent for purposes 1-4 and no publisher segment.",
+  "config": {},
+  "cases": [
+    {
+      "name": "sets the cookie with publisher consent for purposes 1 and 2",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA" },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    },
+    {
+      "name": "reads the TC string from the CMP's euconsent-v2 cookie",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1",
+        "headers": { "cookie": "euconsent-v2=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA" }
+      },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    },
+    {
+      "name": "sets nothing without publisher consent for purpose 1",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.aAAAAAAAAA" },
+      "expect": { "status": 200, "headers": { "cache-control": "no-store", "x-sharedid-status": "denied: tcf: no publisher consent for purpose 1" }, "noCookies": true }
+    },
+    {
+      "name": "sets nothing without publisher consent for any of purposes 2-10",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.cAAAAAAAAA" },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "denied: tcf: no publisher consent for any of purposes 2-10" }, "noCookies": true }
+    },
+    {
+      "name": "doesn't count vendor purpose consents in publisher mode",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAPAAAAAAAAAAAAA" },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "denied: tcf: no publisher TC segment" }, "noCookies": true }
+    },
+    {
+      "name": "checks a TC string even when gdpr=0",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=0&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.aAAAAAAAAA" },
+      "expect": { "status": 200, "noCookies": true }
+    },
+    {
+      "name": "sets nothing when GDPR applies and there is no TC string",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1" },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "denied: tcf: GDPR applies and there is no TC string" }, "noCookies": true }
+    },
+    {
+      "name": "deletes existing cookies when consent is withdrawn",
+      "request": {
+        "path": "/_sid/sync?gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.aAAAAAAAAA",
+        "headers": { "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d" }
+      },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "", "maxAge": 0 }, { "name": "_pubcid_sv", "value": "", "maxAge": 0 }], "onlyListedCookies": true }
+    },
+    {
+      "name": "sets nothing with Global Privacy Control, even with consent",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA",
+        "headers": { "sec-gpc": "1" }
+      },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "denied: gpc" }, "noCookies": true }
+    },
+    {
+      "name": "deletes existing cookies with Global Privacy Control",
+      "request": { "path": "/_sid/sync", "headers": { "sec-gpc": "1", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "", "maxAge": 0 }, { "name": "_pubcid_sv", "value": "", "maxAge": 0 }], "onlyListedCookies": true }
+    },
+    {
+      "name": "sets the cookie when GDPR doesn't apply and there is no TC string",
+      "request": { "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=0" },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    }
+  ]
+}
