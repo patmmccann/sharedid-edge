@@ -76,7 +76,7 @@ Behaviour that must not regress, each covered by tests:
 
 ## Conventions
 
-- ESM only, Node.js 22 or later. Platform-neutral code uses only web-standard APIs (`Request`, `Response`, `URL`, `crypto.randomUUID`).
+- ESM only, Node.js 24 or later. Platform-neutral code uses only web-standard APIs (`Request`, `Response`, `URL`, `crypto.randomUUID`).
 - Keep the worker small: no runtime dependencies in `@sharedid-edge/core`. Check `npm run build -w @sharedid-edge/cloudflare` (a dry-run bundle) for size when adding code.
 - Errors returned to clients never include request data.
 - Commit messages: an imperative summary line, then why. Pull requests describe the motivation and the checks run.

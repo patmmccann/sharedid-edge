@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >-
-  SharedID Edge on AWS Lambda behind CloudFront. A Node.js 22 function with a function URL that only CloudFront can
+  SharedID Edge on AWS Lambda behind CloudFront. A Node.js 24 function with a function URL that only CloudFront can
   call (AWS_IAM auth and origin access control), an origin request policy that forwards the CloudFront viewer
   headers, and optionally a CloudFront distribution with the /_sid/* behaviour. Most sites already have a
   distribution: leave CreateDistribution as false, pass its ID, and add the behaviour to it (see README.md).
@@ -114,7 +114,7 @@ Resources:
       # unbundled lambda.js, which Lambda would load before lambda.mjs. Its handler is lambda.handler.
       CodeUri: deploy/
       Handler: lambda.handler
-      Runtime: nodejs22.x
+      Runtime: nodejs24.x
       Architectures: [arm64]
       MemorySize: 256
       Timeout: 5
