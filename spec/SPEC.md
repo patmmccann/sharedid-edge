@@ -182,7 +182,7 @@ What the platform knows about the request beyond the request itself: the client 
 | city | | `city` | `cf-ipcity` |
 | postal code | | `postalCode` | `cf-postal-code` |
 | metro code | Nielsen DMA code, digits | `metroCode` | `cf-metro-code` |
-| latitude, longitude | finite numbers, in range | `latitude`, `longitude` | `cf-iplatitude`, `cf-iplongitude` |
+| latitude, longitude | finite numbers, in range; only as a pair | `latitude`, `longitude` | `cf-iplatitude`, `cf-iplongitude` |
 | time zone | IANA name, e.g. `America/Chicago` | `timezone` | `cf-timezone` |
 | continent | `AF`, `AN`, `AS`, `EU`, `NA`, `OC` or `SA` | `continent` | `cf-ipcontinent` |
 
