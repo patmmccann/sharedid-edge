@@ -9,6 +9,7 @@ It also has a **module** interface for IDs and signals that are best computed at
 - [How it works](#how-it-works)
 - [Deploy on Cloudflare](#deploy-on-cloudflare)
 - [Deploy on AWS (Lambda and CloudFront)](#deploy-on-aws-lambda-and-cloudfront)
+- [Deploy on Vercel](#deploy-on-vercel)
 - [Configure Prebid.js](#configure-prebidjs)
 - [Migrate from the WordPress or Drupal plugin](#migrate-from-the-wordpress-or-drupal-plugin)
 - [Consent and opt-out](#consent-and-opt-out)
@@ -192,6 +193,59 @@ It checks that `/_sid/*` shares the site's IP addresses, sets the cookies correc
 
 Lambda@Edge (running in CloudFront's edge locations, without a separate origin) is possible future work; see the [package README](packages/adapters/aws-lambda/README.md#lambdaedge).
 
+## Deploy on Vercel
+
+If your site is deployed on Vercel, serve SharedID Edge from a `/_sid/*` route of **the same Vercel project**, as a Next.js route handler (or, for other frameworks, Routing Middleware). Full guide (architecture, middleware, configuration, the platform headers, troubleshooting): [`packages/adapters/vercel/README.md`](packages/adapters/vercel/README.md).
+
+**Why the same project:** since Safari 16.4, cookies set by a server whose IP address doesn't match the website's are capped at 7 days. A route of the project that serves `www.example.com` answers from the same addresses; a separate project on another hostname (`sid.example.com`, `*.vercel.app`) doesn't.
+
+### Prerequisites
+
+- A Next.js (App Router) site deployed on Vercel on your own domain, over https. For other frameworks, see [middleware](packages/adapters/vercel/README.md#deploy-with-middleware).
+- Node.js 24 or later and npm.
+
+### 1. Build the bundle
+
+```sh
+git clone https://github.com/patmmccann/sharedid-edge.git
+cd sharedid-edge
+npm ci
+npm run build
+npm run bundle -w @sharedid-edge/vercel    # packages/adapters/vercel/deploy/sharedid-edge.mjs and .d.mts
+```
+
+Copy `sharedid-edge.mjs` and `sharedid-edge.d.mts` into your site's repository, for example into `lib/`.
+
+### 2. Add the route
+
+Create `app/%5Fsid/[...path]/route.ts` in your site. The folder is `%5Fsid`, the URL-encoded `_sid`: Next.js doesn't route folders whose names start with `_`.
+
+```ts
+import { handlerFromEnv } from '../../../lib/sharedid-edge.mjs';
+
+export const runtime = 'nodejs';
+
+const handler = handlerFromEnv(process.env);
+
+export const GET = handler;
+export const HEAD = handler;
+export const OPTIONS = handler;
+```
+
+Use Node.js 24 for the project (`"engines": { "node": ">=24" }` in `package.json`).
+
+### 3. Configure and deploy
+
+Settings are the project's environment variables (the [Configuration reference](#configuration-reference)), for example `vercel env add SID_MODULES production`. Add `SID_MODULE_SECRETS` as a **Sensitive** variable (`vercel env add SID_MODULE_SECRETS production --sensitive`). Then deploy as usual (`git push` or `vercel deploy --prod`); environment variable changes need a new deployment. Invalid settings make `/_sid/*` return a 500; the reason is in the function's logs.
+
+### 4. Verify
+
+```sh
+npm run verify-deployment -- --site https://www.example.com
+```
+
+It checks that `/_sid/*` shares the site's IP addresses, sets the cookies correctly, isn't cached, and returns the JSON payload. Then [turn it on in Prebid.js](#configure-prebidjs). The client IP and location come from headers Vercel's proxy sets (`x-real-ip`, `x-vercel-ip-country` and the rest); see [Platform information](packages/adapters/vercel/README.md#platform-information).
+
 ## Configure Prebid.js
 
 SharedID Edge works with the unmodified `sharedIdSystem` module. Build Prebid.js with `userId` and `sharedIdSystem`, and set `pixelUrl` to the sync route on your own host:
@@ -342,7 +396,7 @@ Existing visitors keep their IDs: the worker adopts the cookie the plugin set. T
 - **Publisher mode** (the default). SharedID is your own first-party ID, so the worker reads the **publisher** consents (the TC string's publisher TC segment): it needs consent for Purpose 1 (store and access information on a device), and consent or legitimate interest for at least one of Purposes 2 to 10. Configure your CMP to ask for publisher consent for these purposes, or it won't include a publisher TC segment and no one gets a server cookie.
 - **Vendor mode.** If your company is registered as a TCF vendor, set `SID_VENDOR_ID` to your vendor ID. The worker then needs consent for that vendor, consent for Purpose 1, and consent or legitimate interest for at least one of Purposes 2 to 10, all from the vendor part of the TC string instead of the publisher segment.
 
-When GDPR applies and there's no TC string, that counts as no consent: the worker sets nothing and deletes the ID cookies. GDPR applies when Cloudflare places the request in the EU (`request.cf.isEUCountry`; behind CloudFront, `CloudFront-Viewer-Country` is one of the 27 EU member states), or when the request says so with `gdpr=1`.
+When GDPR applies and there's no TC string, that counts as no consent: the worker sets nothing and deletes the ID cookies. GDPR applies when Cloudflare places the request in the EU (`request.cf.isEUCountry`; behind CloudFront, `CloudFront-Viewer-Country` is one of the 27 EU member states; on Vercel, `x-vercel-ip-country` is), or when the request says so with `gdpr=1`.
 
 The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` parameter. Prebid.js doesn't add consent parameters to `pixelUrl`, so for the sync route **your CMP must store the TC string in the `euconsent-v2` cookie** (check yours: some keep it only in local storage). Without it, EU visitors get no server cookie, which is the safe failure. Sending the consent strings from Prebid.js to the worker is planned.
 
@@ -418,7 +472,7 @@ fetch('/_sid/v1', { credentials: 'include' })
 - a TCF TC string doesn't opt in to Special Feature 1 (precise geolocation);
 - GDPR applies and there's no TC string.
 
-**Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. Behind CloudFront it's the address in `CloudFront-Viewer-Address`, which CloudFront sets itself. With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
+**Where the address comes from.** On Cloudflare it's `CF-Connecting-IP`, which Cloudflare sets itself, so visitors can't spoof it. Behind CloudFront it's the address in `CloudFront-Viewer-Address`, which CloudFront sets itself. On Vercel it's `x-real-ip`, which Vercel's proxy sets itself. With the Node.js server it's the socket address, or with `SID_TRUST_PROXY=true` the first `X-Forwarded-For` entry. Only set that behind a proxy that overwrites the header.
 
 The address is only returned to the browser that sent the request. The worker doesn't store or log it, and SharedIDs are never derived from it. `/_sid/v1` responses are `Cache-Control: no-store`.
 
@@ -572,7 +626,7 @@ Make sure no cache in front of it (a CDN or nginx's `proxy_cache`) stores `/_sid
 
 ## Configuration reference
 
-All settings are strings, set as Worker `vars` (Cloudflare) or environment variables (Node.js). Empty means the default. Invalid values make every request fail with a 500 and log the reason, rather than set wrong cookies.
+All settings are strings, set as Worker `vars` (Cloudflare) or environment variables (Node.js, AWS Lambda, Vercel). Empty means the default. Invalid values make every request fail with a 500 and log the reason, rather than set wrong cookies.
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -612,7 +666,7 @@ Responses carry two debug headers: `X-SharedID-Source` (`cookie`, `recovery`, `p
 | No `set-cookie` in the response | See `X-SharedID-Status`. In `tcf` mode, check the `euconsent-v2` cookie exists. |
 | Cookie set but gone after a week in Safari | Run `verify-deployment`: the endpoint's IP addresses probably don't match the site's. |
 | Cookie not readable by Prebid.js | The cookie name or domain doesn't match Prebid.js's `storage` config, or the page and the route are on hosts the cookie's domain doesn't cover. |
-| A 500 with "misconfigured" | A setting is invalid: `npm exec -w @sharedid-edge/cloudflare -- wrangler tail` shows the reason (on AWS, the function's CloudWatch logs). |
+| A 500 with "misconfigured" | A setting is invalid: `npm exec -w @sharedid-edge/cloudflare -- wrangler tail` shows the reason (on AWS, the function's CloudWatch logs; on Vercel, the project's logs). |
 | `getUserIdsAsync()` never resolves | The known Prebid.js issue under [Configure Prebid.js](#configure-prebidjs). |
 
 ## Development
@@ -626,6 +680,7 @@ packages/
     cloudflare/                the Cloudflare Worker
     node/                      the Node.js server (local development, self-hosting, conformance target)
     aws-lambda/                the AWS Lambda adapter, its bundle and SAM template
+    vercel/                    the Vercel adapter (Next.js route handler or middleware), its bundle and an example
   modules/                     modules maintained by this project, built into every adapter
     ip/  ec/  geo/  reflect/   the built-in modules
     all/                       @sharedid-edge/modules: the built-in list the adapters import
@@ -654,10 +709,10 @@ TypeScript is strict from the start, and CI checks types several ways:
 Tests:
 
 - `npm test`: unit tests, including the Worker's tests inside workerd, the Workers runtime. Vendor modules' tests run separately, with `npm run test:vendor-modules`.
-- `npm run conformance`: the conformance suite against the Node.js server; `npm run conformance:wrangler` runs it against the Worker under `wrangler dev`, and `npm run conformance:lambda` against the bundled Lambda handler behind a local stand-in for CloudFront.
+- `npm run conformance`: the conformance suite against the Node.js server; `npm run conformance:wrangler` runs it against the Worker under `wrangler dev`, `npm run conformance:lambda` against the bundled Lambda handler behind a local stand-in for CloudFront, and `npm run conformance:vercel` against the bundled Vercel adapter behind a local stand-in for Vercel's proxy.
 - In `e2e/`: `npm ci && npx playwright install && npm test` runs unmodified Prebid.js against the worker in three browsers.
 
-None of this needs a Cloudflare or AWS account.
+None of this needs a Cloudflare, AWS or Vercel account.
 
 ### Adding a module
 
@@ -679,7 +734,7 @@ Publish it as its own package like [`packages/modules/ip`](packages/modules/ip),
 
 ## Roadmap
 
-1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, an AWS Lambda adapter, and the `ip`, `ec`, `geo` and `reflect` modules.
+1. **Done:** specification, conformance suite, the cookie-only worker on Cloudflare, a Node.js server, AWS Lambda and Vercel adapters, and the `ip`, `ec`, `geo` and `reflect` modules.
 2. **Next:** Prebid.js sending its consent strings (TCF, GPP) to the worker with the sync, so consent no longer depends on the CMP cookie.
 3. A Prebid.js RTD module that reads `/_sid/v1`, plus first-party modules for bot scores and device type, a Fastly adapter, and Lambda@Edge.
 4. Vendor modules, a Rust implementation, and inline mode.

@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', 'packages/adapters/*/deploy/**', '**/.tsbuild/**', '**/.wrangler/**', '**/node_modules/**', 'e2e/**', 'consumer-types/**', '**/worker-configuration.d.ts']
+    ignores: ['**/dist/**', 'packages/adapters/*/deploy/**', 'packages/adapters/vercel/example/**', '**/.tsbuild/**', '**/.wrangler/**', '**/node_modules/**', 'e2e/**', 'consumer-types/**', '**/worker-configuration.d.ts']
   },
   js.configs.recommended,
   // The strictest type-aware presets: no `any` leaks, no floating promises, no unnecessary conditions.

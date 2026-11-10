@@ -10,10 +10,16 @@ export interface RunningTarget {
    * `request.cf`.
    */
   readonly requestHeaders: (headers: Readonly<Record<string, string>>) => Record<string, string>;
+  /**
+   * Payload paths the platform has no data for, such as `ortb2.device.geo.metro` where the platform reports no metro
+   * code. The runner checks they're absent instead of their expected values (see `runCase`). Keep this to what the
+   * platform genuinely doesn't provide, and document it in the adapter's README.
+   */
+  readonly unavailable: readonly string[];
   stop(): Promise<void>;
 }
 
-export type TargetName = 'node' | 'wrangler' | 'lambda';
+export type TargetName = 'node' | 'wrangler' | 'lambda' | 'vercel';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -88,6 +94,15 @@ function asRequestCf(headers: Readonly<Record<string, string>>): Record<string, 
   return { ...headers, 'MF-CF-Blob': JSON.stringify({ ...cf, clientAcceptEncoding: '' }) };
 }
 
+/** What each target's platform doesn't report; see `RunningTarget.unavailable`. */
+const UNAVAILABLE: Readonly<Record<TargetName, readonly string[]>> = {
+  node: [],
+  wrangler: [],
+  lambda: [],
+  // Vercel's geolocation headers have no metro (DMA) code.
+  vercel: ['ortb2.device.geo.metro']
+};
+
 /** Starts a target configured with `config` (SID_* environment variables). */
 export async function startTarget(target: TargetName, config: Readonly<Record<string, string>>): Promise<RunningTarget> {
   const port = await freePort();
@@ -102,6 +117,13 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
     // The bundled Lambda handler behind a local CloudFront and function URL stand-in (lambda-emulator.ts). The
     // public origin is the emulator's own http URL, so cookies aren't Secure, as for the other local targets.
     child = spawn(process.execPath, [join(ROOT, 'conformance/dist/lambda-emulator.js')], {
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
+      stdio: ['ignore', 'ignore', 'inherit']
+    });
+  } else if (target === 'vercel') {
+    // The bundled Vercel adapter behind a local stand-in for Vercel's proxy (vercel-emulator.ts), which sets the
+    // x-real-ip and x-vercel-ip-* headers. Plain http, so cookies aren't Secure, as for the other local targets.
+    child = spawn(process.execPath, [join(ROOT, 'conformance/dist/vercel-emulator.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
@@ -122,5 +144,10 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
     await stop();
     throw error;
   }
-  return { baseUrl, stop, requestHeaders: target === 'wrangler' ? asRequestCf : headers => ({ ...headers }) };
+  return {
+    baseUrl,
+    stop,
+    requestHeaders: target === 'wrangler' ? asRequestCf : headers => ({ ...headers }),
+    unavailable: UNAVAILABLE[target]
+  };
 }

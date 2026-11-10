@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    // Vercel's Edge runtime is web-standard, and the same code runs on its Node.js runtime: only the APIs every
+    // edge runtime has, like core. No Node types, so nothing Node-only can creep in.
+    "lib": ["ES2023", "WebWorker"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../core" },
+    { "path": "../../modules/all" }
+  ]
+}
