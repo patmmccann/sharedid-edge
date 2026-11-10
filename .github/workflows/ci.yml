@@ -114,8 +114,10 @@ jobs:
         env:
           WRANGLER_SEND_METRICS: 'false'
 
-  e2e:
-    name: Prebid.js end to end (Chromium, Firefox, WebKit)
+  # The browser tests run per browser. Chromium goes first; Firefox and WebKit start only once it passes, so a
+  # change that breaks the Prebid.js contract fails fast in one job instead of three.
+  e2e-chromium:
+    name: Prebid.js end to end (Chromium)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -131,21 +133,74 @@ jobs:
             e2e/package-lock.json
       - run: npm ci
       - run: npm run build
-      - name: Install e2e dependencies and browsers
+      - name: Install e2e dependencies
         working-directory: e2e
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium firefox webkit
+        run: npm ci
+      - name: Cache the Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-${{ hashFiles('e2e/package-lock.json') }}
+      - name: Install the browser and its system dependencies
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
       - name: Type-check e2e
         working-directory: e2e
         run: npm run typecheck
-      - name: Unmodified Prebid.js sharedIdSystem against SharedID Edge
+      - name: Unmodified Prebid.js sharedIdSystem against SharedID Edge (chromium)
         working-directory: e2e
-        run: npm test
-      - name: Upload Playwright report
+        run: npx playwright test --project=chromium
+      - name: Upload the Playwright report
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-chromium
+          path: e2e/test-results
+          retention-days: 7
+
+  e2e:
+    name: Prebid.js end to end (${{ matrix.browser }})
+    needs: e2e-chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            e2e/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: npm ci
+      - name: Cache the Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ hashFiles('e2e/package-lock.json') }}
+      - name: Install the browser and its system dependencies
+        working-directory: e2e
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Type-check e2e
+        working-directory: e2e
+        run: npm run typecheck
+      - name: Unmodified Prebid.js sharedIdSystem against SharedID Edge (${{ matrix.browser }})
+        working-directory: e2e
+        run: npx playwright test --project=${{ matrix.browser }}
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ matrix.browser }}
           path: e2e/test-results
           retention-days: 7

@@ -8,3 +8,4 @@ Browser tests proving SharedID Edge works with **unmodified** Prebid.js (the `pr
 - Pin the `prebid.js` version, and bump it deliberately: these tests are the evidence that the `pixelUrl` contract still holds.
 - WebKit here doesn't simulate Safari's 7-day cap on script-set cookies; tests simulate a capped cookie by clearing it. Real-world Safari lifetimes are measured on deployments.
 - Type-check with `npm run typecheck` (strict, the root `tsconfig.base.json`).
+- Run one browser with `npx playwright test --project=chromium` (or `firefox`, `webkit`). CI runs each browser as its own job: `e2e-chromium` first, then Firefox and WebKit (the `e2e` matrix), which start only once Chromium passes. Each job installs only its own browser.
