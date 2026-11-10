@@ -12,6 +12,7 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | `packages/cloudflare/` | The Cloudflare Worker | |
 | `packages/module-ip/` | The `ip` module: client IP in `ortb2.device` | Published as `@sharedid-edge/module-ip`; the pattern for module packages. |
 | `packages/module-ec/` | The `ec` module: Trusted Server Edge Cookies (`ts-ec`) | Opt-in; its ID prefix is derived from the client IP. |
+| `packages/module-reflect/` | The `reflect` module: re-sets other first-party cookies (such as `uid1`) as server-set cookies | Opt-in; follows the SharedID's storage decision, never alters values. |
 | `packages/node/` | Node.js server | Local development, self-hosting, conformance target. |
 | `e2e/` | Unmodified Prebid.js against the worker in three browsers | Separate install. |
 | `scripts/` | Type-check helpers and `verify-deployment` | |

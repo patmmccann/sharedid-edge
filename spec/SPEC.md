@@ -131,6 +131,8 @@ A module has:
 
 The context has the request, its URL and cookies, the platform information (client IP, country, region, EU flag), the SharedID (when storage is allowed), whether the browser opted out, the consent signals, and the module's configuration and secrets.
 
+The context also has the worker's **storage decision** for the request, `storage`: `{ allowed: true }`, or `{ allowed: false, reason }` with the same reason as `X-SharedID-Status` (`opt-out`, `gpc`, `coppa` or `tcf: …`; see [Opt-out and consent](#opt-out-and-consent)). A module that stores or extends an identifier SHOULD do so only when `storage.allowed` is true.
+
 A module's `cookies` are set on the `/v1` response with `Path=/`, `SameSite=Lax`, `Secure` over https, the module's `Domain` (else `SID_COOKIE_DOMAIN`), `Max-Age` (0 deletes) and `HttpOnly` as given. A module MUST NOT set the worker's own cookie names; a malformed or reserved cookie makes the module an `error`, and none of its output is used. A module that returns only cookies reports `empty`.
 
 A module that sets cookies SHOULD also declare the deletions for opt-out. `{basePath}/optout` deletes the ones the browser sent along with the ID cookies, for every installed module (whether or not it's in `SID_MODULES`), so an opt-out takes effect at once and not only on the next `/v1` call.
@@ -170,6 +172,27 @@ Name `ec`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`,
   - opt-out, `Sec-GPC: 1`, `coppa=1`, a `us_privacy` opt-out of sale, or a TC string without consent for Purpose 1 (core segment) **withdraws**: an existing `ts-ec` is deleted and nothing is returned. `{basePath}/optout` deletes `ts-ec` too;
   - an undecodable TC string, or GDPR applying without a TC string, fails closed: nothing is set, returned or deleted.
 - It runs on `/v1` only, so an EC is set only when the page calls `/v1`.
+
+### The `reflect` module
+
+Name `reflect`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`. It re-sets first-party cookies that other scripts on the page wrote, so they become server-set cookies with a new lifetime, as the worker does for the SharedID.
+
+- **Settings,** `SID_MODULE_CONFIG.reflect`: `{ "cookies": [ … ] }`, 1 to 10 entries, each:
+  - `name` (required): a cookie name (an RFC 6265 token, at most 64 characters). It MUST NOT be `_pubcid`, `_pubcid_sv`, `_pubcid_optout`, `ts-ec` or `euconsent-v2`, nor the worker's configured cookie names, and MUST NOT repeat;
+  - `maxAgeDays` (required): an integer from 1 to 400;
+  - `domain` (optional): a registrable domain without a leading dot, such as `example.com`; the cookie gets `Domain=.<domain>`. Without it, `SID_COOKIE_DOMAIN` applies, else the cookie is host-only;
+  - `httpOnly` (optional, default `false`);
+  - `deleteOnOptOut` (optional, default `false`).
+
+  Any other key, a wrong type or an out-of-range value makes the module an `error` on every `/v1` call, with no details.
+- **Reflection:** for each configured cookie the request carries, in configuration order, the module sets `<name>=<value>; Max-Age=<maxAgeDays × 86400>; Expires=…; Path=/; [Domain=.<domain>;] SameSite=Lax; [Secure;] [HttpOnly]`. The value MUST be the request's value byte for byte: not decoded, re-encoded, trimmed beyond the `Cookie` header's own whitespace, or otherwise changed. When the name repeats in the `Cookie` header, the first is used.
+- A cookie is **not reflected** when its value is empty, longer than 1024 characters, quoted, or contains a character that isn't a cookie-octet (RFC 6265). The other cookies are still reflected.
+- **Output:** cookies only, so the status is `empty`. Nothing is added to `eids` or `ortb2`, and neither names nor values are reported.
+- **Consent:** the module reflects only when `storage.allowed` is true: not on opt-out, `Sec-GPC: 1`, `coppa=1`, a TC string that doesn't give the SharedID's consent, or GDPR applying without a TC string. It then sets nothing and, on `/v1`, deletes nothing: the cookies belong to other scripts.
+- **Opt-out:** `{basePath}/optout` deletes a configured cookie the browser sent only when its `deleteOnOptOut` is `true`, with the configured `Domain` and `HttpOnly`.
+- **Attributes:** the worker can't see a cookie's original attributes. If they differ (for example the original is host-only and `domain` is set), the browser keeps two cookies of that name. Configuration SHOULD match the original's `Domain` and `HttpOnly`.
+- It runs on `/v1` only, so cookies are reflected only when the page calls `/v1`.
+
 
 ## Versioning
 

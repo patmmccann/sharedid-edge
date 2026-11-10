@@ -294,6 +294,7 @@ Built-in modules:
 | --- | --- | --- |
 | [`ip`](packages/module-ip/README.md) | `ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out | none |
 | [`ec`](packages/module-ec/README.md) | Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. **IP-derived**; see below | `domain`; secret `passphrase` |
+| [`reflect`](packages/module-reflect/README.md) | Nothing in the payload: re-sets first-party cookies other scripts wrote (such as `uid1`) with the same value and a new expiry, so Safari doesn't cap them | `cookies` |
 
 To build your own, see [Adding a module](#adding-a-module).
 
@@ -369,6 +370,33 @@ npm exec -w @sharedid-edge/cloudflare -- wrangler secret put SID_MODULE_SECRETS
 - The EC is set only when the page calls `/_sid/v1`, not on page loads.
 - There's no server-side identity graph, partner sync or `/identify` API.
 - Consent uses this worker's signals (`gdpr`, the TC string, GPC, `us_privacy`, `coppa`), not Trusted Server's per-country and per-state jurisdiction lists, and GPP isn't decoded yet.
+
+### `reflect`: keep other first-party cookies durable
+
+Full documentation: [`packages/module-reflect/README.md`](packages/module-reflect/README.md).
+
+Scripts on your pages write other first-party cookies with `document.cookie`, such as an ID vendor's `uid1`, and Safari caps those at 7 days just like a script-written `_pubcid`. The `reflect` module sets the cookies you name again from the worker, with the **same value, byte for byte**, and a new expiry, so they become server-set cookies too. It's off until you enable it:
+
+```jsonc
+"vars": {
+  "SID_MODULES": "reflect",
+  "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,\"domain\":\"example.com\"}]}}"
+}
+```
+
+A `/_sid/v1` request carrying `uid1` then gets, alongside the SharedID cookies:
+
+```http
+Set-Cookie: uid1=<same value>; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure
+```
+
+The payload is unchanged apart from `"reflect": { "ms": 0, "status": "empty" }` in `ext.modules`: the module only sets cookies.
+
+- **Match the original's domain and `HttpOnly`.** The worker can't see how a cookie was first set. If the original is host-only and you set `domain` (or the other way round), the browser keeps two cookies of that name. `httpOnly` defaults to `false`, since the script that wrote the cookie usually reads it.
+- **Consent:** it reflects only when the worker would set the SharedID: not on opt-out, GPC, `coppa=1`, denied TCF consent, or GDPR without a TC string. It never deletes these cookies on `/_sid/v1`, and on `/_sid/optout` only those you mark `deleteOnOptOut`.
+- **Only on `/_sid/v1`.** Prebid.js's `pixelUrl` calls `/_sid/sync`, where modules don't run, so the page has to call `/_sid/v1` (for example with the `fetch` snippet under [`ip`](#ip-the-real-client-ip)).
+- Up to 10 cookies, 1 to 400 days each. The SharedID cookies, `ts-ec` and `euconsent-v2` can't be reflected.
+
 
 ## Self-host with Node.js
 
