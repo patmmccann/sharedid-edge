@@ -133,6 +133,18 @@ export default defineConfig({
     // punctuation into hyphens, so `#modules-on-_sidsync` would miss 'Modules on /_sid/sync'.
     anchor: { slugify: githubSlug },
     config(md) {
+      // The SharedID adoption chart (theme/AdoptionChart.vue) goes on the home page between the introduction and "How
+      // it works". Inserted here rather than written in the README, which stays plain Markdown for GitHub and npm.
+      md.core.ruler.push('adoption-chart', state => {
+        const env = state.env as { realPath?: string; path?: string };
+        if (posix(relative(ROOT, env.realPath ?? env.path ?? '')) !== 'README.md') return;
+        const at = state.tokens.findIndex((token, i) =>
+          token.type === 'heading_open' && token.tag === 'h2' && state.tokens[i + 1]?.content === 'How it works');
+        if (at < 0) return;
+        const chart = new state.Token('html_block', '', 0);
+        chart.content = '<AdoptionChart />\n';
+        state.tokens.splice(at, 0, chart);
+      });
       const render = md.renderer.rules.link_open ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
       md.renderer.rules.link_open = (tokens, idx, options, env: { path?: string; realPath?: string }, self) => {
         const token = tokens[idx];
