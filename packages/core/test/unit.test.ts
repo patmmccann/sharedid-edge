@@ -81,8 +81,9 @@ describe('booleanFromEnv', () => {
     expect(booleanFromEnv('OFF', true)).toBe(false);
     expect(booleanFromEnv('yes', false)).toBe(true);
     expect(booleanFromEnv('on', false)).toBe(true);
-    expect(booleanFromEnv('unexpected', true)).toBe(false);
+    expect(booleanFromEnv('unexpected', true)).toBe(true);
     expect(booleanFromEnv('unexpected', false)).toBe(false);
+    expect(booleanFromEnv(' true ', false)).toBe(true);
   });
 });
 
