@@ -142,7 +142,7 @@ Anything else in `geo`'s settings, including a misspelt key (`{"geo":{"precison"
 
 ## On AWS Lambda behind CloudFront
 
-The Lambda adapter reads CloudFront’s geolocation headers (`CloudFront-Viewer-Country`, `-Country-Region`, `-City`, `-Postal-Code`, `-Metro-Code`, `-Latitude`, `-Longitude`, `-Time-Zone`). The SAM template’s origin request policy forwards them. CloudFront has no continent header. See [`packages/adapters/aws-lambda/README.md`](../../adapters/aws-lambda/README.md#platform-information).
+The Lambda adapter reads CloudFront’s geolocation headers (`CloudFront-Viewer-Country`, `-Country-Region`, `-City`, `-Postal-Code`, `-Metro-Code`, `-Latitude`, `-Longitude`, `-Time-Zone`). The SAM template’s origin request policy (`AllViewerExceptHostHeader`) forwards them. CloudFront has no continent header. See [`packages/adapters/aws-lambda/README.md`](../../adapters/aws-lambda/README.md#platform-information).
 
 ## On Vercel
 

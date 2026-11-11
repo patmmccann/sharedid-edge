@@ -239,6 +239,17 @@ describe('handlerFromEnv', () => {
 });
 
 describe('template.yaml', () => {
+  it('sends /_sid/* through the managed CachingDisabled and AllViewerExceptHostHeader policies', () => {
+    const template = readFileSync(join(import.meta.dirname, '..', 'template.yaml'), 'utf8');
+    const behaviour = template.slice(template.indexOf('CacheBehaviors:'), template.indexOf('\nOutputs:'));
+    // AllViewerExceptHostHeader forwards User-Agent, the Client Hints, Origin, Sec-GPC and CloudFront's viewer
+    // address and location headers, but not Host, which origin access control needs to be the function URL's.
+    expect(behaviour).toContain('CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+    expect(behaviour).toContain('OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac');
+    expect(template).not.toContain('AWS::CloudFront::OriginRequestPolicy');
+    expect(template).not.toContain('AWS::CloudFront::CachePolicy');
+  });
+
   it('passes every SID_* setting core reads to the function', () => {
     const root = join(import.meta.dirname, '..');
     const coreDir = dirname(createRequire(import.meta.url).resolve('@sharedid-edge/core/package.json'));

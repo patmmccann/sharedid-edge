@@ -30,9 +30,9 @@ Browser ── https://www.example.com/_sid/sync?id=pubcid:<id>
    ▼
 CloudFront: your site's distribution (www.example.com)
    ├─ /_sid/*  → origin: the function URL, signed with origin access control (SigV4)
-   │             cache policy CachingDisabled; origin request policy forwards cookies, query strings,
-   │             CloudFront-Viewer-Address, CloudFront-Viewer-Country (and the other geolocation headers),
-   │             Origin and Sec-GPC
+   │             cache policy CachingDisabled; origin request policy AllViewerExceptHostHeader forwards
+   │             cookies, query strings, every viewer header but Host (User-Agent, Client Hints, Origin,
+   │             Sec-GPC), and CloudFront-Viewer-Address and the other viewer location headers
    └─ *        → your site's origin, unchanged
                      │
                      ▼
@@ -91,13 +91,13 @@ The prompts:
 | Confirm changes, allow IAM role creation | `y`. SAM creates the function's execution role. |
 | Save arguments to `samconfig.toml` | `y`. Later deploys are just `sam deploy`. |
 
-The stack creates the function and its function URL, the two resource-policy statements that let your distribution invoke it, a log group (30 days' retention), an origin access control and an origin request policy. Its outputs:
+The stack creates the function and its function URL, the two resource-policy statements that let your distribution invoke it, a log group (30 days' retention) and an origin access control. The behaviour uses two managed CloudFront policies, so the stack creates none. Its outputs:
 
 | Output | Use |
 | --- | --- |
 | `OriginDomainName` | The origin to add to your distribution. |
 | `OriginAccessControlId` | The origin access control to attach to that origin. |
-| `OriginRequestPolicyId` | The origin request policy for the behaviour. |
+| `OriginRequestPolicyId` | The managed `AllViewerExceptHostHeader` policy (`b689b0a8-53d0-40ab-baf2-68738e2966ac`). |
 | `CachePolicyId` | The managed `CachingDisabled` policy (`4135ea2d-6df8-44a3-9df3-4b5a84be39ad`). |
 | `FunctionUrl` | For reference. Calling it directly returns 403. |
 
@@ -117,14 +117,14 @@ In the CloudFront console, open your distribution.
    - Viewer protocol policy: *Redirect HTTP to HTTPS*.
    - Allowed HTTP methods: *GET, HEAD, OPTIONS* (`OPTIONS` for CORS preflights on `/_sid/v1`).
    - Cache policy: **CachingDisabled**.
-   - Origin request policy: the stack's (`<stack>-viewer`).
+   - Origin request policy: **AllViewerExceptHostHeader**.
    - No response headers policy, function associations or Lambda@Edge.
 3. **Order:** behaviours match in order, so move `/_sid/*` above any broader pattern that would match it first.
 4. Save, and wait for the distribution to deploy (a few minutes).
 
 If you manage the distribution as code, add the same origin and cache behaviour there; the template's `Distribution` resource shows both in CloudFormation syntax. With Terraform or CDK, the values are the stack outputs above.
 
-**Don't forward the `Host` header** to this origin (for example with `AllViewer`): with origin access control, the signed request must go to the function URL's own host. The stack's origin request policy forwards only what the function needs.
+**Don't forward the `Host` header** to this origin (for example with `AllViewer`): with origin access control, the signed request must go to the function URL's own host. `AllViewerExceptHostHeader` forwards everything else the function reads. If you use your own origin request policy instead, it needs `CloudFront-Viewer-Address`, the location headers below, `Origin`, `Sec-GPC`, `User-Agent` and the Client Hints, which is more than CloudFront's default quota of 10 headers per policy.
 
 ## A new distribution
 
@@ -234,9 +234,9 @@ The handler gets the client IP and location (`PlatformInfo`) from headers CloudF
 | `isEU` | from `country` | `true` for the 27 EU member states, `false` for other countries, unknown without a country. |
 | `traffic` | none | CloudFront adds no bot verdict, so there is none from the platform; the `bot` module and other modules still report to the traffic signal. |
 
-Core's `locationInfo` validates the location values the same way as on the other platforms (dropping empty values, `XX`, and out-of-range coordinates). CloudFront has no continent header, so `continent` is never set on Lambda. The template's origin request policy forwards all these headers. If you use your own policy, forward them too, or the `geo` module only gets what you forward.
+Core's `locationInfo` validates the location values the same way as on the other platforms (dropping empty values, `XX`, and out-of-range coordinates). CloudFront has no continent header, so `continent` is never set on Lambda. The template's origin request policy (`AllViewerExceptHostHeader`) forwards all these headers. If you use your own policy, forward them too, or the `geo` module only gets what you forward.
 
-**The `ua` module** reads the visitor's `User-Agent` and User-Agent Client Hints (`Sec-CH-UA`, `Sec-CH-UA-Mobile`, `Sec-CH-UA-Platform`, and any high-entropy hints you ask for). The template's policy doesn't forward them yet, and CloudFront then sends `User-Agent: Amazon CloudFront`, which the module ignores, so it reports `empty`. Add them to the policy's headers to use it; CloudFront allows 10 headers per policy by default. See the [`ua` module's README](../../modules/ua/README.md#on-aws-lambda-behind-cloudfront).
+**The `ua` module** reads the visitor's `User-Agent` and User-Agent Client Hints (`Sec-CH-UA`, `Sec-CH-UA-Mobile`, `Sec-CH-UA-Platform`, and any high-entropy hints you ask for). The template's origin request policy (`AllViewerExceptHostHeader`) forwards them. A policy that doesn't forward `User-Agent` makes CloudFront send `User-Agent: Amazon CloudFront` instead, which the module ignores, so it reports `empty`. See the [`ua` module's README](../../modules/ua/README.md#on-aws-lambda-behind-cloudfront).
 
 - **`requestContext.http.sourceIp` is never used behind CloudFront:** it's CloudFront's address, not the visitor's. Nor is `X-Forwarded-For`.
 - **`isEU`** comes from a bundled list of the 27 EU member states (`EU_COUNTRY_CODES`), the same meaning as Cloudflare's `request.cf.isEUCountry`, so both platforms treat a visitor the same way. It's EU membership, not the EEA (Iceland, Liechtenstein, Norway) or the UK: pages there should send `gdpr=1` (the [consent rules](../../../docs/consent.md)). When it's `true`, GDPR applies unless the request says `gdpr=0`. When CloudFront sends no country (the header isn't forwarded, or the location is unknown) `isEU` is unknown, as on the other platforms.

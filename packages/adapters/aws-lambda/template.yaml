@@ -197,35 +197,6 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
-  # What CloudFront sends to the function: every cookie and query parameter, the viewer's address and location,
-  # and the headers the handler reads (Origin for CORS on /v1, Sec-GPC for Global Privacy Control). The Host header
-  # is not forwarded: with origin access control it must be the function URL's own.
-  OriginRequestPolicy:
-    Type: AWS::CloudFront::OriginRequestPolicy
-    Properties:
-      OriginRequestPolicyConfig:
-        Name: !Sub ${AWS::StackName}-viewer
-        Comment: SharedID Edge, cookies, query strings and the CloudFront viewer headers
-        CookiesConfig:
-          CookieBehavior: all
-        QueryStringsConfig:
-          QueryStringBehavior: all
-        HeadersConfig:
-          HeaderBehavior: whitelist
-          Headers:
-            - CloudFront-Viewer-Address
-            - CloudFront-Viewer-Country
-            - CloudFront-Viewer-Country-Region
-            # The rest of CloudFront's geolocation headers, for the geo module.
-            - CloudFront-Viewer-City
-            - CloudFront-Viewer-Postal-Code
-            - CloudFront-Viewer-Metro-Code
-            - CloudFront-Viewer-Latitude
-            - CloudFront-Viewer-Longitude
-            - CloudFront-Viewer-Time-Zone
-            - Origin
-            - Sec-GPC
-
   Distribution:
     Type: AWS::CloudFront::Distribution
     Condition: CreateDistribution
@@ -271,7 +242,11 @@ Resources:
             Compress: true
             # Managed CachingDisabled: responses carry per-visitor cookies.
             CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
-            OriginRequestPolicyId: !Ref OriginRequestPolicy
+            # Managed AllViewerExceptHostHeader: every viewer header but Host (which must stay the function URL's, for
+            # origin access control), so User-Agent, the Client Hints, Origin and Sec-GPC, plus CloudFront's viewer
+            # address and location headers, every cookie and every query parameter. A custom policy would need more
+            # than CloudFront's default quota of 10 headers.
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
 
 Outputs:
   FunctionUrl:
@@ -284,8 +259,8 @@ Outputs:
     Description: Attach this origin access control to that origin.
     Value: !GetAtt OriginAccessControl.Id
   OriginRequestPolicyId:
-    Description: The origin request policy for the /_sid/* behaviour.
-    Value: !Ref OriginRequestPolicy
+    Description: The managed AllViewerExceptHostHeader origin request policy, for the /_sid/* behaviour.
+    Value: b689b0a8-53d0-40ab-baf2-68738e2966ac
   CachePolicyId:
     Description: The managed CachingDisabled cache policy, for the /_sid/* behaviour.
     Value: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
