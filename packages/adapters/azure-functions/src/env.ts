@@ -1,4 +1,4 @@
-import { ConfigError, DEFAULT_CONFIG, handlerOrMisconfigured, parseHeaderMap, publicOriginFromEnv, resolveConfig, ROUTES, type EdgeModule } from '@sharedid-edge/core';
+import { ConfigError, DEFAULT_CONFIG, booleanFromEnv, handlerOrMisconfigured, parseHeaderMap, publicOriginFromEnv, resolveConfig, ROUTES, type EdgeModule } from '@sharedid-edge/core';
 import { builtInModules } from '@sharedid-edge/modules';
 import { createAzureHandler, internalError, type AzureHandler } from './handler.js';
 import { LOCATION_FIELDS, type LocationHeaders } from './platform.js';
@@ -35,7 +35,7 @@ export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtI
     () => createAzureHandler({
       config: resolveConfig(env),
       modules,
-      behindFrontDoor: !/^(0|false|no|off)$/i.test(env['SID_BEHIND_FRONT_DOOR'] ?? ''),
+      behindFrontDoor: booleanFromEnv(env['SID_BEHIND_FRONT_DOOR'], true),
       frontDoorIds: parseFrontDoorIds(env['SID_FRONT_DOOR_ID']),
       locationHeaders: parseLocationHeaders(env['SID_LOCATION_HEADERS']),
       ...publicOriginFromEnv(env)
