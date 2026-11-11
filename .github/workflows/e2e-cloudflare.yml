@@ -4,8 +4,11 @@ name: Live tests (Cloudflare)
 # request.cf, the bundle in the real runtime, and unmodified Prebid.js on a page served from the same hostname.
 #
 # It needs the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets, so it never runs on pull requests
-# (they could come from forks): only nightly and on demand, from main. CI (ci.yml) stays account-free.
+# (they could come from forks): only from main, on every push (a merged pull request), nightly and on demand.
+# CI (ci.yml) stays account-free.
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: '17 4 * * *'
   workflow_dispatch:
@@ -13,7 +16,8 @@ on:
 permissions:
   contents: read
 
-# One run at a time: they deploy to the same Workers.
+# One run at a time, since they deploy to the same Workers. A running one finishes; of the runs waiting behind it,
+# GitHub keeps only the newest, which tests the latest main.
 concurrency:
   group: e2e-cloudflare
   cancel-in-progress: false
@@ -117,11 +121,11 @@ jobs:
           path: e2e/test-results
           retention-days: 7
 
-  # A failing nightly run opens an issue, or comments on the open one, so it isn't missed.
+  # A failing run after a merge or overnight opens an issue, or comments on the open one, so it isn't missed.
   report:
-    name: Report a failing nightly run
+    name: Report a failing run
     needs: [deploy, browsers]
-    if: failure() && github.event_name == 'schedule'
+    if: failure() && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -132,11 +136,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT: ${{ github.event_name == 'push' && format('after {0}', github.sha) || 'nightly' }}
         run: |
           title="Live Cloudflare tests are failing"
           number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then
-            gh issue comment "$number" --body "Still failing: $RUN_URL"
+            gh issue comment "$number" --body "Still failing ($EVENT): $RUN_URL"
           else
-            gh issue create --title "$title" --body "The nightly live tests on sharedid.dev failed: $RUN_URL"
+            gh issue create --title "$title" --body "The live tests on sharedid.dev failed ($EVENT): $RUN_URL"
           fi
