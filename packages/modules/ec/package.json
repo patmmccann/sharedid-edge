@@ -36,7 +36,7 @@
     "kind": "module",
     "name": "ec",
     "title": "Trusted Server Edge Cookies",
-    "summary": "Trusted Server Edge Cookies: sets `ts-ec` and returns it as `ortb2.user.id`. Off unless you turn it on",
+    "summary": "Trusted Server Edge Cookies: sets `ts-ec` and returns it as an EID. Off unless you turn it on",
     "ipDerived": true,
     "settings": "`domain`; secret `passphrase`",
     "routes": [

@@ -2,7 +2,7 @@
 
 The `ec` module for [SharedID Edge](../../../README.md): IAB Tech Lab [Trusted Server Edge Cookies](https://iabtechlab.github.io/trusted-server/guide/edge-cookies.html) (`ts-ec`).
 
-It sets the `ts-ec` cookie on the publisher's domain, on Prebid.js's `/_sid/sync` calls on page views as well as on `/_sid/v1`, and returns the Edge Cookie as `ortb2.user.id` in the `/_sid/v1` payload. Publishers who use Trusted Server, or want its identifier, can then run one edge worker for both the SharedID and the EC.
+It sets the `ts-ec` cookie on the publisher's domain, on Prebid.js's `/_sid/sync` calls on page views as well as on `/_sid/v1`, and returns the Edge Cookie as an EID (source `ts.iabtechlab.com`) in the `/_sid/v1` payload. Publishers who use Trusted Server, or want its identifier, can then run one edge worker for both the SharedID and the EC.
 
 > **This ID is derived from the visitor's IP address.** An EC is `HMAC-SHA256(passphrase, IP)` as 64 hex characters, a dot, and 6 random characters. Everyone behind the same IPv4 address, or the same IPv6 /64, gets the same 64-character prefix, and anyone with the passphrase can test which address an EC came from. That's how Trusted Server defines EC. It's the only IP-derived identifier among the modules this project maintains (vendor modules may add others, marked in the [module index](../../../docs/modules.md#module-index)), so the module is **off unless you turn it on**. The SharedID (`_pubcid`) is unaffected and stays random.
 
@@ -60,7 +60,7 @@ The module is built into the Cloudflare Worker, the Node.js server and the AWS L
    # set-cookie: ts-ec=…; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
    ```
 
-5. **On the page,** nothing is needed to set the cookie if Prebid.js calls `/_sid/sync` (its `pixelUrl`, with `extend: true`). To send the EC to bidders, merge the `/_sid/v1` payload's `ortb2` into Prebid.js before the auction, as [Configure Prebid.js](../../../docs/prebid.md#module-output-_sidv1) shows. The EC then reaches bidders as `user.id`.
+5. **On the page,** nothing is needed to set the cookie if Prebid.js calls `/_sid/sync` (its `pixelUrl`, with `extend: true`). To send the EC to bidders, merge the `/_sid/v1` payload's `ortb2` into Prebid.js before the auction, as [Configure Prebid.js](../../../docs/prebid.md#module-output-_sidv1) shows. The EC then reaches bidders in `user.ext.eids`, next to the IDs from Prebid.js's User ID modules.
 
 ## What it does
 
@@ -68,8 +68,8 @@ On each `/_sid/v1` or `/_sid/sync` request, the module does one of three things 
 
 | Situation | Cookie | Payload |
 | --- | --- | --- |
-| Consent allows it and there's no valid `ts-ec` | sets a new `ts-ec` | `ortb2.user.id` = the new EC |
-| Consent allows it and a valid `ts-ec` exists | none (not refreshed) | `ortb2.user.id` = the existing EC |
+| Consent allows it and there's no valid `ts-ec` | sets a new `ts-ec` | the new EC as an EID, in `eids` and `ortb2.user.ext.eids` |
+| Consent allows it and a valid `ts-ec` exists | none (not refreshed) | the existing EC as an EID, in `eids` and `ortb2.user.ext.eids` |
 | Consent withdrawn (see below) | deletes `ts-ec` | nothing |
 | Consent unclear (GDPR applies without a TC string, or the TC string can't be decoded) | none; an existing `ts-ec` is left alone | nothing |
 
@@ -119,8 +119,11 @@ With `SID_MODULES=ec`, a first `/_sid/v1` call from `192.0.2.77`:
 {
   "v": 1,
   "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d",
-  "eids": [{ "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }],
-  "ortb2": { "user": { "id": "7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc.nZ1GxL" } },
+  "eids": [
+    { "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] },
+    { "source": "ts.iabtechlab.com", "uids": [{ "id": "7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc.nZ1GxL", "atype": 1 }] }
+  ],
+  "ortb2": { "user": { "ext": { "eids": [{ "source": "ts.iabtechlab.com", "uids": [{ "id": "7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc.nZ1GxL", "atype": 1 }] }] } } },
   "ext": { "modules": { "ec": { "ms": 1, "status": "ok" } } }
 }
 ```
@@ -130,7 +133,7 @@ With `SID_MODULES=ec`, a first `/_sid/v1` call from `192.0.2.77`:
 - `empty`: none, because consent rules it out, there's no client IP, or the cookie was only deleted.
 - `error`: a missing or short passphrase, or an invalid `domain`. No details are given. Withdrawal doesn’t need the passphrase, so even then GPC, COPPA, opt-out and withdrawn consent still delete an existing `ts-ec`.
 
-The EC is returned as `user.id`, which is where Trusted Server puts it. There's no EID source for EC.
+The EC is returned as an EID with the source `ts.iabtechlab.com` and `atype` 1 (a cookie ID), not as `user.id`. Trusted Server puts the EC in `user.id` of the OpenRTB requests it builds itself, but here the payload is merged into Prebid.js's first-party data, where `user.id` would become every bidder's exchange user ID. Trusted Server defines no EID source for EC, so this one is SharedID Edge's own, until IAB Tech Lab registers one; bidders that want the EC look for it in `user.ext.eids`.
 
 ## Consent and opt-out
 

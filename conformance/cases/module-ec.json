@@ -26,13 +26,14 @@
       }
     },
     {
-      "name": "returns an existing ts-ec as ortb2.user.id without refreshing it",
+      "name": "returns an existing ts-ec as an EID, never as user.id, without refreshing it",
       "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
       "expect": {
         "status": 200,
         "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }],
         "onlyListedCookies": true,
-        "jsonIncludes": { "ortb2": { "user": { "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } } }
+        "jsonIncludes": { "ortb2": { "user": { "ext": { "eids": [{ "source": "ts.iabtechlab.com", "uids": [{ "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9", "atype": 1 }] }] } } } },
+        "jsonAbsent": ["ortb2.user.id"]
       }
     },
     {
