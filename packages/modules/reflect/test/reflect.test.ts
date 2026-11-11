@@ -18,7 +18,7 @@ describe('settings', () => {
         { name: 'uid1', maxAgeDays: 365, domain: 'example.com', httpOnly: false, deleteOnOptOut: false, restore: false, prefer: 'browser', format: undefined },
         { name: 'x', maxAgeDays: 1, domain: undefined, httpOnly: false, deleteOnOptOut: false, restore: false, prefer: 'browser', format: undefined }
       ],
-      keeper: { mode: 'master', suffix: '_backup', cookie: '_sid_keep', maxAgeDays: 400, domain: undefined, backupDomain: undefined }
+      keeper: { mode: 'master', suffix: '_backup', cookie: '_sid_keep', maxAgeDays: 400, domain: undefined, backupDomain: undefined, backedUp: ['uid1', 'x'] }
     });
     expect(reflectModuleConfig({ cookies: [FPID] }).cookies[0]).toEqual({ ...FPID, domain: undefined, restore: false, prefer: 'browser', format: undefined });
   });
@@ -75,11 +75,11 @@ describe('settings', () => {
       { name: 'b', maxAgeDays: 1, domain: 'b.example', restore: true },
       { name: 'c', maxAgeDays: 1, domain: 'c.example', restore: true }
     ];
-    expect(reflectModuleConfig({ cookies: restoring }).keeper).toEqual({ mode: 'master', suffix: '_backup', cookie: '_sid_keep', maxAgeDays: 400, domain: undefined, backupDomain: undefined });
-    expect(reflectModuleConfig({ cookies: restoring.slice(1) }).keeper).toEqual({ mode: 'master', suffix: '_backup', cookie: '_sid_keep', maxAgeDays: 400, domain: 'b.example', backupDomain: undefined });
+    expect(reflectModuleConfig({ cookies: restoring }).keeper).toEqual({ mode: 'master', suffix: '_backup', cookie: '_sid_keep', maxAgeDays: 400, domain: undefined, backupDomain: undefined, backedUp: ['a', 'b', 'c'] });
+    expect(reflectModuleConfig({ cookies: restoring.slice(1) }).keeper).toEqual({ mode: 'master', suffix: '_backup', cookie: '_sid_keep', maxAgeDays: 400, domain: 'b.example', backupDomain: undefined, backedUp: ['b', 'c'] });
     expect(reflectModuleConfig({ cookies: [UID1, ...restoring.slice(2)] }).keeper.domain).toBe('c.example');
     expect(reflectModuleConfig({ cookies: restoring, keeper: { cookie: 'k', maxAgeDays: 30, domain: 'example.com' } }).keeper)
-      .toEqual({ mode: 'master', suffix: '_backup', cookie: 'k', maxAgeDays: 30, domain: 'example.com', backupDomain: 'example.com' });
+      .toEqual({ mode: 'master', suffix: '_backup', cookie: 'k', maxAgeDays: 30, domain: 'example.com', backupDomain: 'example.com', backedUp: ['a', 'b', 'c'] });
     expect(reflectModuleConfig({ cookies: [UID1], keeper: {} }).keeper.cookie).toBe('_sid_keep');
   });
 
@@ -751,9 +751,42 @@ describe('the keeper in the handler', () => {
 
     it('uses a custom suffix, and refuses suffixes that collide or are invalid', () => {
       expect(reflectModuleConfig({ cookies: [GA], keeper: { mode: 'per-cookie', suffix: '_k' } }).keeper.suffix).toBe('_k');
-      expect(() => reflectModuleConfig({ cookies: [GA, { name: '_ga_backup', maxAgeDays: 1 }], keeper: { mode: 'per-cookie' } })).toThrow(/backup name "_ga_backup" is already a cookie/);
+      expect(() => reflectModuleConfig({ cookies: [GA, { name: '_ga_backup', maxAgeDays: 1 }], keeper: { mode: 'per-cookie' } })).toThrow('is already a cookie; choose another "keeper.suffix"');
       expect(() => reflectModuleConfig({ cookies: [GA], keeper: { mode: 'per-cookie', suffix: 'a;b' } })).toThrow(/keeper.suffix/);
       expect(() => reflectModuleConfig({ cookies: [GA], keeper: { mode: 'both' } })).toThrow(TypeError);
+    });
+
+    it("switching to master keeps a backup whose value doesn't fit in the keeper, and refreshes it", async () => {
+      const big = (c: string): string => c.repeat(1024);
+      const three = ['_a', '_b', '_c'].map(name => ({ name, maxAgeDays: 30, domain: 'example.com', restore: true }));
+      const { cookies } = await call('/_sid/v1', { Cookie: `_a_backup=${big('a')}; _b_backup=${big('b')}; _c_backup=${big('c')}` }, { reflect: { cookies: three } });
+      // The keeper's 4096 bytes fit two of the three 1024-character values; the third stays in its backup.
+      const inKeeper = Object.keys(savedIn(cookies) as Record<string, string>);
+      expect(inKeeper).toHaveLength(2);
+      const left = ['_a', '_b', '_c'].find(name => !inKeeper.includes(name)) ?? '';
+      expect(backupOf(cookies, `${left}_backup`)).toMatch(new RegExp(`^${left}_backup=${left.slice(1).repeat(1024)}; Max-Age=34560000; `));
+      for (const name of inKeeper) expect(backupOf(cookies, `${name}_backup`)).toMatch(new RegExp(`^${name}_backup=; Max-Age=0; `));
+    });
+
+    it('cleans up a backup left over after restore was turned off: on denied storage and on opt-out', async () => {
+      const noRestore = { reflect: { cookies: [{ ...GA, restore: false }], keeper: { mode: 'per-cookie' } } };
+      const denied = await call('/_sid/v1', { Cookie: `_ga=${ga}; _ga_backup=${ga}`, 'Sec-GPC': '1' }, noRestore);
+      expect(pairs(denied.cookies)).toEqual(['_ga_backup=']);
+      // Allowed, with nothing to restore: the backup is deleted too, and _ga is just reflected.
+      const allowed = await call('/_sid/v1', { Cookie: `_ga=${ga}; _ga_backup=${ga}` }, noRestore);
+      expect(pairs(allowed.cookies)).toEqual([`_ga=${ga}`, '_ga_backup=']);
+      const optout = await handler(noRestore)(new Request('https://www.example.com/_sid/optout', { headers: { Cookie: `_ga_backup=${ga}` } }));
+      expect(optout.headers.getSetCookie().map(c => c.split('=')[0])).toContain('_ga_backup');
+    });
+
+    it('names no configured cookie in its errors', () => {
+      for (const config of [
+        { cookies: [{ ...GA, name: 'secret_cookie_name_that_is_rather_long_for_a_backup_name_x' }], keeper: { mode: 'per-cookie' } },
+        { cookies: [GA, { name: '_ga_backup', maxAgeDays: 1 }] }
+      ]) {
+        expect(() => reflectModuleConfig(config)).toThrow(TypeError);
+        try { reflectModuleConfig(config); } catch (error) { expect(String(error)).not.toMatch(/secret_cookie|_ga_backup/); }
+      }
     });
   });
 });
