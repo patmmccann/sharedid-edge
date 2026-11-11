@@ -150,9 +150,9 @@ The EC is returned as an EID with the source `ts.iabtechlab.com` and `atype` 1 (
 
 The EC is the publisher's identifier, not an exchange's cookie ID, so it goes in `user.ext.eids`, where IDs from other sources belong. The [OpenRTB implementation guidance, 7.12 ID Match Method Guidance](https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/implementation.md#712---id-match-method-guidance-) doesn't address `user.id` itself; it sets the same expectation for `user.buyeruid` ("expected to be derived from a real time cookie sync") and sends other IDs to the EIDs. On the EID's `source`, its section 7.12.2 says:
 
-> `source` is the party that defined/created an ID. In the case of universal or alt-IDs, it's the domain of the party who defined/created the ID itself. […] Prior to sending a partner's cookie, you are strongly encouraged to verify their preferred EID `source` value.
+> `source` is the party that defined/created an ID. In the case of universal or alt-IDs, it's the domain of the party who defined/created the ID itself.
 
-IAB Tech Lab defines the EC, so the source is a Tech Lab domain. Trusted Server defines no EID source for EC, so `ts.iabtechlab.com` is SharedID Edge's own choice, until Tech Lab confirms or registers one. Bidders that want the EC look for it in `user.ext.eids`.
+The EC is defined by IAB Tech Lab's Trusted Server specification, so the source is a Tech Lab domain: `ts.iabtechlab.com`, for Trusted Server. Trusted Server's code names no EID source for the EC (it only sets `user.id`); the OpenRTB specification, as written, is what this follows. Bidders that want the EC look for it in `user.ext.eids`.
 
 ## Consent and opt-out
 
