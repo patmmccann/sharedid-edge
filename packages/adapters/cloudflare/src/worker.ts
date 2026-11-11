@@ -16,7 +16,7 @@ export function createWorker(modules: readonly EdgeModule[]): ExportedHandler<En
   function handlerFor(env: Env): SharedIdEdgeHandler {
     let handler = handlers.get(env);
     if (handler === undefined) {
-      handler = createHandler({ config: resolveConfig({ ...env }), modules });
+      handler = createHandler({ config: resolveConfig({ ...env }, { requireCookieDomain: true }), modules });
       handlers.set(env, handler);
     }
     return handler;

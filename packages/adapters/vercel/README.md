@@ -143,7 +143,7 @@ Settings are the project's environment variables, the same `SID_*` variables as 
 
 ```sh
 vercel env add SID_MODULES production            # e.g. ip,geo
-vercel env add SID_COOKIE_DOMAIN production      # e.g. .example.com
+vercel env add SID_COOKIE_DOMAIN production      # required: e.g. example.com, the domain Prebid.js writes _pubcid on
 ```
 
 Environment variables apply to new deployments: redeploy after changing them. `example/.env.example` lists every setting. Use separate values for Preview and Production if you want, but remember that cookies set on a preview URL (`*.vercel.app`) belong to that hostname, not your site.

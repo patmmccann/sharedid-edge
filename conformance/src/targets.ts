@@ -147,7 +147,10 @@ const AZURE_LOCATION_HEADERS: Readonly<Record<string, string>> = {
  * deploy-bowser/. The Node.js
  * server always has Bowser.
  */
-export async function startTarget(target: TargetName, config: Readonly<Record<string, string>>, build: readonly BuildOption[] = []): Promise<RunningTarget> {
+export async function startTarget(target: TargetName, caseConfig: Readonly<Record<string, string>>, build: readonly BuildOption[] = []): Promise<RunningTarget> {
+  // Every deployment must set SID_COOKIE_DOMAIN. The targets answer on 127.0.0.1, where cookies are host-only, so that's
+  // the default here; a case sets a domain to test one, or "" to test the error for a missing one.
+  const config: Readonly<Record<string, string>> = { SID_COOKIE_DOMAIN: 'host-only', ...caseConfig };
   const bowser = build.includes('bowser');
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${String(port)}`;

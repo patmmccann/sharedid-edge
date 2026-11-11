@@ -31,7 +31,7 @@ Browser ──► www.example.com (your proxy: nginx, a load balancer, or a CDN)
 ```sh
 npm ci
 npm run build
-PORT=8787 SID_PUBLIC_ORIGIN=https://www.example.com SID_TRUST_PROXY=true node packages/adapters/node/dist/cli.js
+PORT=8787 SID_COOKIE_DOMAIN=example.com SID_PUBLIC_ORIGIN=https://www.example.com SID_TRUST_PROXY=true node packages/adapters/node/dist/cli.js
 # sharedid-edge listening on http://127.0.0.1:8787/_sid/
 ```
 
@@ -63,7 +63,8 @@ From the environment:
 | `HOST` | `127.0.0.1` | Listening address. Keep it local behind a proxy. |
 | `SID_PUBLIC_ORIGIN` | `http://<Host header>` | Your public origin, for example `https://www.example.com`. TLS ends at your proxy, so set this for cookies to be `Secure`. |
 | `SID_TRUST_PROXY` | `false` | Trust the proxy's headers: the client IP from the first `X-Forwarded-For` entry, and location from Cloudflare's visitor location headers. Only behind a proxy that overwrites them. |
-| `SID_*` | | Every core setting, as in the [Configuration reference](../../../docs/configuration.md). |
+| `SID_COOKIE_DOMAIN` | **required** | The domain Prebid.js writes `_pubcid` on, normally your registrable domain (`example.com`), or `host-only`. Without it the server doesn't start. |
+| `SID_*` | | Every other core setting, as in the [Configuration reference](../../../docs/configuration.md). |
 | `SID_MODULE_SECRETS` | `{}` | Module secrets, such as the `ec` passphrase. Supply it from your secret store (systemd `LoadCredential`, a container secret, and so on), not a committed file. |
 
 Invalid settings stop the server at start-up with `Configuration error: …`.

@@ -130,7 +130,7 @@ describe('the ip module on /v1', () => {
   });
 
   it('is built in through handlerFromEnv', async () => {
-    const result = await handlerFromEnv({ SID_MODULES: 'ip' })(cloudFrontEvent({ path: '/_sid/v1', omitHeaders: ['cloudfront-viewer-country'] }));
+    const result = await handlerFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_MODULES: 'ip' })(cloudFrontEvent({ path: '/_sid/v1', omitHeaders: ['cloudfront-viewer-country'] }));
     expect(payload(result.body).ortb2?.device?.ip).toBe('198.51.100.23');
   });
 });
@@ -207,7 +207,7 @@ describe('platformInfo', () => {
 describe('handlerFromEnv', () => {
   it('answers every request with a 500 when the configuration is invalid', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const handler = handlerFromEnv({ SID_MAX_AGE_DAYS: '0' });
+    const handler = handlerFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_MAX_AGE_DAYS: '0' });
     expect(error).toHaveBeenCalledOnce();
     for (const path of ['/_sid/sync', '/_sid/v1']) {
       const result = await handler(cloudFrontEvent({ path }));
@@ -218,8 +218,17 @@ describe('handlerFromEnv', () => {
     }
   });
 
+  it('answers every request with a 500 without SID_COOKIE_DOMAIN, naming the setting', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const handler = handlerFromEnv({});
+    expect(String(error.mock.calls[0]?.[0])).toContain('SID_COOKIE_DOMAIN');
+    expect((await handler(cloudFrontEvent({ path: '/_sid/sync' }))).statusCode).toBe(500);
+    error.mockRestore();
+  });
+
   it('builds in the ec module, with its secret from SID_MODULE_SECRETS', async () => {
     const handler = handlerFromEnv({
+      SID_COOKIE_DOMAIN: 'host-only',
       SID_MODULES: 'ec',
       SID_MODULE_CONFIG: '{"ec":{"domain":"example.com"}}',
       SID_MODULE_SECRETS: '{"ec":{"passphrase":"conformance-passphrase-0123456789abcdef"}}'
@@ -231,7 +240,7 @@ describe('handlerFromEnv', () => {
   });
 
   it('reads SID_PUBLIC_ORIGIN and SID_BEHIND_CLOUDFRONT', async () => {
-    const handler = handlerFromEnv({ SID_MODULES: 'ip', SID_PUBLIC_ORIGIN: 'http://localhost:3000', SID_BEHIND_CLOUDFRONT: 'false' });
+    const handler = handlerFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_MODULES: 'ip', SID_PUBLIC_ORIGIN: 'http://localhost:3000', SID_BEHIND_CLOUDFRONT: 'false' });
     const result = await handler(cloudFrontEvent({ path: '/_sid/v1', omitHeaders: ['cloudfront-viewer-country'] }));
     expect(payload(result.body).ortb2?.device?.ip).toBe('64.252.0.10');
     expect(result.cookies[0]).not.toContain('Secure');

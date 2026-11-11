@@ -285,7 +285,7 @@ describe('settings', () => {
   });
 
   it.each([['/identity', '/identity/sync'], ['/', '/sync']])('answers under SID_BASE_PATH=%s', async (basePath, path) => {
-    const handler = handlerFromEnv({ SID_BASE_PATH: basePath });
+    const handler = handlerFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_BASE_PATH: basePath });
     expect((await handler(frontDoorRequest({ path, query: `id=pubcid%3A${UUID}` }))).cookies[0]).toMatchObject({ name: '_pubcid', value: UUID });
     expect((await handler(frontDoorRequest({ path: '/_sid/sync' }))).status).toBe(404);
   });
@@ -293,7 +293,7 @@ describe('settings', () => {
 
 describe('handlerFromEnv', () => {
   it('answers every request with a 500 when the configuration is invalid', async () => {
-    for (const env of [{ SID_MAX_AGE_DAYS: '0' }, { SID_LOCATION_HEADERS: '{"country":' }, { SID_FRONT_DOOR_ID: 'x' }]) {
+    for (const env of [{}, { SID_MAX_AGE_DAYS: '0' }, { SID_LOCATION_HEADERS: '{"country":' }, { SID_FRONT_DOOR_ID: 'x' }]) {
       const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const handler = handlerFromEnv(env);
       expect(error).toHaveBeenCalledOnce();
@@ -307,6 +307,7 @@ describe('handlerFromEnv', () => {
 
   it('builds in the ec module, with its secret from SID_MODULE_SECRETS', async () => {
     const handler = handlerFromEnv({
+      SID_COOKIE_DOMAIN: 'host-only',
       SID_MODULES: 'ec',
       SID_MODULE_CONFIG: '{"ec":{"domain":"example.com"}}',
       SID_MODULE_SECRETS: '{"ec":{"passphrase":"conformance-passphrase-0123456789abcdef"}}'
@@ -319,6 +320,7 @@ describe('handlerFromEnv', () => {
 
   it('reads the adapter\'s own settings', async () => {
     const handler = handlerFromEnv({
+      SID_COOKIE_DOMAIN: 'host-only',
       SID_MODULES: 'ip,geo',
       SID_PUBLIC_ORIGIN: 'http://localhost:7071',
       SID_FRONT_DOOR_ID: FRONT_DOOR_ID,
@@ -328,7 +330,7 @@ describe('handlerFromEnv', () => {
     expect(payload(result).ortb2?.device).toMatchObject({ ip: '198.51.100.23', geo: { country: 'USA' } });
     expect((await handler(frontDoorRequest({ omitHeaders: ['x-azure-fdid'] }))).status).toBe(403);
     expect((await handler(frontDoorRequest())).cookies[0]?.secure).toBeUndefined();
-    const outside = handlerFromEnv({ SID_MODULES: 'ip', SID_BEHIND_FRONT_DOOR: 'false' });
+    const outside = handlerFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_MODULES: 'ip', SID_BEHIND_FRONT_DOOR: 'false' });
     expect(payload(await outside(frontDoorRequest({ path: '/_sid/v1' }))).ortb2).toBeUndefined();
   });
 });

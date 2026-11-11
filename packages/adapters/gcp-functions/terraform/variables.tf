@@ -74,9 +74,13 @@ variable "sid_cookie_name" {
 }
 
 variable "sid_cookie_domain" {
-  description = "SID_COOKIE_DOMAIN, e.g. .example.com (empty: host-only)"
+  description = "SID_COOKIE_DOMAIN (required): the domain Prebid.js writes the SharedID cookie on, normally your registrable domain (example.com); host-only for cookies without a Domain"
   type        = string
-  default     = ""
+
+  validation {
+    condition     = length(var.sid_cookie_domain) > 0
+    error_message = "Set sid_cookie_domain to the domain Prebid.js writes the SharedID cookie on (example.com), or host-only."
+  }
 }
 
 variable "sid_max_age_days" {

@@ -14,7 +14,7 @@ export type Env = Readonly<Record<string, string | undefined>>;
 export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtInModules): VercelHandler {
   return handlerOrMisconfigured(
     () => createVercelHandler({
-      config: resolveConfig(env),
+      config: resolveConfig(env, { requireCookieDomain: true }),
       modules,
       behindVercel: booleanFromEnv(env['SID_BEHIND_VERCEL'], true),
       ...publicOriginFromEnv(env)

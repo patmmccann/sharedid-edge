@@ -14,7 +14,7 @@ export function handlerFromEnv(
 ): LambdaHandler {
   return handlerOrMisconfigured(
     () => createLambdaHandler({
-      config: resolveConfig(env),
+      config: resolveConfig(env, { requireCookieDomain: true }),
       modules,
       behindCloudFront: booleanFromEnv(env['SID_BEHIND_CLOUDFRONT'], true),
       ...publicOriginFromEnv(env)

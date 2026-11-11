@@ -17,11 +17,13 @@ It never forwards requests to the publisher's origin and never adds `Set-Cookie`
 
 Implementations read these settings, normally as environment variables. Defaults are in brackets.
 
+`SID_COOKIE_DOMAIN` has no default. Prebid.js's `sharedIdSystem` writes its cookie on the highest domain it can set one on (the registrable domain), so cookies from the worker must use the same `Domain`, or the browser holds two cookies of the same name and the page and the worker each see a different ID. A deployment without the setting MUST NOT set cookies: an implementation answers every request with a 500, or refuses to start, and logs the setting's name.
+
 | Setting | | |
 | --- | --- | --- |
 | `SID_BASE_PATH` | [`/_sid`] | Path prefix for all routes. |
 | `SID_COOKIE_NAME` | [`_pubcid`] | The SharedID cookie; must match `storage.name` in Prebid.js. |
-| `SID_COOKIE_DOMAIN` | [host-only] | `Domain` attribute, e.g. `.example.com`. |
+| `SID_COOKIE_DOMAIN` | **required** | The domain Prebid.js writes the SharedID cookie on, which is the `Domain` attribute: normally the registrable domain, `example.com`. `host-only` for no `Domain` attribute. |
 | `SID_MAX_AGE_DAYS` | [`365`] | Cookie lifetime in days, 1 to 400. |
 | `SID_CREATE` | [`true`] | Mint an ID when the request has none. |
 | `SID_RECOVERY_COOKIE` | [`_pubcid_sv`] | Name of the `HttpOnly` recovery copy; `none` disables it. |
@@ -180,7 +182,7 @@ The context has the request, its URL and cookies, the platform information (see 
 
 The context also has the worker's **storage decision** for the request, `storage`: `{ allowed: true }`, or `{ allowed: false, reason }` with the same reason as `X-SharedID-Status` (`opt-out`, `gpc`, `coppa` or `tcf: …`; see [Opt-out and consent](#opt-out-and-consent)). A module that stores or extends an identifier SHOULD do so only when `storage.allowed` is true.
 
-A module's `cookies` are set on the response (of `/v1`, or `/sync`) with `Path=/`, `SameSite=Lax`, `Secure` over https, the module's `Domain` (else `SID_COOKIE_DOMAIN`), `Max-Age` (0 deletes) and `HttpOnly` as given. A module MUST NOT set the worker's own cookie names; a malformed or reserved cookie makes the module an `error`, and none of its output is used. A module that returns only cookies reports `empty`.
+A module's `cookies` are set on the response (of `/v1`, or `/sync`) with `Path=/`, `SameSite=Lax`, `Secure` over https, the module's `Domain` (else `SID_COOKIE_DOMAIN`; none when the module marks the cookie host-only), `Max-Age` (0 deletes) and `HttpOnly` as given. A module MUST NOT set the worker's own cookie names; a malformed or reserved cookie makes the module an `error`, and none of its output is used. A module that returns only cookies reports `empty`.
 
 A module that sets cookies SHOULD also declare the deletions for opt-out. `{basePath}/optout` deletes the ones the browser sent along with the ID cookies, for every installed module (whether or not it's in `SID_MODULES`), so an opt-out takes effect at once and not only on the next `/v1` call.
 

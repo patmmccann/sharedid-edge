@@ -5,6 +5,9 @@
 <script>
   pbjs.que.push(function () {
     pbjs.setConfig({
+      // Until the pinned Prebid.js has prebid/Prebid.js#16156, storageControl blocks the probe cookie sharedIdSystem uses
+      // to find the registrable domain, so _pubcid would be host-only. Remove this with the first release that has it.
+      storageControl: { enforcement: 'off' },
       userSync: {
         syncDelay: 0,
         userIds: [{

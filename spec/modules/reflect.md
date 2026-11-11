@@ -7,7 +7,7 @@ Name `reflect`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODU
 - **Settings,** `SID_MODULE_CONFIG.reflect`: `{ "cookies": [ … ], "keeper": { … } }`. `cookies` has 1 to 10 entries, each:
   - `name` (required): a cookie name (an RFC 6265 token, at most 64 characters). It MUST NOT be `_pubcid`, `_pubcid_sv`, `_pubcid_optout`, `ts-ec` or `euconsent-v2`, nor the worker's configured cookie names, and MUST NOT repeat;
   - `maxAgeDays` (required): an integer from 1 to 400;
-  - `domain` (optional): a registrable domain without a leading dot, such as `example.com`; the cookie gets `Domain=.<domain>`. Without it, `SID_COOKIE_DOMAIN` applies, else the cookie is host-only;
+  - `domain` (optional): a registrable domain without a leading dot, such as `example.com`, and the cookie gets `Domain=.<domain>`; or `host-only`, and the cookie gets no `Domain` attribute whatever `SID_COOKIE_DOMAIN` says. Without it, `SID_COOKIE_DOMAIN` applies;
   - `httpOnly` (optional, default `false`);
   - `deleteOnOptOut` (optional, default `false`);
   - `restore` (optional, default `false`): save the cookie in the keeper cookie and restore it from there (below);
@@ -17,7 +17,7 @@ Name `reflect`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODU
   `keeper` (optional; its defaults apply when it's omitted) configures the keeper cookie:
   - `cookie` (default `_sid_keep`): a cookie name, with the same rules as `name`, and MUST NOT be one of the configured `cookies`;
   - `maxAgeDays` (default `400`): an integer from 1 to 400;
-  - `domain` (optional): as for a cookie. Without it, the first `restore` cookie's `domain` applies; without that, `SID_COOKIE_DOMAIN`, else host-only.
+  - `domain` (optional): as for a cookie. Without it, the first `restore` cookie's `domain` applies; without that, `SID_COOKIE_DOMAIN`.
 
   Any other key, a wrong type or an out-of-range value makes the module an `error` on every call, with no details.
 - **Reflection:** for each configured cookie the request carries, in configuration order, the module sets `<name>=<value>; Max-Age=<maxAgeDays × 86400>; Expires=…; Path=/; [Domain=.<domain>;] SameSite=Lax; [Secure;] [HttpOnly]`. The value MUST be the request's value byte for byte: not decoded, re-encoded, trimmed beyond the `Cookie` header's own whitespace, or otherwise changed. When the name repeats in the `Cookie` header, the first is used.

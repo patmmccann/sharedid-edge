@@ -265,7 +265,7 @@ function payloadResponse(inputs: PayloadInputs): Response {
 function serializeModuleCookie(cookie: ModuleCookie, config: SharedIdEdgeConfig, secure: boolean, date: Date): string {
   const options: CookieOptions = {
     maxAgeSeconds: cookie.maxAgeSeconds,
-    domain: cookie.domain ?? config.cookieDomain,
+    domain: cookie.hostOnly === true ? undefined : (cookie.domain ?? config.cookieDomain),
     secure,
     httpOnly: cookie.httpOnly,
     sameSite: 'Lax'

@@ -121,7 +121,7 @@ describe('createGcpHandler', () => {
   });
 
   it.each([['/identity', '/identity/v1'], ['/', '/v1']])('answers under SID_BASE_PATH=%s only', async (basePath, path) => {
-    const handler = handlerFromEnv({ SID_BASE_PATH: basePath });
+    const handler = handlerFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_BASE_PATH: basePath });
     expect((await call(handler, path)).status).toBe(200);
     expect((await call(handler, '/_sid/v1')).status).toBe(404);
   });
@@ -217,7 +217,7 @@ describe('handlerFromEnv', () => {
   });
 
   it('answers every request with a 500 when the configuration is invalid', async () => {
-    for (const env of [{ SID_MAX_AGE_DAYS: '0' }, { SID_TRUSTED_HOPS: 'x' }, { SID_LOCATION_HEADERS: '{' }, { SID_CLIENT_IP_HEADER: 'a b' }]) {
+    for (const env of [{}, { SID_MAX_AGE_DAYS: '0' }, { SID_TRUSTED_HOPS: 'x' }, { SID_LOCATION_HEADERS: '{' }, { SID_CLIENT_IP_HEADER: 'a b' }]) {
       const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       const handler = handlerFromEnv(env);
       expect(error).toHaveBeenCalledOnce();
@@ -231,6 +231,7 @@ describe('handlerFromEnv', () => {
 
   it('builds in the ec module, with its secret from SID_MODULE_SECRETS', async () => {
     const handler = handlerFromEnv({
+      SID_COOKIE_DOMAIN: 'host-only',
       SID_MODULES: 'ec',
       SID_MODULE_CONFIG: '{"ec":{"domain":"example.com"}}',
       SID_MODULE_SECRETS: '{"ec":{"passphrase":"conformance-passphrase-0123456789abcdef"}}'
@@ -242,6 +243,7 @@ describe('handlerFromEnv', () => {
 
   it('reads the adapter\'s own settings', async () => {
     const handler = handlerFromEnv({
+      SID_COOKIE_DOMAIN: 'host-only',
       SID_MODULES: 'ip,geo',
       SID_TRUSTED_HOPS: '2',
       SID_LOCATION_HEADERS: JSON.stringify(LOCATION),
@@ -249,9 +251,9 @@ describe('handlerFromEnv', () => {
     });
     const response = await call(handler, '/_sid/v1', { headers: { 'x-forwarded-for': `198.51.100.23,192.0.2.10,${LB}` } });
     expect(((await response.json()) as Payload).ortb2?.device).toMatchObject({ ip: '198.51.100.23', geo: { country: 'USA', region: 'WA', city: 'Seattle' } });
-    const header = handlerFromEnv({ SID_MODULES: 'ip', SID_CLIENT_IP_HEADER: 'X-Client-IP' });
+    const header = handlerFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_MODULES: 'ip', SID_CLIENT_IP_HEADER: 'X-Client-IP' });
     expect(((await (await call(header, '/_sid/v1', { headers: { 'x-client-ip': '198.51.100.99' } })).json()) as Payload).ortb2?.device?.ip).toBe('198.51.100.99');
-    const outside = handlerFromEnv({ SID_MODULES: 'ip', SID_BEHIND_LOAD_BALANCER: 'false' });
+    const outside = handlerFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_MODULES: 'ip', SID_BEHIND_LOAD_BALANCER: 'false' });
     expect(((await (await call(outside, '/_sid/v1')).json()) as Payload).ortb2).toBeUndefined();
   });
 });

@@ -116,7 +116,7 @@ With `/`, the route takes only SharedID Edge's own four paths, not the whole sit
 az deployment group create \
   --resource-group sharedid-edge \
   --template-file packages/adapters/azure-functions/infra/main.bicep \
-  --parameters frontDoorProfileName=my-front-door frontDoorResourceGroup=my-site-rg \
+  --parameters sidCookieDomain=example.com frontDoorProfileName=my-front-door frontDoorResourceGroup=my-site-rg \
                frontDoorEndpointName=my-endpoint 'customDomainNames=["www-example-com"]' \
                sidCookieDomain=.example.com sidModules=ip,geo
 ```

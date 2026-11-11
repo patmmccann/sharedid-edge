@@ -33,7 +33,7 @@ export const RESERVED_COOKIE_NAMES: readonly string[] = Object.freeze(['_pubcid'
 export interface ReflectedCookie {
   readonly name: string;
   readonly maxAgeDays: number;
-  /** Registrable domain without a leading dot; the cookie gets `Domain=.{domain}`. */
+  /** Registrable domain without a leading dot (the cookie gets `Domain=.{domain}`), or `host-only`; undefined means `SID_COOKIE_DOMAIN`. */
   readonly domain: string | undefined;
   readonly httpOnly: boolean;
   /** Whether `{basePath}/optout` deletes it. */
@@ -58,7 +58,7 @@ export type TimestampFormat = 'ga' | 'gcl_au' | 'gcl_aw';
 export interface KeeperSettings {
   readonly cookie: string;
   readonly maxAgeDays: number;
-  /** `keeper.domain`, else the first `restore` cookie's `domain`; undefined means `SID_COOKIE_DOMAIN`, else host-only. */
+  /** `keeper.domain`, else the first `restore` cookie's `domain` (either may be `host-only`); undefined means `SID_COOKIE_DOMAIN`. */
   readonly domain: string | undefined;
 }
 
@@ -110,9 +110,12 @@ function ageDays(value: unknown): number {
   return value;
 }
 
+/** `domain` value for a cookie without a `Domain` attribute, whatever `SID_COOKIE_DOMAIN` says. */
+const HOST_ONLY = 'host-only';
+
 function optionalDomain(value: unknown): string | undefined {
-  if (value !== undefined && (typeof value !== 'string' || !DOMAIN.test(value))) {
-    throw new TypeError('reflect: "domain" must be a domain like example.com');
+  if (value !== undefined && value !== HOST_ONLY && (typeof value !== 'string' || !DOMAIN.test(value))) {
+    throw new TypeError('reflect: "domain" must be a domain like example.com, or host-only');
   }
   return value;
 }
@@ -290,12 +293,18 @@ export function decodeKeeper(raw: string | undefined): Map<string, string> {
   return saved;
 }
 
+/** The `ModuleCookie` fields for a `domain` setting: none (core applies `SID_COOKIE_DOMAIN`), host-only, or a domain. */
+function domainFields(domain: string | undefined): Pick<ModuleCookie, 'domain' | 'hostOnly'> {
+  if (domain === undefined) return {};
+  return domain === HOST_ONLY ? { hostOnly: true } : { domain: `.${domain}` };
+}
+
 function moduleCookie(cookie: ReflectedCookie, value: string, maxAgeSeconds: number): ModuleCookie {
-  return { name: cookie.name, value, maxAgeSeconds, httpOnly: cookie.httpOnly, ...(cookie.domain === undefined ? {} : { domain: `.${cookie.domain}` }) };
+  return { name: cookie.name, value, maxAgeSeconds, httpOnly: cookie.httpOnly, ...domainFields(cookie.domain) };
 }
 
 function keeperCookie(keeper: KeeperSettings, value: string, maxAgeSeconds: number): ModuleCookie {
-  return { name: keeper.cookie, value, maxAgeSeconds, httpOnly: true, ...(keeper.domain === undefined ? {} : { domain: `.${keeper.domain}` }) };
+  return { name: keeper.cookie, value, maxAgeSeconds, httpOnly: true, ...domainFields(keeper.domain) };
 }
 
 function run({ request, storage, config }: ModuleContext): ModuleResult | undefined {

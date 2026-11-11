@@ -9,7 +9,7 @@
     "SID_LOCATION_HEADERS": "",
     "SID_BASE_PATH": "",
     "SID_COOKIE_NAME": "",
-    "SID_COOKIE_DOMAIN": "",
+    "SID_COOKIE_DOMAIN": "host-only",
     "SID_MAX_AGE_DAYS": "",
     "SID_CREATE": "",
     "SID_RECOVERY_COOKIE": "",

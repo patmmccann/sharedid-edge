@@ -16,6 +16,7 @@ import {
   preciseLocationDenial,
   publicOriginFromEnv,
   resolveConfig,
+  type ResolveConfigOptions,
   skipsBot,
   splitHeaders,
   type BotKind,
@@ -70,6 +71,10 @@ const keeper: EdgeModule = defineModule({
 });
 
 const config: SharedIdEdgeConfig = resolveConfig({ SID_MODULES: 'geo,keeper', SID_SYNC_MODULES: 'keeper' });
+// A deployment requires SID_COOKIE_DOMAIN; host-only is an explicit value.
+const deployment: ResolveConfigOptions = { requireCookieDomain: true };
+const deployed: SharedIdEdgeConfig = resolveConfig({ SID_COOKIE_DOMAIN: 'host-only' }, deployment);
+void deployed;
 export const syncModules: readonly string[] | undefined = config.syncModules;
 const handler: SharedIdEdgeHandler = createHandler({ config, modules: [geo, keeper] });
 const platform: PlatformInfo = { clientIp: '203.0.113.1', isEU: false };

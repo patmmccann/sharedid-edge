@@ -89,7 +89,7 @@ Set-Cookie: uid1=<same value>; Max-Age=31536000; Expires=…; Path=/; Domain=.ex
 ```
 
 - **`Max-Age`:** `maxAgeDays` × 86400, refreshed on every call.
-- **`Domain`:** `.{domain}` from the cookie's `domain` setting. Without it, `SID_COOKIE_DOMAIN`; without that too, host-only.
+- **`Domain`:** `.{domain}` from the cookie's `domain` setting, or none with `"domain": "host-only"`. Without a `domain` setting, `SID_COOKIE_DOMAIN`.
 - **`HttpOnly`:** only with `"httpOnly": true`. The default is `false`, because the script that wrote the cookie usually needs to read it.
 - **`Path=/`** and **`SameSite=Lax`:** always. Cookies set at another path, or with `SameSite=None` or `Strict`, aren't a good fit for this module.
 - **`Secure`:** over https.
@@ -104,7 +104,7 @@ So, for each cookie:
 
 - **Domain:**
   - if the original's Domain starts with a dot (`.example.com`), set `"domain": "example.com"`;
-  - if it's host-only (`www.example.com`, no dot), leave `domain` out, and don't set `SID_COOKIE_DOMAIN` (which would otherwise apply);
+  - if it's host-only (`www.example.com`, no dot), set `"domain": "host-only"` (without a `domain`, `SID_COOKIE_DOMAIN` applies);
   - if your scripts write it from several subdomains, pick the domain they use.
 - **HttpOnly:** leave it `false` for cookies a script wrote (scripts can't write `HttpOnly` cookies). Set it to `true` only if the script never needs to read the cookie again, which is rare.
 - **Path:** the module always sets `Path=/`. A cookie written with another path ends up duplicated, so don't reflect it.
@@ -393,7 +393,7 @@ All in `SID_MODULE_CONFIG.reflect`. Unknown keys, wrong types and out-of-range v
 | `cookies` | required | 1 to 10 entries, below. |
 | `cookies[].name` | required | The cookie's name, exactly (names are case-sensitive). At most 64 characters, no spaces or `=`. Listed once. |
 | `cookies[].maxAgeDays` | required | The new lifetime in days, a whole number from 1 to 400 (Chrome caps cookies at 400). |
-| `cookies[].domain` | optional | Your registrable domain, such as `example.com`, without a leading dot. The cookie gets `Domain=.example.com`. Default: `SID_COOKIE_DOMAIN`, else host-only. |
+| `cookies[].domain` | optional | Your registrable domain, such as `example.com`, without a leading dot (the cookie gets `Domain=.example.com`), or `host-only` for a cookie without a `Domain`. Default: `SID_COOKIE_DOMAIN`. |
 | `cookies[].httpOnly` | optional | `true` adds `HttpOnly`. Default `false`. |
 | `cookies[].deleteOnOptOut` | optional | `true` deletes the cookie on `/_sid/optout`. Default `false`. |
 | `cookies[].restore` | optional | `true` saves the cookie in the keeper and restores it when the browser no longer has it. Default `false`. |
@@ -402,7 +402,7 @@ All in `SID_MODULE_CONFIG.reflect`. Unknown keys, wrong types and out-of-range v
 | `keeper` | optional | The keeper cookie's settings, below. Leave it out to use the defaults. |
 | `keeper.cookie` | optional | The keeper's name. Default `_sid_keep`. Same rules as `cookies[].name`, and not one of the configured cookies. |
 | `keeper.maxAgeDays` | optional | The keeper's lifetime in days, 1 to 400. Default `400`. |
-| `keeper.domain` | optional | As `cookies[].domain`. Default: the first `restore` cookie's `domain`, else `SID_COOKIE_DOMAIN`, else host-only. |
+| `keeper.domain` | optional | As `cookies[].domain`. Default: the first `restore` cookie's `domain`, else `SID_COOKIE_DOMAIN`. |
 
 These names can't be reflected: `_pubcid`, `_pubcid_sv` and `_pubcid_optout` (the worker sets them itself), `ts-ec` (the `ec` module's cookie, which isn't refreshed by design) and `euconsent-v2` (consent records keep the lifetime the CMP gives them). If you renamed the SharedID cookies with `SID_COOKIE_NAME`, `SID_RECOVERY_COOKIE` or `SID_OPTOUT_COOKIE`, those names are refused too, at request time, as an `error`. The same goes for the keeper's name.
 

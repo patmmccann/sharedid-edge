@@ -108,6 +108,8 @@ jobs:
         working-directory: e2e
         env:
           E2E_BASE_URL: https://e2e.sharedid.dev
+          # The e2e environment's SID_COOKIE_DOMAIN (packages/adapters/cloudflare/wrangler.jsonc).
+          E2E_COOKIE_DOMAIN: sharedid.dev
         run: npx playwright test --project=${{ matrix.browser }}
       - name: Upload the Playwright report
         if: failure()
