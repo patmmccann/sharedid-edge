@@ -1,0 +1,9 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "Several sites from one deployment (SID_HOSTS): a host that isn't listed gets a 404 and no cookies, on every route. The targets answer on 127.0.0.1, which this configuration doesn't list.",
+  "config": { "SID_HOSTS": "{\"www.other.example\":{\"SID_COOKIE_DOMAIN\":\"other.example\"}}" },
+  "cases": [
+    { "name": "an unlisted host's sync sets nothing", "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d" }, "expect": { "status": 404, "noCookies": true } },
+    { "name": "an unlisted host's payload is a 404", "request": { "path": "/_sid/v1", "headers": { "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } }, "expect": { "status": 404, "noCookies": true } }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "Several sites from one deployment (SID_HOSTS): the request's hostname picks the site's settings, on top of the deployment's. The targets answer on 127.0.0.1, so that's the listed host, with its own cookie name.",
+  "config": { "SID_HOSTS": "{\"127.0.0.1\":{\"SID_COOKIE_NAME\":\"sid\",\"SID_RECOVERY_COOKIE\":\"sid_sv\"}}" },
+  "cases": [
+    {
+      "name": "a listed host gets its own settings",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d" },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "sid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }, { "name": "sid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d", "httpOnly": true }],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "and its payload reads its own cookie",
+      "request": { "path": "/_sid/v1", "headers": { "cookie": "sid=c29cb2ae-769d-42f6-891a-f53cadee823d; _pubcid=0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10" } },
+      "expect": { "status": 200, "jsonIncludes": { "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d" } }
+    }
+  ]
+}

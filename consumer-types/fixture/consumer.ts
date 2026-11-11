@@ -17,6 +17,12 @@ import {
   publicOriginFromEnv,
   resolveConfig,
   cookieValues,
+  configForHost,
+  hostKey,
+  hostOverrides,
+  resolveHosts,
+  settingsFromEnv,
+  type EnvSettings,
   type ResolveConfigOptions,
   skipsBot,
   splitHeaders,
@@ -79,6 +85,15 @@ void deployed;
 export const syncModules: readonly string[] | undefined = config.syncModules;
 const handler: SharedIdEdgeHandler = createHandler({ config, modules: [geo, keeper] });
 const platform: PlatformInfo = { clientIp: '203.0.113.1', isEU: false };
+
+// Several sites from one deployment: SID_HOSTS, and a platform's settings for a host (as Cloudflare custom metadata).
+const sites: EnvSettings = settingsFromEnv({ SID_HOSTS: '{"www.example.com":{"SID_COOKIE_DOMAIN":"example.com"}}' }, deployment);
+export const siteHosts: ReadonlyMap<string, SharedIdEdgeConfig> | undefined = resolveHosts({}, deployment) ?? sites.hosts;
+export const multiSite: SharedIdEdgeHandler = createHandler({
+  ...sites,
+  hostConfig: request => (hostKey(new URL(request.url)) === 'saas.example.com' ? configForHost({}, hostOverrides({ SID_COOKIE_DOMAIN: 'example.com' }, 'metadata'), 'metadata', deployment) : undefined),
+  modules: [geo]
+});
 
 export async function payload(request: Request): Promise<PayloadV1> {
   const response = await handler(request, platform);

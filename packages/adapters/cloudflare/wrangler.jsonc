@@ -30,7 +30,8 @@
     "SID_MODULE_CONFIG": "{}",
     "SID_MODULE_TIMEOUT_MS": "50",
     "SID_SKIP_BOTS": "",
-    "SID_SKIP_BOTS_SCORE": ""
+    "SID_SKIP_BOTS_SCORE": "",
+    "SID_HOSTS": ""
   },
   // This project's own live tests (.github/workflows/e2e-cloudflare.yml), on the sharedid.dev test zone. Deployers
   // don't need these. Wrangler doesn't inherit vars into an environment, so each lists them all.
@@ -56,7 +57,8 @@
         "SID_MODULE_CONFIG": "{}",
         "SID_MODULE_TIMEOUT_MS": "50",
         "SID_SKIP_BOTS": "",
-        "SID_SKIP_BOTS_SCORE": ""
+        "SID_SKIP_BOTS_SCORE": "",
+        "SID_HOSTS": ""
       }
     },
     // The Prebid.js browser tests (e2e/), next to the test page the e2e/site Worker serves on the same hostname,
@@ -81,7 +83,8 @@
         "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,\"domain\":\"sharedid.dev\",\"httpOnly\":false,\"restore\":true},{\"name\":\"_ga\",\"maxAgeDays\":400,\"restore\":true}]}}",
         "SID_MODULE_TIMEOUT_MS": "50",
         "SID_SKIP_BOTS": "",
-        "SID_SKIP_BOTS_SCORE": ""
+        "SID_SKIP_BOTS_SCORE": "",
+        "SID_HOSTS": ""
       }
     }
   }

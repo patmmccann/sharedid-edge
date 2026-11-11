@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { booleanFromEnv, ConfigError, LOCATION_FIELDS, parseHeaderMap, resolveConfig } from '@sharedid-edge/core';
+import { booleanFromEnv, ConfigError, LOCATION_FIELDS, parseHeaderMap, settingsFromEnv } from '@sharedid-edge/core';
 // The built-in list with Bowser available to the ua module (SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}): the
 // server isn't bundled, so it has no size budget to keep it out.
 import { builtInModules } from '@sharedid-edge/modules/bowser';
@@ -9,7 +9,8 @@ import { createNodeServer } from './index.js';
 // built-in modules run), plus:
 //   PORT (default 8787), HOST (default 127.0.0.1), SID_TRUST_PROXY, SID_LOCATION_HEADERS, SID_PUBLIC_ORIGIN.
 try {
-  const config = resolveConfig(process.env, { requireCookieDomain: true });
+  // The configuration, and with SID_HOSTS one per hostname (the Host header picks it).
+  const settings = settingsFromEnv(process.env, { requireCookieDomain: true });
   const port = Number(process.env['PORT'] ?? 8787);
   const host = process.env['HOST'] ?? '127.0.0.1';
   const publicOrigin = process.env['SID_PUBLIC_ORIGIN'];
@@ -19,14 +20,14 @@ try {
   // Location headers are read only from a trusted proxy: setting them without the trust would silently do nothing.
   if (configured && !trustProxy) throw new ConfigError('SID_LOCATION_HEADERS needs SID_TRUST_PROXY=true: location headers are read only from a trusted proxy');
   const server = createNodeServer({
-    config,
+    ...settings,
     modules: builtInModules,
     trustProxy,
     ...(configured ? { locationHeaders: parseHeaderMap(locationSetting, 'SID_LOCATION_HEADERS', LOCATION_FIELDS, '{"country":"cloudfront-viewer-country"}') } : {}),
     ...(publicOrigin === undefined ? {} : { publicOrigin })
   });
   server.listen(port, host, () => {
-    console.log(`sharedid-edge listening on http://${host}:${String(port)}${config.basePath}/`);
+    console.log(`sharedid-edge listening on http://${host}:${String(port)}${settings.config.basePath}/`);
   });
 } catch (error) {
   console.error(error instanceof ConfigError ? `Configuration error: ${error.message}` : error);

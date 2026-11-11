@@ -1,4 +1,4 @@
-import { ConfigError, booleanFromEnv, handlerOrMisconfigured, publicOriginFromEnv, resolveConfig, type EdgeModule } from '@sharedid-edge/core';
+import { ConfigError, booleanFromEnv, handlerOrMisconfigured, publicOriginFromEnv, resolveConfig, settingsFromEnv, type EdgeModule } from '@sharedid-edge/core';
 import { builtInModules } from '@sharedid-edge/modules';
 import { createVercelHandler, internalError, middleware, type VercelHandler, type VercelMiddleware } from './handler.js';
 
@@ -14,7 +14,8 @@ export type Env = Readonly<Record<string, string | undefined>>;
 export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtInModules): VercelHandler {
   return handlerOrMisconfigured(
     () => createVercelHandler({
-      config: resolveConfig(env, { requireCookieDomain: true }),
+      // The configuration, and with SID_HOSTS one per hostname.
+      ...settingsFromEnv(env, { requireCookieDomain: true }),
       modules,
       behindVercel: booleanFromEnv(env['SID_BEHIND_VERCEL'], true),
       ...publicOriginFromEnv(env)

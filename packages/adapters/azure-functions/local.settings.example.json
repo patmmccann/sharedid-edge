@@ -21,6 +21,7 @@
     "SID_SYNC_MODULES": "",
     "SID_SKIP_BOTS": "",
     "SID_SKIP_BOTS_SCORE": "",
+    "SID_HOSTS": "",
     "SID_MODULE_CONFIG": "",
     "SID_MODULE_TIMEOUT_MS": "",
     "SID_MODULE_SECRETS": ""

@@ -103,6 +103,7 @@ export const SETTINGS: readonly ConfigSetting[] = [
   { name: 'SID_MODULE_SECRETS', default: '`{}`', description: 'JSON secrets (strings) per module, keyed by module name, e.g. the `ec` passphrase. Set it as a platform secret (`wrangler secret put SID_MODULE_SECRETS`), not in plain settings.' },
   { name: 'SID_MODULE_TIMEOUT_MS', default: '`50`', description: 'Time limit for each module, 1 to 10000.' },
   { name: 'SID_SKIP_BOTS', default: 'off', description: '`verified`, `declared` or `likely`: set no SharedID for bots this sure or surer, from the traffic signal. Existing IDs are never deleted.' },
+  { name: 'SID_HOSTS', default: 'none (one site)', description: 'Several sites from one deployment: JSON from hostname to that site\x27s `SID_*` settings, which go on top of these, like `{"www.example.com":{"SID_COOKIE_DOMAIN":"example.com"}}`. A host that isn\x27t listed gets a 404 and no cookies. Not `SID_MODULE_SECRETS`. See [Several sites from one deployment](#several-sites-from-one-deployment).' },
   { name: 'SID_SKIP_BOTS_SCORE', default: 'off', description: '1 to 99: set no SharedID when the traffic score (Cloudflare Bot Management) is at or below it.' }
 ];
 

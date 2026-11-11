@@ -113,3 +113,27 @@ describe('geo module in workerd', () => {
     expect(await (await fetchWorker('/_sid/v1')).json()).toMatchObject({ ext: { modules: {} } });
   });
 });
+
+describe('Cloudflare for SaaS custom hostname metadata', () => {
+  const withMetadata = (hostMetadata: unknown, host = 'www.saas-customer.example'): Promise<Response> =>
+    exports.default.fetch(new Request(`https://${host}/_sid/sync?id=pubcid%3A${UUID}`, { cf: { hostMetadata } }));
+
+  it("applies a custom hostname's sharedid settings on top of the Worker's", async () => {
+    const response = await withMetadata({ sharedid: { SID_COOKIE_DOMAIN: 'saas-customer.example', SID_COOKIE_NAME: 'msid' } });
+    const cookie = response.headers.getSetCookie().find(c => c.startsWith('msid='));
+    expect(cookie).toMatch(new RegExp(`^msid=${UUID};.*Domain=saas-customer\\.example;`));
+  });
+
+  it('uses the Worker settings without metadata, or with metadata for something else', async () => {
+    for (const metadata of [undefined, { plan: 'gold' }]) {
+      const response = await withMetadata(metadata);
+      expect(response.headers.getSetCookie().find(c => c.startsWith('_pubcid='))).not.toMatch(/Domain=/);
+    }
+  });
+
+  it("answers a host with invalid metadata with a 500, and sets nothing", async () => {
+    const response = await withMetadata({ sharedid: { SID_COOKIE_DOMAIN: 'saas-customer.example', SID_MAX_AGE_DAYS: 'forever' } });
+    expect(response.status).toBe(500);
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+});
