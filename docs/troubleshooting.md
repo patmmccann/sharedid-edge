@@ -12,6 +12,6 @@ Responses carry two debug headers: `X-SharedID-Source` (`cookie`, `recovery`, `p
 | Cookie set but gone after a week in Safari | Run `verify-deployment`: the endpoint's IP addresses probably don't match the site's. |
 | Cookie not readable by Prebid.js | The cookie name or domain doesn't match Prebid.js's `storage` config, or the page and the route are on hosts the cookie's domain doesn't cover. |
 | A 500 with "misconfigured" | A setting is invalid: `npm exec -w @sharedid-edge/cloudflare -- wrangler tail` shows the reason (on AWS, the function's CloudWatch logs; on Vercel, the project's logs; on Azure, the function app's logs; on Google Cloud, the function's logs in Cloud Logging). |
-| `getUserIdsAsync()` never resolves | The known Prebid.js issue under [Configure Prebid.js](prebid.md). |
+| `getUserIdsAsync()` never resolves | A Prebid.js issue in 11.48.0 and earlier, fixed by prebid/Prebid.js#16135; see [Configure Prebid.js](prebid.md). |
 
 Each adapter's README has a troubleshooting table for its platform, and each module's README one for the module.
