@@ -5,6 +5,7 @@ SharedID Edge as a **Cloudflare Worker**: the `/_sid/*` routes on your own site,
 ## Contents
 
 - [Architecture](#architecture)
+- [Worker or Snippet?](#worker-or-snippet)
 - [Build](#build)
 - [Deploy](#deploy)
 - [Configuration and secrets](#configuration-and-secrets)
@@ -26,6 +27,48 @@ Browser ──► www.example.com (proxied by Cloudflare)
 - **Routing:** the Worker runs on a **route** of your own zone, so it answers on your site's hostname and Cloudflare's IP addresses, the same ones that serve your pages. That's what lets Safari treat its cookies as first-party server-set cookies. A `workers.dev` hostname or a CNAME to another domain won't do.
 - **Statelessness:** the Worker keeps nothing between requests (no KV, Durable Objects or logs). Workers observability is off in `wrangler.jsonc`.
 - **Contents:** `src/index.ts` (the fetch handler, one handler per `env`), `src/platform.ts` (request data into `PlatformInfo`) and `wrangler.jsonc` (the route and every `SID_*` setting).
+
+## Worker or Snippet?
+
+On a Pro, Business or Enterprise plan, SharedID Edge can also run as a [Cloudflare Snippet](https://developers.cloudflare.com/rules/snippets/): the same code and the same `request.cf` data, but included in the plan at no extra cost, where a Worker past the free tier (100,000 requests a day) is billed per request. In exchange a Snippet has hard limits: 32 KB of code, 5 ms of CPU, no environment variables and no secrets. The Snippet build bundles your settings into the file and checks its size.
+
+| | Worker (the default, this page) | Snippet |
+| --- | --- | --- |
+| Plans | Every plan, Free included | Pro, Business, Enterprise |
+| Cost | Free up to 100,000 requests a day, then Workers Paid ($5 a month and usage) | Included in the plan |
+| Modules | Every module | Those that fit in 32 KB (below); never `ec` |
+| Secrets (`SID_MODULE_SECRETS`) | Yes (`wrangler secret`) | No: anything in a Snippet is readable by whoever can see it |
+| Changing a setting | Edit `wrangler.jsonc` (or the dashboard) and redeploy | Edit the configuration file, rebuild, and paste or upload the new file |
+| Deploying | `npm run deploy`, with versions and rollbacks | The dashboard, the API or Terraform; no versions, rollbacks or logs |
+
+Pick the Snippet when you're on a paid plan, your modules fit, and you don't need `ec`. Pick the Worker otherwise, or if you want to change settings without rebuilding.
+
+### What fits in a Snippet
+
+The size limit is checked on the minified file, before gzip (the bytes you deploy): Cloudflare doesn't say whether its 32 KB is measured compressed, so the build takes the safe reading. Sizes today:
+
+| `SID_MODULES` | Minified | Fits? |
+| --- | --- | --- |
+| none (SharedID only) | about 22 KB | Yes |
+| `reflect` | about 28 KB | Yes |
+| `ip,geo,bot` | about 29 KB | Yes |
+| `ip,reflect` | about 29 KB | Yes |
+| `ua` (the default parser: isbot, the bot flag only) | about 30 KB | Yes |
+| `ua` with Bowser (`"parser": "bowser"`) | about 64 KB | No: Bowser alone is about 33 KB. Use the default parser, or the Worker |
+| `ip,geo,reflect,bot,ua` | about 42 KB | No: drop `ua` and `reflect`, or use the Worker |
+
+The User-Agent parser is part of the size: the `ua` module bundles only `isbot` by default, and Bowser (the Worker's [Bowser build](#build)) only when `SID_MODULE_CONFIG` sets `{"ua":{"parser":"bowser"}}`. The build prints which one it bundled. You don't need to work this out: the build prints the size of each part, and when the result is over 32 KB it writes nothing, lists the modules by size, and names a set that fits.
+
+### Build and deploy the Snippet
+
+1. Build the repository (`npm ci && npm run build`, as in [Build](#build)).
+2. Copy `snippet.config.example.json` to `snippet.config.json` in this folder and set your values: the same `SID_*` settings as the Worker's `vars` ([Configuration](../../../docs/configuration.md)), with `SID_COOKIE_DOMAIN` required and `SID_MODULE_CONFIG` as JSON or a string. Keys starting with `$` are comments.
+3. Run `npm run build:snippet -w @sharedid-edge/cloudflare`. It validates the settings as a deployment would, bundles only the modules in `SID_MODULES`, checks the size, smoke-tests the result (a first sync sets the cookie, `/v1` reports no module errors), and writes `dist-snippet/snippet.js` and the rule expression to `dist-snippet/snippet-rule.txt`. It prints the trade-offs above on every build.
+4. In the dashboard, go to **Rules > Snippets**, create a snippet, and paste `dist-snippet/snippet.js` (or upload it with the API or Terraform).
+5. Set its **snippet rule** to your hostname and the base path, for example `(http.host eq "www.example.com" and starts_with(http.request.uri.path, "/_sid/"))`: the rule decides which requests run the Snippet, as the Worker's route does. Don't set it wider: a Snippet that answers every request takes your site offline.
+6. Verify as for the Worker ([Verify](#verify)), and turn it on in Prebid.js ([step 5](#5-turn-it-on-in-prebidjs)).
+
+To change a setting or update SharedID Edge, edit `snippet.config.json` or pull the new version, rebuild, and replace the Snippet's code. Don't run the Worker's route and the Snippet on the same paths.
 
 ## Build
 

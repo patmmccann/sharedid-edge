@@ -19,3 +19,4 @@ e2e/site/public/prebid/
 website/.vitepress/dist/
 website/.vitepress/cache/
 .cloudflare/
+packages/adapters/*/dist-snippet/
