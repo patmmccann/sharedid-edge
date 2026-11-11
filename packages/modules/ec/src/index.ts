@@ -100,6 +100,22 @@ export function ecPassphrase(secrets: Readonly<Record<string, string>>): string 
   return passphrase;
 }
 
+/**
+ * The EID `source` for an EC. Trusted Server defines none (it puts the EC in `user.id` of the OpenRTB request it builds),
+ * so this is the project's own until IAB Tech Lab registers one. Change it only with the README and the spec.
+ */
+export const EC_EID_SOURCE = 'ts.iabtechlab.com';
+
+/**
+ * The EC as an EID (`atype` 1, a cookie ID), both in the payload's `eids` and in `ortb2.user.ext.eids`, the fragment the
+ * page merges into Prebid.js. Never as `ortb2.user.id`: in Prebid.js first-party data that would be every bidder's
+ * exchange user ID.
+ */
+function ecOutput(id: string): Pick<ModuleResult, 'eids' | 'ortb2'> {
+  const eid = { source: EC_EID_SOURCE, uids: [{ id, atype: 1 }] };
+  return { eids: [eid], ortb2: { user: { ext: { eids: [eid] } } } };
+}
+
 function ecCookie(value: string, maxAgeSeconds: number, settings: EcModuleConfig): ModuleCookie {
   return { name: EC_COOKIE, value, maxAgeSeconds, httpOnly: true, ...(settings.domain === undefined ? {} : { domain: `.${settings.domain}` }) };
 }
@@ -115,16 +131,16 @@ async function run({ platform, consent, cookies, optedOut, config, secrets }: Mo
   }
   const passphrase = ecPassphrase(secrets);
   // An existing EC is used as is; like Trusted Server, it isn't refreshed.
-  if (isValidEcId(existing)) return { ortb2: { user: { id: existing } } };
+  if (isValidEcId(existing)) return ecOutput(existing);
   const ip = platform.clientIp === undefined ? undefined : parseIp(platform.clientIp);
   if (ip === undefined) return undefined;
   const id = `${await ecPrefix(passphrase, normalizeIp(ip))}.${randomSuffix()}`;
-  return { ortb2: { user: { id } }, cookies: [ecCookie(id, EC_MAX_AGE_SECONDS, settings)] };
+  return { ...ecOutput(id), cookies: [ecCookie(id, EC_MAX_AGE_SECONDS, settings)] };
 }
 
 /**
  * The `ec` module: Trusted Server Edge Cookies. Off until listed in `SID_MODULES`, and needs a passphrase in
- * `SID_MODULE_SECRETS`. It sets the `HttpOnly` `ts-ec` cookie and returns the EC as `ortb2.user.id`.
+ * `SID_MODULE_SECRETS`. It sets the `HttpOnly` `ts-ec` cookie and returns the EC as an EID (`EC_EID_SOURCE`).
  */
 export const ecModule: EdgeModule = defineModule({
   name: 'ec',
