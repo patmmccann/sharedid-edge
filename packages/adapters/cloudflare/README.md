@@ -187,7 +187,15 @@ A host that serves its customers' sites through [Cloudflare for SaaS](https://de
 
 **With [Workers for Platforms](https://developers.cloudflare.com/cloudflare-for-platforms/workers-for-platforms/)** (a paid add-on), one Worker per publisher, picked by a dispatch Worker:
 
-1. Create a dispatch namespace, for example `sharedid`.
+1. Create a dispatch namespace, for example `sharedid`, and **put it in trusted mode** before deploying into it. Namespaces are untrusted by default, and in untrusted mode Workers get no [`request.cf`](https://developers.cloudflare.com/cloudflare-for-platforms/workers-for-platforms/reference/worker-isolation/). Without it, SharedID Edge loses the visitor's location, `isEU` and Bot Management data. An EU visitor whose request carries no `gdpr` flag or TC string would then get cookies, where the location would have ruled them out ([Consent](../../../docs/consent.md)). Turn it on with the API (Cloudflare documents no Wrangler command or dashboard setting for it):
+
+   ```sh
+   curl -X PUT "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/workers/dispatch/namespaces/sharedid" \
+     -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+     --data '{"name": "sharedid", "trusted_workers": true}'
+   ```
+
+   Workers deployed into the namespace before that keep running without `request.cf` until you redeploy them. In trusted mode, the namespace's Workers also share one Cache API space; SharedID Edge doesn't use the Cache API, so that doesn't affect it, but check before putting other Workers in the same namespace.
 2. For each publisher, deploy this package's Worker into it, with that publisher's `vars` and no `routes`: `npx wrangler deploy --dispatch-namespace sharedid --name <publisher> -c <publisher>.jsonc`. Name it as you like; the dispatch Worker looks it up.
 3. Deploy a dispatch Worker on your SaaS zone, with the route `*/_sid/*` (the base path, if you changed `SID_BASE_PATH`) and the namespace bound as `DISPATCHER`. It picks the publisher's Worker from the hostname, using the custom hostname's [custom metadata](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/domain-support/custom-metadata/) (`request.cf.hostMetadata`, which your Cloudflare account team enables, on subdomain-style custom hostnames) or a Workers KV map:
 
@@ -205,7 +213,7 @@ A host that serves its customers' sites through [Cloudflare for SaaS](https://de
 
 4. Verify each hostname with `npm run verify-deployment -- --site https://www.publisher.example` ([Verify](#verify)): it checks that the endpoint shares the site's IP addresses and that the cookies are server-set and `Secure`.
 
-Pass the incoming `request` on as it is, so the publisher's Worker gets the visitor's `CF-Connecting-IP` and `request.cf`. Updating SharedID Edge means redeploying each publisher's Worker into the namespace; a script over your list of publishers does it.
+Pass the incoming `request` on as it is, so the publisher's Worker gets the visitor's `CF-Connecting-IP`, and, in a trusted namespace (step 1), `request.cf`. To check, call `/_sid/v1` on a hosted site with the `geo` module on: `device.geo` should show your own location. Updating SharedID Edge means redeploying each publisher's Worker into the namespace; a script over your list of publishers does it.
 
 **With one shared Worker,** configured per hostname: not possible yet, since a deployment has one configuration. Per-hostname settings in core would allow it, without Workers for Platforms ([#110](https://github.com/patmmccann/sharedid-edge/issues/110)).
 
