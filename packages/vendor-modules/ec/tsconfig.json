@@ -8,5 +8,5 @@
     "lib": ["ES2023", "WebWorker"]
   },
   "include": ["src"],
-  "references": [{ "path": "../../core" }, { "path": "../ip" }]
+  "references": [{ "path": "../../core" }, { "path": "../../modules/ip" }]
 }

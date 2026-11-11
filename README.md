@@ -63,7 +63,7 @@ pbjs.setConfig({
 Modules are built in, and none runs until you list it in `SID_MODULES`. See [Modules](docs/modules.md).
 
 <!-- generated:modules:start -->
-[`bot`](packages/modules/bot/README.md): bot and staff-traffic signals; [`ec`](packages/modules/ec/README.md): Trusted Server Edge Cookies (⚠ IP-derived ID); [`geo`](packages/modules/geo/README.md): the visitor's location as `device.geo`; [`ip`](packages/modules/ip/README.md): the real client IP; [`reflect`](packages/modules/reflect/README.md): keep other first-party cookies durable; [`ua`](packages/modules/ua/README.md): device data and the bot flag.
+[`bot`](packages/modules/bot/README.md): bot and staff-traffic signals; [`geo`](packages/modules/geo/README.md): the visitor's location as `device.geo`; [`ip`](packages/modules/ip/README.md): the real client IP; [`reflect`](packages/modules/reflect/README.md): keep other first-party cookies durable; [`ua`](packages/modules/ua/README.md): device data and the bot flag; [`ec`](packages/vendor-modules/ec/README.md): Trusted Server Edge Cookies (vendor module, offline; ⚠ IP-derived ID).
 <!-- generated:modules:end -->
 
 ## Documentation

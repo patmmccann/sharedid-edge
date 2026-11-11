@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import type { BuildOption } from './cases.js';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
@@ -157,6 +157,13 @@ export async function startTarget(target: TargetName, caseConfig: Readonly<Recor
   // the default here; a case sets a domain to test one, or "" to test the error for a missing one.
   const config: Readonly<Record<string, string>> = { SID_COOKIE_DOMAIN: 'host-only', ...caseConfig };
   const bowser = build.includes('bowser');
+  // With vendor-modules, every module in packages/vendor-modules/ is added to the built-in ones, as a deployer adds
+  // them: the bundled targets load deploy-vendor/ (built by the root conformance:* scripts), the Node.js server gets
+  // SID_MODULE_PACKAGES, and the Worker a generated entry point (scripts/module-list.mjs).
+  const vendor = build.includes('vendor-modules');
+  const bundle = bowser ? 'deploy-bowser' : vendor ? 'deploy-vendor' : 'deploy';
+  const moduleList = (...args: string[]): string => execFileSync(process.execPath, [join(ROOT, 'scripts/module-list.mjs'), ...args], { encoding: 'utf8', cwd: join(ROOT, 'packages/adapters/cloudflare') }).trim();
+  const vendorPackages = vendor ? { SID_MODULE_PACKAGES: moduleList('--print-vendor-modules') } : {};
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${String(port)}`;
   let child: ChildProcess;
@@ -164,21 +171,21 @@ export async function startTarget(target: TargetName, caseConfig: Readonly<Recor
   let upstream: { readonly child: ChildProcess; readonly url: string } | undefined;
   if (target === 'node') {
     child = spawn(process.execPath, [join(ROOT, 'packages/adapters/node/dist/cli.js')], {
-      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), HOST: '127.0.0.1', ...config },
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), HOST: '127.0.0.1', ...vendorPackages, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else if (target === 'lambda') {
     // The bundled Lambda handler behind a local CloudFront and function URL stand-in (lambda-emulator.ts). The
     // public origin is the emulator's own http URL, so cookies aren't Secure, as for the other local targets.
     child = spawn(process.execPath, [join(ROOT, 'conformance/dist/lambda-emulator.js')], {
-      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_LAMBDA_BUNDLE: bowser ? 'deploy-bowser' : 'deploy', ...config },
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_LAMBDA_BUNDLE: bundle, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else if (target === 'vercel') {
     // The bundled Vercel adapter behind a local stand-in for Vercel's proxy (vercel-emulator.ts), which sets the
     // x-real-ip and x-vercel-ip-* headers. Plain http, so cookies aren't Secure, as for the other local targets.
     child = spawn(process.execPath, [join(ROOT, 'conformance/dist/vercel-emulator.js')], {
-      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_VERCEL_BUNDLE: bowser ? 'deploy-bowser' : 'deploy', ...config },
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_VERCEL_BUNDLE: bundle, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else if (target === 'azure') {
@@ -190,7 +197,7 @@ export async function startTarget(target: TargetName, caseConfig: Readonly<Recor
         PATH: process.env['PATH'] ?? '',
         PORT: String(port),
         SID_PUBLIC_ORIGIN: baseUrl,
-        CONFORMANCE_AZURE_BUNDLE: bowser ? 'deploy-bowser' : 'deploy',
+        CONFORMANCE_AZURE_BUNDLE: bundle,
         AZURE_FRONT_DOOR_ID: AZURE_FRONT_DOOR_ID,
         SID_FRONT_DOOR_ID: AZURE_FRONT_DOOR_ID,
         SID_LOCATION_HEADERS: JSON.stringify(AZURE_LOCATION_HEADERS),
@@ -207,7 +214,7 @@ export async function startTarget(target: TargetName, caseConfig: Readonly<Recor
     const framework = join(ROOT, 'node_modules/@google-cloud/functions-framework/build/src/main.js');
     upstream = {
       url: `http://127.0.0.1:${String(functionPort)}`,
-      child: spawn(process.execPath, [framework, '--target=sharedidEdge', `--source=${join(ROOT, 'packages/adapters/gcp-functions', bowser ? 'deploy-bowser' : 'deploy')}`, `--port=${String(functionPort)}`], {
+      child: spawn(process.execPath, [framework, '--target=sharedidEdge', `--source=${join(ROOT, 'packages/adapters/gcp-functions', bundle)}`, `--port=${String(functionPort)}`], {
         env: { PATH: process.env['PATH'] ?? '', SID_PUBLIC_ORIGIN: baseUrl, SID_LOCATION_HEADERS: location, ...config },
         stdio: ['ignore', 'ignore', 'inherit']
       })
@@ -220,7 +227,8 @@ export async function startTarget(target: TargetName, caseConfig: Readonly<Recor
     // `wrangler dev` runs the worker in workerd, the Workers runtime, locally; no Cloudflare account needed.
     const vars = Object.entries(config).flatMap(([key, value]) => ['--var', `${key}:${value}`]);
     // The Bowser build is its own entry point, src/bowser.ts, as in the Worker's dev:bowser and deploy:bowser scripts.
-    const entry = bowser ? ['src/bowser.ts'] : [];
+    if (vendor) moduleList('.sharedid-modules', '--worker', '--vendor-modules');
+    const entry = bowser ? ['src/bowser.ts'] : vendor ? ['.sharedid-modules/worker.ts'] : [];
     const wrangler = join(ROOT, 'node_modules/wrangler/bin/wrangler.js');
     child = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'error', '--show-interactive-dev-session=false', ...entry, ...vars], {
       cwd: join(ROOT, 'packages/adapters/cloudflare'),

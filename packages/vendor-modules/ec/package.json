@@ -30,14 +30,16 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/patmmccann/sharedid-edge.git",
-    "directory": "packages/modules/ec"
+    "directory": "packages/vendor-modules/ec"
   },
   "sharedidEdge": {
     "kind": "module",
     "name": "ec",
     "title": "Trusted Server Edge Cookies",
     "summary": "Trusted Server Edge Cookies: sets `ts-ec` and returns it as an EID. Off unless you turn it on",
+    "export": "ecModule",
     "ipDerived": true,
+    "network": "none",
     "settings": "`domain`; secret `passphrase`",
     "routes": [
       "v1",

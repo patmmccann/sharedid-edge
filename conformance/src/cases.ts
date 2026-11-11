@@ -39,9 +39,10 @@ export interface Case {
 
 /**
  * A build option the target must be built with. `bowser`: Bowser in the ua module (the Worker's and Lambda's Bowser
- * builds; the Node.js server always has it).
+ * builds; the Node.js server always has it). `vendor-modules`: every module in packages/vendor-modules/ added to the
+ * built-in ones, as a deployer adds them (`ec`, and vendor modules).
  */
-export type BuildOption = 'bowser';
+export type BuildOption = 'bowser' | 'vendor-modules';
 
 export interface CaseFile {
   readonly file: string;
@@ -81,7 +82,7 @@ const isInteger: Check = v => Number.isInteger(v);
 const isStringArray: Check = v => Array.isArray(v) && v.every(isString);
 const isStringRecord: Check = v => isObject(v) && Object.values(v).every(isString);
 const isAnything: Check = () => true;
-const isBuildOption = (v: unknown): v is BuildOption => v === 'bowser';
+const isBuildOption = (v: unknown): v is BuildOption => v === 'bowser' || v === 'vendor-modules';
 
 /** Each field the schema allows, with the type check it must pass. Keep in step with case-file.schema.json. */
 const REQUEST_FIELDS: Readonly<Record<string, Check>> = {
@@ -130,7 +131,8 @@ export function validateCaseFile(file: string, value: unknown): CaseFile {
   const { description, config, build = [], cases } = value;
   if (typeof description !== 'string') fail(file, '"description" must be a string');
   if (!isStringRecord(config)) fail(file, '"config" must be an object of strings');
-  if (!Array.isArray(build) || !build.every(isBuildOption)) fail(file, '"build" must be an array of build options ("bowser")');
+  if (!Array.isArray(build) || !build.every(isBuildOption)) fail(file, '"build" must be an array of build options ("bowser", "vendor-modules")');
+  if (build.includes('bowser') && build.includes('vendor-modules')) fail(file, '"build" can\'t combine "bowser" and "vendor-modules": the targets have no bundle with both');
   if (!Array.isArray(cases) || cases.length === 0) fail(file, '"cases" must be a non-empty array');
   cases.forEach((c: unknown, i) => {
     const where = `cases[${String(i)}]`;

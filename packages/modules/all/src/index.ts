@@ -1,6 +1,5 @@
 import type { EdgeModule } from '@sharedid-edge/core';
 import { botModule } from '@sharedid-edge/module-bot';
-import { ecModule } from '@sharedid-edge/module-ec';
 import { geoModule } from '@sharedid-edge/module-geo';
 import { ipModule } from '@sharedid-edge/module-ip';
 import { reflectModule } from '@sharedid-edge/module-reflect';
@@ -17,4 +16,4 @@ import { uaModule } from '@sharedid-edge/module-ua';
  * Only project modules (`packages/modules/`) belong here. Vendor modules aren't built in: a deployer adds one by
  * passing its own list, for example `[...builtInModules, vendorModule]`.
  */
-export const builtInModules: readonly EdgeModule[] = Object.freeze([ipModule, ecModule, geoModule, reflectModule, botModule, uaModule]);
+export const builtInModules: readonly EdgeModule[] = Object.freeze([ipModule, geoModule, reflectModule, botModule, uaModule]);

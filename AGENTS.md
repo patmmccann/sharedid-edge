@@ -21,8 +21,8 @@ The packages, generated from their `package.json` by `node scripts/docs.mjs --wr
 
 <!-- generated:packages:start -->
 - **Adapters** (`packages/adapters/`): [`aws-lambda/`](packages/adapters/aws-lambda/README.md): AWS (Lambda and CloudFront); [`azure-functions/`](packages/adapters/azure-functions/README.md): Azure (Functions and Front Door); [`cloudflare/`](packages/adapters/cloudflare/README.md): Cloudflare Workers; [`gcp-functions/`](packages/adapters/gcp-functions/README.md): Google Cloud (Cloud Run functions and Load Balancing); [`node/`](packages/adapters/node/README.md): Node.js (self-hosted); [`vercel/`](packages/adapters/vercel/README.md): Vercel.
-- **Modules** (`packages/modules/`): [`bot/`](packages/modules/bot/README.md): bot and staff-traffic signals; [`ec/`](packages/modules/ec/README.md): Trusted Server Edge Cookies; [`geo/`](packages/modules/geo/README.md): the visitor's location as `device.geo`; [`ip/`](packages/modules/ip/README.md): the real client IP; [`reflect/`](packages/modules/reflect/README.md): keep other first-party cookies durable; [`ua/`](packages/modules/ua/README.md): device data and the bot flag; and [`all/`](packages/modules/all/README.md): the built-in list.
-- **Vendor modules** (`packages/vendor-modules/`): none yet.
+- **Modules** (`packages/modules/`): [`bot/`](packages/modules/bot/README.md): bot and staff-traffic signals; [`geo/`](packages/modules/geo/README.md): the visitor's location as `device.geo`; [`ip/`](packages/modules/ip/README.md): the real client IP; [`reflect/`](packages/modules/reflect/README.md): keep other first-party cookies durable; [`ua/`](packages/modules/ua/README.md): device data and the bot flag; and [`all/`](packages/modules/all/README.md): the built-in list.
+- **Vendor modules** (`packages/vendor-modules/`): [`ec/`](packages/vendor-modules/ec/README.md): Trusted Server Edge Cookies.
 <!-- generated:packages:end -->
 
 ## TypeScript is strict, everywhere
@@ -62,7 +62,7 @@ TypeScript 6.0 is the main compiler because `typescript-eslint` doesn't support 
 Every pull request that adds or changes something users touch ships its documentation in the same PR. Reviewers should treat missing docs as a blocking gap.
 
 - **Every package has its own `README.md`** (also its npm page). This covers modules, adapters and platform packages alike.
-  - **A module's README** covers: turning it on, the response shape with JSON examples (when it returns data, and when it doesn't), consent rules, settings and secrets, and troubleshooting. **Per-module response examples live here,** not in `docs/responses.md`. Models: `packages/modules/ip/README.md` and `packages/modules/ec/README.md`. Vendor modules add the disclosures in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md).
+  - **A module's README** covers: turning it on, the response shape with JSON examples (when it returns data, and when it doesn't), consent rules, settings and secrets, and troubleshooting. **Per-module response examples live here,** not in `docs/responses.md`. Models: `packages/modules/ip/README.md` and `packages/vendor-modules/ec/README.md`. Vendor modules add the disclosures in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md).
   - **An adapter's README** covers: architecture, build, the deployment walkthrough (prerequisites to verifying, working without reading anything else), configuration and secrets, how platform data maps to `PlatformInfo`, verifying, and troubleshooting.
 - **Where each kind of doc goes:**
 
@@ -96,7 +96,7 @@ Behaviour that must not regress, each covered by tests:
 - An existing valid ID is never replaced; the `HttpOnly` recovery copy restores a re-minted one.
 - The worker answers only its own routes and never forwards requests to the origin.
 - Opt-out, Global Privacy Control, COPPA and denied consent delete existing ID cookies and set none.
-- The SharedID is random, and nothing about requests is logged. Core and the project's own modules derive no ID from the IP address or other request data. IP-derived IDs are for vendor modules, maintained by their vendors under [the vendor rules](packages/vendor-modules/AGENTS.md#ip-derived-ids): opt-in, declared (`ipDerived` in their `sharedidEdge` block) and disclosed. The project treats the `ec` module (`packages/modules/ec`) the same way: it's IAB Tech Lab's open-source Trusted Server Edge Cookies, ported here as specified, and its ID prefix is an HMAC of the client IP. Don't add IP-derived IDs to core or a project module, and never make one the default.
+- The SharedID is random, and nothing about requests is logged. Core and the project's own modules derive no ID from the IP address or other request data. IP-derived IDs are for vendor modules, maintained by their vendors under [the vendor rules](packages/vendor-modules/AGENTS.md#ip-derived-ids): opt-in, declared (`ipDerived` in their `sharedidEdge` block) and disclosed. The `ec` module (`packages/vendor-modules/ec`) is one, maintained by the project: IAB Tech Lab's open-source Trusted Server Edge Cookies, ported here as specified, whose ID prefix is an HMAC of the client IP. Don't add IP-derived IDs to core or a project module, and never make one the default.
 - `Access-Control-Allow-Origin` is never `*`.
 
 ## Conventions

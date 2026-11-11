@@ -37,5 +37,8 @@
     "kind": "adapter",
     "platform": "Node.js (self-hosted)",
     "summary": "A Node.js server behind the web server or load balancer that serves your site."
+  },
+  "devDependencies": {
+    "@sharedid-edge/module-ec": "0.1.0"
   }
 }

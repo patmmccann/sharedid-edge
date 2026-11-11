@@ -21,9 +21,20 @@ It sets the `ts-ec` cookie on the publisher's domain, on Prebid.js's `/_sid/sync
 
 ## Turning it on
 
-The module is built into the Cloudflare Worker, the Node.js server and the AWS Lambda adapter. It does nothing until you list it in `SID_MODULES` and give it a passphrase.
+`ec` is a [vendor module](../README.md), maintained by the project: it isn't built into the adapters, because its ID is derived from the IP address. You add it to your build, then list it in `SID_MODULES` and give it a passphrase. Until then, `SID_MODULES=ec` only reports it as `skipped` (`not installed`).
 
-1. **Create a passphrase** of at least 32 bytes, and keep it secret. For example:
+1. **Add it to your build,** as `@sharedid-edge/module-ec#ecModule`:
+
+   | Platform | How |
+   | --- | --- |
+   | Cloudflare Worker | In `packages/adapters/cloudflare`: `node ../../../scripts/module-list.mjs .sharedid-modules --worker --module @sharedid-edge/module-ec#ecModule`, and deploy with `npx wrangler deploy .sharedid-modules/worker.ts` in step 5 |
+   | AWS Lambda, Vercel, Azure Functions, Google Cloud | `npm run bundle -w @sharedid-edge/<adapter> -- --module @sharedid-edge/module-ec#ecModule` in place of `npm run bundle` |
+   | Node.js server | `SID_MODULE_PACKAGES=@sharedid-edge/module-ec#ecModule` |
+   | Cloudflare Snippet | Not available: it needs a secret, and Snippets have none |
+
+   It adds about 1 KB to a bundle, gzipped.
+
+2. **Create a passphrase** of at least 32 bytes, and keep it secret. For example:
 
    ```sh
    openssl rand -hex 32
@@ -31,7 +42,7 @@ The module is built into the Cloudflare Worker, the Node.js server and the AWS L
 
    Use the same passphrase as your Trusted Server deployment if you want both to derive the same prefix for the same address.
 
-2. **Store it as a secret.** Put it in `SID_MODULE_SECRETS`, never in `vars`:
+3. **Store it as a secret.** Put it in `SID_MODULE_SECRETS`, never in `vars`:
 
    ```sh
    npm exec -w @sharedid-edge/cloudflare -- wrangler secret put SID_MODULE_SECRETS
@@ -40,7 +51,7 @@ The module is built into the Cloudflare Worker, the Node.js server and the AWS L
 
    For local development, put the same line in `packages/adapters/cloudflare/.dev.vars` (which git ignores) as `SID_MODULE_SECRETS={"ec":{"passphrase":"…"}}`. With the Node.js server, set the `SID_MODULE_SECRETS` environment variable. On AWS Lambda, pass it as the SAM template's `SidModuleSecrets` parameter (see [the Lambda adapter's README](../../adapters/aws-lambda/README.md#secrets)).
 
-3. **Enable the module, and set your domain**, in `packages/adapters/cloudflare/wrangler.jsonc`:
+4. **Enable the module, and set your domain**, in `packages/adapters/cloudflare/wrangler.jsonc`:
 
    ```jsonc
    "vars": {
@@ -49,7 +60,7 @@ The module is built into the Cloudflare Worker, the Node.js server and the AWS L
    }
    ```
 
-4. **Deploy** (`npm exec -w @sharedid-edge/cloudflare -- wrangler deploy`), then check:
+5. **Deploy** (on Cloudflare, `npx wrangler deploy .sharedid-modules/worker.ts` in `packages/adapters/cloudflare`), then check:
 
    ```sh
    curl -si https://www.example.com/_sid/v1 | grep -i '^set-cookie: ts-ec'
@@ -60,7 +71,7 @@ The module is built into the Cloudflare Worker, the Node.js server and the AWS L
    # set-cookie: ts-ec=…; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
    ```
 
-5. **On the page,** nothing is needed to set the cookie if Prebid.js calls `/_sid/sync` (its `pixelUrl`, with `extend: true`). To send the EC to bidders, merge the `/_sid/v1` payload's `ortb2` into Prebid.js before the auction, as [Configure Prebid.js](../../../docs/prebid.md#module-output-_sidv1) shows. The EC then reaches bidders in `user.ext.eids`, next to the IDs from Prebid.js's User ID modules.
+6. **On the page,** nothing is needed to set the cookie if Prebid.js calls `/_sid/sync` (its `pixelUrl`, with `extend: true`). To send the EC to bidders, merge the `/_sid/v1` payload's `ortb2` into Prebid.js before the auction, as [Configure Prebid.js](../../../docs/prebid.md#module-output-_sidv1) shows. The EC then reaches bidders in `user.ext.eids`, next to the IDs from Prebid.js's User ID modules.
 
 ## What it does
 
@@ -173,14 +184,15 @@ Where Trusted Server's draft specification and its code differ, this module foll
 
 ## Using it in code
 
-The module and its building blocks are exported for other adapters and for tests:
+The module and its building blocks are exported for your own builds and for tests. Pass it with the built-in modules, `[...builtInModules, ecModule]`:
 
 ```ts
 import { createHandler, resolveConfig } from '@sharedid-edge/core';
+import { builtInModules } from '@sharedid-edge/modules';
 import { ecModule, ecPrefix, normalizeIp, isValidEcId } from '@sharedid-edge/module-ec';
 import { parseIp } from '@sharedid-edge/module-ip';
 
-const handler = createHandler({ config: resolveConfig(env), modules: [ecModule] });
+const handler = createHandler({ config: resolveConfig(env), modules: [...builtInModules, ecModule] });
 
 const ip = parseIp('2001:db8:85a3::1');
 if (ip) console.log(await ecPrefix(passphrase, normalizeIp(ip)));   // 64 hex characters
