@@ -212,8 +212,9 @@ Setting it up on another zone (a fork, say):
 
 1. Add the zone to a Cloudflare account, proxied. For each test hostname, add a proxied `AAAA` record with the content `100::`: the Workers answer every request, so no origin is needed.
 2. Change the hostnames and `zone_name` in the `env` section of `wrangler.jsonc`, `e2e/site/wrangler.jsonc` and the workflow.
-3. Create an API token (**My Profile → API Tokens**, or the account's **API Tokens**) with **Account → Workers Scripts: Edit**, **Zone → Workers Routes: Edit** and **Zone → Zone: Read**, for the account's zones.
-4. Add it and the account ID as the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The workflow fails at once, saying so, when either is missing.
+3. Create an API token with **Workers Scripts: Edit** on the account, and **Workers Routes: Edit** and **Zone: Read** on the zone. Under **My Profile → API Tokens**, the *Edit Cloudflare Workers* template has these. An account-owned token (the account's **API Tokens**) calls the zone a *domain*: the route permissions need a policy for the domain, not the account.
+4. Add the three routes once, on the zone (**Workers Routes → Add route** in the zone's dashboard, or `POST /zones/<zone id>/workers/routes`), each pointing at its Worker name. Wrangler attaches routes through an account-level API call that a token scoped to the zone can't make. When the routes are already in place, `wrangler deploy` leaves them as they are and the deploy succeeds.
+5. Add the token and the account ID as the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The workflow fails at once, saying so, when either is missing.
 
 ## Troubleshooting
 
