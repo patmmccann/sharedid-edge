@@ -192,7 +192,6 @@ describe('routes', () => {
       ['_pubcid_optout', undefined, '0']
     ]);
   });
-  });
 });
 
 describe('v1 payload', () => {
