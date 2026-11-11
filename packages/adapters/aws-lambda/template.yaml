@@ -197,15 +197,20 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
-  # What CloudFront sends to the function: every cookie and query parameter, the viewer's address and location,
-  # and the headers the handler reads (Origin for CORS on /v1, Sec-GPC for Global Privacy Control). The Host header
-  # is not forwarded: with origin access control it must be the function URL's own.
-  OriginRequestPolicy:
-    Type: AWS::CloudFront::OriginRequestPolicy
+  # Forward all viewer headers, cookies and query strings while omitting Host so CloudFront can sign the
+  # Lambda function URL with origin access control. This also preserves User-Agent and Sec-CH-UA* for the ua module.
+  # The managed policy avoids CloudFront's 10-header whitelist quota.
+  OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+
+  SharedIdCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
     Properties:
-      OriginRequestPolicyConfig:
-        Name: !Sub ${AWS::StackName}-viewer
-        Comment: SharedID Edge, cookies, query strings and the CloudFront viewer headers
+      CachePolicyConfig:
+        Name: !Sub ${AWS::StackName}-sharedid
+        Comment: SharedID Edge, zero TTL; preserve viewer User-Agent for ua
+        DefaultTTL: 0
+        MaxTTL: 0
+        MinTTL: 0
         CookiesConfig:
           CookieBehavior: all
         QueryStringsConfig:
@@ -213,18 +218,7 @@ Resources:
         HeadersConfig:
           HeaderBehavior: whitelist
           Headers:
-            - CloudFront-Viewer-Address
-            - CloudFront-Viewer-Country
-            - CloudFront-Viewer-Country-Region
-            # The rest of CloudFront's geolocation headers, for the geo module.
-            - CloudFront-Viewer-City
-            - CloudFront-Viewer-Postal-Code
-            - CloudFront-Viewer-Metro-Code
-            - CloudFront-Viewer-Latitude
-            - CloudFront-Viewer-Longitude
-            - CloudFront-Viewer-Time-Zone
-            - Origin
-            - Sec-GPC
+            - User-Agent
 
   Distribution:
     Type: AWS::CloudFront::Distribution
@@ -269,9 +263,9 @@ Resources:
             AllowedMethods: [GET, HEAD, OPTIONS]
             CachedMethods: [GET, HEAD]
             Compress: true
-            # Managed CachingDisabled: responses carry per-visitor cookies.
-            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
-            OriginRequestPolicyId: !Ref OriginRequestPolicy
+            # Zero TTL prevents edge caching while preserving viewer User-Agent for the ua module.
+            CachePolicyId: !Ref SharedIdCachePolicy
+            OriginRequestPolicyId: !Ref OriginRequestPolicyId
 
 Outputs:
   FunctionUrl:
@@ -284,11 +278,11 @@ Outputs:
     Description: Attach this origin access control to that origin.
     Value: !GetAtt OriginAccessControl.Id
   OriginRequestPolicyId:
-    Description: The origin request policy for the /_sid/* behaviour.
-    Value: !Ref OriginRequestPolicy
+    Description: AWS managed AllViewerExceptHostHeader origin request policy for the /_sid/* behaviour.
+    Value: b689b0a8-53d0-40ab-baf2-68738e2966ac
   CachePolicyId:
-    Description: The managed CachingDisabled cache policy, for the /_sid/* behaviour.
-    Value: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+    Description: The custom zero-TTL cache policy that preserves viewer User-Agent, for the /_sid/* behaviour.
+    Value: !Ref SharedIdCachePolicy
   DistributionDomainName:
     Condition: CreateDistribution
     Description: The new distribution's domain; point your site's hostnames at it.
