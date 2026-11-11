@@ -56,7 +56,7 @@ pbjs.setConfig({
 });
 ```
 
-[Configure Prebid.js](docs/prebid.md) explains each option, two Prebid.js issues fixed after 11.48.0, and how to pass the modules' output to the auction.
+[Configure Prebid.js](docs/prebid.md) explains each option, three Prebid.js issues fixed in 11.49.0, and how to pass the modules' output to the auction.
 
 ## Modules
 
