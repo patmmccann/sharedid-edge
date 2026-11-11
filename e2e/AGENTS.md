@@ -1,6 +1,6 @@
 # e2e
 
-Browser tests proving SharedID Edge works with **unmodified** Prebid.js, in Chromium, Firefox and WebKit, through Playwright.
+Browser tests proving SharedID Edge works with **unmodified** Prebid.js, in Chromium, Firefox and WebKit, through Playwright, and in real Safari on macOS, through `safaridriver` ([Real Safari](#real-safari)).
 
 - Separate install (`npm ci` in this folder), so the main workspace doesn't pull in Prebid.js and browsers. It imports the built core (`../packages/core/dist`), so run `npm run build` at the root first.
 - `server.ts` serves the test page (`site/public/index.html`), Prebid.js and `/_sid/*` (the core handler) from one origin. It runs with `SID_SYNC_CACHE_SECONDS=0` so every visit reaches the endpoint, and with the `reflect` module (`uid1`, and `_ga` with `restore`), which runs on Prebid.js's `/_sid/sync` calls; it imports the built module (`../packages/modules/reflect/dist`).
@@ -47,4 +47,22 @@ The `denied` string is the same without purpose 1 in either purpose or publisher
 - **Live:** `E2E_BASE_URL=https://e2e.sharedid.dev E2E_COOKIE_DOMAIN=sharedid.dev npx playwright test` runs the same tests against the Cloudflare test zone, with no local server. `site/` is the live test site (a static-assets Worker); the [Live tests workflow](../.github/workflows/e2e-cloudflare.yml) deploys it with the latest Prebid.js copied into `site/public/prebid/` (gitignored). See [Live tests](../packages/adapters/cloudflare/README.md#live-tests).
 - Type-check with `npm run typecheck` (strict, the root `tsconfig.base.json`).
 - **CI installs browsers with `install-browser.sh`,** never `npx playwright install --with-deps` directly: it installs the browser from Playwright's CDN first, then its system packages through apt with a time limit, and carries on with the runner image's packages when apt can't reach the Ubuntu mirrors (which happens on GitHub's runners for hours at a time, each apt run hanging for minutes).
-- Run one browser with `npx playwright test --project=chromium` (or `firefox`, `webkit`). CI runs each browser as its own job: `e2e-chromium` first, then Firefox and WebKit (the `e2e` matrix), which start only once Chromium passes. Each job installs only its own browser.
+- Run one browser with `npx playwright test --project=chromium` (or `firefox`, `webkit`). CI runs each browser as its own job: `e2e-chromium` first, then Firefox and WebKit (the `e2e` matrix) and real Safari (`e2e-safari`, below), which start only once Chromium passes. Each job installs only its own browser.
+
+## Real Safari
+
+Playwright's WebKit isn't Safari: it doesn't apply Safari's privacy rules, and its cookie timing differs. `safari/safari.test.ts` runs the core tests in **real Safari**, through `safaridriver` (WebDriver, with `selenium-webdriver`), on the same page, Prebid.js bundle and consent scenarios: a first visit gets server-set `_pubcid` and `_pubcid_sv`, one of each, on the cookie domain; a cleared script cookie is restored, in the cookie and in Prebid.js on the next page view; `denied` stores nothing and the endpoint deletes what an earlier visit left; `notApplicable` works.
+
+- **CI:** the `e2e-safari` job in `ci.yml`, on a `macos-latest` runner, for every pull request (no account needed), after `e2e-chromium`. It isn't in the live workflow yet.
+- **On a Mac,** after `npm run build` at the root and `npm ci` here:
+
+  ```sh
+  sudo safaridriver --enable                                   # once: allow remote automation
+  echo "127.0.0.1 e2e.sharedid.test" | sudo tee -a /etc/hosts  # once: Safari can't use the proxy trick below
+  npm run test:safari
+  ```
+
+  It builds the Prebid.js bundle, starts `server.ts` on port 4310 and browses `http://e2e.sharedid.test:4310` (cookie domain `sharedid.test`). `E2E_BASE_URL=https://e2e.sharedid.dev E2E_COOKIE_DOMAIN=sharedid.dev npm run test:safari` runs it against the live site instead.
+- **No network events in WebDriver:** the tests see the page's `/_sid/sync` call through resource timing (`performance.getEntriesByType('resource')`), and cookies, HttpOnly ones included, through WebDriver's cookie commands.
+- **A new Safari session per test.** In Safari, WebDriver's `deleteAllCookies()` leaves cookies on the parent domain (`.sharedid.test`), so it can't reset the ID cookies; the tests clear the script cookie from the page, as the Playwright tests use `clearCookies`.
+- **The pixel-cookie race.** `sharedIdSystem` reads `document.cookie` in the pixel's load handler. Playwright's WebKit on Linux almost always runs that handler before the pixel response's `Set-Cookie` shows in `document.cookie` (it shows by the next task), so on the page view where the endpoint restores an id, Prebid.js keeps its own new id in memory; on Windows that's rare, and real Safari didn't show it in 30 runs. The Safari and Playwright tests both check the restored id in Prebid.js on the next page view.

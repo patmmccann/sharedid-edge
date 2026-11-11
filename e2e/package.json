@@ -7,13 +7,16 @@
     "bundle-prebid": "node --experimental-strip-types bundle-prebid.ts",
     "tc-string": "node --experimental-strip-types tc-string.ts",
     "test": "playwright test",
+    "test:safari": "node --experimental-strip-types --test --test-concurrency=1 safari/safari.test.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@iabtechlabtcf/core": "^1.5.22",
     "@playwright/test": "^1.65.0",
     "@types/node": "^24.10.1",
+    "@types/selenium-webdriver": "^4.35.7",
     "prebid.js": "11.49.0",
+    "selenium-webdriver": "^4.52.0",
     "typescript": "~7.0.2"
   }
 }

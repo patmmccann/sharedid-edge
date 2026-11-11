@@ -276,3 +276,36 @@ jobs:
           name: playwright-report-${{ matrix.browser }}
           path: e2e/test-results
           retention-days: 7
+
+  # The core browser tests in real Safari, which Playwright can't drive: safaridriver (WebDriver) on a macOS runner, against
+  # the same local server, page and Prebid.js bundle. Playwright's WebKit isn't Safari: its cookie timing differs.
+  e2e-safari:
+    name: Prebid.js end to end (real Safari, macOS)
+    needs: e2e-chromium
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            e2e/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: npm ci
+      - name: Enable safaridriver, and map e2e.sharedid.test to the local server
+        run: |
+          sw_vers
+          echo "Safari $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' /Applications/Safari.app/Contents/Info.plist)"
+          sudo safaridriver --enable
+          echo "127.0.0.1 e2e.sharedid.test" | sudo tee -a /etc/hosts
+      - name: Unmodified Prebid.js sharedIdSystem against SharedID Edge (real Safari)
+        working-directory: e2e
+        run: npm run test:safari

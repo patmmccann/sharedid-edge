@@ -10,5 +10,5 @@
     "lib": ["ES2023", "DOM"],
     "types": ["node"]
   },
-  "include": ["*.ts", "tests/**/*.ts"]
+  "include": ["*.ts", "tests/**/*.ts", "safari/**/*.ts"]
 }
