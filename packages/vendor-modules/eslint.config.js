@@ -34,7 +34,7 @@ export default [
     // module may use the network outside the vendor plugin rules) and writes it into the module. Nothing here runs
     // during requests.
     files: ['*/scripts/*.mjs'],
-    languageOptions: { globals: { process: 'readonly', console: 'readonly', fetch: 'readonly' } },
+    languageOptions: { globals: { process: 'readonly', console: 'readonly', fetch: 'readonly', btoa: 'readonly', crypto: 'readonly', TextDecoder: 'readonly' } },
     rules: { 'no-console': 'off' }
   }
 ];

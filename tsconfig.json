@@ -36,6 +36,8 @@
     { "path": "packages/vendor-modules/dbip/test" },
     { "path": "packages/vendor-modules/ec" },
     { "path": "packages/vendor-modules/ec/test" },
+    { "path": "packages/vendor-modules/maxmind" },
+    { "path": "packages/vendor-modules/maxmind/test" },
     { "path": "conformance" },
     { "path": "scripts" }
   ]

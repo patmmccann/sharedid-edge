@@ -1,0 +1,33 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The maxmind vendor module (SID_MODULES=geo,maxmind, mode fill, the default): the country for the client IP from MaxMind's GeoLite2 Country database, downloaded with the deployer's licence key and built in at build time, as ortb2.device.geo.country (ISO 3166-1 alpha-3, type 2) with ipservice 3 (MaxMind, AdCOM 1.0 List: IP Location Services). The suite's build has the fixture table the package ships with, which knows only documentation addresses: 192.0.2.0/25 FR, 192.0.2.128/25 XK (no alpha-3 code), 198.51.100.0/24 JP, 203.0.113.0/24 BR, 2001:db8::/48 FR, 2001:db8:1::/48 JP. In fill mode it sends a country only when the platform gives the geo module none; replace always sends it. Requests carry the client IP as X-Forwarded-For (with SID_TRUST_PROXY) and CF-Connecting-IP (Workers), and the CDN's country as cf-ipcountry.",
+  "build": ["vendor-modules"],
+  "config": { "SID_MODULES": "geo,maxmind", "SID_TRUST_PROXY": "true" },
+  "cases": [
+    {
+      "name": "fills in the country, with ipservice 3, when the CDN has none",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
+      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "geo": { "type": 2, "country": "FRA", "ipservice": 3 } } }, "ext": { "modules": { "maxmind": { "status": "ok" } } } } }
+    },
+    {
+      "name": "fills in the country for an IPv6 address",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "2001:db8:1::77", "cf-connecting-ip": "2001:db8:1::77" } },
+      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "geo": { "type": 2, "country": "JPN", "ipservice": 3 } } }, "ext": { "modules": { "maxmind": { "status": "ok" } } } } }
+    },
+    {
+      "name": "leaves the CDN's country alone, with no ipservice",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "cf-ipcountry": "DE" } },
+      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "geo": { "type": 2, "country": "DEU" } } }, "ext": { "modules": { "geo": { "status": "ok" }, "maxmind": { "status": "empty" } } } }, "jsonAbsent": ["ortb2.device.geo.ipservice"] }
+    },
+    {
+      "name": "returns nothing for an address the database doesn't know",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "203.0.114.1", "cf-connecting-ip": "203.0.114.1" } },
+      "expect": { "status": 200, "jsonIncludes": { "ext": { "modules": { "maxmind": { "status": "empty" } } } }, "jsonAbsent": ["ortb2"] }
+    },
+    {
+      "name": "sends the country with Global Privacy Control and for a COPPA request",
+      "request": { "path": "/_sid/v1?coppa=1", "headers": { "x-forwarded-for": "203.0.113.9", "cf-connecting-ip": "203.0.113.9", "sec-gpc": "1" } },
+      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "geo": { "type": 2, "country": "BRA", "ipservice": 3 } } }, "ext": { "modules": { "maxmind": { "status": "ok" } } } } }
+    }
+  ]
+}
