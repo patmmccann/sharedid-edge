@@ -1,19 +1,4 @@
 /** Cookies from a request's `Cookie` header. The first value wins when a name repeats, as browsers send the most specific first. */
-export function cookieValues(header: string | null, name: string): string[] {
-  const values: string[] = [];
-  if (header === null) return values;
-  for (const part of header.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq <= 0) continue;
-    const cookieName = part.slice(0, eq).trim();
-    if (cookieName !== name) continue;
-    let value = part.slice(eq + 1).trim();
-    if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
-    values.push(value);
-  }
-  return values;
-}
-
 export function parseCookies(header: string | null): ReadonlyMap<string, string> {
   const cookies = new Map<string, string>();
   if (header === null) return cookies;
