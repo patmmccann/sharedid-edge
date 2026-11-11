@@ -1,14 +1,7 @@
-import { headerValue as header, locationWithEU, type LocationSource, type PlatformInfo } from '@sharedid-edge/core';
+import { headerValue as header, LOCATION_FIELDS, locationWithEU, type LocationField, type LocationHeaders, type PlatformInfo } from '@sharedid-edge/core';
 
-/** The location fields a header can carry, named as in core's `LocationSource`. */
-export type LocationField = keyof LocationSource;
-
-export const LOCATION_FIELDS: readonly LocationField[] = [
-  'country', 'regionCode', 'city', 'postalCode', 'metroCode', 'latitude', 'longitude', 'timezone', 'continent'
-];
-
-/** Request header names, by location field, that a Front Door rule set adds. */
-export type LocationHeaders = Readonly<Partial<Record<LocationField, string>>>;
+// The location fields and header map are core's, shared with the Node.js server; exported here as before.
+export { LOCATION_FIELDS, type LocationField, type LocationHeaders } from '@sharedid-edge/core';
 
 export interface PlatformOptions {
   /**

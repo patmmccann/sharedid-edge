@@ -61,10 +61,37 @@ describe('node server', () => {
 
     const proxied = await start({ config, modules: [location], trustProxy: true });
     expect(await read(proxied, headers)).toEqual({
-      country: 'CH', region: 'ZH', city: 'Zürich', postalCode: '8001', latitude: 47.3769, longitude: 8.5417, timezone: 'Europe/Zurich', continent: 'EU'
+      country: 'CH', region: 'ZH', city: 'Zürich', postalCode: '8001', latitude: 47.3769, longitude: 8.5417, timezone: 'Europe/Zurich', continent: 'EU', isEU: false
     });
     expect(await read(proxied, { 'cf-ipcountry': 'T1', 'cf-iplatitude': 'abc', 'cf-iplongitude': '1' })).toEqual({});
     expect(await read(proxied, { 'cf-ipcountry': 'XX', 'cf-ipcity': 'Saint-Étienne' })).toEqual({ city: 'Saint-Étienne' });
+  });
+
+  it('treats a trusted EU country as GDPR applying: no TC string, no cookies', async () => {
+    const config = resolveConfig({ SID_COOKIE_DOMAIN: 'host-only' });
+    const names = async (base: string, path: string, h: Record<string, string> = {}): Promise<string[]> =>
+      (await fetch(`${base}/_sid/${path}`, { headers: h })).headers.getSetCookie().map(c => c.slice(0, c.indexOf('=')));
+
+    const proxied = await start({ config, trustProxy: true });
+    expect(await names(proxied, 'sync', { 'cf-ipcountry': 'DE' })).toEqual([]);
+    expect(await names(proxied, 'sync', { 'cf-ipcountry': 'US' })).toEqual(['_pubcid', '_pubcid_sv']);
+    // An explicit gdpr=0 still wins over the location.
+    expect(await names(proxied, 'sync?gdpr=0', { 'cf-ipcountry': 'DE' })).toEqual(['_pubcid', '_pubcid_sv']);
+    await new Promise<void>(resolve => { server?.close(() => { resolve(); }); });
+
+    // Untrusted, the header is the visitor's own and is ignored: the country is unknown.
+    const direct = await start({ config });
+    expect(await names(direct, 'sync', { 'cf-ipcountry': 'DE' })).toEqual(['_pubcid', '_pubcid_sv']);
+  });
+
+  it("reads the location from a CDN's own headers when locationHeaders names them, and only those", async () => {
+    const location = defineModule({ name: 'location', run: ({ platform }) => ({ ortb2: { platform: { ...platform, clientIp: undefined } } }) });
+    const config = resolveConfig({ SID_MODULES: 'location', SID_COOKIE_DOMAIN: 'host-only' });
+    const base = await start({ config, modules: [location], trustProxy: true, locationHeaders: { country: 'cloudfront-viewer-country', regionCode: 'cloudfront-viewer-country-region' } });
+    const response = await fetch(`${base}/_sid/v1`, { headers: { 'cloudfront-viewer-country': 'FR', 'cloudfront-viewer-country-region': 'IDF', 'cf-ipcountry': 'US', 'cf-ipcity': 'Boston' } });
+    expect(((await response.json()) as { ortb2: { platform: unknown } }).ortb2.platform).toEqual({ country: 'FR', region: 'IDF', isEU: true });
+    // FR is in the EU and there's no TC string: GDPR applies, so no ID cookies.
+    expect(response.headers.getSetCookie()).toEqual([]);
   });
 
   it('builds request URLs from the public origin, so cookies are Secure behind TLS termination', async () => {

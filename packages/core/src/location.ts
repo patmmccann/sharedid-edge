@@ -17,6 +17,17 @@ export interface LocationSource {
   readonly continent?: unknown;
 }
 
+/** A location field, named as in `LocationSource`. */
+export type LocationField = keyof LocationSource;
+
+/** Every location field, in the order adapters' `SID_LOCATION_HEADERS` settings list them. */
+export const LOCATION_FIELDS: readonly LocationField[] = [
+  'country', 'regionCode', 'city', 'postalCode', 'metroCode', 'latitude', 'longitude', 'timezone', 'continent'
+];
+
+/** Request header names (lower case), by location field, that a trusted proxy sets with the visitor's location. */
+export type LocationHeaders = Readonly<Partial<Record<LocationField, string>>>;
+
 /** The location fields of `PlatformInfo`. */
 export type PlatformLocation = Pick<PlatformInfo, 'country' | 'region' | 'city' | 'postalCode' | 'metroCode' | 'latitude' | 'longitude' | 'timezone' | 'continent'>;
 

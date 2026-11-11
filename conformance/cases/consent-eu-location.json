@@ -1,0 +1,31 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "GDPR from the visitor's location: with no gdpr parameter, GDPR applies when the platform places the request in one of the 27 EU member states, so without a TC string nothing is stored; outside the EU, or with an explicit gdpr=0, the ID is set. Requests describe the location with Cloudflare's visitor location headers (cf-ipcountry): the Node.js target reads them because it runs with SID_TRUST_PROXY, the runner gives the Workers runtime the same values as request.cf (with isEUCountry, as Cloudflare sets it), and each stand-in passes them as its platform's own location headers.",
+  "config": { "SID_TRUST_PROXY": "true" },
+  "cases": [
+    {
+      "name": "an EU visitor without a TC string gets no ID cookies",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "cf-ipcountry": "DE" } },
+      "expect": { "status": 200, "noCookies": true }
+    },
+    {
+      "name": "an EU visitor's existing ID cookies are deleted without a TC string",
+      "request": { "path": "/_sid/sync", "headers": { "cf-ipcountry": "FR", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "_pubcid", "value": "", "maxAge": 0 }, { "name": "_pubcid_sv", "value": "", "maxAge": 0 }],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "a visitor outside the EU gets the ID",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "cf-ipcountry": "US" } },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }, { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    },
+    {
+      "name": "an explicit gdpr=0 wins over an EU location",
+      "request": { "path": "/_sid/sync?gdpr=0&id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "cf-ipcountry": "DE" } },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }, { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    }
+  ]
+}
