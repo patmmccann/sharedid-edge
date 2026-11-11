@@ -1,0 +1,18 @@
+{
+  "$comment": "The Prebid.js modules in the e2e page's bundle (bundle-prebid.ts), and the source of the vendor consents in its TC string (tc-string.ts). See AGENTS.md.",
+  "modules": [
+    "consentManagementTcf",
+    "tcfControl",
+    "storageControl",
+    "userId",
+    "sharedIdSystem",
+    "unifiedIdSystem",
+    "openxBidAdapter",
+    "magniteBidAdapter",
+    "tripleliftBidAdapter",
+    "msftBidAdapter",
+    "gptPreAuction",
+    "genericAnalyticsAdapter",
+    "genericAnalyticsSkinnyEvents"
+  ]
+}

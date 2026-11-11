@@ -5,8 +5,34 @@ Browser tests proving SharedID Edge works with **unmodified** Prebid.js, in Chro
 - Separate install (`npm ci` in this folder), so the main workspace doesn't pull in Prebid.js and browsers. It imports the built core (`../packages/core/dist`), so run `npm run build` at the root first.
 - `server.ts` serves the test page (`site/public/index.html`), Prebid.js and `/_sid/*` (the core handler) from one origin. It runs with `SID_SYNC_CACHE_SECONDS=0` so every visit reaches the endpoint, and with the `reflect` module (`uid1`, and `_ga` with `restore`), which runs on Prebid.js's `/_sid/sync` calls; it imports the built module (`../packages/modules/reflect/dist`).
 - Don't use `pbjs.getUserIdsAsync()` to wait: with `extend: true` and `pixelUrl` it never resolves on later visits (a Prebid.js issue, fixed by prebid/Prebid.js#16135). Wait for the `/_sid/sync` response instead, then read cookies and `pbjs.getUserIds()`.
-- **The Prebid.js the page loads** is a bundle of a typical publisher setup (`MODULES` in `bundle-prebid.ts`: TCF consent management and `tcfControl`, `storageControl`, `userId` with SharedID and Unified ID, the OpenX, Magnite, TripleLift and Microsoft bidders, `gptPreAuction`, and the generic analytics adapter with its skinny preset), about 100 KB gzipped, not the 4 MB `not-for-prod` build. It shows SharedID works next to them; the page configures only the User ID module. `bundle-prebid.ts` (`npm run bundle-prebid`) assembles it into `site/public/prebid/prebid.js` (gitignored) the way Prebid's download page does: the release's precompiled `dist/chunks` for those modules and their dependencies, checked against its `checksums.json`, between a banner and `processQueue()`. Playwright's local server builds it first; the live workflow builds it before deploying `site/`. Change `MODULES` there to change the setup.
+- **The Prebid.js the page loads** is a bundle of a typical publisher setup (`prebid-modules.json`: TCF consent management and `tcfControl`, `storageControl`, `userId` with SharedID and Unified ID, the OpenX, Magnite, TripleLift and Microsoft bidders, `gptPreAuction`, and the generic analytics adapter with its skinny preset), about 100 KB gzipped, not the 4 MB `not-for-prod` build. It shows SharedID works next to them; the page configures only the User ID module. `bundle-prebid.ts` (`npm run bundle-prebid`) assembles it into `site/public/prebid/prebid.js` (gitignored) the way Prebid's download page does: the release's precompiled `dist/chunks` for those modules and their dependencies, checked against its `checksums.json`, between a banner and `processQueue()`. Playwright's local server builds it first; the live workflow builds it before deploying `site/`. Change `prebid-modules.json` to change the setup, then rebuild the TC string (below).
 - **`prebid.js` is pinned** to one version in `package.json`, so CI, the live site and local runs all test the same Prebid.js. Dependabot (`.github/dependabot.yml`) proposes the new release weekly; the PR's e2e run checks the `pixelUrl` contract still holds before it merges. If a new Prebid.js release breaks these tests, fix SharedID Edge or report it to Prebid.js.
+## Consent: the TC string the tests run with
+
+The page runs with **GDPR applying and consent given**: `site/public/tcf.js` sets `window.SID_E2E_TCF`, which the page passes to Prebid.js as static consent data (`consentManagement: { gdpr: { cmpApi: 'static', consentData: { getTCData: … } } }`), and writes the same string to `euconsent-v2`. That cookie is how SharedID Edge sees it, because `sharedIdSystem` doesn't send consent to `pixelUrl`. A test checks that Prebid.js has GDPR scope and that both ID cookies are set.
+
+**The string being tested** (GVL v184, TCF policy version 5): `CQthOAAQthOAAACABBENC4FgAP_AAAAAACiQIEQCQAKgAZAA4ACAAGgARQF5gMZAgQAAAAAA.IAAA.f_gAAAAAAAAA`
+
+| | |
+| --- | --- |
+| Purpose consents | 1-10 |
+| Publisher consents | 1-10 (SharedID Edge's publisher mode needs purpose 1, and one of 2-10) |
+| Legitimate interests, special features, restrictions | none |
+| Vendor consents | 21 The Trade Desk (`unifiedIdSystem`), 25 Yahoo (extra), 28 TripleLift (`tripleliftBidAdapter`), 32 Microsoft/Xandr (`msftBidAdapter`), 52 Magnite (`magniteBidAdapter`), 69 OpenX (`openxBidAdapter`), 755 Google (extra), 793 Amazon Ads (extra), 1032 Project Agora (`msftBidAdapter`'s `projectagora` alias) |
+
+`tcf.js`'s header lists the same, with each vendor's reason. Decode the string at https://iabgpp.com to check it.
+
+**The vendor consents follow the bundle.** They're every GVL ID the modules in `prebid-modules.json` declare in `prebid.js`'s own metadata (`node_modules/prebid.js/metadata/modules/<module>.json`, `components[].gvlid`, aliases included), plus `extraVendors` in `tcf-config.json` for vendors with no module in the bundle (Google, Amazon, Yahoo). CI runs `npm run tc-string -- --check` (offline). It fails when the vendors in `tcf.js` or in the string differ from what the modules and `tcf-config.json` add up to, for example after a module is added to the bundle, or a Prebid.js bump changes a module's GVL ID.
+
+**To make a different string:**
+
+1. Change what it consents to: `purposeConsents`, `publisherConsents` or `extraVendors` in `tcf-config.json`, or the bundle's modules in `prebid-modules.json`.
+2. Run `npm run tc-string` in `e2e/`. It fetches the current Global Vendor List, encodes the string with the IAB Tech Lab's `@iabtechlabtcf/core`, decodes it again to check it, and rewrites `site/public/tcf.js`. Don't edit `tcf.js` by hand.
+3. Update the table above to match `tcf.js`'s header.
+4. Run the tests locally (`npx playwright test`). A string without publisher consent for purpose 1 makes SharedID Edge delete the ID cookies and set none, so the ID tests fail. That's intended: such a string tests the denied path (#82).
+
+`tc-string.ts` sets `cmpId` 2 and `cmpVersion` 1: placeholders, since Prebid.js and SharedID Edge don't check them.
+
 - WebKit here doesn't simulate Safari's 7-day cap on script-set cookies; tests simulate a capped cookie by clearing it. Real-world Safari lifetimes are measured on deployments.
 - **The tests read requests from the browser,** never from the server: the `sid` fixture records the page's `/_sid/*` requests and the cookies sent with them (`request.allHeaders()`). That keeps every test runnable against a live deployment.
 - **The cookie domain.** Prebid.js writes `_pubcid` on the highest domain it can, so the endpoint's `SID_COOKIE_DOMAIN` must match; a test checks there's one `_pubcid`, on the expected domain. Locally the page is `http://e2e.sharedid.test`, reached through `server.ts` as every browser's HTTP proxy (no DNS setup), with `SID_COOKIE_DOMAIN=sharedid.test`; live it's `E2E_COOKIE_DOMAIN` (`sharedid.dev`). Don't go back to 127.0.0.1: Prebid.js's root-domain probe misbehaves on an IP address. Tests add their own cookies with `cookieScope(baseURL)`, on that domain.

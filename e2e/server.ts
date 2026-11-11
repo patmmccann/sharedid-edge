@@ -43,6 +43,10 @@ const server = createServer((req, res) => {
     });
     return;
   }
+  if (url.pathname === '/tcf.js') {
+    res.writeHead(200, { 'Content-Type': 'application/javascript' }).end(readFileSync(join(import.meta.dirname, 'site', 'public', 'tcf.js')));
+    return;
+  }
   if (url.pathname.startsWith('/prebid/')) {
     const file = normalize(join(prebidDist, url.pathname.slice('/prebid/'.length)));
     if (!file.startsWith(prebidDist + sep) || !existsSync(file)) {

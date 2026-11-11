@@ -216,6 +216,9 @@ jobs:
       - name: Type-check e2e
         working-directory: e2e
         run: npm run typecheck
+      - name: The page's TC string consents to the bundle's modules (e2e/AGENTS.md)
+        working-directory: e2e
+        run: npm run tc-string -- --check
       - name: Unmodified Prebid.js sharedIdSystem against SharedID Edge (chromium)
         working-directory: e2e
         run: npx playwright test --project=chromium
