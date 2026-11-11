@@ -1,4 +1,4 @@
-import { ConfigError, handlerOrMisconfigured, isHeaderName, parseHeaderMap, publicOriginFromEnv, resolveConfig, type EdgeModule } from '@sharedid-edge/core';
+import { ConfigError, booleanFromEnv, handlerOrMisconfigured, isHeaderName, parseHeaderMap, publicOriginFromEnv, resolveConfig, type EdgeModule } from '@sharedid-edge/core';
 import { builtInModules } from '@sharedid-edge/modules';
 import { createGcpHandler, sendInternalError, type GcpHandler } from './handler.js';
 import { LOCATION_FIELDS, type LocationHeaders } from './platform.js';
@@ -40,7 +40,7 @@ export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtI
     () => createGcpHandler({
       config: resolveConfig(env),
       modules,
-      behindLoadBalancer: !/^(0|false|no|off)$/i.test(env['SID_BEHIND_LOAD_BALANCER'] ?? ''),
+      behindLoadBalancer: booleanFromEnv(env['SID_BEHIND_LOAD_BALANCER'], true),
       trustedHops: parseTrustedHops(env['SID_TRUSTED_HOPS']),
       locationHeaders: parseLocationHeaders(env['SID_LOCATION_HEADERS']),
       ...(clientIpHeader === undefined || clientIpHeader === '' ? {} : { clientIpHeader: headerName(clientIpHeader, 'SID_CLIENT_IP_HEADER') }),
