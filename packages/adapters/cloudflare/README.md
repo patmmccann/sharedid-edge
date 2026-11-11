@@ -196,7 +196,7 @@ Over plain http locally, cookies aren't `Secure`. `wrangler dev` fills `request.
 
 ## Live tests
 
-Some things can only be checked on Cloudflare's real edge: a Worker route on the site's own proxied hostname (which gives the cookies the site's IP addresses, the [Safari rule](#architecture)), real `request.cf` data, and the bundle in the real runtime. The [Live tests workflow](../../../.github/workflows/e2e-cloudflare.yml) checks them nightly, and on demand from the Actions tab, on this project's test zone, `sharedid.dev`. It runs only from `main` and never on pull requests, which stay account-free.
+Some things can only be checked on Cloudflare's real edge: a Worker route on the site's own proxied hostname (which gives the cookies the site's IP addresses, the [Safari rule](#architecture)), real `request.cf` data, and the bundle in the real runtime. The [Live tests workflow](../../../.github/workflows/e2e-cloudflare.yml) checks them on this project's test zone, `sharedid.dev`, after every merge to `main`, nightly (for changes on Cloudflare's side and new browser versions), and on demand from the Actions tab. It never runs on pull requests, which stay account-free. Runs don't overlap, since they deploy to the same Workers: when several merges land during a run, the next run tests the newest.
 
 It deploys three Workers:
 
@@ -206,7 +206,7 @@ It deploys three Workers:
 | `sharedid-edge-e2e-site` | `e2e.sharedid.dev/*` | The test page and the latest published Prebid.js, as static assets ([`e2e/site/`](../../../e2e/site/wrangler.jsonc)). The more specific `/_sid/*` route wins, as on a publisher's site. |
 | `sharedid-edge-conformance` | `conformance.sharedid.dev/_sid/*` | The `conformance` environment: the default configuration |
 
-Then it runs `npm run verify-deployment -- --site https://e2e.sharedid.dev`, the conformance suite's default-configuration cases against `https://conformance.sharedid.dev/_sid`, and the Playwright tests in [`e2e/`](../../../e2e/AGENTS.md) against `https://e2e.sharedid.dev` (`E2E_BASE_URL`) in Chromium, Firefox and WebKit. A failing nightly run opens an issue, or comments on the open one.
+Then it runs `npm run verify-deployment -- --site https://e2e.sharedid.dev`, the conformance suite's default-configuration cases against `https://conformance.sharedid.dev/_sid`, and the Playwright tests in [`e2e/`](../../../e2e/AGENTS.md) against `https://e2e.sharedid.dev` (`E2E_BASE_URL`) in Chromium, Firefox and WebKit. A failing run, after a merge or overnight, opens an issue, or comments on the open one.
 
 Setting it up on another zone (a fork, say):
 
