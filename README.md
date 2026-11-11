@@ -1,6 +1,6 @@
 # SharedID Edge
 
-SharedID Edge is a small open-source edge worker that keeps the [Prebid SharedID](https://docs.prebid.org/identity/sharedid.html) durable. It runs on a route of your own domain (`www.example.com/_sid/*`) on the CDN that already serves your site, and sets the SharedID as a **server-set first-party cookie**, so Safari doesn't cap it at 7 days.
+SharedID Edge is a small [open-source](https://github.com/patmmccann/sharedid-edge) edge worker that keeps the [Prebid SharedID](https://docs.prebid.org/identity/sharedid.html) durable. It runs on a route of your own domain (`www.example.com/_sid/*`) on the CDN that already serves your site, and sets the SharedID as a **server-set first-party cookie**, so Safari doesn't cap it at 7 days.
 
 It replaces the [WordPress](https://github.com/prebid/sharedid-wordpress) and [Drupal](https://github.com/prebid/sharedid-drupal) SharedID plugins and the endpoint examples in the SharedID docs: it implements the same `pixelUrl` contract, so Prebid.js needs no code change. Unlike those, it answers at the CDN edge, so your origin sees no extra traffic.
 
