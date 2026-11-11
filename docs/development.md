@@ -71,7 +71,8 @@ Every package in `packages/adapters/` and `packages/modules/` (and `packages/ven
   "summary": "What it adds to the payload, in one line (Markdown).",
   "settings": "`precision`: `precise` (default) or `coarse`",   // a short list, or "none"
   "routes": ["v1"],                    // the module's routes: "v1", and "sync" if it runs there
-  "forwards": ["api.example.com"]      // vendor modules only, if it sends data to another service
+  "forwards": ["api.example.com"],     // vendor modules only, if it sends data to another service
+  "ipDerived": true                    // vendor modules (and ec) only, if its ID uses the IP or other request data
 }
 
 // an adapter

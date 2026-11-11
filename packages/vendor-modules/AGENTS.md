@@ -5,6 +5,7 @@ Modules contributed and maintained by vendors: IP intelligence databases (#12), 
 - **Not built in.** Vendor modules are never in `builtInModules`. A deployer opts in at build time by adding the module to the list they pass to the handler, then lists it in `SID_MODULES`. Don't add one to an adapter.
 - **Declare `gvlid`** when the vendor is on the IAB Global Vendor List, or say in the README why the module acts for the publisher instead. Core doesn't run modules with a `gvlid` when GDPR applies until vendor consent is decoded.
 - **Network calls only under the vendor plugin rules** in prebid/prebid-server#5064: opt-in per deployment, a strict timeout, and cached results. Data updates (databases, lists) happen only in scheduled jobs (#30), never while answering a request. Core has no network wrapper yet, so the lint config blocks `fetch` here until it does.
+- **IP-derived IDs are allowed here,** and only here (and in `ec`, which the project treats as a vendor module): see [IP-derived IDs](#ip-derived-ids).
 - **No licensed data in the repo.** Databases and lists the vendor licenses are fetched by the deployer's build or scheduled job with their own credentials; the repo holds only code and small test fixtures you may publish.
 - **Secrets only through `SID_MODULE_SECRETS`** (`context.secrets`): never in `SID_MODULE_CONFIG`, code, fixtures, logs, output or error messages.
 - **Bot and proxy verdicts** go through the shared traffic signal (#5) once it exists, not a field of the module's own, so core and other modules can act on them.
@@ -21,3 +22,14 @@ A module that forwards anything (requests, IDs, the IP address, signals) to its 
 - **Disclosed prominently:** a clearly marked box at the **top** of the module's README stating what is sent, to which host, when, and under which consent conditions. Its `sharedidEdge` block lists the hosts in `forwards`, so its row in the generated module index carries the marker "⚠ forwards data to `<host>`". `ext.modules.<name>` should be able to report that forwarding happened, with no data values.
 - **Co-located when possible:** preferably only to services on the same platform and network as the worker: a service bound to the Worker (a Cloudflare service binding), a container on the same host or VPC, or server-side GTM behind the same load balancer. Forwarding over the public internet to a distant third party is the exception, and the README must justify it.
 - **Still subject to the privacy lines:** no forwarding when GPC, COPPA, opt-out or consent rule it out.
+
+## IP-derived IDs
+
+Core and the project's modules never derive an ID from the IP address or other request data; the SharedID is random. A vendor module may, because that's often how the vendor's product works, and the vendor maintains it and answers for it. The project's `ec` module is held to the same rules: it ports IAB Tech Lab's open-source Trusted Server Edge Cookies, whose ID prefix is an HMAC of the client IP. A module whose ID uses the IP address, or anything else from the request (headers, the User-Agent, location), in whole or part:
+
+- **Declares it:** `"ipDerived": true` in its `sharedidEdge` block, so its row in the generated module index carries "⚠ IP-derived ID".
+- **Is opt-in:** it runs only when the deployer lists it in `SID_MODULES`, and never becomes the default.
+- **Is disclosed** in a clearly marked box at the **top** of its README: what the ID is derived from, who behind the same address shares it, and who can link it back (anyone with the key, say). The `ec` README's box is the model.
+- **Keeps the SharedID random:** it sets its own cookie or payload field, and never changes `_pubcid`.
+- **Still answers to the privacy lines:** no ID when GPC, COPPA, opt-out or consent rule it out, and an existing one is deleted. Declare `gvlid` so TCF vendor consent applies.
+- **Logs nothing** about the request, and never returns the IP address itself.
