@@ -13,31 +13,99 @@
   "cases": [
     {
       "name": "uses the configured name, domain, lifetime and base path, without a recovery cookie",
-      "request": { "path": "/identity/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d" },
+      "request": {
+        "path": "/identity/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d"
+      },
       "expect": {
         "status": 200,
-        "cookies": [{ "name": "sid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d", "maxAge": 2592000, "domain": ".example.com" }],
+        "cookies": [
+          {
+            "name": "sid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "maxAge": 2592000,
+            "domain": ".example.com"
+          }
+        ],
         "onlyListedCookies": true
       }
     },
     {
       "name": "doesn't mint an id when create is off",
-      "request": { "path": "/identity/sync" },
-      "expect": { "status": 200, "headers": { "cache-control": "no-store" }, "noCookies": true }
+      "request": {
+        "path": "/identity/sync"
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-store"
+        },
+        "noCookies": true
+      }
     },
     {
       "name": "deletes the cookie under the cookie domain and a host-only copy when storage is denied",
-      "request": { "path": "/identity/sync", "headers": { "sec-gpc": "1", "cookie": "sid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "request": {
+        "path": "/identity/sync",
+        "headers": {
+          "sec-gpc": "1",
+          "cookie": "sid=c29cb2ae-769d-42f6-891a-f53cadee823d"
+        }
+      },
       "expect": {
         "status": 200,
-        "cookies": [{ "name": "sid", "value": "", "maxAge": 0, "domain": ".example.com" }, { "name": "sid", "value": "", "maxAge": 0, "domain": "" }],
+        "cookies": [
+          {
+            "name": "sid",
+            "value": "",
+            "maxAge": 0,
+            "domain": ".example.com"
+          },
+          {
+            "name": "sid",
+            "value": "",
+            "maxAge": 0,
+            "domain": ""
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "opt-in clears both domain and host-only opt-out copies",
+      "request": {
+        "path": "/identity/optin",
+        "headers": {
+          "cookie": "sid_optout=1"
+        }
+      },
+      "expect": {
+        "status": 204,
+        "cookies": [
+          {
+            "name": "sid_optout",
+            "value": "",
+            "maxAge": 0,
+            "domain": ".example.com"
+          },
+          {
+            "name": "sid_optout",
+            "value": "",
+            "maxAge": 0,
+            "domain": ""
+          }
+        ],
         "onlyListedCookies": true
       }
     },
     {
       "name": "doesn't answer the default base path",
-      "request": { "path": "/_sid/sync" },
-      "expect": { "status": 404, "noCookies": true }
+      "request": {
+        "path": "/_sid/sync"
+      },
+      "expect": {
+        "status": 404,
+        "noCookies": true
+      }
     }
   ]
 }
