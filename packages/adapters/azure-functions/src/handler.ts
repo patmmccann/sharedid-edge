@@ -66,7 +66,8 @@ async function toRequest(request: AzureHttpRequest, publicOrigin: string | undef
 
 /**
  * The `Response` as an `HttpResponseInit`. Each `Set-Cookie` becomes an entry of `cookies[]`: the Functions host
- * keeps one value per header name, so cookies in `headers` would be lost or joined.
+ * keeps one value per header name, so cookies in `headers` would be lost or joined. The exception is one cookie whose
+ * value the host would percent-encode in `cookies[]`: it goes unchanged in `headers`, which the host writes first.
  */
 export async function toResponseInit(response: Response, method: string): Promise<AzureHttpResponseInit> {
   const { headers, cookies: setCookies } = splitHeaders(response.headers);
@@ -83,9 +84,7 @@ export async function toResponseInit(response: Response, method: string): Promis
       else console.error(`sharedid-edge: not setting cookie ${cookie.name}: Azure Functions cannot preserve multiple raw Set-Cookie headers`);
     }
   }
-  const outputHeaders = rawCookies.length === 0
-    ? headers
-    : { ...headers, 'set-cookie': rawCookies.length === 1 ? rawCookies[0] : rawCookies.join('\n') };
+  const outputHeaders = rawCookie === undefined ? headers : { ...headers, 'set-cookie': rawCookie };
   const body = method.toUpperCase() === 'HEAD' || response.body === null ? undefined : new Uint8Array(await response.arrayBuffer());
   return { status: response.status, headers: outputHeaders, cookies, ...(body === undefined || body.byteLength === 0 ? {} : { body }) };
 }

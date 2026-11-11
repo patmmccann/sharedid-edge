@@ -152,6 +152,24 @@ describe('cookies', () => {
     expect(result.cookies.map(c => c.name)).toContain('fpid');
     expect(result.cookies.map(c => c.name)).not.toContain('uid1');
   });
+
+  it('leaves out a second cookie the host would encode, logging only its name', async () => {
+    const handler = createAzureHandler({
+      config: resolveConfig({ SID_MODULES: 'reflect', SID_MODULE_CONFIG: '{"reflect":{"cookies":[{"name":"uid1","maxAgeDays":30},{"name":"uid2","maxAgeDays":30}]}}' }),
+      modules: builtInModules
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const result = await handler(frontDoorRequest({ path: '/_sid/v1', headers: { cookie: `_pubcid=${UUID}; uid1=a+b; uid2=c/d==` } }));
+      expect(result.headers['set-cookie']).toMatch(/^uid1=a\+b;/);
+      expect(result.cookies.map(c => c.name)).not.toContain('uid2');
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(String(error.mock.calls[0]?.[0])).toContain('uid2');
+      expect(String(error.mock.calls[0]?.[0])).not.toContain('c/d');
+    } finally {
+      error.mockRestore();
+    }
+  });
 });
 
 describe('the ip module on /v1', () => {

@@ -7,8 +7,8 @@
 // connection (or, with SID_TRUST_PROXY, as the cases use it, from the first X-Forwarded-For entry), X-Azure-FDID is the
 // profile ID in AZURE_FRONT_DOOR_ID, and the cases' Cloudflare-style location headers become the headers a rule set
 // would add (SID_LOCATION_HEADERS). The host: only paths the function's route template matches reach it (others get
-// the host's 404), header values are one per name, and cookies[] are written as ASP.NET Core's
-// Response.Cookies.Append writes them, percent-encoding the value.
+// the host's 404), header values are one per name, and cookies[] are written after them as ASP.NET
+// Core's Response.Cookies.Append writes them, percent-encoding the value.
 //
 // Started by targets.ts with the case file's configuration as environment variables (read when the bundle is
 // imported, as on a new instance), plus PORT, SID_PUBLIC_ORIGIN, SID_FRONT_DOOR_ID and SID_LOCATION_HEADERS.
@@ -113,7 +113,12 @@ async function writeResponse(res: ServerResponse, init: HttpResponseInit, method
   const headers: Record<string, string | string[]> = {};
   // The host gets one value per header name.
   for (const [name, value] of response.headers.entries()) headers[name] = value;
-  if (response.cookies.length > 0) headers['set-cookie'] = response.cookies.map(setCookie);
+  // RawScriptResult appends the headers, then each cookies[] entry with Response.Cookies.Append, which adds a
+  // Set-Cookie value after any Set-Cookie header the function returned.
+  if (response.cookies.length > 0) {
+    const raw = headers['set-cookie'];
+    headers['set-cookie'] = [...(raw === undefined ? [] : [raw].flat()), ...response.cookies.map(setCookie)];
+  }
   res.writeHead(response.status, headers);
   res.end(method === 'HEAD' ? undefined : Buffer.from(await response.arrayBuffer()));
 }
