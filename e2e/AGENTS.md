@@ -9,9 +9,17 @@ Browser tests proving SharedID Edge works with **unmodified** Prebid.js, in Chro
 - **`prebid.js` is pinned** to one version in `package.json`, so CI, the live site and local runs all test the same Prebid.js. Dependabot (`.github/dependabot.yml`) proposes the new release weekly; the PR's e2e run checks the `pixelUrl` contract still holds before it merges. If a new Prebid.js release breaks these tests, fix SharedID Edge or report it to Prebid.js.
 ## Consent: the TC string the tests run with
 
-The page runs with **GDPR applying and consent given**: `site/public/tcf.js` sets `window.SID_E2E_TCF`, which the page passes to Prebid.js as static consent data (`consentManagement: { gdpr: { cmpApi: 'static', consentData: { getTCData: … } } }`), and writes the same string to `euconsent-v2`. That cookie is how SharedID Edge sees it, because `sharedIdSystem` doesn't send consent to `pixelUrl`. A test checks that Prebid.js has GDPR scope and that both ID cookies are set.
+The page's consent comes from `site/public/tcf.js`, in one of three **scenarios**, picked with `?consent=<name>` in the page URL (`visit(page, '/?consent=denied')`):
 
-**The string being tested** (GVL v184, TCF policy version 5): `CQthOAAQthOAAACABBENC4FgAP_AAAAAACiQIEQCQAKgAZAA4ACAAGgARQF5gMZAgQAAAAAA.IAAA.f_gAAAAAAAAA`
+| Scenario | Consent | What the tests check |
+| --- | --- | --- |
+| `given` (default) | GDPR applies; purpose and publisher consent for 1-10 | Every other test runs with it; one checks Prebid.js has GDPR scope and both ID cookies are set |
+| `denied` | GDPR applies; no purpose 1 consent for vendors or the publisher | Prebid.js (`tcfControl`) writes no id and doesn't call `pixelUrl`; the endpoint answers `denied: tcf: no publisher consent for purpose 1` and deletes the ID cookies left by an earlier visit |
+| `notApplicable` | GDPR doesn't apply; no TC string | Prebid.js reports `gdprApplies: false`, no `euconsent-v2`, and SharedID works as usual |
+
+No CMP runs on the page: static consent data covers what the tests need. `tcf.js` sets `window.SID_E2E_TCF`, which the page passes to Prebid.js as static consent data (`consentManagement: { gdpr: { cmpApi: 'static', consentData: { getTCData: … } } }`), and writes the same string to `euconsent-v2`. That cookie is how SharedID Edge sees it, because `sharedIdSystem` doesn't send consent to `pixelUrl`. A test checks that Prebid.js has GDPR scope and that both ID cookies are set.
+
+**The `given` string** (GVL v184, TCF policy version 5): `CQthOAAQthOAAACABBENC4FgAP_AAAAAACiQIEQCQAKgAZAA4ACAAGgARQF5gMZAgQAAAAAA.IAAA.f_gAAAAAAAAA`
 
 | | |
 | --- | --- |
@@ -20,16 +28,16 @@ The page runs with **GDPR applying and consent given**: `site/public/tcf.js` set
 | Legitimate interests, special features, restrictions | none |
 | Vendor consents | 21 The Trade Desk (`unifiedIdSystem`), 25 Yahoo (extra), 28 TripleLift (`tripleliftBidAdapter`), 32 Microsoft/Xandr (`msftBidAdapter`), 52 Magnite (`magniteBidAdapter`), 69 OpenX (`openxBidAdapter`), 755 Google (extra), 793 Amazon Ads (extra), 1032 Project Agora (`msftBidAdapter`'s `projectagora` alias) |
 
-`tcf.js`'s header lists the same, with each vendor's reason. Decode the string at https://iabgpp.com to check it.
+The `denied` string is the same without purpose 1 in either purpose or publisher consents: `CQthOAAQthOAAACABBENC4FgAH_AAAAAACiQIEQCQAKgAZAA4ACAAGgARQF5gMZAgQAAAAAA.IAAA.b_gAAAAAAAAA`. `tcf.js`'s header lists every scenario, its string and each vendor's reason. Decode the string at https://iabgpp.com to check it.
 
 **The vendor consents follow the bundle.** They're every GVL ID the modules in `prebid-modules.json` declare in `prebid.js`'s own metadata (`node_modules/prebid.js/metadata/modules/<module>.json`, `components[].gvlid`, aliases included), plus `extraVendors` in `tcf-config.json` for vendors with no module in the bundle (Google, Amazon, Yahoo). CI runs `npm run tc-string -- --check` (offline). It fails when the vendors in `tcf.js` or in the string differ from what the modules and `tcf-config.json` add up to, for example after a module is added to the bundle, or a Prebid.js bump changes a module's GVL ID.
 
 **To make a different string:**
 
-1. Change what it consents to: `purposeConsents`, `publisherConsents` or `extraVendors` in `tcf-config.json`, or the bundle's modules in `prebid-modules.json`.
+1. Change what it consents to: a scenario's `purposeConsents` or `publisherConsents` (or `gdprApplies: false`), add a scenario under `scenarios` in `tcf-config.json` (then use it with `?consent=<name>`), change `extraVendors`, or change the bundle's modules in `prebid-modules.json`.
 2. Run `npm run tc-string` in `e2e/`. It fetches the current Global Vendor List, encodes the string with the IAB Tech Lab's `@iabtechlabtcf/core`, decodes it again to check it, and rewrites `site/public/tcf.js`. Don't edit `tcf.js` by hand.
-3. Update the table above to match `tcf.js`'s header.
-4. Run the tests locally (`npx playwright test`). A string without publisher consent for purpose 1 makes SharedID Edge delete the ID cookies and set none, so the ID tests fail. That's intended: such a string tests the denied path (#82).
+3. Update the strings above to match `tcf.js`'s header.
+4. Run the tests locally (`npx playwright test`). The `given` scenario must keep publisher consent for purpose 1 (and one of 2-10), or SharedID Edge sets no ID and most tests fail; put a stricter string in a scenario of its own, as `denied` is.
 
 `tc-string.ts` sets `cmpId` 2 and `cmpVersion` 1: placeholders, since Prebid.js and SharedID Edge don't check them.
 
