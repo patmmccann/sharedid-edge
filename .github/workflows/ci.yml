@@ -101,7 +101,7 @@ jobs:
         run: npm run test:vendor-modules
 
   website:
-    name: Website (VitePress build, dead links fail)
+    name: Website (VitePress build, dead links and anchors fail)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

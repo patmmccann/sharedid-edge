@@ -53,6 +53,11 @@ for (const name of modules) pages[`packages/modules/${name}/README.md`] = `modul
 pages['packages/vendor-modules/README.md'] = 'vendor-modules.md';
 if (existsSync(join(ROOT, 'packages/adapters/vercel/example/README.md'))) pages['packages/adapters/vercel/example/README.md'] = 'adapters/vercel-example.md';
 
+/** A heading's anchor as GitHub makes it (repeats get -1, -2 from VitePress's anchor plugin, as on GitHub). */
+function githubSlug(text: string): string {
+  return text.trim().toLowerCase().replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, '').replace(/\s/g, '-');
+}
+
 /** Every Markdown file in the repository that isn't in `pages` (skipping dependencies and build output). */
 function unpublished(dir = ''): string[] {
   const skip = new Set(['node_modules', '.git', 'dist', 'website', '.wrangler', 'test-results', 'playwright-report']);
@@ -123,6 +128,10 @@ export default defineConfig({
     }
   },
   markdown: {
+    // GitHub's heading anchors, which every link in the docs uses (and scripts/check-links.mjs checks): lowercase,
+    // punctuation other than _ and - dropped, spaces to hyphens. VitePress's own drops underscores and turns other
+    // punctuation into hyphens, so `#modules-on-_sidsync` would miss 'Modules on /_sid/sync'.
+    anchor: { slugify: githubSlug },
     config(md) {
       const render = md.renderer.rules.link_open ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
       md.renderer.rules.link_open = (tokens, idx, options, env: { path?: string; realPath?: string }, self) => {

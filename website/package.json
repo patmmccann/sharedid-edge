@@ -5,7 +5,7 @@
   "description": "sharedid.dev: the repository's Markdown docs as a static site (VitePress)",
   "scripts": {
     "dev": "vitepress dev",
-    "build": "vitepress build",
+    "build": "vitepress build && node check-anchors.mjs",
     "preview": "vitepress preview"
   },
   "devDependencies": {

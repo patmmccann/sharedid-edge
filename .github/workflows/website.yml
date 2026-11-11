@@ -18,6 +18,8 @@ concurrency:
 jobs:
   deploy:
     name: Build and deploy sharedid.dev
+    # workflow_dispatch can pick any branch; only main is published.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
