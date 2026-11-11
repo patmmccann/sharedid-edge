@@ -239,6 +239,15 @@ describe('handlerFromEnv', () => {
 });
 
 describe('template.yaml', () => {
+  it('uses the managed AllViewerExceptHostHeader origin policy and a zero-TTL cache policy that preserves User-Agent', () => {
+    const root = join(import.meta.dirname, '..');
+    const template = readFileSync(join(root, 'template.yaml'), 'utf8');
+    expect(template).toMatch(/OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac/);
+    expect(template).toMatch(/HeaderBehavior: whitelist[\\s\\S]*- User-Agent/);
+    expect(template).toMatch(/DefaultTTL: 0[\\s\\S]*MaxTTL: 0[\\s\\S]*MinTTL: 0/);
+    expect(template).toMatch(/OriginRequestPolicyId: !Ref OriginRequestPolicyId/);
+  });
+
   it('passes every SID_* setting core reads to the function', () => {
     const root = join(import.meta.dirname, '..');
     const coreDir = dirname(createRequire(import.meta.url).resolve('@sharedid-edge/core/package.json'));
