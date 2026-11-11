@@ -34,6 +34,7 @@ const test = base.extend<{ sid: SidLog }>({
 
 interface Pbjs {
   getUserIds(): { pubcid?: string };
+  getUserIdsAsync(): Promise<{ pubcid?: string }>;
 }
 
 const DAY = 86_400;
@@ -183,9 +184,24 @@ test('a capped or cleared script cookie is restored from the server-only copy', 
   const [sync] = await sid.requests();
   expect(sync?.path).not.toContain(String(first));
   expect((await response.headerValues('set-cookie')).some(c => c.startsWith(`_pubcid=${String(first)};`))).toBe(true);
-  // Prebid.js 11.48.0 then writes its new id again from script once the pixel loads (fixed by prebid/Prebid.js#16136),
-  // which can overwrite the restored one, depending on timing. When the pinned prebid.js has the fix, check the browser
-  // too: the _pubcid cookie and pbjs.getUserIds().pubcid are the original id.
+  // ...and the browser keeps it: since Prebid.js 11.49.0 (prebid/Prebid.js#16136), sharedIdSystem no longer writes its own
+  // new id from script after the pixel loads, which overwrote the restored one. Wait a moment so a late rewrite shows.
+  await page.waitForTimeout(500);
+  expect((await cookie(context, '_pubcid'))?.value).toBe(first);
+  await expect.poll(() => pubcidInPrebid(page)).toBe(first);
+});
+
+test('pbjs.getUserIdsAsync() resolves on a later visit with extend: true', async ({ page, context }) => {
+  await visit(page);
+  const first = (await cookie(context, '_pubcid'))?.value;
+  // A later visit takes sharedIdSystem's extendId path, which calls pixelUrl again. In Prebid.js 11.48.0 and earlier its
+  // callback never signalled completion, so getUserIdsAsync() never resolved (fixed by prebid/Prebid.js#16135).
+  await visit(page);
+  const ids = await page.evaluate(() => Promise.race([
+    (window as unknown as { pbjs: Pbjs }).pbjs.getUserIdsAsync(),
+    new Promise<never>((_resolve, reject) => setTimeout(() => { reject(new Error('getUserIdsAsync() did not resolve within 5 seconds')); }, 5_000))
+  ]));
+  expect(ids.pubcid).toBe(first);
 });
 
 test('Prebid.js\'s own pixel call, with no /v1 fetch, refreshes a reflected cookie', async ({ page, context, sid, baseURL }) => {

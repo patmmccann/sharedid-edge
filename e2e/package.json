@@ -13,7 +13,7 @@
     "@iabtechlabtcf/core": "^1.5.22",
     "@playwright/test": "^1.65.0",
     "@types/node": "^24.10.1",
-    "prebid.js": "11.48.0",
+    "prebid.js": "11.49.0",
     "typescript": "~7.0.2"
   }
 }
