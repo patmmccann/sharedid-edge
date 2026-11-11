@@ -71,6 +71,9 @@ jobs:
           npm run build:bowser -w @sharedid-edge/cloudflare
           node scripts/bundle-adapter.mjs packages/adapters/cloudflare/dist/index.js "Worker bundle" \
             packages/adapters/cloudflare/dist-bowser/bowser.js "Worker bundle with Bowser"
+      # The Snippet build: the example configuration must fit the 32 KB Snippet limit and pass its smoke test.
+      - name: Cloudflare Snippet build (example configuration, size limit and smoke test)
+        run: npm run build:snippet -w @sharedid-edge/cloudflare -- --config snippet.config.example.json
       - name: Lambda bundles (default and with Bowser), size budget, and conformance suite against them (local CloudFront stand-in)
         run: npm run conformance:lambda
       - name: Vercel bundles (default and with Bowser; no Node.js built-ins), size budget, and conformance suite against them (local Vercel proxy stand-in)

@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', 'packages/adapters/*/deploy/**', 'packages/adapters/*/deploy-bowser/**', 'packages/adapters/*/dist-bowser/**', 'packages/adapters/vercel/example/**', '**/.tsbuild/**', '**/.wrangler/**', '**/node_modules/**', 'e2e/**', 'website/**', 'consumer-types/**', '**/worker-configuration.d.ts']
+    ignores: ['**/dist/**', 'packages/adapters/*/deploy/**', 'packages/adapters/*/deploy-bowser/**', 'packages/adapters/*/dist-bowser/**', 'packages/adapters/*/dist-snippet/**', 'packages/adapters/vercel/example/**', '**/.tsbuild/**', '**/.wrangler/**', '**/node_modules/**', 'e2e/**', 'website/**', 'consumer-types/**', '**/worker-configuration.d.ts']
   },
   js.configs.recommended,
   // The strictest type-aware presets: no `any` leaks, no floating promises, no unnecessary conditions.
@@ -54,6 +54,6 @@ export default tseslint.config(
   {
     // Build scripts run on Node.
     files: ['scripts/*.mjs', 'packages/*/*/scripts/*.mjs'],
-    languageOptions: { globals: { process: 'readonly', console: 'readonly' } }
+    languageOptions: { globals: { process: 'readonly', console: 'readonly', Request: 'readonly' } }
   }
 );

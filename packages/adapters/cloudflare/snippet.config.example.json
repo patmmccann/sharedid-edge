@@ -1,0 +1,6 @@
+{
+  "$comment": "SharedID Edge as a Cloudflare Snippet: copy to snippet.config.json, set your values, and run npm run build:snippet. Same SID_* settings as the Worker's vars (docs/configuration.md); SID_MODULE_CONFIG may be an object. No SID_MODULE_SECRETS: Snippets have no secrets.",
+  "SID_COOKIE_DOMAIN": "example.com",
+  "SID_MODULES": "reflect",
+  "SID_MODULE_CONFIG": { "reflect": { "cookies": [{ "name": "uid1", "maxAgeDays": 365, "domain": "example.com", "restore": true }] } }
+}
