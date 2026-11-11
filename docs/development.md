@@ -11,6 +11,7 @@ packages/
     all/                       @sharedid-edge/modules: the built-in list the adapters import
   vendor-modules/              modules contributed and maintained by vendors, opt-in at build time
 e2e/                           unmodified Prebid.js against the worker, in Chromium, Firefox and WebKit
+website/                       sharedid.dev: this Markdown, published with VitePress
 scripts/                       verify-deployment, the type checks, the repo checks below, and the docs generator
 ```
 
@@ -82,6 +83,15 @@ Every package in `packages/adapters/` and `packages/modules/` (and `packages/ven
 ```
 
 `@sharedid-edge/modules` (`packages/modules/all`), the built-in list, is `{ "kind": "module-list" }`. A project module also needs its specification in `spec/modules/<name>.md`.
+
+## The website
+
+[sharedid.dev](https://sharedid.dev) is this repository's Markdown, published as it is with [VitePress](https://vitepress.dev): the root README, `docs/`, `spec/`, and every adapter's and module's README. Nothing is copied. `website/.vitepress/config.mts` lists the published files and their URLs, and builds the sidebar from the same `package.json` metadata as the generated tables, so a new adapter or module appears there without an edit. AGENTS.md files and the rest of the repository aren't published.
+
+- **Write links for GitHub,** as relative links between files. The site turns a link to a published page into a site URL, and any other link (a source file, an AGENTS.md, a folder without a README) into a link to the file on GitHub.
+- **A dead link fails the build.** The `website` job in CI builds the site on every pull request, without an account.
+- **Locally:** `cd website && npm ci && npm run dev` serves it with live reload (on `localhost:5173`). `npm run build && npm run preview` serves the production build.
+- **Deploying:** [`website.yml`](../.github/workflows/website.yml) builds and deploys it on every merge to `main`, as a static-assets Worker (`website/wrangler.jsonc`) on the `sharedid.dev/*` route, with the same Cloudflare secrets as the [live tests](../packages/adapters/cloudflare/README.md#live-tests).
 
 ## Adding a module
 

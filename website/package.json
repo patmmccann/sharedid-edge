@@ -1,0 +1,14 @@
+{
+  "name": "sharedid-edge-website",
+  "private": true,
+  "type": "module",
+  "description": "sharedid.dev: the repository's Markdown docs as a static site (VitePress)",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.4"
+  }
+}

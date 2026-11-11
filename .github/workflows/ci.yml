@@ -100,6 +100,25 @@ jobs:
       - name: Each vendor module's tests
         run: npm run test:vendor-modules
 
+  website:
+    name: Website (VitePress build, dead links fail)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: Build sharedid.dev from the repository's Markdown
+        working-directory: website
+        run: |
+          npm ci
+          npm run build
+
   aws-template:
     name: SAM template (cfn-lint, no AWS account)
     runs-on: ubuntu-latest

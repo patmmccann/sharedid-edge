@@ -68,6 +68,8 @@ Modules are built in, and none runs until you list it in `SID_MODULES`. See [Mod
 
 ## Documentation
 
+Also on the web at [sharedid.dev](https://sharedid.dev).
+
 - [Configure Prebid.js](docs/prebid.md)
 - [Responses](docs/responses.md): every route's response, with real output
 - [Configuration reference](docs/configuration.md): every `SID_*` setting
