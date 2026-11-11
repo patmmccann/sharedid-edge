@@ -111,6 +111,18 @@ test('Prebid.js and the endpoint keep one _pubcid, on the same domain', async ({
   await expect.poll(() => pubcidInPrebid(page)).toBe(ids[0]?.value);
 });
 
+test('works under GDPR with the page\'s static TC string: publisher and purpose consent for 1-10', async ({ page, context }) => {
+  await visit(page);
+  // Prebid.js got GDPR scope and the TC string from the page's static consent data (site/public/index.html), so consent is in play.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { pbjs: { getConsentMetadata(): { gdpr?: { gdprApplies?: boolean; consentStringSize?: number } } } }).pbjs.getConsentMetadata().gdpr))
+    .toMatchObject({ gdprApplies: true });
+  const cookies = await context.cookies();
+  // SharedID Edge reads the TC string from euconsent-v2 (sharedIdSystem doesn't send it to pixelUrl), and sets both ID cookies.
+  expect(cookies.find(c => c.name === 'euconsent-v2')?.value).toMatch(/^CQ/);
+  expect(cookies.find(c => c.name === '_pubcid')?.value).toMatch(/^[0-9a-f-]{36}$/);
+  expect(cookies.find(c => c.name === '_pubcid_sv')?.httpOnly).toBe(true);
+});
+
 test('a capped or cleared script cookie is restored from the server-only copy', async ({ page, context, sid }) => {
   await visit(page);
   const first = (await cookie(context, '_pubcid'))?.value;
