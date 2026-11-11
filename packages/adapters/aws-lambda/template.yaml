@@ -197,29 +197,6 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
-  # Forward all viewer headers, cookies and query strings while omitting Host so CloudFront can sign the
-  # Lambda function URL with origin access control. This also preserves User-Agent and Sec-CH-UA* for the ua module.
-  # The managed policy avoids CloudFront's 10-header whitelist quota.
-  OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
-
-  SharedIdCachePolicy:
-    Type: AWS::CloudFront::CachePolicy
-    Properties:
-      CachePolicyConfig:
-        Name: !Sub ${AWS::StackName}-sharedid
-        Comment: SharedID Edge, zero TTL; preserve viewer User-Agent for ua
-        DefaultTTL: 0
-        MaxTTL: 0
-        MinTTL: 0
-        CookiesConfig:
-          CookieBehavior: all
-        QueryStringsConfig:
-          QueryStringBehavior: all
-        HeadersConfig:
-          HeaderBehavior: whitelist
-          Headers:
-            - User-Agent
-
   Distribution:
     Type: AWS::CloudFront::Distribution
     Condition: CreateDistribution
@@ -263,9 +240,13 @@ Resources:
             AllowedMethods: [GET, HEAD, OPTIONS]
             CachedMethods: [GET, HEAD]
             Compress: true
-            # Zero TTL prevents edge caching while preserving viewer User-Agent for the ua module.
-            CachePolicyId: !Ref SharedIdCachePolicy
-            OriginRequestPolicyId: !Ref OriginRequestPolicyId
+            # Managed CachingDisabled: responses carry per-visitor cookies.
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            # Managed AllViewerExceptHostHeader: every viewer header but Host (which must stay the function URL's, for
+            # origin access control), so User-Agent, the Client Hints, Origin and Sec-GPC, plus CloudFront's viewer
+            # address and location headers, every cookie and every query parameter. A custom policy would need more
+            # than CloudFront's default quota of 10 headers.
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
 
 Outputs:
   FunctionUrl:
@@ -278,11 +259,11 @@ Outputs:
     Description: Attach this origin access control to that origin.
     Value: !GetAtt OriginAccessControl.Id
   OriginRequestPolicyId:
-    Description: AWS managed AllViewerExceptHostHeader origin request policy for the /_sid/* behaviour.
+    Description: The managed AllViewerExceptHostHeader origin request policy, for the /_sid/* behaviour.
     Value: b689b0a8-53d0-40ab-baf2-68738e2966ac
   CachePolicyId:
-    Description: The custom zero-TTL cache policy that preserves viewer User-Agent, for the /_sid/* behaviour.
-    Value: !Ref SharedIdCachePolicy
+    Description: The managed CachingDisabled cache policy, for the /_sid/* behaviour.
+    Value: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
   DistributionDomainName:
     Condition: CreateDistribution
     Description: The new distribution's domain; point your site's hostnames at it.

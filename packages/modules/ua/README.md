@@ -360,7 +360,7 @@ Things to know:
 
 ## On AWS Lambda behind CloudFront
 
-CloudFront sends the function only the headers its origin request policy lists, and replaces an unlisted `User-Agent` with `Amazon CloudFront`. The stack's policy doesn't list `User-Agent` or the Client Hints yet, so on Lambda the module sees neither and reports `empty`. (It ignores `Amazon CloudFront` rather than flag every request as a bot.) To use it there, add `User-Agent`, `Sec-CH-UA`, `Sec-CH-UA-Mobile` and `Sec-CH-UA-Platform` (and the high-entropy hints you ask for) to the `OriginRequestPolicy` headers in `template.yaml`, or use your own policy. CloudFront limits a policy to 10 headers by default; ask AWS for a higher quota if you need more. See [`packages/adapters/aws-lambda/README.md`](../../adapters/aws-lambda/README.md#platform-information).
+CloudFront sends the function only the headers its origin request policy forwards, and replaces an unforwarded `User-Agent` with `Amazon CloudFront`. The stack's behaviour uses the managed `AllViewerExceptHostHeader` policy, which forwards `User-Agent` and every Client Hint the browser sends, so the module works on Lambda as elsewhere. With your own policy, include `User-Agent`, `Sec-CH-UA`, `Sec-CH-UA-Mobile` and `Sec-CH-UA-Platform` (and the high-entropy hints you ask for); otherwise the module sees neither and reports `empty`. (It ignores `Amazon CloudFront` rather than flag every request as a bot.) See [`packages/adapters/aws-lambda/README.md`](../../adapters/aws-lambda/README.md#platform-information).
 
 On Cloudflare and the Node.js server, every request header reaches the module.
 
@@ -396,7 +396,7 @@ This package is Apache-2.0. It depends on:
 | `ext.modules.ua` is missing | `ua` isn't in `SID_MODULES`. |
 | `status` is `error` | `SID_MODULE_CONFIG.ua` has a key other than `ua` and `parser`, `ua` isn't `true` or `false`, or `parser` isn't `"isbot"` or `"bowser"`. Or `parser` is `"bowser"` and the bundle was built without Bowser: use the adapter's Bowser build (see [Full parsing with Bowser](#full-parsing-with-bowser)). |
 | `status` is `empty` in Safari or Firefox | They send no Client Hints, and with the default parser the module only checks their `User-Agent` for bots. Build with Bowser and set `"parser": "bowser"` for device data (see [Full parsing with Bowser](#full-parsing-with-bowser)). |
-| `status` is `empty` on AWS Lambda | The origin request policy doesn't forward `User-Agent` and the hints (see [above](#on-aws-lambda-behind-cloudfront)). |
+| `status` is `empty` on AWS Lambda | The behaviour's origin request policy isn't `AllViewerExceptHostHeader` and doesn't forward `User-Agent` and the hints (see [above](#on-aws-lambda-behind-cloudfront)). |
 | `sua.source` is always `1` | The browser hasn't been asked for high-entropy hints (see [Getting high-entropy hints](#getting-high-entropy-hints)), or consent limits them: check `Sec-GPC`, `coppa`, `us_privacy`, `gdpr` and `gdpr_consent`. |
 | No `osv` for a Mac, or for Windows | The `User-Agent` freezes them (macOS `10.15.7`, `Windows NT 10.0`). With `Sec-CH-UA-Platform-Version`, Chromium sends the real version. |
 | An iPad is reported as a Mac | iPadOS asks for desktop sites with a Mac's `User-Agent`. |

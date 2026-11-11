@@ -239,16 +239,15 @@ describe('handlerFromEnv', () => {
 });
 
 describe('template.yaml', () => {
-  it('uses the managed AllViewerExceptHostHeader origin policy and a zero-TTL cache policy that preserves User-Agent', () => {
-    const root = join(import.meta.dirname, '..');
-    const template = readFileSync(join(root, 'template.yaml'), 'utf8');
-    expect(template).toMatch(/OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac/);
-    // AWS's managed policy forwards all viewer headers except Host and all viewer location/device headers,
-    // including CloudFront-Viewer-Address, Country, Region, City, Postal Code, Metro, Latitude, Longitude and Time Zone.
-    expect(template).not.toMatch(/CloudFront-Viewer-Address[\\s\\S]*Headers:/);
-    expect(template).toMatch(/HeaderBehavior: whitelist[\\s\\S]*- User-Agent/);
-    expect(template).toMatch(/DefaultTTL: 0[\\s\\S]*MaxTTL: 0[\\s\\S]*MinTTL: 0/);
-    expect(template).toMatch(/OriginRequestPolicyId: !Ref OriginRequestPolicyId/);
+  it('sends /_sid/* through the managed CachingDisabled and AllViewerExceptHostHeader policies', () => {
+    const template = readFileSync(join(import.meta.dirname, '..', 'template.yaml'), 'utf8');
+    const behaviour = template.slice(template.indexOf('CacheBehaviors:'), template.indexOf('\nOutputs:'));
+    // AllViewerExceptHostHeader forwards User-Agent, the Client Hints, Origin, Sec-GPC and CloudFront's viewer
+    // address and location headers, but not Host, which origin access control needs to be the function URL's.
+    expect(behaviour).toContain('CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad');
+    expect(behaviour).toContain('OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac');
+    expect(template).not.toContain('AWS::CloudFront::OriginRequestPolicy');
+    expect(template).not.toContain('AWS::CloudFront::CachePolicy');
   });
 
   it('passes every SID_* setting core reads to the function', () => {
