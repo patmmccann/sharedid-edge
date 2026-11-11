@@ -1,0 +1,16 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  // sharedid.dev: the built site (npm run build, into .vitepress/dist) as static assets, deployed by
+  // .github/workflows/website.yml on every merge to main. The e2e. and conformance. hostnames have their own Workers.
+  "name": "sharedid-edge-website",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./.vitepress/dist",
+    // VitePress builds clean URLs (/adapters/cloudflare serves adapters/cloudflare.html) and a 404.html.
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "workers_dev": false,
+  "routes": [{ "pattern": "sharedid.dev/*", "zone_name": "sharedid.dev" }],
+  "observability": { "enabled": false }
+}

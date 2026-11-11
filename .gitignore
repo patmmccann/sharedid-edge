@@ -16,3 +16,6 @@ playwright-report/
 packages/adapters/gcp-functions/terraform/.build/
 .jscpd-report/
 e2e/site/public/prebid/
+website/.vitepress/dist/
+website/.vitepress/cache/
+.cloudflare/
