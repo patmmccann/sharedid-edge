@@ -188,7 +188,12 @@ test('a capped or cleared script cookie is restored from the server-only copy', 
   // new id from script after the pixel loads, which overwrote the restored one. Wait a moment so a late rewrite shows.
   await page.waitForTimeout(500);
   expect((await cookie(context, '_pubcid'))?.value).toBe(first);
-  await expect.poll(() => pubcidInPrebid(page)).toBe(first);
+  // Prebid.js reads the restored id from the cookie on the next page view. (On this one, sharedIdSystem reads storage
+  // as soon as the pixel loads; WebKit on Linux may not show the pixel response's Set-Cookie to document.cookie yet,
+  // so Prebid.js can keep its own new id in memory until the page is next loaded.)
+  await visit(page);
+  expect(await pubcidInPrebid(page)).toBe(first);
+  expect((await cookie(context, '_pubcid'))?.value).toBe(first);
 });
 
 test('pbjs.getUserIdsAsync() resolves on a later visit with extend: true', async ({ page, context }) => {
