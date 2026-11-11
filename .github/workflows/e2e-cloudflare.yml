@@ -103,7 +103,7 @@ jobs:
           key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ hashFiles('e2e/package-lock.json') }}
       - name: Install the browser and its system dependencies
         working-directory: e2e
-        run: npx playwright install --with-deps ${{ matrix.browser }}
+        run: ./install-browser.sh ${{ matrix.browser }}
       - name: Unmodified Prebid.js against https://e2e.sharedid.dev (${{ matrix.browser }})
         working-directory: e2e
         env:
