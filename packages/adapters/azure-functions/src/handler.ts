@@ -71,16 +71,20 @@ async function toRequest(request: AzureHttpRequest, publicOrigin: string | undef
 export async function toResponseInit(response: Response, method: string): Promise<AzureHttpResponseInit> {
   const { headers, cookies: setCookies } = splitHeaders(response.headers);
   const cookies: AzureCookie[] = [];
+  const rawCookies: string[] = [];
   for (const header of setCookies) {
     const cookie = parseSetCookie(header);
     if (preservedByHost(cookie.value)) {
       cookies.push(cookie);
     } else {
-      // The host would percent-encode the value and set a different cookie (a reflected cookie the page reads, say).
-      // Leaving it unchanged in the browser is better than corrupting it. The name is configuration, not request data.
-      console.error(`sharedid-edge: not setting cookie ${cookie.name}: Azure Functions would percent-encode its value`);
+      // The Functions host percent-encodes Cookie values supplied through cookies[]. Keep the exact Set-Cookie header
+      // in the response headers instead. This bypasses that transformation while preserving the cookie byte for byte.
+      rawCookies.push(header);
     }
   }
+  const outputHeaders = rawCookies.length === 0
+    ? headers
+    : { ...headers, 'set-cookie': rawCookies.length === 1 ? rawCookies[0] : rawCookies.join('\n') };
   const body = method.toUpperCase() === 'HEAD' || response.body === null ? undefined : new Uint8Array(await response.arrayBuffer());
-  return { status: response.status, headers, cookies, ...(body === undefined || body.byteLength === 0 ? {} : { body }) };
+  return { status: response.status, headers: outputHeaders, cookies, ...(body === undefined || body.byteLength === 0 ? {} : { body }) };
 }
