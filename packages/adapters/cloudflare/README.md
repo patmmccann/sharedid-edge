@@ -181,6 +181,40 @@ Before attaching the production route, you can deploy with `"workers_dev": true`
 
 A company running SharedID Edge for several publishers can deploy one Worker per publisher, each with its own routes and `vars`, using Wrangler environments (`env.<publisher>`) or separate config files (`wrangler deploy -c publisher-a.jsonc`). Each Worker must run on the zone that serves that publisher's site, so the publisher needs to delegate the route (or the zone) to your Cloudflare account. The IP rule means it can't run on your own domain behind a CNAME.
 
+#### Hosting companies
+
+A host that serves its customers' sites through [Cloudflare for SaaS](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/) already answers `www.publisher.example` from its own zone, as a custom hostname. That's the IP rule met for every hosted site: a Worker on that zone's `/_sid/*` answers from the same Cloudflare addresses as the pages, and the publisher changes nothing. Each publisher still needs its own settings, `SID_COOKIE_DOMAIN` at least, and one deployment has one configuration, so the Worker has to be picked per hostname.
+
+**With [Workers for Platforms](https://developers.cloudflare.com/cloudflare-for-platforms/workers-for-platforms/)** (a paid add-on), one Worker per publisher, picked by a dispatch Worker:
+
+1. Create a dispatch namespace, for example `sharedid`.
+2. For each publisher, deploy this package's Worker into it, with that publisher's `vars` and no `routes`: `npx wrangler deploy --dispatch-namespace sharedid --name <publisher> -c <publisher>.jsonc`. Name it as you like; the dispatch Worker looks it up.
+3. Deploy a dispatch Worker on your SaaS zone, with the route `*/_sid/*` (the base path, if you changed `SID_BASE_PATH`) and the namespace bound as `DISPATCHER`. It picks the publisher's Worker from the hostname, using the custom hostname's [custom metadata](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/domain-support/custom-metadata/) (`request.cf.hostMetadata`, which your Cloudflare account team enables, on subdomain-style custom hostnames) or a Workers KV map:
+
+   ```js
+   export default {
+     async fetch(request, env) {
+       const host = new URL(request.url).hostname;
+       const name = request.cf?.hostMetadata?.sharedid ?? (await env.SHAREDID_HOSTS.get(host));
+       // A hostname without SharedID Edge: answer nothing, as the Worker does outside its routes.
+       if (name === null || name === undefined) return new Response(null, { status: 404 });
+       return env.DISPATCHER.get(name).fetch(request);
+     }
+   };
+   ```
+
+4. Verify each hostname with `npm run verify-deployment -- --site https://www.publisher.example` ([Verify](#verify)): it checks that the endpoint shares the site's IP addresses and that the cookies are server-set and `Secure`.
+
+Pass the incoming `request` on as it is, so the publisher's Worker gets the visitor's `CF-Connecting-IP` and `request.cf`. Updating SharedID Edge means redeploying each publisher's Worker into the namespace; a script over your list of publishers does it.
+
+**With one shared Worker,** configured per hostname: not possible yet, since a deployment has one configuration. Per-hostname settings in core would allow it, without Workers for Platforms ([#110](https://github.com/patmmccann/sharedid-edge/issues/110)).
+
+**With Snippets:** there's no Snippets for Platforms. Snippets are per zone (25, 50 or 300 by plan), their configuration is fixed at build time ([Worker or Snippet?](#worker-or-snippet)), and Cloudflare doesn't document whether snippet rules on a SaaS zone run for custom hostnames. So one Snippet per publisher soon runs out, and one for all needs per-hostname settings. Use Workers for Platforms for now.
+
+**If the publisher's own zone is on Cloudflare too** (their proxied hostname is a CNAME to yours, "orange-to-orange"), their zone handles the request first. A SharedID Edge route of theirs on `/_sid/*` would answer instead of yours, so agree which of you runs it.
+
+Not yet tested on a live SaaS zone; [#110](https://github.com/patmmccann/sharedid-edge/issues/110) tracks that, and the per-hostname settings.
+
 ## Configuration and secrets
 
 - **Settings:** every setting is a `SID_*` variable, listed in [`wrangler.jsonc`](wrangler.jsonc) and described in the [Configuration reference](../../../docs/configuration.md). An empty string means "use the default".
