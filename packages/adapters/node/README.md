@@ -50,7 +50,11 @@ location /_sid/ {
 
 - **Overwrite `X-Forwarded-For`:** use `$remote_addr`, not `$proxy_add_x_forwarded_for`. Appending keeps whatever the visitor sent first, and that's the entry the server trusts.
 - **No shared cache:** neither a CDN nor `proxy_cache` may store `/_sid/` responses; they carry per-visitor cookies.
-- **Behind Cloudflare, with an origin running this server:** enable Cloudflare's **"Add visitor location headers"** managed transform if you want the `geo` module. Cloudflare sends `cf-ipcountry`, `cf-ipcity` and the rest, which the server reads with `SID_TRUST_PROXY`. Make sure only Cloudflare can reach your origin, or visitors could send those headers themselves.
+- **Pass the visitor's country on.** Without a `gdpr` signal, GDPR applies when the visitor is in the EU, and the server knows that only from its location headers. With no country, GDPR's scope is unknown and storage is allowed, so an EU visitor without a TC string would get cookies ([Consent](../../../docs/consent.md)). It also feeds the `geo` module.
+  - **Behind Cloudflare,** with an origin running this server: enable Cloudflare's **"Add visitor location headers"** managed transform. Cloudflare sends `cf-ipcountry`, `cf-ipcity` and the rest, which the server reads with `SID_TRUST_PROXY` by default.
+  - **Behind another CDN,** point `SID_LOCATION_HEADERS` at the CDN's own headers. CloudFront: `{"country":"cloudfront-viewer-country","regionCode":"cloudfront-viewer-country-region"}`, with those headers added to the origin request policy. Fastly or Akamai: a header your configuration sets from `client.geo.country_code` or EdgeScape's country.
+  - Either way, the proxy must **overwrite** these headers on every request, and only it may reach the server, or visitors could send them themselves.
+  - **Check it** from an EU location without a TC string: `/_sid/sync` should set no cookie.
 - **Process management:** run it under systemd, in a container, or with another process manager, like any Node.js service. It needs Node.js 24 or later.
 
 ## Configuration and secrets
@@ -62,7 +66,8 @@ From the environment:
 | `PORT` | `8787` | Listening port. |
 | `HOST` | `127.0.0.1` | Listening address. Keep it local behind a proxy. |
 | `SID_PUBLIC_ORIGIN` | `http://<Host header>` | Your public origin, for example `https://www.example.com`. TLS ends at your proxy, so the server sees http; cookies are `Secure` anyway for a public hostname (see [Secure cookies](../../../docs/configuration.md#secure-cookies)), so this is optional. Set it to make request URLs, and so what modules see, match the visitor's. |
-| `SID_TRUST_PROXY` | `false` | Trust the proxy's headers: the client IP from the first `X-Forwarded-For` entry, and location from Cloudflare's visitor location headers. Only behind a proxy that overwrites them. |
+| `SID_TRUST_PROXY` | `false` | Trust the proxy's headers: the client IP from the first `X-Forwarded-For` entry, and the location from `SID_LOCATION_HEADERS`. Only behind a proxy that overwrites them. |
+| `SID_LOCATION_HEADERS` | Cloudflare's visitor location headers (`cf-ipcountry` and the rest) | JSON: location field → the request header it comes from, for a proxy other than Cloudflare, like `{"country":"cloudfront-viewer-country"}`. Fields: `country`, `regionCode`, `city`, `postalCode`, `metroCode`, `latitude`, `longitude`, `timezone`, `continent`; a field left out isn't read. Needs `SID_TRUST_PROXY=true`. An invalid value is a configuration error. |
 | `SID_COOKIE_DOMAIN` | **required** | The domain Prebid.js writes `_pubcid` on, normally your registrable domain (`example.com`), or `host-only`. Without it the server doesn't start. |
 | `SID_*` | | Every other core setting, as in the [Configuration reference](../../../docs/configuration.md). |
 | `SID_MODULE_SECRETS` | `{}` | Module secrets, such as the `ec` passphrase. Supply it from your secret store (systemd `LoadCredential`, a container secret, and so on), not a committed file. |
@@ -71,14 +76,14 @@ Invalid settings stop the server at start-up with `Configuration error: …`.
 
 ## Platform data: what the server knows about each request
 
-| `PlatformInfo` | Without `SID_TRUST_PROXY` | With `SID_TRUST_PROXY=true` |
+| `PlatformInfo` | Without `SID_TRUST_PROXY` | With `SID_TRUST_PROXY=true` (the default headers; `SID_LOCATION_HEADERS` replaces them) |
 | --- | --- | --- |
 | `clientIp` | The socket's remote address (your proxy's, if there is one) | The first `X-Forwarded-For` entry |
 | `country`, `region` | none | `cf-ipcountry`, `cf-region-code` |
 | `city`, `postalCode`, `metroCode` | none | `cf-ipcity` (UTF-8 decoded), `cf-postal-code`, `cf-metro-code` |
 | `latitude`, `longitude` | none | `cf-iplatitude`, `cf-iplongitude` |
 | `timezone`, `continent` | none | `cf-timezone`, `cf-ipcontinent` |
-| `isEU` | none | none: GDPR scope then comes from the `gdpr` parameter |
+| `isEU` | none | From the country: one of the 27 EU member states. Without a `gdpr` parameter, it decides whether GDPR applies |
 | `traffic` | none | none: there is no platform bot verdict; the `bot` module and other modules still report to the traffic signal |
 
 Core's `locationInfo` validates the values the same way for every adapter, dropping empty, `XX`/`T1` and out-of-range ones. IPv4 clients on a dual-stack socket appear as `::ffff:192.0.2.1`, which the `ip` module reports as IPv4.
@@ -123,6 +128,7 @@ Locally, `npm run conformance` runs the whole conformance suite against this ser
 | --- | --- |
 | Cookies aren't `Secure` | The server sees a local host (`localhost`, an IP address, or a `.test`/`.local` name): the proxy isn't passing the public `Host`. Pass it, or set `SID_PUBLIC_ORIGIN` to your https origin. |
 | `ip` returns your proxy's address | Set `SID_TRUST_PROXY=true`, and have the proxy overwrite `X-Forwarded-For`. |
-| `geo` returns nothing | No Cloudflare location headers reach the server, or `SID_TRUST_PROXY` is off. |
+| `geo` returns nothing | No location headers reach the server (Cloudflare's, or those in `SID_LOCATION_HEADERS`), or `SID_TRUST_PROXY` is off. |
+| EU visitors without consent get cookies | The server doesn't know their country: pass it on (see [Deploy behind your proxy](#deploy-behind-your-proxy)). |
 | Visitors share one ID or one cookie | Something caches `/_sid/` responses. Turn caching off for that path. |
 | `verify-deployment` says the IPs differ | `/_sid/` is served from a different host or IP than your pages. Route it through the same proxy. |
