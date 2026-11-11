@@ -223,6 +223,27 @@ Pass the incoming `request` on as it is, so the publisher's Worker gets the visi
 
 Not yet tested on a live SaaS zone; [#110](https://github.com/patmmccann/sharedid-edge/issues/110) tracks that, and the per-hostname settings.
 
+#### Sales houses
+
+A sales house (an ad network representing many publishers, without hosting their sites) can run SharedID Edge for them, but not from its own domain. The endpoint has to answer on each publisher's site hostname, from the site's IP addresses. A CNAME from `sid.publisher.example` to you doesn't do it: the addresses differ from the site's, and Safari caps the cookies (`verify-deployment` reports it). Workers for Platforms doesn't change that. It helps you manage many Workers in your own account, but they still have to be reached on the publisher's hostname.
+
+**When the publisher is on Cloudflare,** run it in their account:
+
+- The publisher creates an API token for you, limited to their zone: **Workers Scripts: Edit** and **Workers Routes: Edit** for a Worker, or **Snippets: Edit** for a Snippet.
+- **A Worker:** you deploy one per publisher, on `www.publisher.example/_sid/*`, with that publisher's `vars`, as in [Deploying for many publishers](#deploying-for-many-publishers). It runs on any plan, and the Workers bill is the publisher's (free up to 100,000 requests a day).
+- **A Snippet,** on Pro or higher: build one per publisher from a configuration file (`SID_COOKIE_DOMAIN` and the rest; [Build and deploy the Snippet](#build-and-deploy-the-snippet)), then upload it and its rule through the API or Terraform. It's included in the publisher's plan at no extra cost. Changing a setting means rebuilding and re-uploading, and `ec` isn't available.
+- Updating SharedID Edge is a rebuild and redeploy per publisher; a script over your publisher list does it.
+
+**When the publisher isn't on Cloudflare,** their CDN or proxy can pass `/_sid/*` to an endpoint you run. CloudFront, Fastly, Akamai and nginx can all route a path to another origin. The browser still sees their hostname and addresses, so the cookies are first-party. The visitor's cookies travel with the request, so the TC string cookie, opt-out and the recovery cookie reach you. Consent also depends on the visitor's country, which needs the publisher's CDN to pass it on (below). Two things to get right:
+
+- **The visitor's country decides consent, not just the `geo` module.** Without a `gdpr` signal, GDPR applies when the request comes from the EU, and if the country is unknown, storage is allowed ([Consent](../../../docs/consent.md)). Behind a CDN that isn't Cloudflare, nothing knows the visitor's country unless the publisher's CDN passes it on. So an EU visitor without a TC string would get cookies they shouldn't.
+  - **This Worker** isn't suited to this setup. Behind another CDN, `CF-Connecting-IP` and `request.cf` describe the CDN's edge server, not the visitor. Its country is usually close to the visitor's, but not reliably enough for consent.
+  - **The [Node.js server](../node/README.md)** with `SID_TRUST_PROXY` takes the client IP from `X-Forwarded-For`, and the location from Cloudflare-named headers (`cf-ipcountry` and the rest). The publisher's CDN must set `cf-ipcountry` to the visitor's country from its own geolocation, overwriting any copy the visitor sent: CloudFront's `CloudFront-Viewer-Country` in a CloudFront Function, Fastly's `client.geo.country_code`, Akamai's EdgeScape country. Trust those headers only from the publisher's proxy, and make sure the endpoint can't be reached any other way.
+  - **Check it** before going live: call `/_sid/v1` through the publisher's site from an EU location without a TC string. It should set no cookie.
+- **Settings per publisher:** `SID_COOKIE_DOMAIN` differs for each, and a deployment has one configuration, so run one endpoint per publisher. For example, one Node.js process each, which the publisher's proxy reaches by its own hostname or path.
+
+Either way, nothing changes on the page: Prebid.js's SharedID `pixelUrl` stays `/_sid/sync` on the publisher's own site ([Configure Prebid.js](../../../docs/prebid.md)). [#111](https://github.com/patmmccann/sharedid-edge/issues/111) tracks testing the proxied setup end to end, and trusted forwarded headers beyond the Node.js server.
+
 ## Configuration and secrets
 
 - **Settings:** every setting is a `SID_*` variable, listed in [`wrangler.jsonc`](wrangler.jsonc) and described in the [Configuration reference](../../../docs/configuration.md). An empty string means "use the default".
