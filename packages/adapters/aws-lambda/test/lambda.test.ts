@@ -226,7 +226,7 @@ describe('handlerFromEnv', () => {
     error.mockRestore();
   });
 
-  it('builds in the ec module, with its secret from SID_MODULE_SECRETS', async () => {
+  it("doesn't build in ec: listed in SID_MODULES without being added, it's skipped as not installed", async () => {
     const handler = handlerFromEnv({
       SID_COOKIE_DOMAIN: 'host-only',
       SID_MODULES: 'ec',
@@ -234,9 +234,9 @@ describe('handlerFromEnv', () => {
       SID_MODULE_SECRETS: '{"ec":{"passphrase":"conformance-passphrase-0123456789abcdef"}}'
     });
     const result = await handler(cloudFrontEvent({ path: '/_sid/v1', headers: { 'cloudfront-viewer-address': '192.0.2.77:443' } }));
-    expect(payload(result.body).ext.modules['ec']?.status).toBe('ok');
-    // HMAC-SHA256 of 192.0.2.77 with that passphrase, as in conformance/cases/module-ec.json.
-    expect(result.cookies.find(c => c.startsWith('ts-ec='))).toMatch(/^ts-ec=7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc.[A-Za-z0-9]{6};/);
+    // ec is a vendor module: a deployer adds it at build time (conformance/cases/module-ec.json covers that build).
+    expect(payload(result.body).ext.modules['ec']).toEqual({ ms: 0, status: 'skipped', reason: 'not installed' });
+    expect(result.cookies.find(c => c.startsWith('ts-ec='))).toBeUndefined();
   });
 
   it('reads SID_PUBLIC_ORIGIN and SID_BEHIND_CLOUDFRONT', async () => {

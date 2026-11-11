@@ -1,6 +1,6 @@
 # @sharedid-edge/gcp-functions
 
-[SharedID Edge](../../../README.md) on Google Cloud: a Cloud Run function (2nd gen, Node.js 24, the Functions Framework) behind a `/_sid/*` path rule of **the external Application Load Balancer that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server and the Lambda function, with built-in modules `ip`, `ec`, `geo` and `reflect`. It passes the same conformance suite, and it uses `@sharedid-edge/node`'s request and response conversion.
+[SharedID Edge](../../../README.md) on Google Cloud: a Cloud Run function (2nd gen, Node.js 24, the Functions Framework) behind a `/_sid/*` path rule of **the external Application Load Balancer that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server and the Lambda function, with built-in modules `ip`, `geo`, `reflect`, `bot` and `ua` (`ec` and vendor modules are added at build time). It passes the same conformance suite, and it uses `@sharedid-edge/node`'s request and response conversion.
 
 This is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform).
 
@@ -50,8 +50,8 @@ Cloud Run function sharedid-edge (Node.js 24, ingress: internal and Cloud Load B
 
 Cloud Run has two shapes, and SharedID Edge fits both:
 
-- **Cloud Run functions (this package):** you deploy a source directory, Google builds it, and the Functions Framework runs it. It's the least to maintain: no image, no Dockerfile. It reads the load balancer's `X-Forwarded-For` entry and location headers, so the `ip`, `ec` and `geo` modules work.
-- **Cloud Run services running the Node.js server ([`@sharedid-edge/node`](../node/README.md))** in a container: choose this if you already deploy containers, want to pin the image, or run the same image elsewhere. A published image is planned ([#35](https://github.com/patmmccann/sharedid-edge/issues/35)). The routing is the same (a serverless NEG and a path rule). But the Node.js server's `SID_TRUST_PROXY` takes the **first** `X-Forwarded-For` entry, which behind this load balancer is whatever the visitor sent. So leave `SID_TRUST_PROXY` off there. The server then has no client IP or location to give (the `ip`, `ec` and `geo` modules return nothing, and GDPR comes from `gdpr=1`).
+- **Cloud Run functions (this package):** you deploy a source directory, Google builds it, and the Functions Framework runs it. It's the least to maintain: no image, no Dockerfile. It reads the load balancer's `X-Forwarded-For` entry and location headers, so the `ip` and `geo` modules work, and `ec` once added.
+- **Cloud Run services running the Node.js server ([`@sharedid-edge/node`](../node/README.md))** in a container: choose this if you already deploy containers, want to pin the image, or run the same image elsewhere. A published image is planned ([#35](https://github.com/patmmccann/sharedid-edge/issues/35)). The routing is the same (a serverless NEG and a path rule). But the Node.js server's `SID_TRUST_PROXY` takes the **first** `X-Forwarded-For` entry, which behind this load balancer is whatever the visitor sent. So leave `SID_TRUST_PROXY` off there. The server then has no client IP or location to give (the `ip` and `geo` modules, and `ec` if added, return nothing, and GDPR comes from `gdpr=1`).
 
 Choose functions unless you have a reason for containers. Both run on the same infrastructure, with the same scaling and pricing model.
 
@@ -89,6 +89,14 @@ npm run bundle -w @sharedid-edge/gcp-functions    # packages/adapters/gcp-functi
 | --- | --- |
 | `sharedid-edge.mjs` | The function: `src/function.ts` with core, `@sharedid-edge/node`'s conversion and the built-in modules, in one minified ESM file (about 16 KB gzipped; the bundle step fails it over 32 KB). It registers the HTTP function `sharedidEdge`. |
 | `package.json` | `main` is the bundle; its one dependency is `@google-cloud/functions-framework`, which Cloud Build installs and which runs the function. |
+
+**`ec` and vendor modules (opt-in).** The bundle has the built-in modules (`ip`, `geo`, `reflect`, `bot`, `ua`). [`ec`](../../vendor-modules/ec/README.md) (Trusted Server Edge Cookies, whose ID is derived from the IP address) and [vendor modules](../../vendor-modules/README.md) aren't in it: add each with `--module <package>#<export>`, in place of `npm run bundle -w @sharedid-edge/gcp-functions`:
+
+```sh
+npm run bundle -w @sharedid-edge/gcp-functions -- --module @sharedid-edge/module-ec#ecModule
+```
+
+Then list it in `SID_MODULES`, with its settings and secrets (the [`ec` README](../../vendor-modules/ec/README.md#turning-it-on)). Without `--module`, `SID_MODULES=ec` reports `ec` as `skipped` (`not installed`) and sets no `ts-ec`. `ec` used to be built in: if you deploy it, add `--module` to your build before you next bundle. The bundle's size is reported but the 32 KB budget isn't enforced with opt-in modules; `--bowser` and `--module` can be combined.
 
 To parse User-Agents fully with Bowser in the `ua` module, bundle with `npm run bundle:bowser -w @sharedid-edge/gcp-functions` instead (see the [`ua` module](../../modules/ua/README.md)). Rebuild and bundle after updating the code.
 

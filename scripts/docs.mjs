@@ -52,6 +52,8 @@ function packages() {
         problems.push(`${where}: sharedidEdge.forwards must be a list of host names`);
       }
       if (parent === 'vendor-modules') {
+        // Deployers add a vendor module as <package>#<export>, and the conformance suite builds it in by its export.
+        if (typeof meta.export !== 'string' || !/^[A-Za-z_$][\w$]*$/.test(meta.export)) problems.push(`${where}: sharedidEdge.export must be the module's export name, like ecModule`);
         // Every vendor module says whether it reaches the network: npm run test:vendor-modules enforces it.
         const hosts = allowedHosts(meta.network);
         if (hosts === undefined) problems.push(`${where}: sharedidEdge.network must be "none" or a non-empty list of host names`);
@@ -63,8 +65,8 @@ function packages() {
         problems.push(`${where}: sharedidEdge.buildCredentials must be a list of environment variable names, like FIFTYONE_DEGREES_LICENSE_KEY`);
       }
       if (meta.ipDerived !== undefined && typeof meta.ipDerived !== 'boolean') problems.push(`${where}: sharedidEdge.ipDerived must be true or false`);
-      // IP-derived IDs are for vendor modules; ec, IAB Tech Lab's Trusted Server port, is held to the same rules.
-      if (meta.ipDerived === true && parent === 'modules' && dir !== 'ec') problems.push(`${where}: a project module can't derive an ID from the IP address (see packages/vendor-modules/AGENTS.md#ip-derived-ids)`);
+      // IP-derived IDs are for vendor modules (ec among them), never the project's own.
+      if (meta.ipDerived === true && parent === 'modules') problems.push(`${where}: a project module can't derive an ID from the IP address (see packages/vendor-modules/AGENTS.md#ip-derived-ids)`);
       if (parent === 'modules' && !existsSync(join(root, 'spec/modules', `${dir}.md`))) problems.push(`${where}: no specification in spec/modules/${dir}.md`);
     }
     if (meta.kind !== 'module-list' && !existsSync(join(root, folder, 'README.md'))) problems.push(`${folder}: no README.md`);

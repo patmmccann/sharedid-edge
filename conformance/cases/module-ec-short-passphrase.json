@@ -1,6 +1,7 @@
 {
   "$schema": "../case-file.schema.json",
   "description": "The ec module with a passphrase under 32 bytes: it reports an error and sets nothing, but withdrawal (GPC, COPPA, opt-out, a TC string without Purpose 1) still deletes an existing ts-ec, because deletion needs no HMAC. Requests carry the client IP as X-Forwarded-For (Node.js and Lambda, SID_TRUST_PROXY) and CF-Connecting-IP (Workers).",
+  "build": ["vendor-modules"],
   "config": {
     "SID_MODULES": "ec",
     "SID_MODULE_CONFIG": "{\"ec\":{\"domain\":\"example.com\"}}",

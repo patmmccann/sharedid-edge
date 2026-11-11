@@ -21,9 +21,20 @@ It sets the `ts-ec` cookie on the publisher's domain, on Prebid.js's `/_sid/sync
 
 ## Turning it on
 
-The module is built into the Cloudflare Worker, the Node.js server and the AWS Lambda adapter. It does nothing until you list it in `SID_MODULES` and give it a passphrase.
+`ec` is a [vendor module](../README.md), maintained by the project: it isn't built into the adapters, because its ID is derived from the IP address. You add it to your build, then list it in `SID_MODULES` and give it a passphrase. Until then, `SID_MODULES=ec` only reports it as `skipped` (`not installed`).
 
-1. **Create a passphrase** of at least 32 bytes, and keep it secret. For example:
+1. **Add it to your build,** as `@sharedid-edge/module-ec#ecModule`:
+
+   | Platform | How |
+   | --- | --- |
+   | Cloudflare Worker | In `packages/adapters/cloudflare`: `node ../../../scripts/module-list.mjs .sharedid-modules --worker --module @sharedid-edge/module-ec#ecModule`, and deploy with `npx wrangler deploy .sharedid-modules/worker.ts` in step 5 |
+   | AWS Lambda, Vercel, Azure Functions, Google Cloud | `npm run bundle -w @sharedid-edge/<adapter> -- --module @sharedid-edge/module-ec#ecModule` in place of `npm run bundle` |
+   | Node.js server | `SID_MODULE_PACKAGES=@sharedid-edge/module-ec#ecModule` |
+   | Cloudflare Snippet | Not available: it needs a secret, and Snippets have none |
+
+   It adds about 1 KB to a bundle, gzipped.
+
+2. **Create a passphrase** of at least 32 bytes, and keep it secret. For example:
 
    ```sh
    openssl rand -hex 32
@@ -31,7 +42,7 @@ The module is built into the Cloudflare Worker, the Node.js server and the AWS L
 
    Use the same passphrase as your Trusted Server deployment if you want both to derive the same prefix for the same address.
 
-2. **Store it as a secret.** Put it in `SID_MODULE_SECRETS`, never in `vars`:
+3. **Store it as a secret.** Put it in `SID_MODULE_SECRETS`, never in `vars`:
 
    ```sh
    npm exec -w @sharedid-edge/cloudflare -- wrangler secret put SID_MODULE_SECRETS
@@ -40,7 +51,7 @@ The module is built into the Cloudflare Worker, the Node.js server and the AWS L
 
    For local development, put the same line in `packages/adapters/cloudflare/.dev.vars` (which git ignores) as `SID_MODULE_SECRETS={"ec":{"passphrase":"…"}}`. With the Node.js server, set the `SID_MODULE_SECRETS` environment variable. On AWS Lambda, pass it as the SAM template's `SidModuleSecrets` parameter (see [the Lambda adapter's README](../../adapters/aws-lambda/README.md#secrets)).
 
-3. **Enable the module, and set your domain**, in `packages/adapters/cloudflare/wrangler.jsonc`:
+4. **Enable the module, and set your domain**, in `packages/adapters/cloudflare/wrangler.jsonc`:
 
    ```jsonc
    "vars": {
@@ -49,7 +60,7 @@ The module is built into the Cloudflare Worker, the Node.js server and the AWS L
    }
    ```
 
-4. **Deploy** (`npm exec -w @sharedid-edge/cloudflare -- wrangler deploy`), then check:
+5. **Deploy** (on Cloudflare, `npx wrangler deploy .sharedid-modules/worker.ts` in `packages/adapters/cloudflare`), then check:
 
    ```sh
    curl -si https://www.example.com/_sid/v1 | grep -i '^set-cookie: ts-ec'
@@ -60,7 +71,7 @@ The module is built into the Cloudflare Worker, the Node.js server and the AWS L
    # set-cookie: ts-ec=…; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
    ```
 
-5. **On the page,** nothing is needed to set the cookie if Prebid.js calls `/_sid/sync` (its `pixelUrl`, with `extend: true`). To send the EC to bidders, merge the `/_sid/v1` payload's `ortb2` into Prebid.js before the auction, as [Configure Prebid.js](../../../docs/prebid.md#module-output-_sidv1) shows. The EC then reaches bidders in `user.ext.eids`, next to the IDs from Prebid.js's User ID modules.
+6. **On the page,** nothing is needed to set the cookie if Prebid.js calls `/_sid/sync` (its `pixelUrl`, with `extend: true`). To send the EC to bidders, merge the `/_sid/v1` payload's `ortb2` into Prebid.js before the auction, as [Configure Prebid.js](../../../docs/prebid.md#module-output-_sidv1) shows. The EC then reaches bidders in `user.ext.eids`, next to the IDs from Prebid.js's User ID modules.
 
 ## What it does
 
@@ -133,7 +144,15 @@ With `SID_MODULES=ec`, a first `/_sid/v1` call from `192.0.2.77`:
 - `empty`: none, because consent rules it out, there's no client IP, or the cookie was only deleted.
 - `error`: a missing or short passphrase, or an invalid `domain`. No details are given. Withdrawal doesn’t need the passphrase, so even then GPC, COPPA, opt-out and withdrawn consent still delete an existing `ts-ec`.
 
-The EC is returned as an EID with the source `ts.iabtechlab.com` and `atype` 1 (a cookie ID), not as `user.id`. Trusted Server puts the EC in `user.id` of the OpenRTB requests it builds itself, but here the payload is merged into Prebid.js's first-party data, where `user.id` would become every bidder's exchange user ID. Trusted Server defines no EID source for EC, so this one is SharedID Edge's own, until IAB Tech Lab registers one; bidders that want the EC look for it in `user.ext.eids`.
+The EC is returned as an EID with the source `ts.iabtechlab.com` and `atype` 1 (a cookie ID), not as `user.id`. Trusted Server puts the EC in `user.id` of the OpenRTB requests it builds itself, but here the payload is merged into Prebid.js's first-party data, where `user.id` would become every bidder's exchange user ID. That isn't what the field is for. [OpenRTB 2.6](https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/2.6.md), Object: User, defines it as:
+
+> `id` | string | Exchange-specific ID for the user. Unless prior arrangements have been made between the buyer and the seller directly, the value in this field is expected to be the exchange's user ID from its cookie.
+
+The EC is the publisher's identifier, not an exchange's cookie ID, so it goes in `user.ext.eids`, where IDs from other sources belong. The [OpenRTB implementation guidance, 7.12 ID Match Method Guidance](https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/implementation.md#712---id-match-method-guidance-) doesn't address `user.id` itself; it sets the same expectation for `user.buyeruid` ("expected to be derived from a real time cookie sync") and sends other IDs to the EIDs. On the EID's `source`, its section 7.12.2 says:
+
+> `source` is the party that defined/created an ID. In the case of universal or alt-IDs, it's the domain of the party who defined/created the ID itself.
+
+The EC is defined by IAB Tech Lab's Trusted Server specification, so the source is a Tech Lab domain: `ts.iabtechlab.com`, for Trusted Server. Trusted Server's code names no EID source for the EC (it only sets `user.id`); the OpenRTB specification, as written, is what this follows. Bidders that want the EC look for it in `user.ext.eids`.
 
 ## Consent and opt-out
 
@@ -173,14 +192,15 @@ Where Trusted Server's draft specification and its code differ, this module foll
 
 ## Using it in code
 
-The module and its building blocks are exported for other adapters and for tests:
+The module and its building blocks are exported for your own builds and for tests. Pass it with the built-in modules, `[...builtInModules, ecModule]`:
 
 ```ts
 import { createHandler, resolveConfig } from '@sharedid-edge/core';
+import { builtInModules } from '@sharedid-edge/modules';
 import { ecModule, ecPrefix, normalizeIp, isValidEcId } from '@sharedid-edge/module-ec';
 import { parseIp } from '@sharedid-edge/module-ip';
 
-const handler = createHandler({ config: resolveConfig(env), modules: [ecModule] });
+const handler = createHandler({ config: resolveConfig(env), modules: [...builtInModules, ecModule] });
 
 const ip = parseIp('2001:db8:85a3::1');
 if (ip) console.log(await ecPrefix(passphrase, normalizeIp(ip)));   // 64 hex characters

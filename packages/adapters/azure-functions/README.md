@@ -1,6 +1,6 @@
 # @sharedid-edge/azure-functions
 
-[SharedID Edge](../../../README.md) on Azure: an Azure Functions app (Node.js v4 programming model) behind a `/_sid/*` route of **the Azure Front Door profile that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server, the Lambda function and the Vercel adapter, with built-in modules `ip`, `ec`, `geo`, `reflect`, `bot` and `ua`. It passes the same conformance suite, except for one documented limitation of Azure Functions: [cookie values](#cookie-values).
+[SharedID Edge](../../../README.md) on Azure: an Azure Functions app (Node.js v4 programming model) behind a `/_sid/*` route of **the Azure Front Door profile that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server, the Lambda function and the Vercel adapter, with built-in modules `ip`, `geo`, `reflect`, `bot` and `ua` (`ec` and vendor modules are added at build time). It passes the same conformance suite, except for one documented limitation of Azure Functions: [cookie values](#cookie-values).
 
 This is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform).
 
@@ -82,6 +82,14 @@ npm install --omit=dev                              # @azure/functions, the v4 p
 | `package.json` | `main` is the bundle; its one dependency is `@azure/functions`. That library isn't bundled: it reaches the Functions worker through a module only the worker provides. |
 
 Rebuild and bundle after updating the code.
+
+**`ec` and vendor modules (opt-in).** The bundle has the built-in modules (`ip`, `geo`, `reflect`, `bot`, `ua`). [`ec`](../../vendor-modules/ec/README.md) (Trusted Server Edge Cookies, whose ID is derived from the IP address) and [vendor modules](../../vendor-modules/README.md) aren't in it: add each with `--module <package>#<export>`, in place of `npm run bundle -w @sharedid-edge/azure-functions`:
+
+```sh
+npm run bundle -w @sharedid-edge/azure-functions -- --module @sharedid-edge/module-ec#ecModule
+```
+
+Then list it in `SID_MODULES`, with its settings and secrets (the [`ec` README](../../vendor-modules/ec/README.md#turning-it-on)). Without `--module`, `SID_MODULES=ec` reports `ec` as `skipped` (`not installed`) and sets no `ts-ec`. `ec` used to be built in: if you deploy it, add `--module` to your build before you next bundle. The bundle's size is reported but the 32 KB budget isn't enforced with opt-in modules; `--bowser` and `--module` can be combined.
 
 **Bowser (opt-in).** The `ua` module's [full `User-Agent` parsing](../../modules/ua/README.md#full-parsing-with-bowser) fills `device` (`sua`, `devicetype`, `make`, `model`, `os`, `osv`) for Safari, Firefox, TVs and other browsers that send no Client Hints. It isn't in the default bundle, to keep it small. `npm run bundle:bowser -w @sharedid-edge/azure-functions` (in place of `bundle`; the same `deploy/` function app) builds it in, then `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` turns it on. The cost, minified and gzipped, against the 32 KB budget CI checks for both builds:
 

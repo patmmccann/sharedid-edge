@@ -22,8 +22,6 @@
     { "path": "packages/modules/all/test" },
     { "path": "packages/modules/bot" },
     { "path": "packages/modules/bot/test" },
-    { "path": "packages/modules/ec" },
-    { "path": "packages/modules/ec/test" },
     { "path": "packages/modules/geo" },
     { "path": "packages/modules/geo/test" },
     { "path": "packages/modules/ip" },
@@ -32,6 +30,8 @@
     { "path": "packages/modules/reflect/test" },
     { "path": "packages/modules/ua" },
     { "path": "packages/modules/ua/test" },
+    { "path": "packages/vendor-modules/ec" },
+    { "path": "packages/vendor-modules/ec/test" },
     { "path": "conformance" },
     { "path": "scripts" }
   ]

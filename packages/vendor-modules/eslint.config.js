@@ -9,7 +9,7 @@ export default [
     files: ['*/src/**/*.ts'],
     rules: {
       // No logging at all: a module never logs request data, and errors are reported by core as `status: "error"`.
-      'no-console': ['error', { allow: [] }],
+      'no-console': 'error',
       // Network calls only through the opt-in, time-limited, cached wrapper the vendor rules require; until core
       // provides it, none. Data updates belong in scheduled jobs, not requests.
       'no-restricted-globals': [

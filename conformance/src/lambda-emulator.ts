@@ -11,7 +11,8 @@ import { join } from 'node:path';
 import type { LambdaEventV2, LambdaHandler } from '@sharedid-edge/aws-lambda';
 import { caseClientIp, caseLocation, emulatorPort, loadBundleExport, readBody, serve, trustProxyFromEnv, type CaseLocationHeader } from './emulator.js';
 
-const BUNDLE_DIR = process.env['CONFORMANCE_LAMBDA_BUNDLE'] === 'deploy-bowser' ? 'deploy-bowser' : 'deploy';
+// deploy, deploy-bowser (Bowser in the ua module) or deploy-vendor (the vendor modules added); anything else is deploy.
+const BUNDLE_DIR = ['deploy-bowser', 'deploy-vendor'].find(dir => dir === process.env['CONFORMANCE_LAMBDA_BUNDLE']) ?? 'deploy';
 const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/aws-lambda', BUNDLE_DIR, 'lambda.mjs');
 
 async function loadHandler(): Promise<LambdaHandler> {

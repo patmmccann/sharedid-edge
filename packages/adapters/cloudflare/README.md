@@ -275,7 +275,7 @@ Either way, nothing changes on the page: Prebid.js's SharedID `pixelUrl` stays `
 
 | `PlatformInfo` | From | Used by |
 | --- | --- | --- |
-| `clientIp` | `CF-Connecting-IP` header | `ip`, `ec` |
+| `clientIp` | `CF-Connecting-IP` header | `ip`, and `ec` when added |
 | `isEU` | `request.cf.isEUCountry` (`"1"` in an EU member state) | GDPR scope when there's no `gdpr` parameter |
 | `country` | `request.cf.country` (ISO 3166-1 alpha-2; `XX` and Tor's `T1` are dropped) | `geo` |
 | `region` | `request.cf.regionCode` | `geo` |
@@ -288,7 +288,7 @@ Core's `locationInfo` validates every location value the same way for all adapte
 
 ## Built-in modules
 
-The Worker builds in `ip`, `ec`, `geo`, `reflect`, `bot` and `ua`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the [Modules](../../../docs/modules.md) and each module's README. To add your own or a vendor module, import it in `src/index.ts` and pass `[...builtInModules, yourModule]`.
+The Worker builds in `ip`, `geo`, `reflect`, `bot` and `ua`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the [Modules](../../../docs/modules.md) and each module's README. To add your own or a vendor module, import it in `src/index.ts` and pass `[...builtInModules, yourModule]`.
 
 ## Verify
 

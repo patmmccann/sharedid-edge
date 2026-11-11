@@ -229,7 +229,7 @@ describe('handlerFromEnv', () => {
     }
   });
 
-  it('builds in the ec module, with its secret from SID_MODULE_SECRETS', async () => {
+  it("doesn't build in ec: listed in SID_MODULES without being added, it's skipped as not installed", async () => {
     const handler = handlerFromEnv({
       SID_COOKIE_DOMAIN: 'host-only',
       SID_MODULES: 'ec',
@@ -237,8 +237,9 @@ describe('handlerFromEnv', () => {
       SID_MODULE_SECRETS: '{"ec":{"passphrase":"conformance-passphrase-0123456789abcdef"}}'
     });
     const response = await call(handler, '/_sid/v1', { headers: { 'x-forwarded-for': `192.0.2.77,${LB}` } });
-    expect(((await response.json()) as Payload).ext.modules['ec']?.status).toBe('ok');
-    expect(response.headers.getSetCookie().find(c => c.startsWith('ts-ec='))).toMatch(/^ts-ec=7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc\.[A-Za-z0-9]{6};/);
+    // ec is a vendor module: a deployer adds it at build time (conformance/cases/module-ec.json covers that build).
+    expect(((await response.json()) as Payload).ext.modules['ec']).toEqual({ ms: 0, status: 'skipped', reason: 'not installed' });
+    expect(response.headers.getSetCookie().find(c => c.startsWith('ts-ec='))).toBeUndefined();
   });
 
   it('reads the adapter\'s own settings', async () => {
