@@ -13,6 +13,8 @@ const port = Number(process.env['PORT'] ?? 4310);
 // /sync, so Prebid.js's pixel call refreshes uid1 and keeps _ga (host-only cookies: the site is 127.0.0.1).
 const handler = createHandler({
   config: resolveConfig({
+    // 127.0.0.1 can't have domain cookies, so Prebid.js writes _pubcid host-only here; the live site uses its domain.
+    SID_COOKIE_DOMAIN: 'host-only',
     SID_SYNC_CACHE_SECONDS: '0',
     SID_MODULES: 'reflect',
     SID_MODULE_CONFIG: JSON.stringify({ reflect: { cookies: [{ name: 'uid1', maxAgeDays: 365 }, { name: '_ga', maxAgeDays: 400, restore: true }] } })

@@ -38,7 +38,7 @@ export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtI
   const clientIpHeader = env['SID_CLIENT_IP_HEADER'];
   return handlerOrMisconfigured<GcpHandler>(
     () => createGcpHandler({
-      config: resolveConfig(env),
+      config: resolveConfig(env, { requireCookieDomain: true }),
       modules,
       behindLoadBalancer: booleanFromEnv(env['SID_BEHIND_LOAD_BALANCER'], true),
       trustedHops: parseTrustedHops(env['SID_TRUSTED_HOPS']),

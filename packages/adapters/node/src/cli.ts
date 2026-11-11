@@ -9,7 +9,7 @@ import { createNodeServer } from './index.js';
 // built-in modules run), plus:
 //   PORT (default 8787), HOST (default 127.0.0.1), SID_TRUST_PROXY, SID_PUBLIC_ORIGIN.
 try {
-  const config = resolveConfig(process.env);
+  const config = resolveConfig(process.env, { requireCookieDomain: true });
   const port = Number(process.env['PORT'] ?? 8787);
   const host = process.env['HOST'] ?? '127.0.0.1';
   const publicOrigin = process.env['SID_PUBLIC_ORIGIN'];

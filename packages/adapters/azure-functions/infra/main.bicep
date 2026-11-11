@@ -45,8 +45,9 @@ param maximumInstanceCount int = 100
 param sidBasePath string = '/_sid'
 @description('SID_COOKIE_NAME (empty: _pubcid)')
 param sidCookieName string = ''
-@description('SID_COOKIE_DOMAIN, e.g. .example.com (empty: host-only)')
-param sidCookieDomain string = ''
+@description('SID_COOKIE_DOMAIN (required): the domain Prebid.js writes the SharedID cookie on, normally your registrable domain (example.com); host-only for cookies without a Domain')
+@minLength(1)
+param sidCookieDomain string
 @description('SID_MAX_AGE_DAYS (empty: 365)')
 param sidMaxAgeDays string = ''
 @description('SID_CREATE (empty: true)')

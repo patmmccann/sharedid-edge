@@ -89,7 +89,7 @@ export interface ConfigSetting {
 export const SETTINGS: readonly ConfigSetting[] = [
   { name: 'SID_BASE_PATH', default: '`/_sid`', description: 'Path prefix the worker answers under. Must match your route.' },
   { name: 'SID_COOKIE_NAME', default: '`_pubcid`', description: 'The SharedID cookie; must match `storage.name` in Prebid.js.' },
-  { name: 'SID_COOKIE_DOMAIN', default: 'host-only', description: '`Domain` for the cookies, e.g. `.example.com` to share across subdomains.' },
+  { name: 'SID_COOKIE_DOMAIN', default: '**required**', description: 'The domain Prebid.js writes the SharedID cookie on, which the worker\'s cookies must match: normally your registrable domain, `example.com` (Prebid.js picks the highest domain it can set a cookie on). `host-only` for cookies without a `Domain`, when Prebid.js writes them that way (a site served from an IP address, say). Unset, every request gets a 500.' },
   { name: 'SID_MAX_AGE_DAYS', default: '`365`', description: 'Cookie lifetime in days, 1 to 400 (browsers cap at 400).' },
   { name: 'SID_CREATE', default: '`true`', description: 'Mint an ID when the request has none. With Prebid.js it always sends one, so this rarely matters.' },
   { name: 'SID_RECOVERY_COOKIE', default: '`_pubcid_sv`', description: 'Name of the `HttpOnly` recovery copy; `none` to disable it.' },
@@ -155,6 +155,18 @@ function list(env: Env, key: string): string[] {
   return value === undefined ? [] : value.split(',').map(s => s.trim()).filter(s => s !== '');
 }
 
+/** `SID_COOKIE_DOMAIN` value for cookies without a `Domain` attribute. */
+const HOST_ONLY = 'host-only';
+
+export interface ResolveConfigOptions {
+  /**
+   * Throw a `ConfigError` when `SID_COOKIE_DOMAIN` is unset. Adapters pass it for the deployment's configuration:
+   * Prebid.js writes the SharedID cookie on the registrable domain, so a deployment has to say which domain (or
+   * `host-only`) rather than default to host-only cookies that split the ID in two.
+   */
+  readonly requireCookieDomain?: boolean;
+}
+
 /**
  * Resolve configuration from environment variables (strings, as platforms provide them). The variables, with their
  * defaults and descriptions, are listed in {@link SETTINGS} (and, generated from it, in `docs/configuration.md`). An
@@ -162,13 +174,19 @@ function list(env: Env, key: string): string[] {
  *
  * @throws ConfigError when a value is invalid, so a misconfigured deployment fails loudly instead of setting bad cookies.
  */
-export function resolveConfig(env: Env): SharedIdEdgeConfig {
+export function resolveConfig(env: Env, options: ResolveConfigOptions = {}): SharedIdEdgeConfig {
   const basePath = str(env, 'SID_BASE_PATH') ?? DEFAULT_CONFIG.basePath;
   if (!BASE_PATH.test(basePath) || basePath.includes('//')) {
     throw new ConfigError(`SID_BASE_PATH must be a path like /_sid, not "${basePath}"`);
   }
 
-  const cookieDomain = str(env, 'SID_COOKIE_DOMAIN');
+  const cookieDomainSetting = str(env, 'SID_COOKIE_DOMAIN');
+  if (cookieDomainSetting === undefined && options.requireCookieDomain === true) {
+    throw new ConfigError(
+      'SID_COOKIE_DOMAIN is required: set it to the domain Prebid.js writes the SharedID cookie on, normally your registrable domain (example.com), or to host-only'
+    );
+  }
+  const cookieDomain = cookieDomainSetting === HOST_ONLY ? undefined : cookieDomainSetting;
   if (cookieDomain !== undefined && !DOMAIN.test(cookieDomain)) {
     throw new ConfigError(`SID_COOKIE_DOMAIN is not a valid domain: "${cookieDomain}"`);
   }

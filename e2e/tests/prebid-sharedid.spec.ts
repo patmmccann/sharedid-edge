@@ -39,6 +39,17 @@ interface Pbjs {
 const DAY = 86_400;
 
 /**
+ * The deployment's SID_COOKIE_DOMAIN (E2E_COOKIE_DOMAIN, `sharedid.dev` live), or undefined for host-only cookies, as on
+ * the local server at 127.0.0.1. Prebid.js writes _pubcid on the highest domain it can, and the endpoint must match.
+ */
+const COOKIE_DOMAIN = process.env['E2E_COOKIE_DOMAIN'];
+
+/** Where a test's own cookie goes: on the cookie domain, as a script on the site would write it, or host-only. */
+function cookieScope(baseURL: string | undefined): { domain: string; path: string } | { url: string } {
+  return COOKIE_DOMAIN === undefined ? { url: String(baseURL) } : { domain: `.${COOKIE_DOMAIN}`, path: '/' };
+}
+
+/**
  * Loads the page and waits for Prebid.js's pixelUrl request to SharedID Edge to complete.
  *
  * Not `pbjs.getUserIdsAsync()`: with `extend: true` and `pixelUrl`, sharedIdSystem's extendId callback ignores the
@@ -86,6 +97,20 @@ test('unmodified Prebid.js sharedIdSystem with pixelUrl gets a long-lived server
   expect(await pubcidInPrebid(page)).toBe(first);
 });
 
+test('Prebid.js and the endpoint keep one _pubcid, on the same domain', async ({ page, context, baseURL }) => {
+  await visit(page);
+  await page.reload();
+  await page.waitForTimeout(500);
+  const all = await context.cookies();
+  const ids = all.filter(c => c.name === '_pubcid');
+  // Two _pubcid cookies mean SID_COOKIE_DOMAIN doesn't match where Prebid.js writes it: each side reads its own.
+  expect(ids.map(c => c.domain)).toHaveLength(1);
+  const expected = COOKIE_DOMAIN === undefined ? new URL(String(baseURL)).hostname : `.${COOKIE_DOMAIN}`;
+  expect(ids[0]?.domain).toBe(expected);
+  expect(all.find(c => c.name === '_pubcid_sv')?.domain).toBe(expected);
+  await expect.poll(() => pubcidInPrebid(page)).toBe(ids[0]?.value);
+});
+
 test('a capped or cleared script cookie is restored from the server-only copy', async ({ page, context, sid }) => {
   await visit(page);
   const first = (await cookie(context, '_pubcid'))?.value;
@@ -107,7 +132,7 @@ test('a capped or cleared script cookie is restored from the server-only copy', 
 test('Prebid.js\'s own pixel call, with no /v1 fetch, refreshes a reflected cookie', async ({ page, context, sid, baseURL }) => {
   // A script-written uid1 that would expire in a day, as Safari caps script cookies.
   const soon = Math.round(Date.now() / 1000) + DAY;
-  await context.addCookies([{ name: 'uid1', value: 'AbC%2Fx+y/z==.v1', url: String(baseURL), expires: soon }]);
+  await context.addCookies([{ name: 'uid1', value: 'AbC%2Fx+y/z==.v1', ...cookieScope(baseURL), expires: soon }]);
   await visit(page);
 
   const log = await sid.requests();
@@ -119,7 +144,7 @@ test('Prebid.js\'s own pixel call, with no /v1 fetch, refreshes a reflected cook
 });
 
 test('Prebid.js\'s pixel call restores a deleted cookie from the keeper', async ({ page, context, sid, baseURL }) => {
-  await context.addCookies([{ name: '_ga', value: 'GA1.1.1234567890.1700000000', url: String(baseURL), expires: Math.round(Date.now() / 1000) + DAY }]);
+  await context.addCookies([{ name: '_ga', value: 'GA1.1.1234567890.1700000000', ...cookieScope(baseURL), expires: Math.round(Date.now() / 1000) + DAY }]);
   await visit(page);
   expect((await cookie(context, '_sid_keep'))?.httpOnly).toBe(true);
 

@@ -15,6 +15,8 @@
   "vars": {
     "SID_BASE_PATH": "/_sid",
     "SID_COOKIE_NAME": "_pubcid",
+    // Required: the domain Prebid.js writes _pubcid on, normally your registrable domain ("example.com"), or "host-only".
+    // Left empty, every request gets a 500 and the log names this setting.
     "SID_COOKIE_DOMAIN": "",
     "SID_MAX_AGE_DAYS": "365",
     "SID_CREATE": "true",
@@ -41,7 +43,7 @@
       "vars": {
         "SID_BASE_PATH": "/_sid",
         "SID_COOKIE_NAME": "_pubcid",
-        "SID_COOKIE_DOMAIN": "",
+        "SID_COOKIE_DOMAIN": "host-only",
         "SID_MAX_AGE_DAYS": "365",
         "SID_CREATE": "true",
         "SID_RECOVERY_COOKIE": "_pubcid_sv",
@@ -66,7 +68,7 @@
       "vars": {
         "SID_BASE_PATH": "/_sid",
         "SID_COOKIE_NAME": "_pubcid",
-        "SID_COOKIE_DOMAIN": "",
+        "SID_COOKIE_DOMAIN": "sharedid.dev",
         "SID_MAX_AGE_DAYS": "365",
         "SID_CREATE": "true",
         "SID_RECOVERY_COOKIE": "_pubcid_sv",

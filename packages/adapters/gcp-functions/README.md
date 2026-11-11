@@ -104,7 +104,7 @@ To parse User-Agents fully with Bowser in the `ua` module, bundle with `npm run 
 cd packages/adapters/gcp-functions/terraform
 terraform init
 terraform apply -var project=my-project -var region=us-central1 \
-  -var sid_cookie_domain=.example.com -var sid_modules=ip,geo
+  -var sid_cookie_domain=example.com -var sid_modules=ip,geo
 ```
 
 | Variable | |

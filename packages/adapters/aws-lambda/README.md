@@ -86,7 +86,8 @@ The prompts:
 | `DistributionId` | Your distribution's ID. Only it may invoke the function. |
 | `SiteOriginDomainName`, `Aliases`, `AcmCertificateArn` | Leave empty unless `CreateDistribution` is `true`. |
 | `SidBasePath` | `/_sid`, unless you use another path. The behaviour's path pattern is this plus `/*`. |
-| `Sid*` | The [settings](#configuration). Empty means the default. |
+| `SidCookieDomain` | **Required:** the domain Prebid.js writes `_pubcid` on, normally your registrable domain (`example.com`), or `host-only`. See [Configure Prebid.js](../../../docs/prebid.md). |
+| Other `Sid*` | The [settings](#configuration). Empty means the default. |
 | `SidModuleSecrets` | Only for modules that need a secret; see [Secrets](#secrets). |
 | Confirm changes, allow IAM role creation | `y`. SAM creates the function's execution role. |
 | Save arguments to `samconfig.toml` | `y`. Later deploys are just `sam deploy`. |

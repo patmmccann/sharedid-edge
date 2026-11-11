@@ -9,7 +9,7 @@ These are the core settings, which every platform reads. The table is generated 
 | --- | --- | --- |
 | `SID_BASE_PATH` | `/_sid` | Path prefix the worker answers under. Must match your route. |
 | `SID_COOKIE_NAME` | `_pubcid` | The SharedID cookie; must match `storage.name` in Prebid.js. |
-| `SID_COOKIE_DOMAIN` | host-only | `Domain` for the cookies, e.g. `.example.com` to share across subdomains. |
+| `SID_COOKIE_DOMAIN` | **required** | The domain Prebid.js writes the SharedID cookie on, which the worker's cookies must match: normally your registrable domain, `example.com` (Prebid.js picks the highest domain it can set a cookie on). `host-only` for cookies without a `Domain`, when Prebid.js writes them that way (a site served from an IP address, say). Unset, every request gets a 500. |
 | `SID_MAX_AGE_DAYS` | `365` | Cookie lifetime in days, 1 to 400 (browsers cap at 400). |
 | `SID_CREATE` | `true` | Mint an ID when the request has none. With Prebid.js it always sends one, so this rarely matters. |
 | `SID_RECOVERY_COOKIE` | `_pubcid_sv` | Name of the `HttpOnly` recovery copy; `none` to disable it. |

@@ -5,6 +5,7 @@ export {
   DEFAULT_CONFIG,
   MAX_COOKIE_AGE_DAYS,
   resolveConfig,
+  type ResolveConfigOptions,
   SETTINGS,
   type ConfigSetting,
   type SharedIdEdgeConfig

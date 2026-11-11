@@ -49,8 +49,10 @@ export interface ModuleCookie {
   readonly value: string;
   readonly maxAgeSeconds: number;
   readonly httpOnly: boolean;
-  /** The `Domain` attribute; `SID_COOKIE_DOMAIN` when omitted, host-only when that's unset too. */
+  /** The `Domain` attribute; `SID_COOKIE_DOMAIN` when omitted, host-only when that's `host-only`. */
   readonly domain?: string;
+  /** `true`: no `Domain` attribute, whatever `SID_COOKIE_DOMAIN` says (for re-setting a host-only cookie). */
+  readonly hostOnly?: boolean;
 }
 
 /** What a module adds to the payload. Every field is optional. */

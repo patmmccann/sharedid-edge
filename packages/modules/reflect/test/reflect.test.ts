@@ -321,6 +321,17 @@ describe('the reflect module in the handler', () => {
     expect(response.headers.getSetCookie().find(c => c.startsWith('fpid='))).toMatch(/^fpid=def; Max-Age=2592000; Expires=[^;]+; Path=\/; Domain=\.example\.com; SameSite=Lax; HttpOnly$/);
   });
 
+  it('keeps a cookie set to "domain": "host-only" host-only, even with SID_COOKIE_DOMAIN', async () => {
+    const reflectConfig = { reflect: { cookies: [{ name: 'uid1', maxAgeDays: 30, domain: 'host-only' }, FPID] } };
+    const response = await createHandler({
+      config: resolveConfig({ SID_MODULES: 'reflect', SID_COOKIE_DOMAIN: 'example.com', SID_MODULE_CONFIG: JSON.stringify(reflectConfig) }),
+      modules: [reflectModule]
+    })(new Request('https://www.example.com/_sid/v1', { headers: { Cookie: 'uid1=abc; fpid=def' } }));
+    const cookies = response.headers.getSetCookie();
+    expect(cookies.find(c => c.startsWith('uid1='))).not.toMatch(/Domain=/);
+    expect(cookies.find(c => c.startsWith('fpid='))).toMatch(/; Domain=example\.com;/);
+  });
+
   it('reflects only configured cookies the request carries, with reflectable values', async () => {
     expect((await call('/_sid/v1', { Cookie: 'other=1; uid1=; fpid=x' })).cookies.map(c => c.split(';')[0])).toEqual(['fpid=x']);
     expect((await call('/_sid/v1', { Cookie: 'uid1="abc"; fpid=a b' })).cookies).toEqual([]);

@@ -140,11 +140,11 @@ describe('createVercelMiddleware', () => {
 
   it('is configured from the environment, and a misconfiguration fails only the base path', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const ok = middlewareFromEnv({ SID_BASE_PATH: '/identity' });
+    const ok = middlewareFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_BASE_PATH: '/identity' });
     expect((await ok(vercelRequest({ path: '/identity/v1' })))?.status).toBe(200);
     expect(await ok(vercelRequest({ path: '/_sid/v1' }))).toBeUndefined();
 
-    const bad = middlewareFromEnv({ SID_MAX_AGE_DAYS: '0' });
+    const bad = middlewareFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_MAX_AGE_DAYS: '0' });
     expect((await bad(vercelRequest({ path: '/_sid/sync' })))?.status).toBe(500);
     expect(await bad(vercelRequest({ path: '/article' }))).toBeUndefined();
     expect(error).toHaveBeenCalledOnce();
@@ -181,7 +181,7 @@ describe('the ip module on /v1', () => {
   });
 
   it('is built in through handlerFromEnv', async () => {
-    const response = await handlerFromEnv({ SID_MODULES: 'ip' })(vercelRequest({ path: '/_sid/v1', omitHeaders: GEO_HEADERS }));
+    const response = await handlerFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_MODULES: 'ip' })(vercelRequest({ path: '/_sid/v1', omitHeaders: GEO_HEADERS }));
     expect((await payload(response)).ortb2?.device?.ip).toBe('198.51.100.23');
   });
 });
@@ -251,7 +251,7 @@ describe('platformInfo', () => {
 describe('handlerFromEnv', () => {
   it('answers every request with a 500 when the configuration is invalid', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const handler = handlerFromEnv({ SID_MAX_AGE_DAYS: '0' });
+    const handler = handlerFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_MAX_AGE_DAYS: '0' });
     expect(error).toHaveBeenCalledOnce();
     expect(JSON.stringify(error.mock.calls)).toContain('SID_MAX_AGE_DAYS');
     for (const path of ['/_sid/sync', '/_sid/v1']) {
@@ -263,8 +263,17 @@ describe('handlerFromEnv', () => {
     }
   });
 
+  it('answers every request with a 500 without SID_COOKIE_DOMAIN, naming the setting', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const handler = handlerFromEnv({});
+    expect(String(error.mock.calls[0]?.[0])).toContain('SID_COOKIE_DOMAIN');
+    expect((await handler(vercelRequest({ path: '/_sid/sync' }))).status).toBe(500);
+    error.mockRestore();
+  });
+
   it('builds in the ec module, with its secret from SID_MODULE_SECRETS', async () => {
     const handler = handlerFromEnv({
+      SID_COOKIE_DOMAIN: 'host-only',
       SID_MODULES: 'ec',
       SID_MODULE_CONFIG: '{"ec":{"domain":"example.com"}}',
       SID_MODULE_SECRETS: '{"ec":{"passphrase":"conformance-passphrase-0123456789abcdef"}}'
@@ -276,7 +285,7 @@ describe('handlerFromEnv', () => {
   });
 
   it('reads SID_PUBLIC_ORIGIN and SID_BEHIND_VERCEL', async () => {
-    const handler = handlerFromEnv({ SID_MODULES: 'ip', SID_PUBLIC_ORIGIN: 'http://localhost:3000', SID_BEHIND_VERCEL: 'false' });
+    const handler = handlerFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_MODULES: 'ip', SID_PUBLIC_ORIGIN: 'http://localhost:3000', SID_BEHIND_VERCEL: 'false' });
     const response = await handler(vercelRequest({ path: '/_sid/v1' }));
     expect((await payload(response)).ortb2).toBeUndefined();
     const sync = await handler(vercelRequest());

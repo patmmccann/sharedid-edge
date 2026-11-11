@@ -33,7 +33,7 @@ export function parseFrontDoorIds(value: string | undefined): readonly string[] 
 export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtInModules): AzureHandler {
   return handlerOrMisconfigured(
     () => createAzureHandler({
-      config: resolveConfig(env),
+      config: resolveConfig(env, { requireCookieDomain: true }),
       modules,
       behindFrontDoor: booleanFromEnv(env['SID_BEHIND_FRONT_DOOR'], true),
       frontDoorIds: parseFrontDoorIds(env['SID_FRONT_DOOR_ID']),

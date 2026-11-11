@@ -195,6 +195,23 @@ describe('resolveConfig', () => {
   ])('rejects %s=%s', (key, value) => {
     expect(() => resolveConfig({ [key]: value })).toThrow(ConfigError);
   });
+
+  describe('SID_COOKIE_DOMAIN', () => {
+    it('is required for a deployment (requireCookieDomain), naming the setting', () => {
+      expect(() => resolveConfig({}, { requireCookieDomain: true })).toThrow(/SID_COOKIE_DOMAIN is required/);
+      expect(() => resolveConfig({ SID_COOKIE_DOMAIN: '' }, { requireCookieDomain: true })).toThrow(ConfigError);
+    });
+    it('host-only gives cookies without a Domain', () => {
+      expect(resolveConfig({ SID_COOKIE_DOMAIN: 'host-only' }, { requireCookieDomain: true }).cookieDomain).toBeUndefined();
+    });
+    it('takes a registrable domain, with or without the leading dot', () => {
+      expect(resolveConfig({ SID_COOKIE_DOMAIN: 'example.com' }, { requireCookieDomain: true }).cookieDomain).toBe('example.com');
+      expect(resolveConfig({ SID_COOKIE_DOMAIN: '.example.com' }, { requireCookieDomain: true }).cookieDomain).toBe('.example.com');
+    });
+    it('stays optional for a programmatic configuration (host-only when unset)', () => {
+      expect(resolveConfig({}).cookieDomain).toBeUndefined();
+    });
+  });
 });
 
 describe('decodeTcf', () => {

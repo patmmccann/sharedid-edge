@@ -78,7 +78,7 @@ Edit [`wrangler.jsonc`](wrangler.jsonc):
   "workers_dev": false,                    // no public *.workers.dev URL in production
   "vars": {
     "SID_COOKIE_NAME": "_pubcid",          // must match storage.name in Prebid.js
-    "SID_COOKIE_DOMAIN": "",               // e.g. ".example.com" to share across subdomains
+    "SID_COOKIE_DOMAIN": "example.com",    // required: the domain Prebid.js writes _pubcid on (or "host-only")
     "SID_MAX_AGE_DAYS": "365",
     "SID_VENDOR_ID": ""                    // your TCF vendor ID, only if you are one; see Consent and opt-out
     // … every setting is listed in the Configuration reference
@@ -221,6 +221,7 @@ Setting it up on another zone (a fork, say):
 | --- | --- |
 | `/_sid/sync` returns your site's 404 page | The route doesn't match: check the hostname in `routes`, and that the hostname is proxied (orange cloud). |
 | `500 SharedID Edge is misconfigured` | A `SID_*` value is invalid. `wrangler tail` shows which. |
+| Every request gets a 500 | `SID_COOKIE_DOMAIN` is empty: it's required (`wrangler tail` shows the message). |
 | Cookies set but not sent back | `SID_COOKIE_DOMAIN` doesn't cover the page's host, or the site isn't on https. |
 | `geo` returns nothing precise | Consent rules out precise location, or the visitor's location isn't known to that precision. Check `ext.modules.geo`. |
 | `verify-deployment` says the IPs differ | The endpoint is answered somewhere other than your site's Cloudflare hostname (for example a CNAME to another domain). Safari will cap its cookies. |
