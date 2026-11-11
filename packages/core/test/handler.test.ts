@@ -174,6 +174,16 @@ describe('routes', () => {
     const back = await handler()(get('/_sid/optin', { Cookie: '_pubcid_optout=1' }));
     expect(setCookies(back).map(c => [c.name, c.attributes.get('max-age')])).toEqual([['_pubcid_optout', '0']]);
   });
+
+  it('clears both domain and host-only opt-out copies when a cookie domain is configured', async () => {
+    const h = handler({ SID_COOKIE_DOMAIN: '.example.com' });
+    const response = await h(get('/_sid/optin', { Cookie: '_pubcid_optout=1' }));
+    expect(setCookies(response).map(c => [c.name, c.attributes.get('domain'), c.attributes.get('max-age')])).toEqual([
+      ['_pubcid_optout', '.example.com', '0'],
+      ['_pubcid_optout', undefined, '0']
+    ]);
+  });
+  });
 });
 
 describe('v1 payload', () => {
