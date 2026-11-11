@@ -176,7 +176,8 @@ const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
  */
 function secureCookies(url: URL): boolean {
   if (url.protocol === 'https:') return true;
-  const host = url.hostname.toLowerCase();
+  // An absolute name (`app.test.`) is the same host: drop the trailing dot before matching the suffixes.
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
   const local = host === 'localhost' || host.startsWith('[') || IPV4.test(host) || LOCAL_SUFFIXES.some(suffix => host.endsWith(suffix));
   return !local;
 }

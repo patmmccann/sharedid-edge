@@ -80,7 +80,8 @@ describe('sync (pixelUrl)', () => {
 
   it.each([
     'http://localhost:8787', 'http://app.localhost', 'http://127.0.0.1:4310', 'http://192.168.1.20', 'http://[::1]:8787',
-    'http://e2e.sharedid.test', 'http://printer.local', 'http://sid.internal', 'http://www.example', 'http://x.invalid'
+    'http://e2e.sharedid.test', 'http://printer.local', 'http://sid.internal', 'http://www.example', 'http://x.invalid',
+    'http://app.test.', 'http://localhost.:8787', 'http://printer.local.'
   ])('omits Secure over plain http in local development (%s)', async origin => {
     const response = await handler()(new Request(`${origin}/_sid/sync`));
     expect(cookieNamed(response, '_pubcid')?.attributes.has('secure')).toBe(false);
@@ -91,7 +92,7 @@ describe('sync (pixelUrl)', () => {
     expect(cookieNamed(response, '_pubcid')?.attributes.has('secure')).toBe(true);
     expect(cookieNamed(response, '_pubcid_sv')?.attributes.has('secure')).toBe(true);
     // Hostnames that only look local don't count: a public name ending in "test" or "local" isn't one of those TLDs.
-    for (const origin of ['http://latest.com', 'http://mylocal.net', 'http://example.localhost.com']) {
+    for (const origin of ['http://latest.com', 'http://mylocal.net', 'http://example.localhost.com', 'http://www.example.com.']) {
       expect(cookieNamed(await handler()(new Request(`${origin}/_sid/sync`)), '_pubcid')?.attributes.has('secure')).toBe(true);
     }
   });

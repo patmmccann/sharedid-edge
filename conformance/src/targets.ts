@@ -6,6 +6,11 @@ import { join } from 'node:path';
 export interface RunningTarget {
   readonly baseUrl: string;
   /**
+   * The origin the implementation builds request URLs from: the case file's SID_PUBLIC_ORIGIN where the adapter reads
+   * it, otherwise `baseUrl`. The Worker always sees the real request URL, so for `wrangler` it's `baseUrl`.
+   */
+  readonly publicOrigin: string;
+  /**
    * Rewrites a case's request headers for this target. Cases describe the visitor's location with Cloudflare's
    * visitor location headers, which the Node.js target reads (with SID_TRUST_PROXY); for workerd they become
    * `request.cf`.
@@ -237,6 +242,7 @@ export async function startTarget(target: TargetName, caseConfig: Readonly<Recor
   }
   return {
     baseUrl,
+    publicOrigin: target === 'wrangler' ? baseUrl : caseConfig['SID_PUBLIC_ORIGIN'] ?? baseUrl,
     stop,
     requestHeaders: target === 'wrangler' ? asRequestCf : headers => ({ ...headers }),
     unavailable: UNAVAILABLE[target],
