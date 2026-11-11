@@ -4,8 +4,10 @@
 // `network` declaration: "none", or a comma-separated list of hosts. Loopback (localhost, 127.0.0.0/8, ::1) is always
 // allowed, so tests can stand up a local mock of an API.
 //
-// It covers fetch, WebSocket, EventSource and XMLHttpRequest (when defined), DNS lookups and resolves, and every
-// TCP or TLS connection made through node:net (node:http, node:https and node:tls connect through it).
+// It covers fetch, WebSocket, EventSource and XMLHttpRequest (when defined), every DNS query (module functions and
+// Resolver instances), UDP sends and connects (node:dgram), and every TCP or TLS connection made through node:net
+// (node:http, node:https and node:tls connect through it). Loopback means localhost names and loopback addresses only.
+import dgram from 'node:dgram';
 import dns from 'node:dns';
 import { appendFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
@@ -24,7 +26,11 @@ const attempts = [];
 
 function isLoopback(host) {
   const name = host.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
-  return name === 'localhost' || name.endsWith('.localhost') || name === '::1' || name.startsWith('127.') || name === '0:0:0:0:0:0:0:1';
+  if (name === 'localhost' || name.endsWith('.localhost')) return true;
+  // Only real addresses: a DNS name like 127.vendor.example can resolve anywhere.
+  // 0.0.0.0 and :: are the unspecified addresses a socket binds to locally (node:dgram looks them up before a send).
+  if (net.isIPv4(name)) return name.startsWith('127.') || name === '0.0.0.0';
+  return net.isIPv6(name) && (name === '::1' || name === '0:0:0:0:0:0:0:1' || name === '::');
 }
 
 /** Throws (and records) unless `host` is loopback or declared. */
@@ -80,16 +86,40 @@ net.Socket.prototype.connect = function (...args) {
   return connect.apply(this, args);
 };
 
-for (const target of [dns, dns.promises]) {
-  for (const name of ['lookup', 'resolve', 'resolve4', 'resolve6', 'resolveAny']) {
+// Every DNS query, on the module functions and on Resolver instances: lookup and lookupService, reverse, and every
+// resolve* (resolveTxt, resolveSrv, …, and any added later). DNS has its own transport, so the socket guard doesn't
+// see it.
+const isQuery = name => name === 'lookup' || name === 'lookupService' || name === 'reverse' || name.startsWith('resolve');
+function guardQueries(target, label) {
+  for (const name of Object.getOwnPropertyNames(target)) {
     const real = target[name];
-    if (typeof real !== 'function') continue;
+    if (typeof real !== 'function' || !isQuery(name) || name === 'Resolver') continue;
     target[name] = function (host, ...rest) {
-      guard(String(host), `dns.${name}`);
+      guard(String(host), `${label}.${name}`);
       return real.call(this, host, ...rest);
     };
   }
 }
+guardQueries(dns, 'dns');
+guardQueries(dns.promises, 'dns');
+guardQueries(dns.Resolver.prototype, 'dns.Resolver');
+guardQueries(dns.promises.Resolver.prototype, 'dns.Resolver');
+
+// UDP (node:dgram): sending to, or connecting to, an address.
+const dgramSocket = dgram.Socket.prototype;
+const send = dgramSocket.send;
+dgramSocket.send = function (...args) {
+  // send(msg, [offset, length,] port, [address], [callback]); without an address it goes to the connected peer (guarded
+  // in connect) or to localhost.
+  const at = typeof args[1] === 'number' && typeof args[2] === 'number' && typeof args[3] === 'number' ? 4 : 2;
+  if (typeof args[at] === 'string') guard(args[at], 'udp');
+  return send.apply(this, args);
+};
+const udpConnect = dgramSocket.connect;
+dgramSocket.connect = function (port, address, ...rest) {
+  if (typeof address === 'string') guard(address, 'udp');
+  return udpConnect.call(this, port, address, ...rest);
+};
 // ESM named imports of built-ins (`import { lookup } from 'node:dns'`) are copies taken at load: update them.
 syncBuiltinESMExports();
 
