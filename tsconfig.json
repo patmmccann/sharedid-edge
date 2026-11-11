@@ -8,6 +8,8 @@
   "references": [
     { "path": "packages/core" },
     { "path": "packages/core/test" },
+    { "path": "packages/adapters/akamai" },
+    { "path": "packages/adapters/akamai/test" },
     { "path": "packages/adapters/aws-lambda" },
     { "path": "packages/adapters/aws-lambda/test" },
     { "path": "packages/adapters/azure-functions" },

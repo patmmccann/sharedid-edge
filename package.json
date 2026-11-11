@@ -28,13 +28,14 @@
     "conformance": "npm run conformance -w @sharedid-edge/conformance",
     "consumer-types": "node scripts/consumer-types.mjs",
     "attw": "npm run attw -w packages/core -w packages/adapters -w packages/modules --if-present",
-    "check": "npm run check:projects && npm run check:links && npm run check:docs && npm run check:duplication && npm run build && npm run lint && npm run typecheck:ts7 && npm run typecheck:cloudflare && npm run types:check -w @sharedid-edge/cloudflare && npm test && npm run conformance && npm run consumer-types && npm run attw && npm run conformance:lambda && npm run conformance:vercel && npm run conformance:azure && npm run conformance:gcp",
+    "check": "npm run check:projects && npm run check:links && npm run check:docs && npm run check:duplication && npm run build && npm run lint && npm run typecheck:ts7 && npm run typecheck:cloudflare && npm run types:check -w @sharedid-edge/cloudflare && npm test && npm run conformance && npm run consumer-types && npm run attw && npm run conformance:lambda && npm run conformance:vercel && npm run conformance:azure && npm run conformance:gcp && npm run conformance:akamai",
     "verify-deployment": "tsx scripts/verify-deployment.ts",
     "conformance:wrangler": "npm run conformance:wrangler -w @sharedid-edge/conformance",
     "conformance:lambda": "npm run bundle -w @sharedid-edge/aws-lambda && npm run bundle:bowser -w @sharedid-edge/aws-lambda -- --outdir deploy-bowser && npm run bundle -w @sharedid-edge/aws-lambda -- --outdir deploy-vendor --vendor-modules && npm run conformance:lambda -w @sharedid-edge/conformance",
     "conformance:vercel": "npm run bundle -w @sharedid-edge/vercel && npm run bundle:bowser -w @sharedid-edge/vercel -- --outdir deploy-bowser && npm run bundle -w @sharedid-edge/vercel -- --outdir deploy-vendor --vendor-modules && npm run conformance:vercel -w @sharedid-edge/conformance",
     "conformance:azure": "npm run bundle -w @sharedid-edge/azure-functions && npm run bundle:bowser -w @sharedid-edge/azure-functions -- --outdir deploy-bowser && npm run bundle -w @sharedid-edge/azure-functions -- --outdir deploy-vendor --vendor-modules && npm run conformance:azure -w @sharedid-edge/conformance",
-    "conformance:gcp": "npm run bundle -w @sharedid-edge/gcp-functions && npm run bundle:bowser -w @sharedid-edge/gcp-functions -- --outdir deploy-bowser && npm run bundle -w @sharedid-edge/gcp-functions -- --outdir deploy-vendor --vendor-modules && npm run conformance:gcp -w @sharedid-edge/conformance"
+    "conformance:gcp": "npm run bundle -w @sharedid-edge/gcp-functions && npm run bundle:bowser -w @sharedid-edge/gcp-functions -- --outdir deploy-bowser && npm run bundle -w @sharedid-edge/gcp-functions -- --outdir deploy-vendor --vendor-modules && npm run conformance:gcp -w @sharedid-edge/conformance",
+    "conformance:akamai": "npm run bundle -w @sharedid-edge/akamai && npm run bundle:bowser -w @sharedid-edge/akamai -- --outdir deploy-bowser && npm run bundle -w @sharedid-edge/akamai -- --outdir deploy-vendor --vendor-modules && npm run conformance:akamai -w @sharedid-edge/conformance"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",

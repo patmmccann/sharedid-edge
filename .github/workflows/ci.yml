@@ -82,6 +82,8 @@ jobs:
         run: npm run conformance:gcp
       - name: Azure Functions bundle, size budget, and conformance suite against it (local Front Door and Functions host stand-in)
         run: npm run conformance:azure
+      - name: Akamai EdgeWorker bundles (default and with Bowser; no web or Node.js globals), size budget, and conformance suite against them (local EdgeWorkers stand-in)
+        run: npm run conformance:akamai
 
   # Vendor modules (packages/vendor-modules/*) are tested in their own job, so one vendor's failing tests don't block
   # changes elsewhere; branch protection can leave this job not required. Their types and lint are still checked in
