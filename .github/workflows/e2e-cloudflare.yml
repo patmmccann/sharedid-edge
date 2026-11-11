@@ -46,21 +46,17 @@ jobs:
             e2e/package-lock.json
       - run: npm ci
       - run: npm run build
-      - name: Install e2e dependencies, with the latest published Prebid.js
+      - name: Install e2e dependencies
         working-directory: e2e
-        run: |
-          npm ci
-          npm install --no-save prebid.js@latest
-          node -e "console.log('Prebid.js', require('./node_modules/prebid.js/package.json').version)"
+        run: npm ci
       - name: Deploy SharedID Edge (the e2e and conformance environments)
         working-directory: packages/adapters/cloudflare
         run: |
           npx wrangler deploy --env e2e
           npx wrangler deploy --env conformance
-      - name: Deploy the test site, with Prebid.js
+      - name: Deploy the test site, with its Prebid.js bundle
         run: |
-          mkdir -p e2e/site/public/prebid/not-for-prod
-          cp e2e/node_modules/prebid.js/dist/not-for-prod/prebid.js e2e/site/public/prebid/not-for-prod/
+          npm run bundle-prebid --prefix e2e
           npx wrangler deploy --config e2e/site/wrangler.jsonc
       - name: Wait for the new version to answer
         run: |
