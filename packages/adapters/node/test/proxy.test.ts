@@ -152,6 +152,8 @@ describe('clientIpHeader', () => {
   it('needs trustProxy and a header name', () => {
     expect(() => createNodeServer({ clientIpHeader: 'fastly-client-ip' })).toThrow(ConfigError);
     expect(() => createNodeServer({ clientIpHeader: 'fastly client ip', trustProxy: true })).toThrow(ConfigError);
+    // Location headers too, as the CLI refuses SID_LOCATION_HEADERS without SID_TRUST_PROXY.
+    expect(() => createNodeServer({ locationHeaders: { country: 'cloudfront-viewer-country' } })).toThrow(/SID_LOCATION_HEADERS needs SID_TRUST_PROXY/);
     expect(() => createNodeServer({ clientIpHeader: 'Fastly-Client-IP', trustProxy: true })).not.toThrow();
   });
 

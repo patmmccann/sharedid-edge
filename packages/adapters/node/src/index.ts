@@ -34,7 +34,8 @@ export interface NodeServerOptions extends HandlerOptions {
   /**
    * The headers the location comes from, with `trustProxy`: Cloudflare's visitor location headers by default, or a
    * CDN's own (CloudFront's `cloudfront-viewer-country`, say). The country also decides whether GDPR applies when a
-   * request has no `gdpr` signal, so behind a proxy, pass the visitor's country on.
+   * request has no `gdpr` signal, so behind a proxy, pass the visitor's country on. Setting it without `trustProxy`
+   * throws a `ConfigError`.
    */
   readonly locationHeaders?: LocationHeaders;
   /** Origin used to build request URLs, e.g. `https://www.example.com`. Defaults to `http://<Host header>`. */
@@ -60,13 +61,17 @@ interface TrustedHeaders {
   readonly location: LocationHeaders;
 }
 
-/** The trusted proxy's headers, or undefined when the proxy isn't trusted. Checks `clientIpHeader`. */
+/** The trusted proxy's headers, or undefined when the proxy isn't trusted. Checks `clientIpHeader` and `locationHeaders`. */
 function trustedHeaders(options: NodeServerOptions): TrustedHeaders | undefined {
   const clientIp = options.clientIpHeader?.trim().toLowerCase();
   if (clientIp !== undefined) {
     // Read only from a trusted proxy: without the trust, the setting would silently do nothing.
     if (options.trustProxy !== true) throw new ConfigError('SID_CLIENT_IP_HEADER needs SID_TRUST_PROXY=true: the client IP header is read only from a trusted proxy');
     if (!isHeaderName(clientIp)) throw new ConfigError('SID_CLIENT_IP_HEADER must be a header name, like fastly-client-ip');
+  }
+  // The same for the location headers: the CLI refuses SID_LOCATION_HEADERS without the trust, and so does the library.
+  if (options.locationHeaders !== undefined && options.trustProxy !== true) {
+    throw new ConfigError('SID_LOCATION_HEADERS needs SID_TRUST_PROXY=true: location headers are read only from a trusted proxy');
   }
   if (options.trustProxy !== true) return undefined;
   return { clientIp, location: options.locationHeaders ?? CLOUDFLARE_LOCATION_HEADERS };

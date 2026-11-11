@@ -20,14 +20,12 @@ try {
   const trustProxy = booleanFromEnv(process.env['SID_TRUST_PROXY'], false);
   const locationSetting = process.env['SID_LOCATION_HEADERS'];
   const configured = locationSetting !== undefined && locationSetting.trim() !== '';
-  // Location headers are read only from a trusted proxy: setting them without the trust would silently do nothing.
-  if (configured && !trustProxy) throw new ConfigError('SID_LOCATION_HEADERS needs SID_TRUST_PROXY=true: location headers are read only from a trusted proxy');
   const clientIpHeader = process.env['SID_CLIENT_IP_HEADER']?.trim() ?? '';
   const server = createNodeServer({
     ...settings,
     modules: [...builtInModules, ...(await loadModulePackages(process.env['SID_MODULE_PACKAGES']))],
     trustProxy,
-    // createNodeServer checks it: a header name, and only with SID_TRUST_PROXY.
+    // createNodeServer checks both: SID_CLIENT_IP_HEADER is a header name, and both need SID_TRUST_PROXY.
     ...(clientIpHeader === '' ? {} : { clientIpHeader }),
     ...(configured ? { locationHeaders: parseHeaderMap(locationSetting, 'SID_LOCATION_HEADERS', LOCATION_FIELDS, '{"country":"cloudfront-viewer-country"}') } : {}),
     ...(publicOrigin === undefined ? {} : { publicOrigin })
