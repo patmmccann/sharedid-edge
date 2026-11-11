@@ -84,10 +84,12 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
           // Only cookies the browser sent: nothing to delete otherwise.
           ...optOutCookies(registry, config).filter(cookie => cookies.has(cookie.name)).map(cookie => serializeModuleCookie(cookie, config, secure, date))
         ]);
-      case ROUTES.optin:
-        return withCookies(new Response(null, { status: 204, headers: NO_STORE }), [
-          serializeCookie(config.optOutCookieName, '', { ...cookieOptions(config, secure, false), maxAgeSeconds: 0 }, date)
-        ]);
+      case ROUTES.optin: {
+        const domains = config.cookieDomain === undefined ? [undefined] : [config.cookieDomain, undefined];
+        return withCookies(new Response(null, { status: 204, headers: NO_STORE }), domains.map(domain =>
+          serializeCookie(config.optOutCookieName, '', { ...cookieOptions(config, secure, false), maxAgeSeconds: 0, domain }, date)
+        ));
+      }
       case ROUTES.sync:
       case ROUTES.v1: {
         const consent = readConsent(url, request.headers, cookies, platform);
