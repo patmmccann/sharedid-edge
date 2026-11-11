@@ -15,7 +15,7 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | `packages/vendor-modules/` | Modules contributed and maintained by vendors (listed below) | Extra rules in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md). Opt-in at build time; tested in their own CI job. |
 | `e2e/` | Unmodified Prebid.js against the worker in three browsers | Separate install. |
 | `website/` | [sharedid.dev](https://sharedid.dev): the Markdown above, published with VitePress | Separate install. See [The website](docs/development.md#the-website). |
-| `scripts/` | Type-check helpers, the repo checks (`check-projects`, `check-links`), the docs generator (`docs.mjs`), the bundled adapters' build and size budget (`bundle-adapter.mjs`) and `verify-deployment` | `projects.mjs` derives the project list from the workspace folders. |
+| `scripts/` | Type-check helpers, the repo checks (`check-projects`, `check-links`), the docs generator (`docs.mjs`), the bundled adapters' build and size budget (`bundle-adapter.mjs`), the vendor-module checks (`no-network.mjs`, `check-build-secrets.mjs`) and `verify-deployment` | `projects.mjs` derives the project list from the workspace folders. |
 
 The packages, generated from their `package.json` by `node scripts/docs.mjs --write`:
 
