@@ -59,11 +59,21 @@ The size limit is checked on the minified file, before gzip (the bytes you deplo
 
 The User-Agent parser is part of the size: the `ua` module bundles only `isbot` by default, and Bowser (the Worker's [Bowser build](#build)) only when `SID_MODULE_CONFIG` sets `{"ua":{"parser":"bowser"}}`. The build prints which one it bundled. You don't need to work this out: the build prints the size of each part, and when the result is over 32 KB it writes nothing, lists the modules by size, and names a set that fits.
 
+### The 5 ms CPU limit
+
+SharedID Edge is far under it. The handler does no I/O: it reads cookies and headers, maybe mints a UUID, and writes cookies. Measured on a laptop, with every module that fits a Snippet:
+
+- a request takes about 0.03 to 0.05 ms typically, and under 0.3 ms at the 99th percentile;
+- the first request after the Snippet loads takes about 1 to 1.5 ms;
+- loading the Snippet (parsing it and validating the baked-in settings) takes about 2.5 to 3 ms, once per isolate, not per request. Cloudflare doesn't say whether that counts against the first request's 5 ms.
+
+The geo module adds about 0.2 to 0.5 ms the first time it sees a time zone, and about 0.01 ms after that. Every build times 300 requests and prints the median and the 99th percentile, warning when the 99th percentile is over half the limit. These are estimates on the build machine; a live Snippet hasn't been measured yet ([#105](https://github.com/patmmccann/sharedid-edge/issues/105)).
+
 ### Build and deploy the Snippet
 
 1. Build the repository (`npm ci && npm run build`, as in [Build](#build)).
 2. Copy `snippet.config.example.json` to `snippet.config.json` in this folder and set your values: the same `SID_*` settings as the Worker's `vars` ([Configuration](../../../docs/configuration.md)), with `SID_COOKIE_DOMAIN` required and `SID_MODULE_CONFIG` as JSON or a string. Keys starting with `$` are comments.
-3. Run `npm run build:snippet -w @sharedid-edge/cloudflare`. It validates the settings as a deployment would, bundles only the modules in `SID_MODULES`, checks the size, smoke-tests the result (a first sync sets the cookie, `/v1` reports no module errors), and writes `dist-snippet/snippet.js` and the rule expression to `dist-snippet/snippet-rule.txt`. It prints the trade-offs above on every build.
+3. Run `npm run build:snippet -w @sharedid-edge/cloudflare`. It validates the settings as a deployment would, bundles only the modules in `SID_MODULES`, checks the size, smoke-tests the result (a first sync sets the cookie, `/v1` reports no module errors), and writes `dist-snippet/snippet.js` and the rule expression to `dist-snippet/snippet.rule.txt`. It replaces only those two files, so `--out` can point anywhere. It prints the trade-offs above on every build.
 4. In the dashboard, go to **Rules > Snippets**, create a snippet, and paste `dist-snippet/snippet.js` (or upload it with the API or Terraform).
 5. Set its **snippet rule** to your hostname and the base path, for example `(http.host eq "www.example.com" and starts_with(http.request.uri.path, "/_sid/"))`: the rule decides which requests run the Snippet, as the Worker's route does. Don't set it wider: a Snippet that answers every request takes your site offline.
 6. Verify as for the Worker ([Verify](#verify)), and turn it on in Prebid.js ([step 5](#5-turn-it-on-in-prebidjs)).
