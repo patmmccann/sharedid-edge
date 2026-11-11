@@ -11,6 +11,7 @@ import {
   isValidId,
   locationWithEU,
   logRequestFailure,
+  booleanFromEnv,
   parseCookies,
   parseHeaderMap,
   publicOriginFromEnv,
@@ -69,6 +70,19 @@ describe('parseCookies', () => {
   });
   it('handles a missing header', () => {
     expect(parseCookies(null).size).toBe(0);
+  });
+});
+
+describe('booleanFromEnv', () => {
+  it('uses the fallback for missing or blank values and recognizes true/false tokens', () => {
+    expect(booleanFromEnv(undefined, true)).toBe(true);
+    expect(booleanFromEnv('', true)).toBe(true);
+    expect(booleanFromEnv(' false ', true)).toBe(false);
+    expect(booleanFromEnv('OFF', true)).toBe(false);
+    expect(booleanFromEnv('yes', false)).toBe(true);
+    expect(booleanFromEnv('on', false)).toBe(true);
+    expect(booleanFromEnv('unexpected', true)).toBe(false);
+    expect(booleanFromEnv('unexpected', false)).toBe(false);
   });
 });
 
