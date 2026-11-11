@@ -1,0 +1,52 @@
+{
+  "name": "@sharedid-edge/module-dbip",
+  "version": "0.1.0",
+  "description": "SharedID Edge module: the visitor's country from DB-IP's free IP to Country Lite database, built in at build time, as ortb2.device.geo",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.tsbuildinfo",
+    "scripts"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "data": "node scripts/build-data.mjs",
+    "attw": "attw --pack . --profile esm-only --quiet || attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "@sharedid-edge/core": "0.1.0",
+    "@sharedid-edge/ip-ranges": "0.1.0"
+  },
+  "devDependencies": {
+    "@sharedid-edge/module-geo": "0.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patmmccann/sharedid-edge.git",
+    "directory": "packages/vendor-modules/dbip"
+  },
+  "sharedidEdge": {
+    "kind": "module",
+    "name": "dbip",
+    "title": "DB-IP Lite country",
+    "summary": "`ortb2.device.geo.country` from DB-IP's free IP to Country Lite database, built in at build time (CC BY 4.0)",
+    "export": "dbipModule",
+    "network": "none",
+    "settings": "`mode`: `fill` (default) or `replace`",
+    "routes": [
+      "v1"
+    ]
+  }
+}

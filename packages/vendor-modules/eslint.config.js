@@ -28,5 +28,13 @@ export default [
       'no-eval': 'error',
       'no-new-func': 'error'
     }
+  },
+  {
+    // A module's build script runs on Node.js at build time: it downloads the vendor's data (the only place a vendor
+    // module may use the network outside the vendor plugin rules) and writes it into the module. Nothing here runs
+    // during requests.
+    files: ['*/scripts/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly', fetch: 'readonly' } },
+    rules: { 'no-console': 'off' }
   }
 ];
