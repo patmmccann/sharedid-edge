@@ -2,10 +2,13 @@ name: Website (sharedid.dev)
 
 # Builds the site from the repository's Markdown (website/) and deploys it to sharedid.dev as a static-assets Worker.
 # It needs the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets, so it runs only from main: on every
-# merge, and on demand. Pull requests only build the site (ci.yml), without an account.
+# merge, weekly (to refresh the SharedID adoption chart's numbers from OpenSincera) and on demand. Pull requests only
+# build the site (ci.yml), without an account or the Sincera key, from website/adoption-snapshot.json.
 on:
   push:
     branches: [main]
+  schedule:
+    - cron: '41 5 * * 1'
   workflow_dispatch:
 
 permissions:
@@ -40,6 +43,9 @@ jobs:
       - run: npm ci
       - name: Build the site
         working-directory: website
+        env:
+          # Only the build step gets it: adoption.data.ts fetches the chart's numbers and puts only those in the page.
+          SINCERA_API_KEY: ${{ secrets.SINCERA_API_KEY }}
         run: |
           npm ci
           npm run build
