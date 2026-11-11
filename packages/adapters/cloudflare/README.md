@@ -12,6 +12,7 @@ SharedID Edge as a **Cloudflare Worker**: the `/_sid/*` routes on your own site,
 - [Built-in modules](#built-in-modules)
 - [Verify](#verify)
 - [Local development and tests](#local-development-and-tests)
+- [Live tests](#live-tests)
 - [Troubleshooting](#troubleshooting)
 
 ## Architecture
@@ -192,6 +193,27 @@ npm run typecheck -w @sharedid-edge/cloudflare    # against the Workers runtime 
 ```
 
 Over plain http locally, cookies aren't `Secure`. `wrangler dev` fills `request.cf` from Cloudflare's view of your machine; the conformance runner overrides it with fixed values (Miniflare's `MF-CF-Blob` header).
+
+## Live tests
+
+Some things can only be checked on Cloudflare's real edge: a Worker route on the site's own proxied hostname (which gives the cookies the site's IP addresses, the [Safari rule](#architecture)), real `request.cf` data, and the bundle in the real runtime. The [Live tests workflow](../../../.github/workflows/e2e-cloudflare.yml) checks them nightly, and on demand from the Actions tab, on this project's test zone, `sharedid.dev`. It runs only from `main` and never on pull requests, which stay account-free.
+
+It deploys three Workers:
+
+| Worker | Route | What |
+| --- | --- | --- |
+| `sharedid-edge-e2e` | `e2e.sharedid.dev/_sid/*` | This package's `e2e` environment in `wrangler.jsonc`: no pixel caching, and `reflect` with `uid1` and `_ga`, as in the local browser tests |
+| `sharedid-edge-e2e-site` | `e2e.sharedid.dev/*` | The test page and the latest published Prebid.js, as static assets ([`e2e/site/`](../../../e2e/site/wrangler.jsonc)). The more specific `/_sid/*` route wins, as on a publisher's site. |
+| `sharedid-edge-conformance` | `conformance.sharedid.dev/_sid/*` | The `conformance` environment: the default configuration |
+
+Then it runs `npm run verify-deployment -- --site https://e2e.sharedid.dev`, the conformance suite's default-configuration cases against `https://conformance.sharedid.dev/_sid`, and the Playwright tests in [`e2e/`](../../../e2e/AGENTS.md) against `https://e2e.sharedid.dev` (`E2E_BASE_URL`) in Chromium, Firefox and WebKit. A failing nightly run opens an issue, or comments on the open one.
+
+Setting it up on another zone (a fork, say):
+
+1. Add the zone to a Cloudflare account, proxied. For each test hostname, add a proxied `AAAA` record with the content `100::`: the Workers answer every request, so no origin is needed.
+2. Change the hostnames and `zone_name` in the `env` section of `wrangler.jsonc`, `e2e/site/wrangler.jsonc` and the workflow.
+3. Create an API token (**My Profile → API Tokens**, or the account's **API Tokens**) with **Account → Workers Scripts: Edit**, **Zone → Workers Routes: Edit** and **Zone → Zone: Read**, for the account's zones.
+4. Add it and the account ID as the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The workflow fails at once, saying so, when either is missing.
 
 ## Troubleshooting
 

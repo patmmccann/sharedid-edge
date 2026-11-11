@@ -29,5 +29,58 @@
     "SID_MODULE_TIMEOUT_MS": "50",
     "SID_SKIP_BOTS": "",
     "SID_SKIP_BOTS_SCORE": ""
+  },
+  // This project's own live tests (.github/workflows/e2e-cloudflare.yml), on the sharedid.dev test zone. Deployers
+  // don't need these. Wrangler doesn't inherit vars into an environment, so each lists them all.
+  "env": {
+    // The conformance suite's default-configuration cases (conformance --base-url https://conformance.sharedid.dev/_sid).
+    "conformance": {
+      "name": "sharedid-edge-conformance",
+      "workers_dev": false,
+      "routes": [{ "pattern": "conformance.sharedid.dev/_sid/*", "zone_name": "sharedid.dev" }],
+      "vars": {
+        "SID_BASE_PATH": "/_sid",
+        "SID_COOKIE_NAME": "_pubcid",
+        "SID_COOKIE_DOMAIN": "",
+        "SID_MAX_AGE_DAYS": "365",
+        "SID_CREATE": "true",
+        "SID_RECOVERY_COOKIE": "_pubcid_sv",
+        "SID_OPTOUT_COOKIE": "_pubcid_optout",
+        "SID_VENDOR_ID": "",
+        "SID_ALLOWED_ORIGINS": "",
+        "SID_SYNC_CACHE_SECONDS": "86400",
+        "SID_MODULES": "",
+        "SID_SYNC_MODULES": "",
+        "SID_MODULE_CONFIG": "{}",
+        "SID_MODULE_TIMEOUT_MS": "50",
+        "SID_SKIP_BOTS": "",
+        "SID_SKIP_BOTS_SCORE": ""
+      }
+    },
+    // The Prebid.js browser tests (e2e/), next to the test page the e2e/site Worker serves on the same hostname,
+    // configured as e2e/server.ts configures core locally: no pixel caching, and reflect with uid1 and _ga.
+    "e2e": {
+      "name": "sharedid-edge-e2e",
+      "workers_dev": false,
+      "routes": [{ "pattern": "e2e.sharedid.dev/_sid/*", "zone_name": "sharedid.dev" }],
+      "vars": {
+        "SID_BASE_PATH": "/_sid",
+        "SID_COOKIE_NAME": "_pubcid",
+        "SID_COOKIE_DOMAIN": "",
+        "SID_MAX_AGE_DAYS": "365",
+        "SID_CREATE": "true",
+        "SID_RECOVERY_COOKIE": "_pubcid_sv",
+        "SID_OPTOUT_COOKIE": "_pubcid_optout",
+        "SID_VENDOR_ID": "",
+        "SID_ALLOWED_ORIGINS": "",
+        "SID_SYNC_CACHE_SECONDS": "0",
+        "SID_MODULES": "reflect",
+        "SID_SYNC_MODULES": "",
+        "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365},{\"name\":\"_ga\",\"maxAgeDays\":400,\"restore\":true}]}}",
+        "SID_MODULE_TIMEOUT_MS": "50",
+        "SID_SKIP_BOTS": "",
+        "SID_SKIP_BOTS_SCORE": ""
+      }
+    }
   }
 }

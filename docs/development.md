@@ -41,7 +41,7 @@ Tests:
 - `npm run conformance`: the conformance suite against the Node.js server; `npm run conformance:wrangler` runs it against the Worker under `wrangler dev`, `npm run conformance:lambda` against the bundled Lambda handler behind a local stand-in for CloudFront, `npm run conformance:vercel` against the bundled Vercel adapter behind a local stand-in for Vercel's proxy, `npm run conformance:azure` against the bundled Azure Functions app behind a local stand-in for Front Door and the Functions host, and `npm run conformance:gcp` against the real Functions Framework serving the bundled Cloud Run function, behind a local stand-in for Google Cloud's load balancer. See [`conformance/AGENTS.md`](../conformance/AGENTS.md).
 - In `e2e/`: `npm ci && npx playwright install && npm test` runs unmodified Prebid.js against the worker in three browsers.
 
-None of this needs a Cloudflare, AWS, Vercel, Azure or Google Cloud account.
+None of this needs a Cloudflare, AWS, Vercel, Azure or Google Cloud account. Separately, the [Live tests](../packages/adapters/cloudflare/README.md#live-tests) workflow deploys to this project's Cloudflare test zone nightly, from `main` only, and runs `verify-deployment`, conformance and the browser tests against it.
 
 ## Generated docs
 

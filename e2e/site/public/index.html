@@ -1,0 +1,19 @@
+<!doctype html>
+<html><head><title>SharedID Edge e2e</title>
+<script>window.pbjs = window.pbjs || { que: [] };</script>
+<script src="/prebid/not-for-prod/prebid.js"></script>
+<script>
+  pbjs.que.push(function () {
+    pbjs.setConfig({
+      userSync: {
+        syncDelay: 0,
+        userIds: [{
+          name: 'sharedId',
+          params: { pixelUrl: '/_sid/sync', extend: true },
+          storage: { type: 'cookie', name: '_pubcid', expires: 365 }
+        }]
+      }
+    });
+  });
+</script>
+</head><body>SharedID Edge e2e</body></html>
