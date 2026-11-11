@@ -1,4 +1,4 @@
-import { ConfigError, DEFAULT_CONFIG, booleanFromEnv, handlerOrMisconfigured, parseHeaderMap, publicOriginFromEnv, resolveConfig, ROUTES, type EdgeModule } from '@sharedid-edge/core';
+import { ConfigError, DEFAULT_CONFIG, booleanFromEnv, handlerOrMisconfigured, parseHeaderMap, publicOriginFromEnv, resolveConfig, settingsFromEnv, ROUTES, type EdgeModule } from '@sharedid-edge/core';
 import { builtInModules } from '@sharedid-edge/modules';
 import { createAzureHandler, internalError, type AzureHandler } from './handler.js';
 import { LOCATION_FIELDS, type LocationHeaders } from './platform.js';
@@ -33,7 +33,8 @@ export function parseFrontDoorIds(value: string | undefined): readonly string[] 
 export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtInModules): AzureHandler {
   return handlerOrMisconfigured(
     () => createAzureHandler({
-      config: resolveConfig(env, { requireCookieDomain: true }),
+      // The configuration, and with SID_HOSTS one per hostname.
+      ...settingsFromEnv(env, { requireCookieDomain: true }),
       modules,
       behindFrontDoor: booleanFromEnv(env['SID_BEHIND_FRONT_DOOR'], true),
       frontDoorIds: parseFrontDoorIds(env['SID_FRONT_DOOR_ID']),

@@ -38,8 +38,18 @@ Implementations read these settings, normally as environment variables. Defaults
 | `SID_MODULE_TIMEOUT_MS` | [`50`] | Time limit for each module. |
 | `SID_SKIP_BOTS` | [off] | `verified`, `declared` or `likely`: set no SharedID for bots this sure or surer; see [Skipping bots](#skipping-bots). |
 | `SID_SKIP_BOTS_SCORE` | [off] | 1 to 99: set no SharedID when the traffic score is at or below it; see [Skipping bots](#skipping-bots). |
+| `SID_HOSTS` | [one site] | JSON object from hostname to that site's settings, for several sites from one deployment; see [Several sites](#several-sites). |
 
 The three cookie names (`SID_COOKIE_NAME`, `SID_RECOVERY_COOKIE`, `SID_OPTOUT_COOKIE`) MUST all differ. Invalid configuration MUST fail every request with a 5xx rather than set cookies.
+
+### Several sites
+
+One deployment can serve several sites (a hosting company's, say) with `SID_HOSTS`: a JSON object whose keys are hostnames and whose values are objects of `SID_*` settings, which apply on top of the deployment's own for requests to that host. `SID_MODULE_CONFIG` may be an object; every other value is a string. `SID_HOSTS`, `SID_MODULE_SECRETS` and `SID_BASE_PATH` can't be set per host: the base path is what the platform routes by, which is the deployment's.
+
+- The request's host is the hostname of its URL, lower-cased, without the port or a trailing dot. Keys are compared the same way; a key listed twice, or one that isn't a hostname, is invalid configuration.
+- Each host's settings are validated as a deployment's are, at start-up: one invalid host fails the deployment. `SID_COOKIE_DOMAIN` is required of each host (set there, or inherited); the deployment's own settings needn't name one.
+- With `SID_HOSTS` set (even to `{}`), a request for a host it doesn't list MUST get a 404 and no cookies, unless the platform supplies settings for that host. On Cloudflare for SaaS, a custom hostname's metadata can: the object under its `sharedid` key is that site's settings, applied like an entry of `SID_HOSTS` (which takes precedence). Invalid metadata fails that host's requests with a 5xx.
+- Without `SID_HOSTS`, every request uses the deployment's settings, or the platform's for its host.
 
 ## Routes
 

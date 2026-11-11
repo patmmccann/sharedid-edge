@@ -1,4 +1,5 @@
 import { DEFAULT_CONFIG, type SharedIdEdgeConfig } from './config.js';
+import { hostKey } from './hosts.js';
 import { readConsent, storageDecision, type StorageDecision } from './consent.js';
 import { cookieValues, parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
 import { idFromSyncParam, isValidId, mintId } from './id.js';
@@ -22,6 +23,16 @@ type Route = (typeof ROUTES)[keyof typeof ROUTES];
 
 export interface HandlerOptions {
   readonly config?: SharedIdEdgeConfig;
+  /**
+   * Several sites from one deployment (`SID_HOSTS`, see `settingsFromEnv`): the configuration for each hostname. A
+   * request whose host isn't listed (nor given by `hostConfig`) gets a 404, and no cookies.
+   */
+  readonly hosts?: ReadonlyMap<string, SharedIdEdgeConfig>;
+  /**
+   * The configuration a platform supplies for a request's host (Cloudflare for SaaS custom hostname metadata), used
+   * when `hosts` has none for it; undefined when it has none either. It may throw a `ConfigError`.
+   */
+  readonly hostConfig?: (request: Request) => SharedIdEdgeConfig | undefined;
   /** Modules the worker is built with; `config.modules` chooses which run. */
   readonly modules?: Iterable<EdgeModule>;
   /** Clock, for tests. */
@@ -57,8 +68,29 @@ function platformTrafficEntries(platform: PlatformInfo): TrafficEntry[] {
  * It answers every route under `config.basePath` itself and never forwards a request to the origin.
  */
 export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler {
-  const config = options.config ?? DEFAULT_CONFIG;
   const registry = new ModuleRegistry(options.modules ?? []);
+  const { hosts, hostConfig } = options;
+  const base = options.config ?? DEFAULT_CONFIG;
+  if (hosts === undefined && hostConfig === undefined) return configuredHandler(options, base, registry);
+
+  // One handler per configuration, built on first use: SID_HOSTS's are fixed, and a platform's are usually the same
+  // object for a host (the Worker caches them).
+  const handlers = new WeakMap<SharedIdEdgeConfig, SharedIdEdgeHandler>();
+  return (request: Request, platform: PlatformInfo = {}): Promise<Response> => {
+    const config = hosts?.get(hostKey(new URL(request.url))) ?? hostConfig?.(request) ?? (hosts === undefined ? base : undefined);
+    // A host this deployment doesn't serve: answer nothing, set nothing, as outside the routes.
+    if (config === undefined) return Promise.resolve(text(404, 'Not found'));
+    let handler = handlers.get(config);
+    if (handler === undefined) {
+      handler = configuredHandler(options, config, registry);
+      handlers.set(config, handler);
+    }
+    return handler(request, platform);
+  };
+}
+
+/** The handler for one configuration. */
+function configuredHandler(options: HandlerOptions, config: SharedIdEdgeConfig, registry: ModuleRegistry): SharedIdEdgeHandler {
   const now = options.now ?? ((): Date => new Date());
   const newId = options.mintId ?? mintId;
 

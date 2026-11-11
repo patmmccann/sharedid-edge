@@ -22,8 +22,7 @@ import {
   splitHeaders,
   storageDecision,
   type SharedIdEdgeConfig,
-  type StorageDecision
-} from '../src/index.js';
+  type StorageDecision, settingsFromEnv } from '../src/index.js';
 import { publisherTc, tcString } from './helpers.js';
 
 const UUID = 'c29cb2ae-769d-42f6-891a-f53cadee823d';
@@ -108,7 +107,8 @@ describe('resolveConfig', () => {
         return undefined;
       }
     });
-    resolveConfig(env);
+    // Adapters read their settings through settingsFromEnv: resolveConfig's, and SID_HOSTS.
+    settingsFromEnv(env);
     expect([...read].sort()).toEqual(SETTINGS.map(setting => setting.name).sort());
     expect(new Set(SETTINGS.map(setting => setting.name)).size).toBe(SETTINGS.length);
   });

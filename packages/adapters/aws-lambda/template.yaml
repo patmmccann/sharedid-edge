@@ -112,6 +112,10 @@ Parameters:
     Type: String
     Default: ''
     Description: SID_SKIP_BOTS_SCORE, 1 to 99, set no SharedID when the traffic score is at or below it (default off).
+  SidHosts:
+    Type: String
+    Default: ''
+    Description: "SID_HOSTS, several sites from one deployment, as JSON from hostname to settings (empty: one site). The function sees the site's host only when CloudFront passes it in X-Forwarded-Host."
 
 Conditions:
   CreateDistribution: !Equals [!Ref CreateDistribution, 'true']
@@ -157,6 +161,7 @@ Resources:
           SID_MODULE_TIMEOUT_MS: !Ref SidModuleTimeoutMs
           SID_SKIP_BOTS: !Ref SidSkipBots
           SID_SKIP_BOTS_SCORE: !Ref SidSkipBotsScore
+          SID_HOSTS: !Ref SidHosts
 
   SharedIdLogGroup:
     Type: AWS::Logs::LogGroup

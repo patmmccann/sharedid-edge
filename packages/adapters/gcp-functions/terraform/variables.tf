@@ -160,3 +160,9 @@ variable "sid_skip_bots_score" {
   type        = string
   default     = ""
 }
+
+variable "sid_hosts" {
+  description = "SID_HOSTS: several sites from one deployment: JSON from hostname to settings (empty: one site)"
+  type        = string
+  default     = ""
+}

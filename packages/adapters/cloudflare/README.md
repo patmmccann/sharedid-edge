@@ -215,13 +215,26 @@ A host that serves its customers' sites through [Cloudflare for SaaS](https://de
 
 Pass the incoming `request` on as it is, so the publisher's Worker gets the visitor's `CF-Connecting-IP`, and, in a trusted namespace (step 1), `request.cf`. To check, call `/_sid/v1` on a hosted site with the `geo` module on: `device.geo` should show your own location. Updating SharedID Edge means redeploying each publisher's Worker into the namespace; a script over your list of publishers does it.
 
-**With one shared Worker,** configured per hostname: not possible yet, since a deployment has one configuration. Per-hostname settings in core would allow it, without Workers for Platforms ([#110](https://github.com/patmmccann/sharedid-edge/issues/110)).
+**With one shared Worker,** configured per hostname, without Workers for Platforms: deploy this Worker once, on your SaaS zone's `*/_sid/*` route, and give each site its settings in one of two ways ([Several sites from one deployment](../../../docs/configuration.md#several-sites-from-one-deployment)):
 
-**With Snippets:** there's no Snippets for Platforms. Snippets are per zone (25, 50 or 300 by plan), their configuration is fixed at build time ([Worker or Snippet?](#worker-or-snippet)), and Cloudflare doesn't document whether snippet rules on a SaaS zone run for custom hostnames. So one Snippet per publisher soon runs out, and one for all needs per-hostname settings. Use Workers for Platforms for now.
+- **Custom hostname metadata** (your Cloudflare account team enables it): put the site's settings under a `sharedid` key when you create or update its custom hostname, and set `"SID_HOSTS": "{}"` in the Worker's `vars`, so a hostname without them gets nothing. Adding or changing a site is an API call, with no redeploy:
+
+  ```sh
+  curl -X PATCH "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/custom_hostnames/$HOSTNAME_ID" \
+    -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+    --data '{"custom_metadata": {"sharedid": {"SID_COOKIE_DOMAIN": "pub-a.example"}}}'
+  ```
+
+  Metadata reaches the Worker within about 30 seconds. Invalid settings in one site's metadata fail that site's requests with a 500, not the others'.
+- **`SID_HOSTS`** in the Worker's `vars`: every site's hostname and settings in one JSON value. Simpler, but adding a site is a redeploy.
+
+Every site shares the Worker's modules and `SID_MODULE_SECRETS`. Verify each hostname with `verify-deployment`, as in step 4 above.
+
+**With Snippets:** there's no Snippets for Platforms. Snippets are per zone (25, 50 or 300 by plan), their configuration is fixed at build time ([Worker or Snippet?](#worker-or-snippet)), and Cloudflare doesn't document whether snippet rules on a SaaS zone run for custom hostnames. So one Snippet per publisher soon runs out. One Snippet for all of them can carry `SID_HOSTS` in its configuration file (the build smoke-tests the first site and bundles every site's modules), but it can't read custom hostname metadata, and whether it runs for custom hostnames at all is untested ([#105](https://github.com/patmmccann/sharedid-edge/issues/105)). Use a Worker for now.
 
 **If the publisher's own zone is on Cloudflare too** (their proxied hostname is a CNAME to yours, "orange-to-orange"), their zone handles the request first. A SharedID Edge route of theirs on `/_sid/*` would answer instead of yours, so agree which of you runs it.
 
-Not yet tested on a live SaaS zone; [#110](https://github.com/patmmccann/sharedid-edge/issues/110) tracks that, and the per-hostname settings.
+Not yet tested on a live SaaS zone; [#110](https://github.com/patmmccann/sharedid-edge/issues/110) tracks that.
 
 #### Sales houses
 
