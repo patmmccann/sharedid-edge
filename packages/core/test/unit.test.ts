@@ -307,6 +307,11 @@ describe('storageDecision', () => {
     expect(storageDecision(vendorMode, consent('gdpr=1'))).toEqual(denied('tcf: GDPR applies and there is no TC string'));
     expect(storageDecision(vendorMode, consent(`gdpr=1&gdpr_consent=${tc([755], [1, 2])}`, { gpc: true }))).toEqual(denied('gpc'));
   });
+  it('parses only non-empty numeric GPP section IDs', () => {
+    const consent = readConsent(new URL('https://example.com/_sid/v1?gpp_sid=2,,6,x'), new Headers(), new Map(), {});
+    expect(consent.gppSid).toEqual([2, 6]);
+  });
+
   it('reads the TC string from the CMP cookie', () => {
     expect(storageDecision(publisherMode, consent('', { cookie: `euconsent-v2=${publisherTc([1, 2])}`, isEU: true })).allowed).toBe(true);
     expect(storageDecision(publisherMode, consent('', { cookie: `euconsent-v2=${publisherTc([2])}`, isEU: true })).allowed).toBe(false);
