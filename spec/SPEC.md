@@ -44,7 +44,7 @@ The three cookie names (`SID_COOKIE_NAME`, `SID_RECOVERY_COOKIE`, `SID_OPTOUT_CO
 
 ### Several sites
 
-One deployment can serve several sites (a hosting company's, say) with `SID_HOSTS`: a JSON object whose keys are hostnames and whose values are objects of `SID_*` settings, which apply on top of the deployment's own for requests to that host. `SID_MODULE_CONFIG` may be an object; every other value is a string. `SID_HOSTS` and `SID_MODULE_SECRETS` can't be set per host.
+One deployment can serve several sites (a hosting company's, say) with `SID_HOSTS`: a JSON object whose keys are hostnames and whose values are objects of `SID_*` settings, which apply on top of the deployment's own for requests to that host. `SID_MODULE_CONFIG` may be an object; every other value is a string. `SID_HOSTS`, `SID_MODULE_SECRETS` and `SID_BASE_PATH` can't be set per host: the base path is what the platform routes by, which is the deployment's.
 
 - The request's host is the hostname of its URL, lower-cased, without the port or a trailing dot. Keys are compared the same way; a key listed twice, or one that isn't a hostname, is invalid configuration.
 - Each host's settings are validated as a deployment's are, at start-up: one invalid host fails the deployment. `SID_COOKIE_DOMAIN` is required of each host (set there, or inherited); the deployment's own settings needn't name one.

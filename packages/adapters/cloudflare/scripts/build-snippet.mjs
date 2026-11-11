@@ -77,13 +77,11 @@ try {
   if (error instanceof ConfigError) fail(`${error.message} (in ${show(configFile)}).`, 2);
   throw error;
 }
-// With SID_HOSTS, one Snippet serves several sites: the first listed is smoke-tested, the bundle has every site's
-// modules, and the snippet rule needs one base path for all of them.
+// With SID_HOSTS, one Snippet serves several sites: the first listed is smoke-tested, and the bundle has every site's
+// modules. The base path is the deployment's (core refuses it per host), so one snippet rule covers them all.
 const sites = settings.hosts === undefined ? [] : [...settings.hosts];
 const [smokeHost, config] = sites[0] ?? [undefined, settings.config];
 const configs = sites.length === 0 ? [settings.config] : sites.map(([, siteConfig]) => siteConfig);
-const basePaths = [...new Set(configs.map(c => c.basePath))];
-if (basePaths.length > 1) fail(`the sites in SID_HOSTS use different base paths (${basePaths.join(', ')}); one Snippet rule needs one. Use the same SID_BASE_PATH for all of them.`, 2);
 const moduleNames = [...new Set(configs.flatMap(c => c.modules))];
 if (moduleNames.includes('ec')) fail('SID_MODULES includes ec, which needs its passphrase from SID_MODULE_SECRETS, and Snippets have no secrets. Leave ec out, or use the Worker.', 2);
 const unknown = moduleNames.filter(name => !(name in MODULES));

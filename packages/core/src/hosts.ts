@@ -2,8 +2,12 @@ import { ConfigError, resolveConfig, type ResolveConfigOptions, type SharedIdEdg
 
 type Env = Readonly<Record<string, unknown>>;
 
-/** Settings that can't vary by host: secrets stay in the platform's secret store, and `SID_HOSTS` doesn't nest. */
-const NOT_PER_HOST: ReadonlySet<string> = new Set(['SID_HOSTS', 'SID_MODULE_SECRETS']);
+/**
+ * Settings that can't vary by host: secrets stay in the platform's secret store, `SID_HOSTS` doesn't nest, and the base
+ * path is what the platform routes by (a Worker route, a CloudFront behaviour, a Front Door route, Vercel's middleware
+ * predicate, a Snippet rule), which is the deployment's.
+ */
+const NOT_PER_HOST: ReadonlySet<string> = new Set(['SID_HOSTS', 'SID_MODULE_SECRETS', 'SID_BASE_PATH']);
 
 /** A DNS hostname (or IPv4 address), lower case, without a trailing dot. */
 const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;

@@ -28,6 +28,8 @@ describe('SID_HOSTS', () => {
     expect(bad({ 'a.example': { SID_COOKIE_DOMAIN: 'a.example' }, 'A.example': { SID_COOKIE_DOMAIN: 'a.example' } })).toThrow(/lists a.example twice/);
     expect(bad({ 'a.example': { SID_COOKIE_DOMAIN: 'a.example', SID_MODULE_SECRETS: '{}' } })).toThrow(/SID_MODULE_SECRETS can't be set per host/);
     expect(bad({ 'a.example': { COOKIE: 'x' } })).toThrow(/"COOKIE" isn't a SID_\* setting/);
+    // The base path is what the platform routes by (a Worker route, Vercel's middleware): the deployment's, for every site.
+    expect(bad({ 'a.example': { SID_COOKIE_DOMAIN: 'a.example', SID_BASE_PATH: '/identity' } })).toThrow(/SID_BASE_PATH can't be set per host/);
     expect(bad({ 'a.example': { SID_MAX_AGE_DAYS: 30 } })).toThrow(/SID_MAX_AGE_DAYS must be a string/);
     // Each host must name its cookie domain, or inherit one.
     expect(bad({ 'a.example': {} })).toThrow(ConfigError);
