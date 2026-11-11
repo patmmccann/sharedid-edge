@@ -1,0 +1,24 @@
+{
+  "$comment": "The e2e page's consent scenarios; tc-string.ts encodes them into site/public/tcf.js, and the page picks one with ?consent=<name> (given by default). A scenario with a TC string gets vendor consent for every GVL ID the bundle's modules declare (prebid-modules.json, from prebid.js's metadata) plus extraVendors. See AGENTS.md.",
+  "scenarios": {
+    "given": {
+      "description": "GDPR applies; consent to everything the tests need",
+      "purposeConsents": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "publisherConsents": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    },
+    "denied": {
+      "description": "GDPR applies; no purpose 1 consent, for vendors or the publisher",
+      "purposeConsents": [2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "publisherConsents": [2, 3, 4, 5, 6, 7, 8, 9, 10]
+    },
+    "notApplicable": {
+      "description": "GDPR doesn't apply; no TC string",
+      "gdprApplies": false
+    }
+  },
+  "extraVendors": {
+    "755": "Google (GPT and Google's demand)",
+    "793": "Amazon Ads",
+    "25": "Yahoo"
+  }
+}

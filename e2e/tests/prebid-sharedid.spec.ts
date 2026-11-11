@@ -56,9 +56,10 @@ function cookieScope(baseURL: string | undefined): { domain: string; path: strin
  * completion callback the User ID module passes it, so on every visit after the first the promise never resolves.
  * That is a Prebid.js issue, independent of this endpoint.
  */
-async function visit(page: Page): Promise<Response> {
+/** Loads the page (with a consent scenario from site/public/tcf.js: ?consent=denied, say) and waits for the sync. */
+async function visit(page: Page, path = '/'): Promise<Response> {
   const sync = page.waitForResponse(response => new URL(response.url()).pathname === '/_sid/sync', { timeout: 15_000 });
-  await page.goto('/');
+  await page.goto(path);
   const response = await sync;
   expect(response.status()).toBe(200);
   return response;
@@ -111,6 +112,60 @@ test('Prebid.js and the endpoint keep one _pubcid, on the same domain', async ({
   expect(ids[0]?.domain).toBe(expected);
   expect(all.find(c => c.name === '_pubcid_sv')?.domain).toBe(expected);
   await expect.poll(() => pubcidInPrebid(page)).toBe(ids[0]?.value);
+});
+
+test('works under GDPR with the page\'s static TC string: publisher and purpose consent for 1-10', async ({ page, context }) => {
+  await visit(page);
+  // Prebid.js got GDPR scope and the TC string from the page's static consent data (site/public/index.html), so consent is in play.
+  await expect.poll(() => page.evaluate(() => (window as unknown as { pbjs: { getConsentMetadata(): { gdpr?: { gdprApplies?: boolean; consentStringSize?: number } } } }).pbjs.getConsentMetadata().gdpr))
+    .toMatchObject({ gdprApplies: true });
+  const cookies = await context.cookies();
+  // SharedID Edge reads the TC string from euconsent-v2 (sharedIdSystem doesn't send it to pixelUrl), and sets both ID cookies.
+  expect(cookies.find(c => c.name === 'euconsent-v2')?.value).toMatch(/^CQ/);
+  expect(cookies.find(c => c.name === '_pubcid')?.value).toMatch(/^[0-9a-f-]{36}$/);
+  expect(cookies.find(c => c.name === '_pubcid_sv')?.httpOnly).toBe(true);
+});
+
+interface ConsentMeta {
+  getConsentMetadata(): { gdpr?: { gdprApplies?: boolean } };
+}
+
+function gdprMeta(page: Page): Promise<{ gdprApplies?: boolean } | undefined> {
+  return page.evaluate(() => (window as unknown as { pbjs: ConsentMeta }).pbjs.getConsentMetadata().gdpr);
+}
+
+test('without purpose 1 consent, neither Prebid.js nor the endpoint stores an id, and existing ones are deleted', async ({ page, context, sid }) => {
+  // An earlier visit with consent leaves the ID cookies.
+  await visit(page);
+  expect(await cookie(context, '_pubcid')).toBeDefined();
+  await context.clearCookies({ name: '_pubcid' });
+  sid.reset();
+
+  // The visitor withdraws purpose 1 consent (vendors and publisher): the denied scenario's TC string.
+  await page.goto('/?consent=denied');
+  await expect.poll(() => gdprMeta(page)).toMatchObject({ gdprApplies: true });
+  await page.waitForTimeout(1_500);
+  // tcfControl stops sharedIdSystem: it writes no id and doesn't call pixelUrl.
+  expect(await cookie(context, '_pubcid')).toBeUndefined();
+  expect((await sid.requests()).filter(r => r.path.startsWith('/_sid/sync'))).toEqual([]);
+
+  // The endpoint reads the same TC string from euconsent-v2: it sets no id and deletes the recovery copy left from before.
+  expect(await cookie(context, '_pubcid_sv')).toBeDefined();
+  const response = await page.request.get('/_sid/sync');
+  expect(response.status()).toBe(200);
+  expect(response.headers()['x-sharedid-status']).toBe('denied: tcf: no publisher consent for purpose 1');
+  expect(await cookie(context, '_pubcid')).toBeUndefined();
+  expect(await cookie(context, '_pubcid_sv')).toBeUndefined();
+});
+
+test('where GDPR doesn\'t apply (static consent data, no TC string), everything works', async ({ page, context }) => {
+  await visit(page, '/?consent=notApplicable');
+  await expect.poll(() => gdprMeta(page)).toMatchObject({ gdprApplies: false });
+  expect(await cookie(context, 'euconsent-v2')).toBeUndefined();
+  const id = (await cookie(context, '_pubcid'))?.value;
+  expect(id).toMatch(/^[0-9a-f-]{36}$/);
+  expect((await cookie(context, '_pubcid_sv'))?.value).toBe(id);
+  await expect.poll(() => pubcidInPrebid(page)).toBe(id);
 });
 
 test('a capped or cleared script cookie is restored from the server-only copy', async ({ page, context, sid }) => {
