@@ -1,4 +1,4 @@
-import { ConfigError, handlerOrMisconfigured, publicOriginFromEnv, resolveConfig, type EdgeModule } from '@sharedid-edge/core';
+import { ConfigError, booleanFromEnv, handlerOrMisconfigured, publicOriginFromEnv, resolveConfig, type EdgeModule } from '@sharedid-edge/core';
 import { builtInModules } from '@sharedid-edge/modules';
 import { createVercelHandler, internalError, middleware, type VercelHandler, type VercelMiddleware } from './handler.js';
 
@@ -16,7 +16,7 @@ export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtI
     () => createVercelHandler({
       config: resolveConfig(env),
       modules,
-      behindVercel: !/^(0|false|no|off)$/i.test(env['SID_BEHIND_VERCEL'] ?? ''),
+      behindVercel: booleanFromEnv(env['SID_BEHIND_VERCEL'], true),
       ...publicOriginFromEnv(env)
     }),
     () => () => Promise.resolve(internalError('SharedID Edge is misconfigured'))
