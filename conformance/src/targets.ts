@@ -1,4 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { EU_COUNTRY_CODES } from '@sharedid-edge/core';
 import type { BuildOption } from './cases.js';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
@@ -103,6 +104,10 @@ function asRequestCf(headers: Readonly<Record<string, string>>): Record<string, 
     const field = LOCATION_HEADERS[name.toLowerCase()];
     if (field !== undefined) cf[field] = value;
   }
+  // Cloudflare sets isEUCountry ("1" for the 27 EU member states) whenever it knows the country; the Worker reads it
+  // to decide whether GDPR applies.
+  const country = cf['country'];
+  if (country !== undefined && country !== '') cf['isEUCountry'] = EU_COUNTRY_CODES.has(country.toUpperCase()) ? '1' : '0';
   return { ...headers, 'MF-CF-Blob': JSON.stringify({ ...cf, clientAcceptEncoding: '' }) };
 }
 

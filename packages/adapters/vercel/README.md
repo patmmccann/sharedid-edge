@@ -1,6 +1,6 @@
 # @sharedid-edge/vercel
 
-[SharedID Edge](../../../README.md) on Vercel: a `/_sid/*` route of the Vercel project that serves your site, as a Next.js route handler or as Routing Middleware. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server and the Lambda function, with built-in modules `ip`, `ec`, `geo`, `reflect`, `bot` and `ua`, and it passes the same conformance suite.
+[SharedID Edge](../../../README.md) on Vercel: a `/_sid/*` route of the Vercel project that serves your site, as a Next.js route handler or as Routing Middleware. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server and the Lambda function, with built-in modules `ip`, `geo`, `reflect`, `bot` and `ua` (`ec` and vendor modules are added at build time), and it passes the same conformance suite.
 
 This is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform).
 
@@ -71,6 +71,14 @@ npm run bundle -w @sharedid-edge/vercel     # packages/adapters/vercel/deploy/sh
 ```
 
 The bundle is a single ESM file with no dependencies and no Node.js built-ins (about 19 KB gzipped, minified; the bundle step fails it over 32 KB), with a declaration file next to it. Copy both into your site's repository, for example as `lib/sharedid-edge.mjs` and `lib/sharedid-edge.d.mts`, and commit them. To update, rebuild and copy them again.
+
+**`ec` and vendor modules (opt-in).** The bundle has the built-in modules (`ip`, `geo`, `reflect`, `bot`, `ua`). [`ec`](../../vendor-modules/ec/README.md) (Trusted Server Edge Cookies, whose ID is derived from the IP address) and [vendor modules](../../vendor-modules/README.md) aren't in it: add each with `--module <package>#<export>`, in place of `npm run bundle -w @sharedid-edge/vercel`:
+
+```sh
+npm run bundle -w @sharedid-edge/vercel -- --module @sharedid-edge/module-ec#ecModule
+```
+
+Then list it in `SID_MODULES`, with its settings and secrets (the [`ec` README](../../vendor-modules/ec/README.md#turning-it-on)). Without `--module`, `SID_MODULES=ec` reports `ec` as `skipped` (`not installed`) and sets no `ts-ec`. `ec` used to be built in: if you deploy it, add `--module` to your build before you next bundle. The bundle's size is reported but the 32 KB budget isn't enforced with opt-in modules; `--bowser` and `--module` can be combined.
 
 **Bowser (opt-in).** The `ua` module's [full `User-Agent` parsing](../../modules/ua/README.md#full-parsing-with-bowser) fills `device` (`sua`, `devicetype`, `make`, `model`, `os`, `osv`) for Safari, Firefox, TVs and other browsers that send no Client Hints. It isn't in the default bundle, to keep it small. `npm run bundle:bowser -w @sharedid-edge/vercel` (in place of `bundle`; same output files) builds it in, then `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` turns it on. The cost, minified and gzipped, against the 32 KB budget CI checks for both builds:
 

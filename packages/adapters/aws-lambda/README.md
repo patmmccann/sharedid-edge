@@ -1,6 +1,6 @@
 # @sharedid-edge/aws-lambda
 
-[SharedID Edge](../../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `ec`, `geo`, `reflect`, `bot` and `ua`, and it passes the same conformance suite.
+[SharedID Edge](../../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `geo`, `reflect`, `bot` and `ua` (`ec` and vendor modules are added at build time), and it passes the same conformance suite.
 
 This is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform).
 
@@ -62,6 +62,14 @@ npm run bundle -w @sharedid-edge/aws-lambda    # bundles the function into packa
 ```
 
 The bundle is a single ESM file with no dependencies (about 19 KB gzipped, minified; CI fails it over 32 KB). There's no `sam build` step: the template's `CodeUri` is `dist/`, and `sam deploy` zips it as it is. Rebuild and bundle after updating the code.
+
+**`ec` and vendor modules (opt-in).** The bundle has the built-in modules (`ip`, `geo`, `reflect`, `bot`, `ua`). [`ec`](../../vendor-modules/ec/README.md) (Trusted Server Edge Cookies, whose ID is derived from the IP address) and [vendor modules](../../vendor-modules/README.md) aren't in it: add each with `--module <package>#<export>`, in place of `npm run bundle -w @sharedid-edge/aws-lambda`:
+
+```sh
+npm run bundle -w @sharedid-edge/aws-lambda -- --module @sharedid-edge/module-ec#ecModule
+```
+
+Then list it in `SID_MODULES`, with its settings and secrets (the [`ec` README](../../vendor-modules/ec/README.md#turning-it-on)). Without `--module`, `SID_MODULES=ec` reports `ec` as `skipped` (`not installed`) and sets no `ts-ec`. `ec` used to be built in: if you deploy it, add `--module` to your build before you next bundle. The bundle's size is reported but the 32 KB budget isn't enforced with opt-in modules; `--bowser` and `--module` can be combined.
 
 **Bowser (opt-in).** The `ua` module's [full `User-Agent` parsing](../../modules/ua/README.md#full-parsing-with-bowser) fills `device` (`sua`, `devicetype`, `make`, `model`, `os`, `osv`) for Safari, Firefox, TVs and other browsers that send no Client Hints. It isn't in the default bundle, to keep it small. `npm run bundle:bowser -w @sharedid-edge/aws-lambda` (in place of `bundle`; same `deploy/lambda.mjs`, so `sam deploy` is unchanged) builds it in, then `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` turns it on. The cost, minified and gzipped, against the 32 KB budget CI checks for both builds:
 
