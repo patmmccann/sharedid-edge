@@ -1,5 +1,5 @@
 export { createHandler, ROUTES, type HandlerOptions, type SharedIdEdgeHandler } from './handler.js';
-export { handlerOrMisconfigured, headerValue, isHeaderName, logRequestFailure, parseHeaderMap, publicOriginFromEnv, splitHeaders, type SplitHeaders } from './adapter.js';
+export { booleanFromEnv, handlerOrMisconfigured, headerValue, isHeaderName, logRequestFailure, parseHeaderMap, publicOriginFromEnv, splitHeaders, type SplitHeaders } from './adapter.js';
 export {
   ConfigError,
   DEFAULT_CONFIG,

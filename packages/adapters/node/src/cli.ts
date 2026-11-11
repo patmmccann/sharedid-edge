@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { ConfigError, resolveConfig } from '@sharedid-edge/core';
+import { booleanFromEnv, ConfigError, resolveConfig } from '@sharedid-edge/core';
 // The built-in list with Bowser available to the ua module (SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}): the
 // server isn't bundled, so it has no size budget to keep it out.
 import { builtInModules } from '@sharedid-edge/modules/bowser';
@@ -16,7 +16,7 @@ try {
   const server = createNodeServer({
     config,
     modules: builtInModules,
-    trustProxy: /^(1|true|yes|on)$/i.test(process.env['SID_TRUST_PROXY'] ?? ''),
+    trustProxy: booleanFromEnv(process.env['SID_TRUST_PROXY'], false),
     ...(publicOrigin === undefined ? {} : { publicOrigin })
   });
   server.listen(port, host, () => {

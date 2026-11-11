@@ -1,6 +1,7 @@
 // A strict consumer of @sharedid-edge/core's public API, as a platform adapter or module author would write it.
 // Type-checked against the packed package by scripts/consumer-types.mjs.
 import {
+  booleanFromEnv,
   createHandler,
   defineModule,
   EU_COUNTRY_CODES,
@@ -115,3 +116,5 @@ export function platformFromHeaders(headers: Headers, env: Readonly<Record<strin
 }
 export const geoHeaders: Partial<Record<'country' | 'city', string>> = parseHeaderMap('{"country":"x-geo"}', 'SID_LOCATION_HEADERS', ['country', 'city'], '{"country":"x-geo"}');
 export const validName: boolean = isHeaderName('x-geo');
+
+export const booleanSetting: boolean = booleanFromEnv('true', false);
