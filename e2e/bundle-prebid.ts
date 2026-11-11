@@ -12,8 +12,30 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** The modules the test page uses. Parent modules (userId for sharedIdSystem) are added as on the download page. */
-const MODULES = ['sharedIdSystem'];
+/**
+ * A typical publisher setup around SharedID, so the tests show it works next to consent enforcement, storage control,
+ * other ID modules, bidders and analytics, not only alone. Parent modules are added as on the download page.
+ */
+const MODULES = [
+  // consent: the TCF CMP integration, and enforcement of its purposes
+  'consentManagementTcf',
+  'tcfControl',
+  // storage disclosure enforcement (brings in the modules' metadata chunks)
+  'storageControl',
+  // user IDs: SharedID, and The Trade Desk's Unified ID 1.0
+  'userId',
+  'sharedIdSystem',
+  'unifiedIdSystem',
+  // bidders: OpenX, Magnite, TripleLift and Microsoft
+  'openxBidAdapter',
+  'magniteBidAdapter',
+  'tripleliftBidAdapter',
+  'msftBidAdapter',
+  // GPT integration, and the generic analytics adapter with its skinny preset
+  'gptPreAuction',
+  'genericAnalyticsAdapter',
+  'genericAnalyticsSkinnyEvents'
+];
 
 const CORE = 'prebid-core';
 const METADATA_SUFFIX = '.metadata.js';
