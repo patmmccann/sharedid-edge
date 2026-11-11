@@ -14,6 +14,7 @@ The module never changes, returns or logs the values. It only sets cookies, and 
 - [What it does](#what-it-does)
 - [Match the original cookie's attributes](#match-the-original-cookies-attributes)
 - [Make `uid1` sticky and server-set](#make-uid1-sticky-and-server-set)
+- [Duplicates](#duplicates)
 - [Restore Google Analytics and Ads cookies after Safari deletes them (`_ga`, `_gcl_aw`, `_gcl_au`)](#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au)
 - [The keeper cookie](#the-keeper-cookie)
 - [Which value wins: `prefer`](#which-value-wins-prefer)
@@ -118,7 +119,7 @@ You can check in the browser's developer tools after a `/_sid/sync` or `/_sid/v1
 **The fix.** Have the worker set `uid1` again from your own domain. A cookie set in an HTTP response (a server-set cookie) isn't held to the 7-day cap, provided the worker answers on your site's own IP addresses (see [Troubleshooting](#troubleshooting)).
 
 1. **Look at the original cookie.** In Chrome or Edge: developer tools, Application, Cookies, your site. In Safari: Develop, Show Web Inspector, Storage, Cookies. Find `uid1` and note:
-   - **Domain:** `.example.com` (with the dot) means it's set for the whole site. Use `"domain": "example.com"`. A host name without the dot (`www.example.com`) means host-only: leave `domain` out.
+   - **Domain:** `.example.com` (with the dot) means it's set for the whole site. Use `"domain": "example.com"`. A host name without the dot (`www.example.com`) means host-only: use `"domain": "host-only"`. Leaving `domain` out gives the cookie `SID_COOKIE_DOMAIN`'s domain.
    - **HttpOnly:** it won't be ticked, since a script wrote it. Keep `"httpOnly": false`, or the vendor's script can no longer read it.
    - **Expires:** in Safari, at most 7 days away. That's what you're fixing.
 
@@ -148,7 +149,9 @@ You can check in the browser's developer tools after a `/_sid/sync` or `/_sid/v1
    - `restore: true` is optional. It saves `uid1` in the [keeper](#the-keeper-cookie), so if Safari has already deleted `uid1` when the visitor comes back, the worker sets the old value again instead of letting the vendor mint a new one. Leave it out if the vendor's own deletion of `uid1` means something (for example, its opt-out).
    - `"prefer": "backup"` (optional, with `restore`) also puts the saved `uid1` back when the vendor's script already wrote a new one before the worker was called. Add it only if the vendor never changes `uid1` on purpose; see [Which value wins](#which-value-wins-prefer).
 
-3. **Let Prebid.js's pixel call carry it.** With `pixelUrl: '/_sid/sync'` and `extend: true` (see [Configure Prebid.js](../../../docs/prebid.md)), Prebid.js calls the worker on page views, and that call reflects `uid1` when the browser has it. If the vendor's script writes `uid1` after Prebid.js's call, the next call picks it up. Without Prebid.js's pixel call, call `/_sid/v1` from the page, after the vendor's script has written `uid1`:
+3. **Let Prebid.js's pixel call carry it.** With `pixelUrl: '/_sid/sync'` and `extend: true` (see [Configure Prebid.js](../../../docs/prebid.md)), Prebid.js calls the worker on page views, and that call reflects `uid1` when the browser has it. If the vendor's script writes `uid1` after Prebid.js's call, the next call picks it up.
+
+   **Where the vendor's tag sits matters for `restore`.** Prebid.js makes its pixel call as soon as it loads. If the vendor's tag comes **after** Prebid.js in the page, the pixel call reaches the worker before the tag runs, so a `uid1` Safari deleted comes back with its old value, and the tag then finds it and keeps it. If the vendor's tag comes **before** Prebid.js, it has already minted a new `uid1` by the time the pixel call is made, and with the default `prefer` the browser's new value wins (the keeper saves it from then on). To keep the old value in that case, add `"prefer": "backup"` (only if the vendor never changes `uid1` on purpose), or load the vendor's tag after Prebid.js. The [browser tests](../../../e2e/AGENTS.md) check both orders. Without Prebid.js's pixel call, call `/_sid/v1` from the page, after the vendor's script has written `uid1`:
 
    ```js
    fetch('/_sid/v1', { credentials: 'include' }).catch(() => {});
@@ -158,8 +161,16 @@ You can check in the browser's developer tools after a `/_sid/sync` or `/_sid/v1
 
 4. **Verify.** Load a page, then in the developer tools:
    - **Network:** select the `/_sid/sync` (or `/_sid/v1`) request; if it says "(disk cache)", disable the cache and reload. Its response headers include `Set-Cookie: uid1=…; Max-Age=31536000; Expires=…; Path=/; Domain=.example.com; SameSite=Lax; Secure`, with the same value the request's `Cookie` header carried. With `restore`, there's also `Set-Cookie: _sid_keep=…; …; HttpOnly`.
-   - **Application (Storage in Safari), Cookies:** there's one `uid1`, its **Expires** is a year from now (not 7 days), and its value hasn't changed. `_sid_keep` is there too, with **HttpOnly** ticked.
+   - **Application (Storage in Safari), Cookies:** there's exactly one `uid1` (two mean `domain` doesn't match where the vendor writes it; see [Duplicates](#duplicates)), its **Expires** is a year from now (not 7 days), and its value hasn't changed. `_sid_keep` is there too, with **HttpOnly** ticked.
    - In Safari, check again after more than 7 days, or delete `uid1` by hand and reload: `uid1` comes back with the same value.
+
+## Duplicates
+
+A browser can hold two cookies with the same name, set with different `Domain`s: a host-only `uid1` from a vendor's tag next to the `Domain=.example.com` copy this module sets, say. It sends both, and the `Cookie` header doesn't say which is which. The module reflects the **first** (browsers list the older copy first). Then:
+
+- **Same value in every copy:** it also deletes the host-only copy (an empty value, `Max-Age=0`, no `Domain`), which leaves the domain copy alone, so the browser keeps one. This needs the copy it sets to have a domain (the cookie's `domain`, else `SID_COOKIE_DOMAIN`).
+- **Different values:** it deletes neither. The other copy may be the vendor's newer write, such as a rotated ID or its opt-out, and the module never overrides that. Set `domain` to match where the vendor writes the cookie, and the copies stop diverging.
+- **The keeper** (`_sid_keep`) is this worker's own, so a host-only duplicate of it is always deleted.
 
 ## Restore Google Analytics and Ads cookies after Safari deletes them (`_ga`, `_gcl_aw`, `_gcl_au`)
 
@@ -431,7 +442,7 @@ const handler = createHandler({ config: resolveConfig(env), modules: [reflectMod
 
 Other exports:
 - `reflectModuleConfig(config)`: parses and validates the settings, with the keeper's defaults applied; throws a `TypeError` on invalid ones.
-- `rawCookieValue(header, name)`: a cookie's value exactly as the `Cookie` header carries it.
+- `rawCookieValue(header, name)`: a cookie's value exactly as the `Cookie` header carries it (the first, when the name repeats), and `rawCookieValues(header, name)` every value in header order.
 - `isReflectable(value)`: whether a value can be set again unchanged.
 - `encodeKeeper(entries, maxLength)` and `decodeKeeper(value)`: the keeper's value format. `decodeKeeper` never throws.
 - `cookieTimestamp(format, value, nowSeconds)`: the creation time `prefer: "older"` reads from a value, or `undefined`. Never throws.

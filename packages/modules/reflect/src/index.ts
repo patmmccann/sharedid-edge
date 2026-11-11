@@ -198,12 +198,22 @@ export function reflectModuleConfig(config: Readonly<Record<string, unknown>>): 
  * changed.
  */
 export function rawCookieValue(header: string | null, name: string): string | undefined {
-  if (header === null) return undefined;
+  return rawCookieValues(header, name)[0];
+}
+
+/**
+ * Every value `name` has in the `Cookie` header, in header order, raw as in `rawCookieValue`. A browser sends several
+ * when cookies of that name were set with different `Domain`s: a host-only copy written by script next to the domain
+ * copy this module sets, say. Browsers list the older one first when the paths are the same.
+ */
+export function rawCookieValues(header: string | null, name: string): string[] {
+  if (header === null) return [];
+  const values: string[] = [];
   for (const part of header.split(';')) {
     const eq = part.indexOf('=');
-    if (eq > 0 && trimHttpWhitespace(part.slice(0, eq)) === name) return trimHttpWhitespace(part.slice(eq + 1));
+    if (eq > 0 && trimHttpWhitespace(part.slice(0, eq)) === name) values.push(trimHttpWhitespace(part.slice(eq + 1)));
   }
-  return undefined;
+  return values;
 }
 
 /**
@@ -307,7 +317,32 @@ function keeperCookie(keeper: KeeperSettings, value: string, maxAgeSeconds: numb
   return { name: keeper.cookie, value, maxAgeSeconds, httpOnly: true, ...domainFields(keeper.domain) };
 }
 
-function run({ request, storage, config }: ModuleContext): ModuleResult | undefined {
+/**
+ * The `Domain` a cookie with this `domain` setting is set with: its own, else `SID_COOKIE_DOMAIN`; undefined when it's
+ * host-only.
+ */
+function effectiveDomain(domain: string | undefined, cookieDomain: string | undefined): string | undefined {
+  if (domain === HOST_ONLY) return undefined;
+  return domain ?? cookieDomain;
+}
+
+/**
+ * When the browser sent `name` more than once and the copy being set has a `Domain`, deletes the host-only copy (no
+ * `Domain`, `Max-Age=0`), which leaves the domain one alone, so the browser keeps one. With a host-only copy being set,
+ * the other copy is on some domain this module can't name, so it's left alone.
+ *
+ * For a configured cookie, only when every copy has the same value (`sameValuesOnly`): those are other parties' cookies,
+ * and a copy with a different value may be its owner's newer write (a rotated ID, or its opt-out), which this module
+ * mustn't override. The keeper is the worker's own, so its duplicates always go.
+ */
+function hostOnlyDuplicate(header: string | null, name: string, httpOnly: boolean, domain: string | undefined, sameValuesOnly: boolean): ModuleCookie[] {
+  const values = rawCookieValues(header, name);
+  if (domain === undefined || values.length < 2) return [];
+  if (sameValuesOnly && values.some(v => v !== values[0])) return [];
+  return [{ name, value: '', maxAgeSeconds: 0, httpOnly, hostOnly: true }];
+}
+
+function run({ request, storage, config, cookieDomain }: ModuleContext): ModuleResult | undefined {
   const { cookies: configured, keeper } = reflectModuleConfig(config);
   const header = request.headers.get('Cookie');
   const kept = rawCookieValue(header, keeper.cookie);
@@ -328,9 +363,12 @@ function run({ request, storage, config }: ModuleContext): ModuleResult | undefi
       // Missing (Safari deleted or expired it), or present but `prefer` picks the backup (the page re-minted it):
       // restored from the keeper byte for byte, and kept there.
       cookies.push(moduleCookie(cookie, stored, cookie.maxAgeDays * 86_400));
+      cookies.push(...hostOnlyDuplicate(header, cookie.name, cookie.httpOnly, effectiveDomain(cookie.domain, cookieDomain), true));
       save.push([cookie.name, stored]);
     } else if (isReflectable(value)) {
+      // With duplicates, the first value (browsers list the older first) is the one reflected.
       cookies.push(moduleCookie(cookie, value, cookie.maxAgeDays * 86_400));
+      cookies.push(...hostOnlyDuplicate(header, cookie.name, cookie.httpOnly, effectiveDomain(cookie.domain, cookieDomain), true));
       if (cookie.restore) save.push([cookie.name, value]);
     }
     // Present but not reflectable: left alone, and its saved value is dropped so an outdated one is never restored.
@@ -338,7 +376,10 @@ function run({ request, storage, config }: ModuleContext): ModuleResult | undefi
   // Rewritten on every call, so its expiry is refreshed with the cookies it keeps. With nothing to keep, a keeper the
   // browser sent is deleted.
   const encoded = restoring ? encodeKeeper(save, MAX_KEEPER_COOKIE_BYTES - keeper.cookie.length) : '';
-  if (encoded !== '') cookies.push(keeperCookie(keeper, encoded, keeper.maxAgeDays * 86_400));
+  if (encoded !== '') {
+    cookies.push(keeperCookie(keeper, encoded, keeper.maxAgeDays * 86_400));
+    cookies.push(...hostOnlyDuplicate(header, keeper.cookie, true, effectiveDomain(keeper.domain, cookieDomain), false));
+  }
   else if (kept !== undefined) cookies.push(keeperCookie(keeper, '', 0));
   return cookies.length === 0 ? undefined : { cookies };
 }

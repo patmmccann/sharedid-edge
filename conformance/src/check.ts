@@ -95,9 +95,10 @@ export async function runCase(
     if (want.maxAge !== undefined && want.maxAge > 0 && !got.attributes.has('expires')) failures.push(`cookie ${want.name}: missing Expires`);
   }
   if (expect.onlyListedCookies === true) {
-    const listed = new Set((expect.cookies ?? []).map(c => c.name));
-    const extra = cookies.filter(c => !listed.has(c.name)).map(c => c.name);
-    if (extra.length > 0) failures.push(`unexpected cookies: ${extra.join(', ')}`);
+    // Every Set-Cookie must be one of the listed cookies, so a name appears only as many times as it's listed (a
+    // duplicate's deletion next to the cookie, say, has to be listed to be allowed).
+    // Each listed cookie consumed one Set-Cookie above; whatever is left wasn't listed.
+    if (unmatched.length > 0) failures.push(`unexpected cookies: ${unmatched.map(c => `${c.name}${c.attributes.has('domain') ? ` (Domain ${String(c.attributes.get('domain'))})` : ' (host-only)'}`).join(', ')}`);
   }
   return failures;
 }
