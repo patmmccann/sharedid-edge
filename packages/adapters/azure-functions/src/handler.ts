@@ -71,7 +71,7 @@ async function toRequest(request: AzureHttpRequest, publicOrigin: string | undef
 export async function toResponseInit(response: Response, method: string): Promise<AzureHttpResponseInit> {
   const { headers, cookies: setCookies } = splitHeaders(response.headers);
   const cookies: AzureCookie[] = [];
-  const rawCookies: string[] = [];
+  let rawCookie: string | undefined;
   for (const header of setCookies) {
     const cookie = parseSetCookie(header);
     if (preservedByHost(cookie.value)) {
@@ -79,7 +79,8 @@ export async function toResponseInit(response: Response, method: string): Promis
     } else {
       // The Functions host percent-encodes Cookie values supplied through cookies[]. Keep the exact Set-Cookie header
       // in the response headers instead. This bypasses that transformation while preserving the cookie byte for byte.
-      rawCookies.push(header);
+      if (rawCookie === undefined) rawCookie = header;
+      else console.error(`sharedid-edge: not setting cookie ${cookie.name}: Azure Functions cannot preserve multiple raw Set-Cookie headers`);
     }
   }
   const outputHeaders = rawCookies.length === 0
