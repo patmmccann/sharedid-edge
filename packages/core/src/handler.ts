@@ -1,6 +1,6 @@
 import { DEFAULT_CONFIG, type SharedIdEdgeConfig } from './config.js';
 import { readConsent, storageDecision, type StorageDecision } from './consent.js';
-import { parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
+import { cookieValues, parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
 import { idFromSyncParam, isValidId, mintId } from './id.js';
 import { deepMerge, ModuleRegistry, optOutCookies, runModules, type EdgeModule, type ModuleCookie, type ModuleRunOutput } from './modules.js';
 import { trimEnd } from './text.js';
@@ -72,7 +72,8 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
       return new Response(null, { status: 405, headers: { Allow: route === ROUTES.v1 ? 'GET, HEAD, OPTIONS' : 'GET, HEAD', ...NO_STORE } });
     }
 
-    const cookies = parseCookies(request.headers.get('Cookie'));
+    const cookieHeader = request.headers.get('Cookie');
+    const cookies = parseCookies(cookieHeader);
     const secure = url.protocol === 'https:';
     const date = now();
 
@@ -117,7 +118,7 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
 
         const setCookies: string[] = [];
         if (state.id !== undefined) {
-          setCookies.push(...idCookies(config, state.id, secure, date));
+          setCookies.push(...idCookies(config, state.id, secure, date), ...hostOnlyDuplicates(config, cookieHeader, secure, date));
         } else if (!decision.allowed && (cookies.has(config.cookieName) || (config.recoveryCookieName !== undefined && cookies.has(config.recoveryCookieName)))) {
           setCookies.push(...expireIdCookies(config, secure, date));
         }
@@ -173,6 +174,21 @@ function idCookies(config: SharedIdEdgeConfig, id: string, secure: boolean, date
     cookies.push(serializeCookie(config.recoveryCookieName, id, cookieOptions(config, secure, true), date));
   }
   return cookies;
+}
+
+/**
+ * With `SID_COOKIE_DOMAIN` set to a domain, deletes the host-only copy of an ID cookie the browser sent more than once.
+ * A host-only `_pubcid` from before the domain was configured (from Prebid.js, or from this worker's old host-only
+ * default) sits next to the domain cookie; the browser sends both, and the page and the worker can each read a different
+ * one. The worker keeps the value it chose and sets it on the domain (idCookies); this removes the host-only copy, which
+ * the deletion's missing `Domain` attribute targets without touching the domain cookie.
+ */
+function hostOnlyDuplicates(config: SharedIdEdgeConfig, cookieHeader: string | null, secure: boolean, date: Date): string[] {
+  if (config.cookieDomain === undefined) return [];
+  const names = [config.cookieName, ...(config.recoveryCookieName === undefined ? [] : [config.recoveryCookieName])];
+  return names
+    .filter(name => cookieValues(cookieHeader, name).length > 1)
+    .map(name => serializeCookie(name, '', { ...cookieOptions(config, secure, name !== config.cookieName), maxAgeSeconds: 0, domain: undefined }, date));
 }
 
 /**

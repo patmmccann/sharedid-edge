@@ -136,6 +136,46 @@ describe('sync (pixelUrl)', () => {
     ]);
   });
 
+  describe('duplicate ID cookies (a host-only copy next to the domain one)', () => {
+    const summary = (response: Response): (string | undefined)[][] =>
+      setCookies(response).map(c => [c.name, c.value, c.attributes.get('domain'), c.attributes.get('max-age')]);
+
+    it('keeps the first value, sets it on the domain and deletes the host-only copy', async () => {
+      const response = await handler({ SID_COOKIE_DOMAIN: 'example.com', SID_RECOVERY_COOKIE: 'none' })(
+        get('/_sid/sync', { Cookie: `_pubcid=${UUID}; _pubcid=${OTHER}` })
+      );
+      expect(summary(response)).toEqual([
+        ['_pubcid', UUID, 'example.com', '31536000'],
+        ['_pubcid', '', undefined, '0']
+      ]);
+    });
+
+    it('deletes a duplicated recovery copy\'s host-only cookie too, keeping it HttpOnly', async () => {
+      const response = await handler({ SID_COOKIE_DOMAIN: 'example.com' })(
+        get('/_sid/v1', { Cookie: `_pubcid=${UUID}; _pubcid_sv=${UUID}; _pubcid_sv=${OTHER}` })
+      );
+      const cookies = setCookies(response);
+      expect(summary(response)).toEqual([
+        ['_pubcid', UUID, 'example.com', '31536000'],
+        ['_pubcid_sv', UUID, 'example.com', '31536000'],
+        ['_pubcid_sv', '', undefined, '0']
+      ]);
+      expect(cookies[2]?.attributes.has('httponly')).toBe(true);
+    });
+
+    it('leaves a single cookie alone', async () => {
+      const response = await handler({ SID_COOKIE_DOMAIN: 'example.com', SID_RECOVERY_COOKIE: 'none' })(get('/_sid/sync', { Cookie: `_pubcid=${UUID}` }));
+      expect(summary(response)).toEqual([['_pubcid', UUID, 'example.com', '31536000']]);
+    });
+
+    it('deletes nothing with host-only cookies (there\'s no other copy to tell apart)', async () => {
+      const response = await handler({ SID_COOKIE_DOMAIN: 'host-only', SID_RECOVERY_COOKIE: 'none' })(
+        get('/_sid/sync', { Cookie: `_pubcid=${UUID}; _pubcid=${OTHER}` })
+      );
+      expect(summary(response)).toEqual([['_pubcid', UUID, undefined, '31536000']]);
+    });
+  });
+
   it('uses the platform location to decide whether GDPR applies', async () => {
     expect(setCookies(await handler()(get(`/_sid/sync?id=pubcid:${UUID}`), { isEU: true }))).toEqual([]);
     expect(cookieNamed(await handler()(get(`/_sid/sync?id=pubcid:${UUID}`), { isEU: false }), '_pubcid')?.value).toBe(UUID);

@@ -1,16 +1,33 @@
 /** Cookies from a request's `Cookie` header. The first value wins when a name repeats, as browsers send the most specific first. */
 export function parseCookies(header: string | null): ReadonlyMap<string, string> {
   const cookies = new Map<string, string>();
-  if (header === null) return cookies;
+  for (const [name, value] of cookiePairs(header)) {
+    if (!cookies.has(name)) cookies.set(name, value);
+  }
+  return cookies;
+}
+
+/**
+ * Every value the `Cookie` header has for `name`, in header order. A browser sends several when cookies of the same
+ * name were set with different `Domain` or `Path` attributes (a host-only one and a `Domain=.example.com` one, say),
+ * listing longer paths first and, for the same path, older cookies first. The header doesn't say which is which.
+ */
+export function cookieValues(header: string | null, name: string): string[] {
+  return cookiePairs(header).filter(([n]) => n === name).map(([, value]) => value);
+}
+
+function cookiePairs(header: string | null): [string, string][] {
+  if (header === null) return [];
+  const pairs: [string, string][] = [];
   for (const part of header.split(';')) {
     const eq = part.indexOf('=');
     if (eq <= 0) continue;
     const name = part.slice(0, eq).trim();
     let value = part.slice(eq + 1).trim();
     if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
-    if (name !== '' && !cookies.has(name)) cookies.set(name, value);
+    if (name !== '') pairs.push([name, value]);
   }
-  return cookies;
+  return pairs;
 }
 
 export interface CookieOptions {
