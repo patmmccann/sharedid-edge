@@ -1,7 +1,6 @@
 // Test site: serves a page that loads the unmodified Prebid.js build from the prebid.js npm package, and answers
 // /_sid/* with SharedID Edge (the built core package and the reflect module), on one origin, as a publisher's CDN would.
-// Requests to /_sid/* are recorded so tests can check what Prebid.js sent.
-import { createReadStream, existsSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join, normalize, sep } from 'node:path';
 import { createHandler, resolveConfig } from '../packages/core/dist/index.js';
@@ -20,41 +19,12 @@ const handler = createHandler({
   }),
   modules: [reflectModule]
 });
-const syncLog: { path: string; cookie: string }[] = [];
-
-const PAGE = `<!doctype html>
-<html><head><title>SharedID Edge e2e</title>
-<script>window.pbjs = window.pbjs || { que: [] };</script>
-<script src="/prebid/not-for-prod/prebid.js"></script>
-<script>
-  pbjs.que.push(function () {
-    pbjs.setConfig({
-      userSync: {
-        syncDelay: 0,
-        userIds: [{
-          name: 'sharedId',
-          params: { pixelUrl: '/_sid/sync', extend: true },
-          storage: { type: 'cookie', name: '_pubcid', expires: 365 }
-        }]
-      }
-    });
-  });
-</script>
-</head><body>SharedID Edge e2e</body></html>`;
+// The same page the live test site (site/) serves.
+const PAGE = readFileSync(join(import.meta.dirname, 'site', 'public', 'index.html'), 'utf8');
 
 createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${String(port)}`);
-  if (url.pathname === '/__sync-log') {
-    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(syncLog));
-    return;
-  }
-  if (url.pathname === '/__reset') {
-    syncLog.length = 0;
-    res.writeHead(204).end();
-    return;
-  }
   if (url.pathname.startsWith('/_sid/')) {
-    syncLog.push({ path: url.pathname + url.search, cookie: req.headers.cookie ?? '' });
     const headers = new Headers();
     for (const [name, value] of Object.entries(req.headers)) {
       if (typeof value === 'string') headers.set(name, value);
