@@ -140,18 +140,6 @@ const AZURE_LOCATION_HEADERS: Readonly<Record<string, string>> = {
   continent: 'x-sid-continent'
 };
 
-const PERCENT_ENCODED = 'the Functions host percent-encodes cookie values, so the adapter leaves out a cookie whose value it would change';
-
-/**
- * What Azure Functions can't do; see `RunningTarget.limitations`. The reflect module re-sets cookies byte for byte, and
- * these cases' uid1 has `%`, `+`, `/` and `=` in its value.
- */
-const AZURE_LIMITATIONS: Readonly<Record<string, string>> = {
-  'module-reflect.json#reflects uid1 byte for byte with Domain=.example.com and a new Max-Age': PERCENT_ENCODED,
-  "module-reflect.json#reflects on /sync (Prebid.js's pixelUrl call), with the pixel response otherwise unchanged": PERCENT_ENCODED,
-  'module-reflect-prefer.json#backup: restores the saved uid1 byte for byte over the present one, restores the missing _ga, and keeps {_ga, uid1}': PERCENT_ENCODED
-};
-
 /**
  * Starts a target configured with `config` (SID_* environment variables) and built with `build`. With `bowser`, the
  * Worker runs its Bowser entry point (src/bowser.ts), and the Lambda, Vercel, Azure and Google Cloud targets load the
@@ -249,6 +237,6 @@ export async function startTarget(target: TargetName, config: Readonly<Record<st
     stop,
     requestHeaders: target === 'wrangler' ? asRequestCf : headers => ({ ...headers }),
     unavailable: UNAVAILABLE[target],
-    limitations: target === 'azure' ? AZURE_LIMITATIONS : {}
+    limitations: {}
   };
 }

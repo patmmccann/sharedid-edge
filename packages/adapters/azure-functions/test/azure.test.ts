@@ -142,17 +142,33 @@ describe('cookies', () => {
     for (const value of ['AbC%2Fx', 'a+b', 'a/b', 'a=b', 'a:b', '"q"', 'a b']) expect(preservedByHost(value)).toBe(false);
   });
 
-  it('leaves out a module cookie the host would percent-encode, logging only its name', async () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  it('puts a cookie the host would encode into a raw Set-Cookie header', async () => {
     const handler = createAzureHandler({
       config: resolveConfig({ SID_MODULES: 'reflect', SID_MODULE_CONFIG: '{"reflect":{"cookies":[{"name":"uid1","maxAgeDays":30},{"name":"fpid","maxAgeDays":30}]}}' }),
       modules: builtInModules
     });
     const result = await handler(frontDoorRequest({ path: '/_sid/v1', headers: { cookie: `_pubcid=${UUID}; uid1=AbC%2Fx+y/z==; fpid=7a1f-0c2e_93b4` } }));
+    expect(result.headers['set-cookie']).toMatch(/^uid1=AbC%2Fx\+y\/z==;/);
     expect(result.cookies.map(c => c.name)).toContain('fpid');
     expect(result.cookies.map(c => c.name)).not.toContain('uid1');
-    expect(JSON.stringify(error.mock.calls)).toContain('uid1');
-    expect(JSON.stringify(error.mock.calls)).not.toContain('AbC');
+  });
+
+  it('leaves out a second cookie the host would encode, logging only its name', async () => {
+    const handler = createAzureHandler({
+      config: resolveConfig({ SID_MODULES: 'reflect', SID_MODULE_CONFIG: '{"reflect":{"cookies":[{"name":"uid1","maxAgeDays":30},{"name":"uid2","maxAgeDays":30}]}}' }),
+      modules: builtInModules
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const result = await handler(frontDoorRequest({ path: '/_sid/v1', headers: { cookie: `_pubcid=${UUID}; uid1=a+b; uid2=c/d==` } }));
+      expect(result.headers['set-cookie']).toMatch(/^uid1=a\+b;/);
+      expect(result.cookies.map(c => c.name)).not.toContain('uid2');
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(String(error.mock.calls[0]?.[0])).toContain('uid2');
+      expect(String(error.mock.calls[0]?.[0])).not.toContain('c/d');
+    } finally {
+      error.mockRestore();
+    }
   });
 });
 

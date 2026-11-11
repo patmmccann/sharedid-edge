@@ -27,7 +27,7 @@ export interface AzureCookie {
 /** An Azure Functions v4 `HttpResponseInit`. */
 export interface AzureHttpResponseInit {
   readonly status: number;
-  /** Every header except `Set-Cookie`. */
+  /** Response headers. `Set-Cookie` may be present for cookie values the Functions cookie serializer cannot preserve. */
   readonly headers: Readonly<Record<string, string>>;
   /** One entry per `Set-Cookie`: the Functions host keeps one value per header name, so cookies must go here. */
   readonly cookies: AzureCookie[];
