@@ -13,10 +13,14 @@ interface FileResult {
   readonly limited: number;
 }
 
-/** What a target can't do: payload paths it has no data for, and cases it can't pass (see `RunningTarget`). */
+/**
+ * What a target can't do (payload paths it has no data for, and cases it can't pass), and the origin it builds request
+ * URLs from when that isn't the URL the runner calls (see `RunningTarget`).
+ */
 interface TargetGaps {
   readonly unavailable: readonly string[];
   readonly limitations: Readonly<Record<string, string>>;
+  readonly publicOrigin?: string;
 }
 
 const NO_GAPS: TargetGaps = { unavailable: [], limitations: {} };
@@ -31,7 +35,7 @@ async function runFile(baseUrl: string, file: CaseFile, adaptHeaders?: HeaderAda
   let limited = 0;
   console.log(`# ${file.file}: ${file.description}`);
   for (const testCase of file.cases) {
-    const failures = await runCase(baseUrl, testCase, adaptHeaders, gaps.unavailable);
+    const failures = await runCase(baseUrl, testCase, adaptHeaders, gaps.unavailable, gaps.publicOrigin);
     const limitation = gaps.limitations[`${file.file}#${testCase.name}`];
     if (failures.length === 0 && limitation === undefined) {
       console.log(`ok - ${testCase.name}`);

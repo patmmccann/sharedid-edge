@@ -74,7 +74,7 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
 
     const cookieHeader = request.headers.get('Cookie');
     const cookies = parseCookies(cookieHeader);
-    const secure = url.protocol === 'https:';
+    const secure = secureCookies(url);
     const date = now();
 
     switch (route) {
@@ -162,6 +162,24 @@ function resolveId(config: SharedIdEdgeConfig, cookies: ReadonlyMap<string, stri
   if (paramId !== undefined) return { id: paramId, source: 'param' };
   if (config.create) return { id: newId(), source: 'minted' };
   return { id: undefined, source: undefined };
+}
+
+/** Names reserved for local and private use (RFC 6761, RFC 6762, and ICANN's .internal), never a public site. */
+const LOCAL_SUFFIXES = ['.localhost', '.test', '.local', '.internal', '.example', '.invalid'];
+const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+
+/**
+ * Whether cookies get `Secure`. On https, always. On plain http only local development omits it (a browser drops a
+ * `Secure` cookie from an insecure origin): `localhost`, an IP address, or a name reserved for local use. A public
+ * hostname over http means TLS ended in front of the worker (a proxy or load balancer, without SID_PUBLIC_ORIGIN), and
+ * the visitor is on https, so the cookies are `Secure`, rather than set without it on a live site.
+ */
+function secureCookies(url: URL): boolean {
+  if (url.protocol === 'https:') return true;
+  // An absolute name (`app.test.`) is the same host: drop the trailing dot before matching the suffixes.
+  const host = url.hostname.toLowerCase().replace(/\.$/, '');
+  const local = host === 'localhost' || host.startsWith('[') || IPV4.test(host) || LOCAL_SUFFIXES.some(suffix => host.endsWith(suffix));
+  return !local;
 }
 
 function cookieOptions(config: SharedIdEdgeConfig, secure: boolean, httpOnly: boolean): CookieOptions {

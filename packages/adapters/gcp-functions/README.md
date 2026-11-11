@@ -184,7 +184,7 @@ Read only by the Google Cloud adapter:
 | `SID_TRUSTED_HOPS` | `1` | How many `X-Forwarded-For` entries your infrastructure appends after the client's address. The external Application Load Balancer appends `<client>,<load balancer>`, so the client is the second-to-last entry: `1`. Raise it only if another proxy of yours appends its own entry after the load balancer's. 0 to 10. |
 | `SID_CLIENT_IP_HEADER` | none | A custom request header with the client's address (`x-client-ip: {client_ip_address}` on the backend service), used instead of `X-Forwarded-For`. |
 | `SID_LOCATION_HEADERS` | none (no location) | JSON: location field → the custom request header with it, like `{"country":"x-client-region"}`. Fields: `country` (`{client_region}`), `region` (`{client_region_subdivision}`), `city` (`{client_city}`), `latLong` (`{client_city_lat_long}`). Terraform sets all four. An invalid value is a configuration error. |
-| `SID_PUBLIC_ORIGIN` | `https://` and the `Host` header | The origin of request URLs. Only its scheme matters (`https` makes cookies `Secure`). |
+| `SID_PUBLIC_ORIGIN` | `https://` and the `Host` header | The origin of request URLs. Only its scheme matters, and cookies are `Secure` for a public hostname whatever the scheme, so it matters only for local development (see [Secure cookies](../../../docs/configuration.md#secure-cookies)). |
 | `SID_BEHIND_LOAD_BALANCER` | `true` | `false` when no load balancer is in front (local development): `X-Forwarded-For` and the location headers are then ignored, and there's no client IP or location. Don't serve a site that way: without the load balancer the endpoint isn't on the site's IP address. |
 
 ## Secrets

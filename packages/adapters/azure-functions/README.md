@@ -187,7 +187,7 @@ Read only by the Azure Functions adapter:
 | --- | --- | --- |
 | `SID_FRONT_DOOR_ID` | none (no check) | Front Door profile IDs (GUIDs), comma-separated. Requests with another or no `X-Azure-FDID` get a 403. The template sets it. |
 | `SID_LOCATION_HEADERS` | none (no location) | JSON: location field → the request header a Front Door rule set adds, like `{"country":"x-sid-country"}`. Fields: `country`, `regionCode`, `city`, `postalCode`, `metroCode`, `latitude`, `longitude`, `timezone`, `continent`. The template sets `country` when `addCountryHeader` is on. An invalid value is a configuration error. |
-| `SID_PUBLIC_ORIGIN` | the request's own origin | The origin of request URLs. Behind Front Door it's `https://<app>.azurewebsites.net`; only its scheme matters (`https` makes cookies `Secure`). |
+| `SID_PUBLIC_ORIGIN` | the request's own origin | The origin of request URLs. Behind Front Door it's `https://<app>.azurewebsites.net`; only its scheme matters, and cookies are `Secure` for a public hostname whatever the scheme, so it matters only for local development (see [Secure cookies](../../../docs/configuration.md#secure-cookies)). |
 | `SID_BEHIND_FRONT_DOOR` | `true` | `false` when Front Door isn't in front (local development): `X-Azure-ClientIP` and the location headers are then ignored, since anyone could send them. Don't serve a site that way: without Front Door the endpoint isn't on the site's IP addresses. |
 
 ## Secrets

@@ -22,15 +22,30 @@ function parseSetCookie(header: string): SetCookie {
 export type HeaderAdapter = (headers: Readonly<Record<string, string>>) => Record<string, string>;
 
 /**
+ * Whether the spec requires `Secure` on cookies for requests the implementation sees at `origin`: always over https,
+ * and over plain http unless the host is local (`localhost`, an IP address, or a name under a suffix reserved for local
+ * use, ignoring a trailing dot). Written from the spec rather than imported from core, so the suite checks core too.
+ */
+function expectsSecure(origin: URL): boolean {
+  if (origin.protocol === 'https:') return true;
+  const host = origin.hostname.toLowerCase().replace(/\.$/, '');
+  if (host === 'localhost' || host.startsWith('[') || /^[\d.]+$/.test(host)) return false;
+  return !['localhost', 'test', 'local', 'internal', 'example', 'invalid'].includes(host.slice(host.lastIndexOf('.') + 1));
+}
+
+/**
  * Sends a case's request to `baseUrl` and returns the failures (empty when it passes). `unavailable` lists payload
  * paths (`ortb2.device.geo.metro`) the target's platform has no data for (see `RunningTarget.unavailable`): they're
  * removed from the expected JSON, and checked to be absent instead, so a platform can't pass by making them up.
+ * `publicOrigin` is the origin the implementation builds request URLs from, when it isn't `baseUrl` (a target given
+ * SID_PUBLIC_ORIGIN); it decides whether cookies must be `Secure`.
  */
 export async function runCase(
   baseUrl: string,
   testCase: Case,
   adaptHeaders: HeaderAdapter = headers => ({ ...headers }),
-  unavailable: readonly string[] = []
+  unavailable: readonly string[] = [],
+  publicOrigin?: string
 ): Promise<string[]> {
   const { request } = testCase;
   const expect = withoutUnavailable(testCase.expect, unavailable);
@@ -69,9 +84,9 @@ export async function runCase(
   }
 
   const cookies = response.headers.getSetCookie().map(parseSetCookie);
-  const secure = new URL(baseUrl).protocol === 'https:';
+  const secure = expectsSecure(new URL(publicOrigin ?? baseUrl));
   for (const cookie of cookies) {
-    // Every cookie is Secure over https, and not over plain http (local development).
+    // Every cookie is Secure, except over plain http in local development (see expectsSecure).
     if (cookie.attributes.has('secure') !== secure) failures.push(`cookie ${cookie.name}: Secure should be ${String(secure)}`);
   }
   if (expect.noCookies === true && cookies.length > 0) failures.push(`expected no cookies, got ${cookies.map(c => c.name).join(', ')}`);

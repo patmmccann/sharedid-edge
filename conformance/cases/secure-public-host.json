@@ -1,0 +1,30 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "A public hostname seen over plain http (TLS ended at a proxy in front of the implementation): cookies are still Secure. Targets that read SID_PUBLIC_ORIGIN see http://www.example.com; the Worker sees its real URL, so for it this checks the local case.",
+  "config": { "SID_PUBLIC_ORIGIN": "http://www.example.com" },
+  "cases": [
+    {
+      "name": "a first sync sets Secure ID cookies for a public host over http",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d" },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" },
+          { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d", "httpOnly": true }
+        ]
+      }
+    },
+    {
+      "name": "an opt-out's cookies are Secure too",
+      "request": { "path": "/_sid/optout", "headers": { "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 204,
+        "cookies": [
+          { "name": "_pubcid_optout", "value": "1" },
+          { "name": "_pubcid", "value": "", "maxAge": 0 },
+          { "name": "_pubcid_sv", "value": "", "maxAge": 0 }
+        ]
+      }
+    }
+  ]
+}
