@@ -1,19 +1,22 @@
 # Vendor modules
 
-This folder is for [SharedID Edge](../../README.md) modules contributed and maintained by vendors: IP intelligence databases, bot detection, device databases and other data a publisher licenses from a third party. The project's own modules (`ip`, `ec`, `geo`, `reflect`, `ua`) are in [`../modules/`](../modules/AGENTS.md) and are built into every adapter; vendor modules aren't.
+This folder is for [SharedID Edge](../../README.md) modules contributed and maintained by vendors: IP intelligence databases, bot detection, device databases and other data a publisher licenses from a third party. The project's own modules (`ip`, `geo`, `reflect`, `bot`, `ua`) are in [`../modules/`](../modules/AGENTS.md) and are built into every adapter; vendor modules aren't. The rules below are in full in [AGENTS.md](AGENTS.md).
 
-There are no vendor modules yet. The rules below are in full in [AGENTS.md](AGENTS.md).
+One module here is maintained by the project rather than a vendor: [`ec`](ec/README.md), IAB Tech Lab's Trusted Server Edge Cookies, ported. It's here because its ID is derived from the visitor's IP address, which the project's own modules never do.
 
 ## For publishers: using a vendor module
 
-Vendor modules are **opt-in at build time**. Add the module to the list your build passes to the handler, then turn it on with `SID_MODULES`:
+Vendor modules are **opt-in at build time**: add the module to your build, then turn it on with `SID_MODULES` (and its settings and secrets, as its README says). A module is named as `<package>#<export>`, which its README gives, like `@sharedid-edge/module-ec#ecModule`.
 
-```ts
-import { builtInModules } from '@sharedid-edge/modules';
-import { exampleModule } from '@sharedid-edge/module-example';
+| Platform | Add it |
+| --- | --- |
+| AWS Lambda, Vercel, Azure Functions, Google Cloud | `npm run bundle -w @sharedid-edge/<adapter> -- --module <package>#<export>` (repeat `--module` for more), in place of `npm run bundle`. The bundle's size is reported, but the project's 32 KB budget isn't enforced: your platform's limit is what counts. |
+| Cloudflare Worker | In `packages/adapters/cloudflare`: `node ../../../scripts/module-list.mjs .sharedid-modules --worker --module <package>#<export>`, then `npx wrangler deploy .sharedid-modules/worker.ts` in place of `npm run deploy`. |
+| Cloudflare Snippet | Not supported: Snippets have 32 KB, 5 ms and no secrets ([AGENTS.md](AGENTS.md#offline-modules-and-build-time-credentials)). |
+| Node.js server | `SID_MODULE_PACKAGES=<package>#<export>` (comma-separated for more), with the package installed next to the server. |
+| Your own code | Pass the list yourself: `[...builtInModules, exampleModule]`, to `createHandler` or an adapter's `handlerFromEnv(env, modules)`. |
 
-const modules = [...builtInModules, exampleModule];
-```
+A module listed in `SID_MODULES` but not added is reported as `skipped` (`not installed`) in `ext.modules`, and does nothing.
 
 Each vendor module's README says what it needs (usually an account or licence with the vendor, and a scheduled job that refreshes its data) and what it sends back. The [module index](../../docs/modules.md#module-index) marks each one **offline** (no network calls, checked in CI) or lists the hosts it reaches, and names any licence key its build needs. Set that key in your build's environment: it never ends up in the deployed code, and the bundled adapters' builds fail if it does.
 

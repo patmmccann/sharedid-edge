@@ -3,7 +3,7 @@
 The modules this project maintains, listed in the [module index](../../docs/modules.md#module-index), each its own package (`@sharedid-edge/module-<name>`), plus [`all`](all/README.md) (`@sharedid-edge/modules`), the built-in list. Vendor modules live in [`../vendor-modules/`](../vendor-modules/AGENTS.md), with extra rules. Each module's own `AGENTS.md` adds its specifics.
 
 - **Project modules are built in.** Every adapter bundles them through `builtInModules` (`all/src/index.ts`); a new module is added there, never to an adapter. Being built in doesn't turn a module on: it does nothing until listed in `SID_MODULES`.
-- **A package per module,** depending only on `@sharedid-edge/core`'s public API (and, where it saves duplicating code, another project module, as `ec` uses `ip`'s parser). Core never depends on a module.
+- **A package per module,** depending only on `@sharedid-edge/core`'s public API (and, where it saves duplicating code, another project module's exports, as the `ec` vendor module uses `ip`'s parser). Core never depends on a module.
 - **Platform-neutral**, like core: `lib: ["ES2023", "WebWorker"]`, no Node or DOM types, no runtime dependencies besides core (the exception is `ua`, which bundles `isbot`, and `bowser` in opt-in builds; see its `AGENTS.md`). Platform data comes through `PlatformInfo`, never `request.cf` or headers read directly; add new fields to `PlatformInfo` in core and to the adapters.
 - **No network calls,** and no data updates during requests.
 
@@ -21,7 +21,7 @@ export const example = defineModule({
 ```
 
 - Output is OpenRTB: `eids` in the `user.ext.eids` shape, other signals as an `ortb2` fragment. It's deep-merged with other modules' output in `SID_MODULES` order.
-- **`routes`** says where the module runs: `['v1']` (the default) or `['v1', 'sync']`. Add `'sync'` only for modules that maintain cookies (`reflect`, `ec`) or report traffic (`bot`): Prebid.js calls `/sync` (its `pixelUrl`) on page views, so they run with no page code. On `/sync` the module gets the same context, but only its `cookies` and `traffic` report are used (the report for `SID_SKIP_BOTS` only); `eids` and `ortb2` are dropped, since the response is a GIF. Modules that return data (`ip`, `geo`) stay on `v1`. Deployers can narrow it with `SID_SYNC_MODULES`. The browser caches a successful sync for `SID_SYNC_CACHE_SECONDS` (a day by default), so don't rely on running there on every page view.
+- **`routes`** says where the module runs: `['v1']` (the default) or `['v1', 'sync']`. Add `'sync'` only for modules that maintain cookies (`reflect`, and the `ec` vendor module) or report traffic (`bot`): Prebid.js calls `/sync` (its `pixelUrl`) on page views, so they run with no page code. On `/sync` the module gets the same context, but only its `cookies` and `traffic` report are used (the report for `SID_SKIP_BOTS` only); `eids` and `ortb2` are dropped, since the response is a GIF. Modules that return data (`ip`, `geo`) stay on `v1`. Deployers can narrow it with `SID_SYNC_MODULES`. The browser caches a successful sync for `SID_SYNC_CACHE_SECONDS` (a day by default), so don't rely on running there on every page view.
 - Use `context.config` for settings (from `SID_MODULE_CONFIG`), and validate them: it's `Record<string, unknown>`. Settings that could leak data on a typo throw, so the module reports `error` instead.
 - Secrets come from `SID_MODULE_SECRETS` (`context.secrets`). Never return, log or put them in an error message.
 - Data that locates the user precisely (a full IP address, coordinates, a postal code, a city) is sent in full or not at all, and left out when `preciseLocationDenial(consent)` gives a reason.
@@ -56,7 +56,7 @@ run({ request }) {
 
 ## Docs
 
-- **Every module has its own `README.md`** (also its npm page): turning it on, the response shape with JSON examples (when it returns data, and when it doesn't), consent rules, settings and secrets, and troubleshooting. Models: [`ip/README.md`](ip/README.md) and [`ec/README.md`](ec/README.md).
+- **Every module has its own `README.md`** (also its npm page): turning it on, the response shape with JSON examples (when it returns data, and when it doesn't), consent rules, settings and secrets, and troubleshooting. Models: [`ip/README.md`](ip/README.md) and the `ec` vendor module's [`README.md`](../vendor-modules/ec/README.md).
 - **Response examples go in the module's README,** not in `docs/responses.md`.
 - **Metadata, not shared prose:** add a `sharedidEdge` block to its `package.json` (`kind: "module"`, `name`, `title`, `summary`, `settings`, `routes`; see [Package metadata](../../docs/development.md#package-metadata)), then run `node scripts/docs.mjs --write`. That lists it in the root README, the [module index](../../docs/modules.md#module-index) and the root `AGENTS.md`; don't edit those by hand. `routes` must match the module's own (`npm run check:docs` checks).
 - **Its specification** is `spec/modules/<name>.md`, a page of its own, changed with the code; the spec's list of modules is generated from that folder.

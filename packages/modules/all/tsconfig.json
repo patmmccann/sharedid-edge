@@ -11,7 +11,6 @@
   "references": [
     { "path": "../../core" },
     { "path": "../ip" },
-    { "path": "../ec" },
     { "path": "../geo" },
     { "path": "../reflect" },
     { "path": "../bot" },

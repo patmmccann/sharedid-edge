@@ -7,12 +7,18 @@
 //                   same list with uaModuleWithBowser, as the Worker's src/bowser.ts entry point imports. Same budget.
 //   --outdir <dir>  write to another deploy* directory than deploy/ (the conformance suite builds the Bowser bundle
 //                   into deploy-bowser/, next to the default one).
+//   --module <package>#<export>  add an opt-in module to the built-in ones (repeatable): `ec`
+//                   (@sharedid-edge/module-ec#ecModule) or a vendor module. scripts/module-list.mjs writes the list
+//                   to .sharedid-modules/ and @sharedid-edge/modules is aliased to it. The size budget is reported,
+//                   not enforced: a build with opt-in modules answers to the platform's limit.
+//   --vendor-modules  add every module in packages/vendor-modules/ (the conformance suite's build).
 import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { gzipSync } from 'node:zlib';
 import { build } from 'esbuild';
 import { checkBuildSecrets } from './check-build-secrets.mjs';
+import { vendorModuleSpecs, writeModuleList } from './module-list.mjs';
 
 /** The size budget of every bundle, gzipped, the Worker's included, with or without Bowser. */
 export const BUDGET = 32 * 1024;
@@ -28,7 +34,15 @@ export const BUDGET = 32 * 1024;
  * @returns {Promise<{ outdir: string, outfile: string, pkg: { version: string, devDependencies: Record<string, string> } }>}
  */
 export async function bundleAdapter({ root, entry, file, label, options = {} }) {
-  const { values: args } = parseArgs({ options: { bowser: { type: 'boolean', default: false }, outdir: { type: 'string', default: 'deploy' } } });
+  const { values: args } = parseArgs({
+    options: {
+      bowser: { type: 'boolean', default: false },
+      outdir: { type: 'string', default: 'deploy' },
+      module: { type: 'string', multiple: true, default: [] },
+      'vendor-modules': { type: 'boolean', default: false }
+    }
+  });
+  const extra = [...(args['vendor-modules'] ? vendorModuleSpecs() : []), ...args.module];
   const outdir = resolve(root, args.outdir);
   // The directory is emptied first, so it must be a deploy* directory of this package.
   if (dirname(outdir) !== root || !basename(outdir).startsWith('deploy')) {
@@ -49,24 +63,43 @@ export async function bundleAdapter({ root, entry, file, label, options = {} }) 
     legalComments: 'none',
     logLevel: 'warning',
     ...options,
-    ...(args.bowser ? { alias: { '@sharedid-edge/modules': '@sharedid-edge/modules/bowser' } } : {})
+    ...moduleAlias(root, args.bowser, extra)
   });
-  checkBudget(outfile, args.bowser ? `${label} with Bowser` : label, root);
+  const labelled = `${label}${args.bowser ? ' with Bowser' : ''}${extra.length > 0 ? ` with ${extra.map(spec => spec.slice(0, spec.indexOf('#'))).join(', ')}` : ''}`;
+  checkBudget(outfile, labelled, root, { enforce: extra.length === 0 });
   return { outdir, outfile, pkg: JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) };
 }
 
 /**
- * Logs a file's gzipped size, and sets a failing exit code when it's over `BUDGET`, or when it contains a vendor
- * module's build-time credential (scripts/check-build-secrets.mjs).
+ * The esbuild alias for the module list: `@sharedid-edge/modules` to its Bowser variant with `--bowser`, or to a
+ * generated list in `<root>/.sharedid-modules/` with opt-in modules (`extra`, `<package>#<export>` each).
+ *
+ * @param {string} root
+ * @param {boolean} bowser
+ * @param {string[]} extra
+ * @returns {{ alias?: Record<string, string> }}
+ */
+function moduleAlias(root, bowser, extra) {
+  if (extra.length > 0) {
+    const list = writeModuleList(join(root, '.sharedid-modules'), { bowser, modules: extra });
+    return { alias: { '@sharedid-edge/modules': list, '@sharedid-edge/modules/bowser': list } };
+  }
+  return bowser ? { alias: { '@sharedid-edge/modules': '@sharedid-edge/modules/bowser' } } : {};
+}
+
+/**
+ * Logs a file's gzipped size, and sets a failing exit code when it's over `BUDGET` (unless `enforce` is false: a build
+ * with opt-in modules), or when it contains a vendor module's build-time credential (scripts/check-build-secrets.mjs).
  *
  * @param {string} file
  * @param {string} label
  * @param {string} [from] the folder the logged path is relative to
+ * @param {{ enforce?: boolean }} [options]
  */
-export function checkBudget(file, label, from = process.cwd()) {
+export function checkBudget(file, label, from = process.cwd(), { enforce = true } = {}) {
   const gzipped = gzipSync(readFileSync(file)).length;
-  console.log(`${label}: ${relative(from, file).replaceAll('\\', '/')}, ${String(gzipped)} bytes gzipped (budget ${String(BUDGET)})`);
-  if (gzipped > BUDGET) {
+  console.log(`${label}: ${relative(from, file).replaceAll('\\', '/')}, ${String(gzipped)} bytes gzipped (budget ${String(BUDGET)}${enforce ? '' : ', not enforced with opt-in modules'})`);
+  if (enforce && gzipped > BUDGET) {
     console.error('Over the bundle size budget');
     process.exitCode = 1;
   }

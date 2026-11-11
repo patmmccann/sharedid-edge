@@ -101,8 +101,9 @@ export function ecPassphrase(secrets: Readonly<Record<string, string>>): string 
 }
 
 /**
- * The EID `source` for an EC. Trusted Server defines none (it puts the EC in `user.id` of the OpenRTB request it builds),
- * so this is the project's own until IAB Tech Lab registers one. Change it only with the README and the spec.
+ * The EID `source` for an EC. OpenRTB's implementation guidance (7.12.2) makes an alt-ID's source the domain of the party
+ * that defined it; IAB Tech Lab's Trusted Server defines the EC. Trusted Server's code names none (it sets `user.id` in
+ * the requests it builds itself). Change it only with the README and the spec.
  */
 export const EC_EID_SOURCE = 'ts.iabtechlab.com';
 

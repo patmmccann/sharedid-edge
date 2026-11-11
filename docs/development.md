@@ -72,6 +72,7 @@ Every package in `packages/adapters/` and `packages/modules/` (and `packages/ven
   "settings": "`precision`: `precise` (default) or `coarse`",   // a short list, or "none"
   "routes": ["v1"],                    // the module's routes: "v1", and "sync" if it runs there
   "forwards": ["api.example.com"],     // vendor modules only, if it sends data to another service
+  "export": "exampleModule",           // vendor modules only, required: the module's export, for <package>#<export>
   "network": "none",                   // vendor modules only, required: "none", or the hosts it may reach
   "buildCredentials": ["EXAMPLE_LICENSE_KEY"], // vendor modules only: env variables its build reads (never shipped)
   "ipDerived": true                    // vendor modules (and ec) only, if its ID uses the IP or other request data

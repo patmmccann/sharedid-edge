@@ -126,3 +126,4 @@ export function utf8(latin1: string): string {
     return latin1;
   }
 }
+export { loadModulePackages } from './module-packages.js';

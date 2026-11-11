@@ -20,3 +20,5 @@ website/.vitepress/dist/
 website/.vitepress/cache/
 .cloudflare/
 packages/adapters/*/dist-snippet/
+packages/adapters/*/deploy-vendor/
+packages/adapters/*/.sharedid-modules/

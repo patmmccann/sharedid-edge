@@ -5,3 +5,6 @@
 # alongside a project maintainer. For example:
 #
 # /packages/vendor-modules/example/  @example-vendor-github-user @patmmccann
+
+# ec: IAB Tech Lab's Trusted Server Edge Cookies, ported; maintained by the project.
+/packages/vendor-modules/ec/  @patmmccann

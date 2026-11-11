@@ -51,6 +51,8 @@ for (const name of adapters) pages[`packages/adapters/${name}/README.md`] = `ada
 const modules = subfolders('packages/modules');
 for (const name of modules) pages[`packages/modules/${name}/README.md`] = `modules/${name}.md`;
 pages['packages/vendor-modules/README.md'] = 'vendor-modules.md';
+const vendorModules = subfolders('packages/vendor-modules');
+for (const name of vendorModules) pages[`packages/vendor-modules/${name}/README.md`] = `vendor-modules/${name}.md`;
 if (existsSync(join(ROOT, 'packages/adapters/vercel/example/README.md'))) pages['packages/adapters/vercel/example/README.md'] = 'adapters/vercel-example.md';
 
 /** A heading's anchor as GitHub makes it (repeats get -1, -2 from VitePress's anchor plugin, as on GitHub). */
@@ -100,6 +102,10 @@ const adapterItems: DefaultTheme.SidebarItem[] = adapters
 const moduleItems: DefaultTheme.SidebarItem[] = modules
   .filter(name => packageMeta(`packages/modules/${name}`).kind === 'module')
   .map(name => ({ text: `${name}: ${packageMeta(`packages/modules/${name}`).title ?? ''}`, link: pageUrl(`packages/modules/${name}/README.md`) }));
+// Vendor modules (ec among them) are listed with the project's, marked, since a deployer adds them at build time.
+const vendorModuleItems: DefaultTheme.SidebarItem[] = vendorModules
+  .filter(name => packageMeta(`packages/vendor-modules/${name}`).kind === 'module')
+  .map(name => ({ text: `${name}: ${packageMeta(`packages/vendor-modules/${name}`).title ?? ''} (vendor module)`, link: pageUrl(`packages/vendor-modules/${name}/README.md`) }));
 const docItems: DefaultTheme.SidebarItem[] = Object.keys(pages)
   .filter(path => path.startsWith('docs/'))
   .map(path => ({ text: firstHeading(path), link: pageUrl(path) }));
@@ -169,7 +175,7 @@ export default defineConfig({
       { text: 'Introduction', items: [{ text: 'SharedID Edge', link: '/' }] },
       { text: 'Deploy', items: adapterItems },
       { text: 'Guides', items: docItems },
-      { text: 'Modules', collapsed: true, items: moduleItems },
+      { text: 'Modules', collapsed: true, items: [...moduleItems, ...vendorModuleItems] },
       { text: 'Specification', collapsed: true, items: specItems },
       { text: 'Packages', collapsed: true, items: [{ text: '@sharedid-edge/core', link: '/core' }, { text: 'Vendor modules', link: '/vendor-modules' }] }
     ],
