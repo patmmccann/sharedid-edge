@@ -1,7 +1,7 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  // The live tests' test site (.github/workflows/e2e-cloudflare.yml): the page in public/ and Prebid.js, which the
-  // workflow copies into public/prebid/ before deploying. It takes every path on e2e.sharedid.dev; the more specific
+  // The live tests' test site (.github/workflows/e2e-cloudflare.yml): the page in public/ and the Prebid.js bundle
+  // bundle-prebid.ts builds into public/prebid/ before deploying. It takes every path on e2e.sharedid.dev; the more specific
   // e2e.sharedid.dev/_sid/* route sends the endpoint's requests to SharedID Edge (the cloudflare adapter's e2e
   // environment), as on a publisher's site.
   "name": "sharedid-edge-e2e-site",

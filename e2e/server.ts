@@ -1,4 +1,4 @@
-// Test site: serves a page that loads the unmodified Prebid.js build from the prebid.js npm package, and answers
+// Test site: serves a page that loads unmodified Prebid.js (a bundle of the npm package's chunks, bundle-prebid.ts), and answers
 // /_sid/* with SharedID Edge (the built core package and the reflect module), on one origin, as a publisher's CDN would.
 import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -6,8 +6,8 @@ import { join, normalize, sep } from 'node:path';
 import { createHandler, resolveConfig } from '../packages/core/dist/index.js';
 import { reflectModule } from '../packages/modules/reflect/dist/index.js';
 
-// prebid.js doesn't export its package.json, so locate the install directly.
-const prebidDist = join(import.meta.dirname, 'node_modules', 'prebid.js', 'dist');
+// The Prebid.js bundle bundle-prebid.ts builds (Playwright's webServer command runs it first).
+const prebidDist = join(import.meta.dirname, 'site', 'public', 'prebid');
 const port = Number(process.env['PORT'] ?? 4310);
 // No pixel caching, so every visit reaches the endpoint and the tests can observe it. The reflect module runs on
 // /sync, so Prebid.js's pixel call refreshes uid1 and keeps _ga (host-only cookies: the site is 127.0.0.1).

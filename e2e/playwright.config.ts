@@ -19,7 +19,7 @@ export default defineConfig({
   ...(live === undefined
     ? {
       webServer: {
-        command: 'node --experimental-strip-types server.ts',
+        command: 'node --experimental-strip-types bundle-prebid.ts && node --experimental-strip-types server.ts',
         url: `http://127.0.0.1:${String(PORT)}/`,
         env: { PORT: String(PORT) },
         reuseExistingServer: false
