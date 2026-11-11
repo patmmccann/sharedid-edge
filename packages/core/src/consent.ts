@@ -29,8 +29,8 @@ export function readConsent(url: URL, headers: Headers, cookies: ReadonlyMap<str
   const tcString = nonEmpty(url.searchParams.get('gdpr_consent')) ?? nonEmpty(cookies.get(TCF_COOKIE));
   const gppSid = nonEmpty(url.searchParams.get('gpp_sid'))
     ?.split(',')
-    .map(Number)
-    .filter(n => Number.isInteger(n));
+    .filter(value => /^\d+$/.test(value.trim()))
+    .map(value => Number(value));
   return {
     gdprApplies,
     tcString,
