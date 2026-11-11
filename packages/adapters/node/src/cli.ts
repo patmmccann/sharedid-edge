@@ -8,9 +8,9 @@ import { loadModulePackages } from './module-packages.js';
 
 // Configuration comes from the same SID_* environment variables as the edge workers (SID_MODULES picks which of the
 // built-in modules run), plus:
-//   PORT (default 8787), HOST (default 127.0.0.1), SID_TRUST_PROXY, SID_LOCATION_HEADERS, SID_PUBLIC_ORIGIN, and
-//   SID_MODULE_PACKAGES (opt-in modules such as ec or vendor modules, added to the built-in ones: <package>#<export>,
-//   comma-separated).
+//   PORT (default 8787), HOST (default 127.0.0.1), SID_TRUST_PROXY, SID_CLIENT_IP_HEADER, SID_LOCATION_HEADERS,
+//   SID_PUBLIC_ORIGIN, and SID_MODULE_PACKAGES (opt-in modules such as ec or vendor modules, added to the built-in
+//   ones: <package>#<export>, comma-separated).
 try {
   // The configuration, and with SID_HOSTS one per hostname (the Host header picks it).
   const settings = settingsFromEnv(process.env, { requireCookieDomain: true });
@@ -22,10 +22,13 @@ try {
   const configured = locationSetting !== undefined && locationSetting.trim() !== '';
   // Location headers are read only from a trusted proxy: setting them without the trust would silently do nothing.
   if (configured && !trustProxy) throw new ConfigError('SID_LOCATION_HEADERS needs SID_TRUST_PROXY=true: location headers are read only from a trusted proxy');
+  const clientIpHeader = process.env['SID_CLIENT_IP_HEADER']?.trim() ?? '';
   const server = createNodeServer({
     ...settings,
     modules: [...builtInModules, ...(await loadModulePackages(process.env['SID_MODULE_PACKAGES']))],
     trustProxy,
+    // createNodeServer checks it: a header name, and only with SID_TRUST_PROXY.
+    ...(clientIpHeader === '' ? {} : { clientIpHeader }),
     ...(configured ? { locationHeaders: parseHeaderMap(locationSetting, 'SID_LOCATION_HEADERS', LOCATION_FIELDS, '{"country":"cloudfront-viewer-country"}') } : {}),
     ...(publicOrigin === undefined ? {} : { publicOrigin })
   });
