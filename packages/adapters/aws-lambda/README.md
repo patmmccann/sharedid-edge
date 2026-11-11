@@ -30,9 +30,8 @@ Browser ── https://www.example.com/_sid/sync?id=pubcid:<id>
    ▼
 CloudFront: your site's distribution (www.example.com)
    ├─ /_sid/*  → origin: the function URL, signed with origin access control (SigV4)
-   │             cache policy CachingDisabled; origin request policy forwards cookies, query strings,
-   │             CloudFront-Viewer-Address, CloudFront-Viewer-Country (and the other geolocation headers),
-   │             Origin and Sec-GPC
+   │             cache policy CachingDisabled; origin request policy forwards all viewer headers except Host (including User-Agent and Sec-CH-UA*),
+   │             cookies, query strings and CloudFront viewer geolocation headers
    └─ *        → your site's origin, unchanged
                      │
                      ▼
