@@ -15,4 +15,4 @@ The TC string comes from the CMP's `euconsent-v2` cookie, or a `gdpr_consent` pa
 
 **Deleting the cookie.** When consent is missing or withdrawn, or with GPC, COPPA or opt-out, the worker deletes the ID cookies it finds: it overwrites each with an empty value, `Max-Age=0` and an `Expires` date in 1970, which browsers treat as a delete. With `SID_COOKIE_DOMAIN` set, it deletes a host-only copy too.
 
-**What's stored and logged.** SharedIDs are random UUIDs, never derived from the IP address or other request data. (The opt-in `ec` module is the exception: see [its README](../packages/modules/ec/README.md).) The worker stores nothing server-side and logs nothing about requests (Workers observability is off in the default config).
+**What's stored and logged.** SharedIDs are random UUIDs, never derived from the IP address or other request data. (Opt-in modules marked "IP-derived ID" in the [module index](modules.md#module-index), such as `ec`, set their own IP-derived IDs: see each module's README.) The worker stores nothing server-side and logs nothing about requests (Workers observability is off in the default config).

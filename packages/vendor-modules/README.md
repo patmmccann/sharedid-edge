@@ -27,6 +27,7 @@ Each vendor module's README says what it needs (usually an account or licence wi
    - no licensed data in the repository;
    - secrets only through `SID_MODULE_SECRETS`;
    - bot and proxy verdicts through the shared traffic signal;
+   - an ID derived from the IP address or other request data is allowed in a vendor module, opt-in, declared with `ipDerived` and disclosed at the top of your README ([IP-derived IDs](AGENTS.md#ip-derived-ids));
    - core's privacy lines apply: GPC, COPPA, opt-out and consent.
 4. **Forwarding** requests or data to any service is off by default, enabled per deployment with an explicit list of destination hosts, preferably to a service on the same platform and network, and **disclosed at the top of your README** in a clearly marked box: what is sent, to which host, when, and under which consent conditions. See [Forwarding requests or data](AGENTS.md#forwarding-requests-or-data).
 5. **Name a maintainer** for your folder in [`.github/CODEOWNERS`](../../.github/CODEOWNERS). You review changes to your module and answer its issues.

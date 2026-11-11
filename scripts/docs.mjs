@@ -50,6 +50,9 @@ function packages() {
       if (meta.forwards !== undefined && (!Array.isArray(meta.forwards) || meta.forwards.some(host => typeof host !== 'string'))) {
         problems.push(`${where}: sharedidEdge.forwards must be a list of host names`);
       }
+      if (meta.ipDerived !== undefined && typeof meta.ipDerived !== 'boolean') problems.push(`${where}: sharedidEdge.ipDerived must be true or false`);
+      // IP-derived IDs are for vendor modules; ec, IAB Tech Lab's Trusted Server port, is held to the same rules.
+      if (meta.ipDerived === true && parent === 'modules' && dir !== 'ec') problems.push(`${where}: a project module can't derive an ID from the IP address (see packages/vendor-modules/AGENTS.md#ip-derived-ids)`);
       if (parent === 'modules' && !existsSync(join(root, 'spec/modules', `${dir}.md`))) problems.push(`${where}: no specification in spec/modules/${dir}.md`);
     }
     if (meta.kind !== 'module-list' && !existsSync(join(root, folder, 'README.md'))) problems.push(`${folder}: no README.md`);
@@ -86,6 +89,7 @@ function platformTable(file, adapters) {
 function moduleName({ parent, meta }) {
   const marks = [];
   if (parent === 'vendor-modules') marks.push('vendor module');
+  if (meta.ipDerived === true) marks.push('⚠ IP-derived ID');
   if (Array.isArray(meta.forwards) && meta.forwards.length > 0) marks.push(`⚠ forwards data to ${codeList(meta.forwards)}`);
   return marks.length === 0 ? '' : ` (${marks.join('; ')})`;
 }

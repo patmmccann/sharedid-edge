@@ -4,7 +4,7 @@ The `ec` module for [SharedID Edge](../../../README.md): IAB Tech Lab [Trusted S
 
 It sets the `ts-ec` cookie on the publisher's domain, on Prebid.js's `/_sid/sync` calls on page views as well as on `/_sid/v1`, and returns the Edge Cookie as `ortb2.user.id` in the `/_sid/v1` payload. Publishers who use Trusted Server, or want its identifier, can then run one edge worker for both the SharedID and the EC.
 
-> **This ID is derived from the visitor's IP address.** An EC is `HMAC-SHA256(passphrase, IP)` as 64 hex characters, a dot, and 6 random characters. Everyone behind the same IPv4 address, or the same IPv6 /64, gets the same 64-character prefix, and anyone with the passphrase can test which address an EC came from. That's how Trusted Server defines EC. It's the one IP-derived identifier in SharedID Edge, so the module is **off unless you turn it on**. The SharedID (`_pubcid`) is unaffected and stays random.
+> **This ID is derived from the visitor's IP address.** An EC is `HMAC-SHA256(passphrase, IP)` as 64 hex characters, a dot, and 6 random characters. Everyone behind the same IPv4 address, or the same IPv6 /64, gets the same 64-character prefix, and anyone with the passphrase can test which address an EC came from. That's how Trusted Server defines EC. It's the only IP-derived identifier among the modules this project maintains (vendor modules may add others, marked in the [module index](../../../docs/modules.md#module-index)), so the module is **off unless you turn it on**. The SharedID (`_pubcid`) is unaffected and stays random.
 
 ## Contents
 
