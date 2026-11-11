@@ -1,7 +1,7 @@
 import { createHandler, resolveConfig, type ConsentContext, type PayloadV1, type PlatformInfo, type SharedIdEdgeHandler, type TcfConsents } from '@sharedid-edge/core';
 import { parseIp } from '@sharedid-edge/module-ip';
 import { describe, expect, it } from 'vitest';
-import { EC_COOKIE, ecDecision, ecModule, ecModuleConfig, ecPassphrase, ecPrefix, isValidEcId, normalizeIp, randomSuffix } from '../src/index.js';
+import { EC_COOKIE, EC_EID_SOURCE, ecDecision, ecModule, ecModuleConfig, ecPassphrase, ecPrefix, isValidEcId, normalizeIp, randomSuffix } from '../src/index.js';
 
 const PASSPHRASE = 'conformance-passphrase-0123456789abcdef';
 // Computed independently with Node.js: createHmac('sha256', PASSPHRASE).update(message).digest('hex')
@@ -11,6 +11,8 @@ const VECTORS: readonly (readonly [string, string, string])[] = [
   ['192.168.1.100', '192.168.1.100', '6d72d453c324416ca19c36e0738596d62d00f531dd0d72961de438fbb5f6030a']
 ];
 const parsed = (text: string): NonNullable<ReturnType<typeof parseIp>> => parseIp(text) ?? expect.unreachable(text);
+/** The EC in a payload's eids (the `EC_EID_SOURCE` entry). */
+const ecId = (body: PayloadV1): string => body.eids.find(eid => eid.source === EC_EID_SOURCE)?.uids[0]?.id ?? expect.unreachable('no EC eid');
 
 describe('EC IDs', () => {
   it('normalizes addresses as Trusted Server does', () => {
@@ -92,23 +94,27 @@ describe('the ec module in the handler', () => {
     const response = await createHandler({ config: resolveConfig({}), modules: [ecModule] })(new Request('https://www.example.com/_sid/v1'), { clientIp: '192.0.2.77' });
     expect(response.headers.getSetCookie().some(c => c.startsWith(`${EC_COOKIE}=`))).toBe(false);
   });
-  it('mints an EC from the client IP, sets ts-ec and returns it as ortb2.user.id', async () => {
+  it('mints an EC from the client IP, sets ts-ec and returns it as an EID, never as user.id', async () => {
     const { body, ec } = await call('/_sid/v1', { clientIp: '192.0.2.77' });
-    const id = (body.ortb2 as { user: { id: string } }).user.id;
+    const id = ecId(body);
+    const eid = { source: EC_EID_SOURCE, uids: [{ id, atype: 1 }] };
+    expect(body.eids).toContainEqual(eid);
+    expect(body.ortb2).toEqual({ user: { ext: { eids: [eid] } } });
     expect(id).toMatch(/^7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc\.[A-Za-z0-9]{6}$/);
     expect(ec).toMatch(new RegExp(`^ts-ec=${id.replace('.', '\\.')}; Max-Age=31536000; Expires=[^;]+; Path=/; Domain=\\.example\\.com; SameSite=Lax; Secure; HttpOnly$`));
     expect(body.ext.modules['ec']?.status).toBe('ok');
   });
   it('gives clients behind the same address the same prefix and different suffixes', async () => {
-    const a = (await call('/_sid/v1', { clientIp: '192.0.2.77' })).body.ortb2 as { user: { id: string } };
-    const b = (await call('/_sid/v1', { clientIp: '192.0.2.77' })).body.ortb2 as { user: { id: string } };
-    expect(a.user.id.slice(0, 64)).toBe(b.user.id.slice(0, 64));
-    expect(a.user.id).not.toBe(b.user.id);
+    const a = ecId((await call('/_sid/v1', { clientIp: '192.0.2.77' })).body);
+    const b = ecId((await call('/_sid/v1', { clientIp: '192.0.2.77' })).body);
+    expect(a.slice(0, 64)).toBe(b.slice(0, 64));
+    expect(a).not.toBe(b);
   });
   it('uses an existing EC without refreshing it, and replaces an invalid one', async () => {
     const existing = `${'a'.repeat(64)}.Ab12z9`;
     const kept = await call('/_sid/v1', { clientIp: '192.0.2.77' }, { Cookie: `ts-ec=${existing}` });
-    expect(kept.body.ortb2).toEqual({ user: { id: existing } });
+    expect(kept.body.ortb2).toEqual({ user: { ext: { eids: [{ source: EC_EID_SOURCE, uids: [{ id: existing, atype: 1 }] }] } } });
+    expect(kept.body.eids).toContainEqual({ source: EC_EID_SOURCE, uids: [{ id: existing, atype: 1 }] });
     expect(kept.ec).toBeUndefined();
     const replaced = await call('/_sid/v1', { clientIp: '192.0.2.77' }, { Cookie: 'ts-ec=junk' });
     expect(replaced.ec).toMatch(/^ts-ec=7ef9/);
