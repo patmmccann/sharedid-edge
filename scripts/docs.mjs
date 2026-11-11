@@ -12,6 +12,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { tsImport } from 'tsx/esm/api';
 import { root, workspaceFolders } from './projects.mjs';
+import { allowedHosts } from './vendor-modules.mjs';
 
 const ROUTES = ['v1', 'sync'];
 const problems = [];
@@ -50,6 +51,17 @@ function packages() {
       if (meta.forwards !== undefined && (!Array.isArray(meta.forwards) || meta.forwards.some(host => typeof host !== 'string'))) {
         problems.push(`${where}: sharedidEdge.forwards must be a list of host names`);
       }
+      if (parent === 'vendor-modules') {
+        // Every vendor module says whether it reaches the network: npm run test:vendor-modules enforces it.
+        const hosts = allowedHosts(meta.network);
+        if (hosts === undefined) problems.push(`${where}: sharedidEdge.network must be "none" or a non-empty list of host names`);
+        else if (Array.isArray(meta.forwards) && meta.forwards.some(host => !hosts.includes(host))) problems.push(`${where}: every host in sharedidEdge.forwards must also be in sharedidEdge.network`);
+      } else if (meta.network !== undefined) {
+        problems.push(`${where}: sharedidEdge.network is for vendor modules; project modules make no network calls`);
+      }
+      if (meta.buildCredentials !== undefined && (!Array.isArray(meta.buildCredentials) || meta.buildCredentials.some(name => typeof name !== 'string' || !/^[A-Z][A-Z0-9_]*$/.test(name)))) {
+        problems.push(`${where}: sharedidEdge.buildCredentials must be a list of environment variable names, like FIFTYONE_DEGREES_LICENSE_KEY`);
+      }
       if (parent === 'modules' && !existsSync(join(root, 'spec/modules', `${dir}.md`))) problems.push(`${where}: no specification in spec/modules/${dir}.md`);
     }
     if (meta.kind !== 'module-list' && !existsSync(join(root, folder, 'README.md'))) problems.push(`${folder}: no README.md`);
@@ -85,7 +97,9 @@ function platformTable(file, adapters) {
 
 function moduleName({ parent, meta }) {
   const marks = [];
-  if (parent === 'vendor-modules') marks.push('vendor module');
+  if (parent === 'vendor-modules') marks.push(meta.network === 'none' ? 'vendor module, offline' : 'vendor module');
+  if (Array.isArray(meta.network) && meta.network.length > 0) marks.push(`⚠ network: ${codeList(meta.network)}`);
+  if (Array.isArray(meta.buildCredentials) && meta.buildCredentials.length > 0) marks.push(`needs ${codeList(meta.buildCredentials)} at build time`);
   if (Array.isArray(meta.forwards) && meta.forwards.length > 0) marks.push(`⚠ forwards data to ${codeList(meta.forwards)}`);
   return marks.length === 0 ? '' : ` (${marks.join('; ')})`;
 }

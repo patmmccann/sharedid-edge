@@ -12,6 +12,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { gzipSync } from 'node:zlib';
 import { build } from 'esbuild';
+import { checkBuildSecrets } from './check-build-secrets.mjs';
 
 /** The size budget of every bundle, gzipped, the Worker's included, with or without Bowser. */
 export const BUDGET = 32 * 1024;
@@ -55,7 +56,8 @@ export async function bundleAdapter({ root, entry, file, label, options = {} }) 
 }
 
 /**
- * Logs a file's gzipped size, and sets a failing exit code when it's over `BUDGET`.
+ * Logs a file's gzipped size, and sets a failing exit code when it's over `BUDGET`, or when it contains a vendor
+ * module's build-time credential (scripts/check-build-secrets.mjs).
  *
  * @param {string} file
  * @param {string} label
@@ -68,6 +70,7 @@ export function checkBudget(file, label, from = process.cwd()) {
     console.error('Over the bundle size budget');
     process.exitCode = 1;
   }
+  checkBuildSecrets(file, { from });
 }
 
 // `node scripts/bundle-adapter.mjs <file> <label> [<file> <label> …]` checks bundles built elsewhere (the Worker's

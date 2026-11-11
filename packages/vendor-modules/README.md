@@ -15,16 +15,17 @@ import { exampleModule } from '@sharedid-edge/module-example';
 const modules = [...builtInModules, exampleModule];
 ```
 
-Each vendor module's README says what it needs (usually an account or licence with the vendor, and a scheduled job that refreshes its data) and what it sends back.
+Each vendor module's README says what it needs (usually an account or licence with the vendor, and a scheduled job that refreshes its data) and what it sends back. The [module index](../../docs/modules.md#module-index) marks each one **offline** (no network calls, checked in CI) or lists the hosts it reaches, and names any licence key its build needs. Set that key in your build's environment: it never ends up in the deployed code, and the bundled adapters' builds fail if it does.
 
 ## For vendors: contributing a module
 
-1. **Open an issue first** describing the data, where it comes from, what the module returns, and whether it makes network calls or forwards anything.
+1. **Open an issue first** describing the data, where it comes from, what the module returns, and whether it makes network calls or forwards anything. Offline modules, with the data built in at build time, are the model: see [Offline modules and build-time credentials](AGENTS.md#offline-modules-and-build-time-credentials).
 2. **Add a package folder** here, `packages/vendor-modules/<vendor>/`, published as `@sharedid-edge/module-<vendor>`. Copy the shape of a project module such as [`../modules/ip`](../modules/ip/README.md): `package.json`, `tsconfig.json` (extending `../../../tsconfig.base.json` and referencing `../../core`), `src/`, `test/`, `README.md` and `AGENTS.md`. The workspace glob picks it up; run `npm install`, then `node scripts/check-projects.mjs --write` to add it to the `tsc -b` build.
 3. **Follow the rules** in [AGENTS.md](AGENTS.md). In short:
    - declare your IAB `gvlid`, or explain why the module acts for the publisher;
    - network calls only under the vendor plugin rules in prebid/prebid-server#5064 (opt-in, a strict timeout, caching), and data updates only in scheduled jobs, never during requests;
-   - no licensed data in the repository;
+   - declare `network`: `"none"` or the hosts you reach; your tests run with the network blocked outside that list, and any attempt fails them;
+   - no licensed data in the repository: a licence key is a build-time credential (`buildCredentials`), used to fetch data at build time and never shipped;
    - secrets only through `SID_MODULE_SECRETS`;
    - bot and proxy verdicts through the shared traffic signal;
    - core's privacy lines apply: GPC, COPPA, opt-out and consent.
@@ -34,7 +35,7 @@ Each vendor module's README says what it needs (usually an account or licence wi
 
 ## Checks
 
-Your code is linted with the root rules plus [`eslint.config.js`](eslint.config.js) (no `console`, no network globals, no Node.js built-ins) and type-checked with everything else in the main CI job. Your tests run in the separate `vendor-modules` job, one line per vendor, so a failure in one module doesn't block changes elsewhere. Run them locally with:
+Your code is linted with the root rules plus [`eslint.config.js`](eslint.config.js) (no `console`, no network globals, no Node.js built-ins) and type-checked with everything else in the main CI job. Your tests run in the separate `vendor-modules` job, one line per vendor, so a failure in one module doesn't block changes elsewhere, with the network blocked outside what your `network` declares: any attempt fails the run, even if your code catches the error. Run them locally with:
 
 ```sh
 npm run build
