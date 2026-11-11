@@ -16,6 +16,7 @@ import {
   preciseLocationDenial,
   publicOriginFromEnv,
   resolveConfig,
+  cookieValues,
   type ResolveConfigOptions,
   skipsBot,
   splitHeaders,
@@ -123,3 +124,7 @@ export const geoHeaders: Partial<Record<'country' | 'city', string>> = parseHead
 export const validName: boolean = isHeaderName('x-geo');
 
 export const booleanSetting: boolean = booleanFromEnv('true', false);
+
+// Every value of a duplicated cookie, in header order.
+const duplicates: string[] = cookieValues('_pubcid=a; _pubcid=b', '_pubcid');
+void duplicates;

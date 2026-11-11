@@ -32,6 +32,28 @@ Set-Cookie: _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expi
 Set-Cookie: _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=Wed, 10 Nov 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
 ```
 
+### Duplicate ID cookies
+
+A browser can hold a host-only `_pubcid` next to the worker's domain one: written before SharedID Edge was deployed, by Prebid.js 11.48.0 and earlier with `storageControl`, or by the WordPress or Drupal plugin without a cookie domain. It then sends both, and the `Cookie` header doesn't say which is which. With `SID_COOKIE_DOMAIN=example.com` and a request carrying two of each ID cookie, the worker keeps the first value (browsers list the older cookie first), refreshes it on the domain, and deletes the host-only copies: the same `Set-Cookie` name with an empty value, `Max-Age=0` and **no `Domain`**, which leaves the domain cookie alone. `HttpOnly` stays on the recovery copy's deletion. Real output:
+
+```http
+GET /_sid/sync?id=pubcid%253A0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10
+Cookie: _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; _pubcid=0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10; _pubcid_sv=0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10
+
+HTTP/1.1 200 OK
+Cache-Control: private, max-age=86400
+Content-Length: 43
+Content-Type: image/gif
+X-Robots-Tag: noindex
+X-SharedID-Source: cookie
+Set-Cookie: _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=Thu, 11 Nov 2027 18:53:36 GMT; Path=/; Domain=example.com; SameSite=Lax; Secure
+Set-Cookie: _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=Thu, 11 Nov 2027 18:53:36 GMT; Path=/; Domain=example.com; SameSite=Lax; Secure; HttpOnly
+Set-Cookie: _pubcid=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; SameSite=Lax; Secure
+Set-Cookie: _pubcid_sv=; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; SameSite=Lax; Secure; HttpOnly
+```
+
+This is a successful sync that tidies up, not a denial. A response that deletes ID cookies because of opt-out, GPC, COPPA or consent has `X-SharedID-Status: denied: …`, sets no ID, and deletes both the domain and the host-only copies; this one has no `X-SharedID-Status`, and refreshes the domain cookies. `/_sid/v1` does the same, with the JSON payload. With a single cookie of each name, or with `SID_COOKIE_DOMAIN=host-only`, nothing extra is sent.
+
 ## `GET /_sid/v1`: the ID and the modules' output
 
 JSON (`Content-Type: application/json; charset=utf-8`, `Cache-Control: no-store`), with the same cookies as `/sync`. With `SID_MODULES=ip` and an IPv4 visitor:

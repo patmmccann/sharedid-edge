@@ -76,6 +76,8 @@ When an ID is chosen, the response sets:
 - `SID_COOKIE_NAME=<id>; Max-Age=<SID_MAX_AGE_DAYS × 86400>; Expires=<…>; Path=/; [Domain=…;] SameSite=Lax; Secure` — not `HttpOnly`, because Prebid.js reads it;
 - unless disabled, `SID_RECOVERY_COOKIE=<id>` with the same attributes plus `HttpOnly`.
 
+**Duplicates.** A browser sends several cookies with the same name when they were set with different `Domain` attributes, such as a host-only `_pubcid` written before `SID_COOKIE_DOMAIN` was set (by Prebid.js, or by an implementation's earlier host-only default) next to the domain cookie. The `Cookie` header doesn't say which is which; browsers list cookies with the same path oldest first. The ID is chosen from the **first** value of each cookie. When `SID_COOKIE_DOMAIN` is a domain and the request carries more than one `SID_COOKIE_NAME` (or `SID_RECOVERY_COOKIE`) cookie, the response, besides setting the chosen ID on the domain, MUST delete the host-only copy of that cookie: an empty value, `Max-Age=0` and no `Domain` (keeping `HttpOnly` for the recovery copy). That deletion doesn't touch the domain cookie, so the browser is left with one.
+
 `Secure` is set on https requests. Over plain http (local development only) it MUST be omitted, or browsers drop the cookie.
 
 When storage isn't allowed, no ID cookie is set and existing ID cookies MUST be deleted: each is overwritten with an empty value, `Max-Age=0` and `Expires=Thu, 01 Jan 1970 00:00:00 GMT`, with the same `Path` and `Domain` it was set with. With `SID_COOKIE_DOMAIN`, a host-only copy (no `Domain`) is deleted too, since Prebid.js may have written one.

@@ -1,6 +1,6 @@
 {
   "$schema": "../case-file.schema.json",
-  "description": "Non-default options: cookie name, domain and lifetime; no recovery cookie; no minting; deleting cookies under a cookie domain.",
+  "description": "Non-default options: cookie name, domain and lifetime; no recovery cookie; no minting; deleting cookies under a cookie domain, and a host-only duplicate next to the domain cookie.",
   "config": {
     "SID_COOKIE_NAME": "sid",
     "SID_OPTOUT_COOKIE": "sid_optout",
@@ -58,6 +58,33 @@
             "name": "sid",
             "value": "",
             "maxAge": 0,
+            "domain": ".example.com"
+          },
+          {
+            "name": "sid",
+            "value": "",
+            "maxAge": 0,
+            "domain": ""
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "keeps the first of two cookies with the same name, sets it on the cookie domain and deletes the host-only copy",
+      "request": {
+        "path": "/identity/sync",
+        "headers": {
+          "cookie": "sid=c29cb2ae-769d-42f6-891a-f53cadee823d; sid=0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "sid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "maxAge": 2592000,
             "domain": ".example.com"
           },
           {
