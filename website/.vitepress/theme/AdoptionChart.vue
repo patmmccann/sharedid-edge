@@ -29,7 +29,7 @@ const showTable = ref(false);
 </script>
 
 <template>
-  <figure class="adoption" aria-labelledby="adoption-title">
+  <figure class="adoption vp-raw" aria-labelledby="adoption-title">
     <h2 id="adoption-title" class="adoption-title">SharedID across Prebid.js</h2>
     <p class="adoption-lede">Of the Prebid.js sites running the User ID module, the share that also run SharedID.</p>
     <div class="adoption-body">

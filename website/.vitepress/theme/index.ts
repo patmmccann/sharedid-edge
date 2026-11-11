@@ -1,18 +1,13 @@
-// VitePress's default theme, plus the SharedID adoption chart at the top of the home page (the root README), added
-// through a layout slot so the README itself stays plain Markdown for GitHub and npm.
-import { h } from 'vue';
-import { useData } from 'vitepress';
+// VitePress's default theme, plus the SharedID adoption chart, registered globally: config.mts places it on the home
+// page (the root README) between the introduction and "How it works", so the README stays plain Markdown.
 import DefaultTheme from 'vitepress/theme';
 import type { Theme } from 'vitepress';
 import AdoptionChart from './AdoptionChart.vue';
 
 const theme: Theme = {
   extends: DefaultTheme,
-  Layout() {
-    const { page } = useData();
-    return h(DefaultTheme.Layout, null, {
-      'doc-before': () => (page.value.relativePath === 'index.md' ? h(AdoptionChart) : null)
-    });
+  enhanceApp({ app }) {
+    app.component('AdoptionChart', AdoptionChart);
   }
 };
 
