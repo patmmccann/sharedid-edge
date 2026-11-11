@@ -26,6 +26,11 @@ export function headerValue(headers: Headers, name: string): string | undefined 
 }
 
 /** `SID_PUBLIC_ORIGIN` as an adapter option: `{ publicOrigin }`, or nothing when it's unset or empty. */
+export function booleanFromEnv(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined || value.trim() === '') return fallback;
+  return /^(1|true|yes|on)$/i.test(value);
+}
+
 export function publicOriginFromEnv(env: Readonly<Record<string, string | undefined>>): { readonly publicOrigin?: string } {
   const publicOrigin = env['SID_PUBLIC_ORIGIN'];
   return publicOrigin === undefined || publicOrigin === '' ? {} : { publicOrigin };
