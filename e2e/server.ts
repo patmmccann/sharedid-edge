@@ -19,7 +19,9 @@ const handler = createHandler({
     SID_COOKIE_DOMAIN: 'sharedid.test',
     SID_SYNC_CACHE_SECONDS: '0',
     SID_MODULES: 'reflect',
-    SID_MODULE_CONFIG: JSON.stringify({ reflect: { cookies: [{ name: 'uid1', maxAgeDays: 365 }, { name: '_ga', maxAgeDays: 400, restore: true }] } })
+    // uid1 as the reflect README's walkthrough configures it: on the domain the vendor tag writes it on, readable by
+    // script, and restored from the keeper.
+    SID_MODULE_CONFIG: JSON.stringify({ reflect: { cookies: [{ name: 'uid1', maxAgeDays: 365, domain: 'sharedid.test', httpOnly: false, restore: true }, { name: '_ga', maxAgeDays: 400, restore: true }] } })
   }),
   modules: [reflectModule]
 });
@@ -43,8 +45,8 @@ const server = createServer((req, res) => {
     });
     return;
   }
-  if (url.pathname === '/tcf.js') {
-    res.writeHead(200, { 'Content-Type': 'application/javascript' }).end(readFileSync(join(import.meta.dirname, 'site', 'public', 'tcf.js')));
+  if (url.pathname === '/tcf.js' || url.pathname === '/vendor-uid1.js') {
+    res.writeHead(200, { 'Content-Type': 'application/javascript' }).end(readFileSync(join(import.meta.dirname, 'site', 'public', url.pathname.slice(1))));
     return;
   }
   if (url.pathname.startsWith('/prebid/')) {

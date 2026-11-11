@@ -1,4 +1,4 @@
-import { createHandler, readConsent, resolveConfig, type ModuleContext, type PayloadV1, type SharedIdEdgeHandler, type StorageDecision } from '@sharedid-edge/core';
+import { createHandler, readConsent, resolveConfig, type ModuleContext, type ModuleCookie, type PayloadV1, type SharedIdEdgeHandler, type StorageDecision } from '@sharedid-edge/core';
 import { describe, expect, it } from 'vitest';
 import { cookieTimestamp, decodeKeeper, encodeKeeper, isReflectable, MAX_KEEPER_COOKIE_BYTES, rawCookieValue, reflectModule, reflectModuleConfig, RESERVED_COOKIE_NAMES } from '../src/index.js';
 
@@ -260,14 +260,64 @@ describe('the keeper value', () => {
 });
 
 describe('run', () => {
-  const context = (cookie: string, storage: StorageDecision, config: Readonly<Record<string, unknown>> = { cookies: [UID1] }): ModuleContext => {
+  const context = (cookie: string, storage: StorageDecision, config: Readonly<Record<string, unknown>> = { cookies: [UID1] }, cookieDomain?: string): ModuleContext => {
     const request = new Request('https://www.example.com/_sid/v1', { headers: { Cookie: cookie } });
     const url = new URL(request.url);
     return {
       request, url, platform: {}, sharedId: undefined, consent: readConsent(url, request.headers, new Map(), {}),
-      cookies: new Map(), optedOut: false, storage, config, secrets: {}
+      cookies: new Map(), optedOut: false, cookieDomain, storage, config, secrets: {}
     };
   };
+
+describe('duplicates (a host-only copy next to the domain one)', () => {
+    const ALLOWED = { allowed: true } as const;
+    const hostOnlyDeletion = (name: string, httpOnly = false): ModuleCookie => ({ name, value: '', maxAgeSeconds: 0, httpOnly, hostOnly: true });
+
+    it('with the same value twice, reflects it on its domain and deletes the host-only copy', async () => {
+      expect(await reflectModule.run(context('uid1=abc; uid1=abc', ALLOWED))).toEqual({
+        cookies: [{ name: 'uid1', value: 'abc', maxAgeSeconds: 31_536_000, httpOnly: false, domain: '.example.com' }, hostOnlyDeletion('uid1')]
+      });
+    });
+
+    it('with different values, reflects the first and deletes neither (the other may be its owner\'s newer write)', async () => {
+      expect(await reflectModule.run(context('uid1=old; uid1=new', ALLOWED))).toEqual({
+        cookies: [{ name: 'uid1', value: 'old', maxAgeSeconds: 31_536_000, httpOnly: false, domain: '.example.com' }]
+      });
+    });
+
+    it('uses SID_COOKIE_DOMAIN for a cookie without its own domain', async () => {
+      const config = { cookies: [{ name: 'uid1', maxAgeDays: 365 }] };
+      expect(await reflectModule.run(context('uid1=abc; uid1=abc', ALLOWED, config, 'example.com'))).toEqual({
+        cookies: [{ name: 'uid1', value: 'abc', maxAgeSeconds: 31_536_000, httpOnly: false }, hostOnlyDeletion('uid1')]
+      });
+    });
+
+    it('deletes nothing when the copy it sets is host-only', async () => {
+      const hostOnly = { cookies: [{ name: 'uid1', maxAgeDays: 365, domain: 'host-only' }] };
+      expect((await reflectModule.run(context('uid1=abc; uid1=abc', ALLOWED, hostOnly, 'example.com')))?.cookies).toEqual([
+        { name: 'uid1', value: 'abc', maxAgeSeconds: 31_536_000, httpOnly: false, hostOnly: true }
+      ]);
+      const noDomain = { cookies: [{ name: 'uid1', maxAgeDays: 365 }] };
+      expect((await reflectModule.run(context('uid1=abc; uid1=abc', ALLOWED, noDomain)))?.cookies).toHaveLength(1);
+    });
+
+    it('leaves a single cookie alone, and keeps HttpOnly on the deletion of an HttpOnly cookie', async () => {
+      expect((await reflectModule.run(context('uid1=only', ALLOWED)))?.cookies).toHaveLength(1);
+      const config = { cookies: [{ ...FPID, domain: 'example.com' }] };
+      expect((await reflectModule.run(context('fpid=a; fpid=a', ALLOWED, config)))?.cookies?.[1]).toEqual(hostOnlyDeletion('fpid', true));
+    });
+
+    it('deletes a duplicated keeper\'s host-only copy too, whatever the values (the keeper is the worker\'s own)', async () => {
+      const config = { cookies: [{ ...UID1, restore: true }] };
+      const keeper = encodeKeeper([['uid1', 'old']], 4000);
+      const cookies = (await reflectModule.run(context(`uid1=old; _sid_keep=${keeper}; _sid_keep=${keeper}`, ALLOWED, config)))?.cookies ?? [];
+      expect(cookies.map(c => [c.name, c.value === '' ? 'deleted' : 'set', c.hostOnly === true ? 'host-only' : (c.domain ?? 'default')])).toEqual([
+        ['uid1', 'set', '.example.com'],
+        ['_sid_keep', 'set', '.example.com'],
+        ['_sid_keep', 'deleted', 'host-only']
+      ]);
+    });
+  });
 
   it('follows the storage decision, without deleting', async () => {
     expect(await reflectModule.run(context('uid1=abc', { allowed: true }))).toEqual({ cookies: [{ name: 'uid1', value: 'abc', maxAgeSeconds: 31_536_000, httpOnly: false, domain: '.example.com' }] });

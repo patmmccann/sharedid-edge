@@ -78,7 +78,7 @@
         "SID_SYNC_CACHE_SECONDS": "0",
         "SID_MODULES": "reflect",
         "SID_SYNC_MODULES": "",
-        "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365},{\"name\":\"_ga\",\"maxAgeDays\":400,\"restore\":true}]}}",
+        "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,\"domain\":\"sharedid.dev\",\"httpOnly\":false,\"restore\":true},{\"name\":\"_ga\",\"maxAgeDays\":400,\"restore\":true}]}}",
         "SID_MODULE_TIMEOUT_MS": "50",
         "SID_SKIP_BOTS": "",
         "SID_SKIP_BOTS_SCORE": ""

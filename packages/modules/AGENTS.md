@@ -25,6 +25,7 @@ export const example = defineModule({
 - Use `context.config` for settings (from `SID_MODULE_CONFIG`), and validate them: it's `Record<string, unknown>`. Settings that could leak data on a typo throw, so the module reports `error` instead.
 - Secrets come from `SID_MODULE_SECRETS` (`context.secrets`). Never return, log or put them in an error message.
 - Data that locates the user precisely (a full IP address, coordinates, a postal code, a city) is sent in full or not at all, and left out when `preciseLocationDenial(consent)` gives a reason.
+- `context.cookieDomain` is `SID_COOKIE_DOMAIN`, the `Domain` core gives your cookies when you don't set one, or `undefined` for host-only. A cookie's `hostOnly: true` overrides it.
 - `context.storage` is the worker's own storage decision for the SharedID (`{ allowed: false, reason }` on opt-out, GPC, COPPA or denied consent). A module that stores or extends an identifier should follow it, as `reflect` does.
 - Don't put personal data in the output unless the publisher enabled it in the module's config, and default to off. Never log, store or hash request data, or put it anywhere but the response to the same request.
 - A module that throws or exceeds `SID_MODULE_TIMEOUT_MS` is reported (`ext.modules`) and left out. Don't rely on that for control flow; return `undefined` when there's nothing to add.

@@ -16,6 +16,12 @@ export interface ModuleContext {
   /** Whether the browser has opted out (the SharedID opt-out cookie is present). */
   readonly optedOut: boolean;
   /**
+   * `SID_COOKIE_DOMAIN`, the `Domain` core gives a module cookie without its own `domain`, or undefined for host-only
+   * cookies (`host-only`). A module that tidies up duplicate copies of a cookie needs it, to know whether the cookie it
+   * sets is host-only.
+   */
+  readonly cookieDomain: string | undefined;
+  /**
    * Whether the worker may store the SharedID for this request: `{ allowed: false, reason }` on opt-out, GPC, COPPA or
    * denied TCF consent, with the reason `X-SharedID-Status` gives. Modules that store or extend an identifier should
    * follow it.

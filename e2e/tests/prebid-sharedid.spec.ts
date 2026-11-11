@@ -237,6 +237,64 @@ test('Prebid.js\'s pixel call restores a deleted cookie from the keeper', async 
   expect((await cookie(context, '_ga'))?.value).toBe('GA1.1.1234567890.1700000000');
 });
 
+// The reflect README's "Make uid1 sticky and server-set" walkthrough, with a stand-in vendor tag
+// (site/public/vendor-uid1.js) writing uid1 from page script, and uid1 configured as the walkthrough does it.
+const ONE_YEAR_ISH = 360 * DAY;
+
+async function uid1Cookies(context: BrowserContext): Promise<{ value: string; domain: string; expires: number }[]> {
+  return (await context.cookies()).filter(c => c.name === 'uid1');
+}
+
+test('a vendor-written uid1 becomes one server-set cookie with the vendor\'s value, kept for a year', async ({ page, context }) => {
+  // The vendor tag writes uid1 with a 7-day lifetime; the next page view's pixel call carries it to the worker.
+  await visit(page);
+  const written = (await uid1Cookies(context))[0]?.value;
+  expect(written).toMatch(/^v1\./);
+  await visit(page);
+  const uid1 = await uid1Cookies(context);
+  expect(uid1.map(c => c.domain)).toEqual([COOKIE_DOMAIN === undefined ? new URL(String(page.url())).hostname : `.${COOKIE_DOMAIN}`]);
+  expect(uid1[0]?.value).toBe(written);
+  expect((uid1[0]?.expires ?? 0) - Date.now() / 1000).toBeGreaterThan(ONE_YEAR_ISH);
+  expect((await cookie(context, '_sid_keep'))?.httpOnly).toBe(true);
+});
+
+test('a deleted uid1 comes back with the same value when the vendor tag runs after Prebid.js\'s pixel call', async ({ page, context, sid }) => {
+  await visit(page, '/?vendor=late');
+  await expect.poll(async () => (await uid1Cookies(context))[0]?.value, { timeout: 5_000 }).toMatch(/^v1\./);
+  const original = (await uid1Cookies(context))[0]?.value;
+  await visit(page, '/?vendor=late'); // reflected, and saved in the keeper
+
+  // Safari's cap, or the visitor, deletes uid1; the HttpOnly keeper survives.
+  await context.clearCookies({ name: 'uid1' });
+  sid.reset();
+  await visit(page, '/?vendor=late');
+  expect((await sid.requests())[0]?.cookie).not.toContain('uid1=');
+  expect((await uid1Cookies(context)).map(c => c.value)).toEqual([original]);
+  // The vendor tag, running now, finds uid1 and keeps it.
+  await page.waitForTimeout(2_000);
+  expect((await uid1Cookies(context)).map(c => c.value)).toEqual([original]);
+});
+
+test('when the vendor tag runs before Prebid.js\'s pixel call, it re-mints a deleted uid1 before the worker can restore it', async ({ page, context, sid }) => {
+  await visit(page);
+  await visit(page);
+  const original = (await uid1Cookies(context))[0]?.value;
+  expect(original).toMatch(/^v1\./);
+
+  await context.clearCookies({ name: 'uid1' });
+  sid.reset();
+  await visit(page);
+  // The pixel call already carries the vendor's new uid1, and with the default prefer ("browser") the browser's value
+  // wins: it's reflected, and the keeper saves it. "prefer": "backup", or calling /_sid/v1 before the vendor tag runs,
+  // restores the original instead (see the README).
+  const sent = (await sid.requests())[0]?.cookie ?? '';
+  expect(sent).toMatch(/uid1=v1\./);
+  expect(sent).not.toContain(`uid1=${String(original)}`);
+  const now = (await uid1Cookies(context)).map(c => c.value);
+  expect(now).toHaveLength(1);
+  expect(now[0]).not.toBe(original);
+});
+
 test('an opted-out user gets no id cookies from the endpoint', async ({ page, context }) => {
   const optout = await page.request.get('/_sid/optout');
   expect(optout.status()).toBe(204);

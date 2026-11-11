@@ -107,7 +107,7 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
 
         // Modules run on both routes (on /sync, those configured for it). Their traffic reports join the platform's, so
         // SID_SKIP_BOTS sees the same merged verdict on /sync as on /v1.
-        const context = { request, url, platform, sharedId: state.id, consent, cookies, optedOut, storage: decision };
+        const context = { request, url, platform, sharedId: state.id, consent, cookies, optedOut, cookieDomain: config.cookieDomain, storage: decision };
         const modules = await runModules(registry, config, context, () => now().getTime(), route === ROUTES.sync ? 'sync' : 'v1');
         const traffic = mergeTraffic([...platformTraffic, ...modules.traffic]);
         if (decision.allowed && !skipped && skipsBot(config, traffic)) {
