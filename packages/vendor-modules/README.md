@@ -28,10 +28,11 @@ Each vendor module's README says what it needs (usually an account or licence wi
    - no licensed data in the repository: a licence key is a build-time credential (`buildCredentials`), used to fetch data at build time and never shipped;
    - secrets only through `SID_MODULE_SECRETS`;
    - bot and proxy verdicts through the shared traffic signal;
+   - an ID derived from the IP address or other request data is allowed in a vendor module, opt-in, declared with `ipDerived` and disclosed at the top of your README ([IP-derived IDs](AGENTS.md#ip-derived-ids));
    - core's privacy lines apply: GPC, COPPA, opt-out and consent.
 4. **Forwarding** requests or data to any service is off by default, enabled per deployment with an explicit list of destination hosts, preferably to a service on the same platform and network, and **disclosed at the top of your README** in a clearly marked box: what is sent, to which host, when, and under which consent conditions. See [Forwarding requests or data](AGENTS.md#forwarding-requests-or-data).
 5. **Name a maintainer** for your folder in [`.github/CODEOWNERS`](../../.github/CODEOWNERS). You review changes to your module and answer its issues.
-6. **Document it** to the project's module README standard (turning it on, the response with JSON examples when it returns data and when it doesn't, consent rules, settings and secrets, troubleshooting), and add a `sharedidEdge` block to its `package.json` (see [Development](../../docs/development.md#package-metadata)): the [module index](../../docs/modules.md#module-index) is generated from it, and marks vendor modules.
+6. **Document it** to the project's module README standard (turning it on, the response with JSON examples when it returns data and when it doesn't, consent rules, settings and secrets, troubleshooting), plus a **Size** section: what your module adds to a bundle, minified and gzipped, for each property set or build option a deployer can choose, so they can fit their platform's limit ([details](AGENTS.md#offline-modules-and-build-time-credentials)). Vendor modules don't run in Cloudflare Snippets, and network ones never can (5 ms, 32 KB, no secrets). and add a `sharedidEdge` block to its `package.json` (see [Development](../../docs/development.md#package-metadata)): the [module index](../../docs/modules.md#module-index) is generated from it, and marks vendor modules.
 
 ## Checks
 

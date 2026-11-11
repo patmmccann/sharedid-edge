@@ -60,7 +60,7 @@ Prebid.js's `sharedIdSystem` calls `pixelUrl` with `id=pubcid:<id>`, percent-enc
 
 ## The ID
 
-A valid ID matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. Minted IDs are random UUID v4s, never derived from the IP address or other request data. (The opt-in [`ec` module](modules/ec.md) sets a separate, IP-derived cookie; the SharedID is unaffected.)
+A valid ID matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. Minted IDs are random UUID v4s, never derived from the IP address or other request data. (Opt-in modules may set separate IP-derived IDs, such as the [`ec` module](modules/ec.md)'s cookie, and vendor modules that declare it; the SharedID is unaffected.)
 
 For `/sync` and `/v1`, when storage is allowed, the ID is the first of:
 

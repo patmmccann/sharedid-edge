@@ -6,6 +6,7 @@ Modules contributed and maintained by vendors: IP intelligence databases (#12), 
 - **Declare `gvlid`** when the vendor is on the IAB Global Vendor List, or say in the README why the module acts for the publisher instead. Core doesn't run modules with a `gvlid` when GDPR applies until vendor consent is decoded.
 - **Declare `network`** in the `sharedidEdge` block: `"none"` (an offline module, the default to aim for) or the hosts it may reach. `npm run test:vendor-modules` enforces it: see [Offline modules and build-time credentials](#offline-modules-and-build-time-credentials).
 - **Network calls only under the vendor plugin rules** in prebid/prebid-server#5064: opt-in per deployment, a strict timeout, and cached results. Data updates (databases, lists) happen only in scheduled jobs (#30), never while answering a request. Core has no network wrapper yet, so the lint config blocks `fetch` here until it does.
+- **IP-derived IDs are allowed here,** and only here (and in `ec`, which the project treats as a vendor module): see [IP-derived IDs](#ip-derived-ids).
 - **No licensed data in the repo.** Databases and lists the vendor licenses are fetched by the deployer's build or scheduled job with their own credentials (a licence key named in `buildCredentials`); the repo holds only code and small test fixtures you may publish.
 - **Secrets only through `SID_MODULE_SECRETS`** (`context.secrets`): never in `SID_MODULE_CONFIG`, code, fixtures, logs, output or error messages. A build-time credential (`buildCredentials`) is for the build only and never ships in the bundle.
 - **Bot and proxy verdicts** go through the shared traffic signal (#5) once it exists, not a field of the module's own, so core and other modules can act on them.
@@ -22,7 +23,18 @@ Device and IP databases (51Degrees, WURFL, IP intelligence) work best **offline*
 - **The key check.** `node scripts/check-build-secrets.mjs <bundle>` fails when a bundle contains the value of any `buildCredentials` variable set in the environment, as is or base64-, base64url-, hex- or URI-encoded, without printing it. The bundled adapters run it on every build (`checkBudget` in `scripts/bundle-adapter.mjs`); run it on anything else you deploy.
 - **`network: "none"` is checked, not trusted.** `npm run test:vendor-modules` runs each module's tests with [`scripts/no-network.mjs`](../../scripts/no-network.mjs) preloaded. It blocks and records every attempt to reach a host the module didn't declare: `fetch`, `WebSocket`, `EventSource`, `XMLHttpRequest`, DNS, and TCP or TLS connections (so `node:http` and `node:https` too). Loopback is allowed, for a local mock of an API. A run with an attempt fails, even when the module catches the error and its tests pass. So **tests must exercise the module's real code paths**, data loading included: tests that skip the code that would call out prove nothing.
 - **Declared hosts** (`network: ["api.vendor.example"]`) are allowed in tests, marked "⚠ network" in the module index, and still follow the vendor plugin rules above (opt-in, a strict timeout, caching). Every host in `forwards` must also be in `network`.
-- **Size.** A full device or IP database won't fit a Worker (a few MB on Free, about 10 MB on paid plans), let alone a Snippet (32 KB). Build in only the properties the module returns, and say in the README how big the bundle gets. The project's [32 KB gzipped budget](../adapters/AGENTS.md) is for the default bundles; a deployer's build with a vendor module answers to their platform's limit.
+- **Size guidance is part of the README.** Deployers have a size target to fit: a Worker's limit (a few MB on Free, about 10 MB on paid plans), Lambda's, or their own budget. So the README has a **Size** section with what the module adds to a bundle, minified and gzipped, measured with this repo's build:
+  - for each build option or property set the deployer can choose (all properties, the ones a typical setup needs, the smallest useful set), so they can trade data for size;
+  - with how to measure it themselves (the build command, and the bundle the adapter's size check reports);
+  - and the memory it needs at runtime, if the data is unpacked or indexed when the module loads.
+
+  A full device or IP database won't fit a Worker; build in only the properties the module returns. The project's [32 KB gzipped budget](../adapters/AGENTS.md) is for the default bundles: a deployer's build with a vendor module answers to their platform's limit, which is why they need these numbers.
+- **Not for Cloudflare Snippets.** Snippets allow 32 KB of code, 2 MB of memory and 5 ms of execution time. Vendor data won't fit in 32 KB with core. A **network** vendor module can never work there:
+  - its request waits on a round trip to the vendor, which on its own almost always takes longer than 5 ms. Cloudflare doesn't say whether the limit counts waiting time, and if it does, every request fails;
+  - Snippets allow 2 to 5 subrequests by plan;
+  - Snippets have no secrets for an API key.
+
+  The Snippet build only bundles the project's modules. Vendor modules are for Workers and the other adapters.
 
 ## Forwarding requests or data
 
@@ -32,3 +44,14 @@ A module that forwards anything (requests, IDs, the IP address, signals) to its 
 - **Disclosed prominently:** a clearly marked box at the **top** of the module's README stating what is sent, to which host, when, and under which consent conditions. Its `sharedidEdge` block lists the hosts in `forwards`, so its row in the generated module index carries the marker "⚠ forwards data to `<host>`". `ext.modules.<name>` should be able to report that forwarding happened, with no data values.
 - **Co-located when possible:** preferably only to services on the same platform and network as the worker: a service bound to the Worker (a Cloudflare service binding), a container on the same host or VPC, or server-side GTM behind the same load balancer. Forwarding over the public internet to a distant third party is the exception, and the README must justify it.
 - **Still subject to the privacy lines:** no forwarding when GPC, COPPA, opt-out or consent rule it out.
+
+## IP-derived IDs
+
+Core and the project's modules never derive an ID from the IP address or other request data; the SharedID is random. A vendor module may, because that's often how the vendor's product works, and the vendor maintains it and answers for it. The project's `ec` module is held to the same rules: it ports IAB Tech Lab's open-source Trusted Server Edge Cookies, whose ID prefix is an HMAC of the client IP. A module whose ID uses the IP address, or anything else from the request (headers, the User-Agent, location), in whole or part:
+
+- **Declares it:** `"ipDerived": true` in its `sharedidEdge` block, so its row in the generated module index carries "⚠ IP-derived ID".
+- **Is opt-in:** it runs only when the deployer lists it in `SID_MODULES`, and never becomes the default.
+- **Is disclosed** in a clearly marked box at the **top** of its README: what the ID is derived from, who behind the same address shares it, and who can link it back (anyone with the key, say). The `ec` README's box is the model.
+- **Keeps the SharedID random:** it sets its own cookie or payload field, and never changes `_pubcid`.
+- **Still answers to the privacy lines:** no ID when GPC, COPPA, opt-out or consent rule it out, and an existing one is deleted. Declare `gvlid` so TCF vendor consent applies.
+- **Logs nothing** about the request, and never returns the IP address itself.

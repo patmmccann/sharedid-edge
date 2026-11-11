@@ -96,7 +96,7 @@ Behaviour that must not regress, each covered by tests:
 - An existing valid ID is never replaced; the `HttpOnly` recovery copy restores a re-minted one.
 - The worker answers only its own routes and never forwards requests to the origin.
 - Opt-out, Global Privacy Control, COPPA and denied consent delete existing ID cookies and set none.
-- The SharedID is random; nothing is derived from the IP address or other request data, and nothing about requests is logged. The one exception is the opt-in `ec` module (`packages/modules/ec`), which implements Trusted Server Edge Cookies as specified: its ID prefix is an HMAC of the client IP. Don't add other IP-derived IDs, and don't make `ec` the default.
+- The SharedID is random, and nothing about requests is logged. Core and the project's own modules derive no ID from the IP address or other request data. IP-derived IDs are for vendor modules, maintained by their vendors under [the vendor rules](packages/vendor-modules/AGENTS.md#ip-derived-ids): opt-in, declared (`ipDerived` in their `sharedidEdge` block) and disclosed. The project treats the `ec` module (`packages/modules/ec`) the same way: it's IAB Tech Lab's open-source Trusted Server Edge Cookies, ported here as specified, and its ID prefix is an HMAC of the client IP. Don't add IP-derived IDs to core or a project module, and never make one the default.
 - `Access-Control-Allow-Origin` is never `*`.
 
 ## Conventions
