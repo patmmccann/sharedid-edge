@@ -366,8 +366,8 @@ describe('the reflect module in the handler', () => {
     expect(JSON.stringify(body)).not.toMatch(/uid1|fpid|abc|def/);
   });
 
-  it('uses SID_COOKIE_DOMAIN for cookies without a domain, and omits Secure over http', async () => {
-    const response = await handler({ SID_COOKIE_DOMAIN: '.example.com' })(new Request('http://www.example.com/_sid/v1', { headers: { Cookie: 'fpid=def' } }));
+  it('uses SID_COOKIE_DOMAIN for cookies without a domain, and omits Secure over http in local development', async () => {
+    const response = await handler({ SID_COOKIE_DOMAIN: '.example.com' })(new Request('http://localhost/_sid/v1', { headers: { Cookie: 'fpid=def' } }));
     expect(response.headers.getSetCookie().find(c => c.startsWith('fpid='))).toMatch(/^fpid=def; Max-Age=2592000; Expires=[^;]+; Path=\/; Domain=\.example\.com; SameSite=Lax; HttpOnly$/);
   });
 

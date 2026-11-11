@@ -152,7 +152,7 @@ Two more variables are read only by the Vercel adapter:
 
 | Variable | Default | |
 | --- | --- | --- |
-| `SID_PUBLIC_ORIGIN` | the request's own origin | The origin of request URLs. On Vercel it's the https URL the visitor asked for, so leave it unset; only its scheme matters (`https` makes cookies `Secure`). |
+| `SID_PUBLIC_ORIGIN` | the request's own origin | The origin of request URLs. On Vercel it's the https URL the visitor asked for, so leave it unset; only its scheme matters, and cookies are `Secure` for a public hostname whatever the scheme, so it matters only for local development (see [Secure cookies](../../../docs/configuration.md#secure-cookies)). |
 | `SID_BEHIND_VERCEL` | `true` | `false` when the code isn't running on Vercel (for example `next start` on your own server): the client IP and geolocation headers are then ignored, since anyone could send them. See [Platform information](#platform-information). |
 
 Configuration is read once per instance, when the route or middleware module loads. An invalid setting makes every `/_sid/*` request return `500 SharedID Edge is misconfigured`, and the reason is logged to the function's logs, rather than setting wrong cookies. With middleware, the rest of the site is unaffected.

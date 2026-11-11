@@ -40,3 +40,7 @@ Routes, under `SID_BASE_PATH`:
 | `GET /_sid/optout`, `GET /_sid/optin` | Set or clear the opt-out cookie. |
 
 The full behaviour is in the [specification](../spec/SPEC.md).
+
+## Secure cookies
+
+Cookies get `Secure` on https, and also when a public hostname arrives over plain http: that only happens when TLS ends in front of the worker (nginx, a load balancer, a CDN), and the visitor is on https. So a deployment behind a TLS-terminating proxy gets `Secure` cookies without any setting. `Secure` is left out only for plain http in local development, where browsers would drop a `Secure` cookie: `localhost`, an IP address, or a name under `.localhost`, `.test`, `.local`, `.internal`, `.example` or `.invalid`. A site served to visitors over plain http, without TLS anywhere, therefore can't keep SharedID Edge's cookies; serve it over https. `verify-deployment` checks that `_pubcid` is `Secure`.

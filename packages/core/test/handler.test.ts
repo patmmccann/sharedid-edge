@@ -78,9 +78,22 @@ describe('sync (pixelUrl)', () => {
     expect(cookieNamed(response, 'sid')?.attributes.get('max-age')).toBe(String(30 * 86_400));
   });
 
-  it('omits Secure over plain http, for local development', async () => {
-    const response = await handler()(new Request('http://localhost:8787/_sid/sync'));
+  it.each([
+    'http://localhost:8787', 'http://app.localhost', 'http://127.0.0.1:4310', 'http://192.168.1.20', 'http://[::1]:8787',
+    'http://e2e.sharedid.test', 'http://printer.local', 'http://sid.internal', 'http://www.example', 'http://x.invalid'
+  ])('omits Secure over plain http in local development (%s)', async origin => {
+    const response = await handler()(new Request(`${origin}/_sid/sync`));
     expect(cookieNamed(response, '_pubcid')?.attributes.has('secure')).toBe(false);
+  });
+
+  it('keeps Secure for a public hostname seen over http (TLS ended at a proxy in front of the worker)', async () => {
+    const response = await handler({ SID_COOKIE_DOMAIN: 'example.com' })(new Request('http://www.example.com/_sid/sync', { headers: { Cookie: `uid1=x` } }));
+    expect(cookieNamed(response, '_pubcid')?.attributes.has('secure')).toBe(true);
+    expect(cookieNamed(response, '_pubcid_sv')?.attributes.has('secure')).toBe(true);
+    // Hostnames that only look local don't count: a public name ending in "test" or "local" isn't one of those TLDs.
+    for (const origin of ['http://latest.com', 'http://mylocal.net', 'http://example.localhost.com']) {
+      expect(cookieNamed(await handler()(new Request(`${origin}/_sid/sync`)), '_pubcid')?.attributes.has('secure')).toBe(true);
+    }
   });
 
   it('expires the cookies and sets none after an opt-out', async () => {

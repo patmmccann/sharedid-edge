@@ -61,7 +61,7 @@ From the environment:
 | --- | --- | --- |
 | `PORT` | `8787` | Listening port. |
 | `HOST` | `127.0.0.1` | Listening address. Keep it local behind a proxy. |
-| `SID_PUBLIC_ORIGIN` | `http://<Host header>` | Your public origin, for example `https://www.example.com`. TLS ends at your proxy, so set this for cookies to be `Secure`. |
+| `SID_PUBLIC_ORIGIN` | `http://<Host header>` | Your public origin, for example `https://www.example.com`. TLS ends at your proxy, so the server sees http; cookies are `Secure` anyway for a public hostname (see [Secure cookies](../../../docs/configuration.md#secure-cookies)), so this is optional. Set it to make request URLs, and so what modules see, match the visitor's. |
 | `SID_TRUST_PROXY` | `false` | Trust the proxy's headers: the client IP from the first `X-Forwarded-For` entry, and location from Cloudflare's visitor location headers. Only behind a proxy that overwrites them. |
 | `SID_COOKIE_DOMAIN` | **required** | The domain Prebid.js writes `_pubcid` on, normally your registrable domain (`example.com`), or `host-only`. Without it the server doesn't start. |
 | `SID_*` | | Every other core setting, as in the [Configuration reference](../../../docs/configuration.md). |
@@ -121,7 +121,7 @@ Locally, `npm run conformance` runs the whole conformance suite against this ser
 
 | Symptom | Cause |
 | --- | --- |
-| Cookies aren't `Secure` | `SID_PUBLIC_ORIGIN` isn't set to your https origin. |
+| Cookies aren't `Secure` | The server sees a local host (`localhost`, an IP address, or a `.test`/`.local` name): the proxy isn't passing the public `Host`. Pass it, or set `SID_PUBLIC_ORIGIN` to your https origin. |
 | `ip` returns your proxy's address | Set `SID_TRUST_PROXY=true`, and have the proxy overwrite `X-Forwarded-For`. |
 | `geo` returns nothing | No Cloudflare location headers reach the server, or `SID_TRUST_PROXY` is off. |
 | Visitors share one ID or one cookie | Something caches `/_sid/` responses. Turn caching off for that path. |
