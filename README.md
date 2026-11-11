@@ -85,36 +85,3 @@ Issues and pull requests are welcome. Read [AGENTS.md](AGENTS.md) and [Developme
 ## License
 
 [Apache-2.0](LICENSE)
-
-## Moved sections
-
-These sections now live in their own pages.
-
-### Deploy on Cloudflare
-Moved to [packages/adapters/cloudflare/README.md](packages/adapters/cloudflare/README.md#deploy).
-### Deploy on AWS (Lambda and CloudFront)
-Moved to [packages/adapters/aws-lambda/README.md](packages/adapters/aws-lambda/README.md).
-### Deploy on Vercel
-Moved to [packages/adapters/vercel/README.md](packages/adapters/vercel/README.md).
-### Deploy on Azure (Functions and Front Door)
-Moved to [packages/adapters/azure-functions/README.md](packages/adapters/azure-functions/README.md).
-### Deploy on Google Cloud (Cloud Run functions and Load Balancing)
-Moved to [packages/adapters/gcp-functions/README.md](packages/adapters/gcp-functions/README.md).
-### Self-host with Node.js
-Moved to [packages/adapters/node/README.md](packages/adapters/node/README.md).
-### Configure Prebid.js
-Moved to [docs/prebid.md](docs/prebid.md).
-### Responses
-Moved to [docs/responses.md](docs/responses.md).
-### Migrate from the WordPress or Drupal plugin
-Moved to [docs/migrating.md](docs/migrating.md).
-### Consent and opt-out
-Moved to [docs/consent.md](docs/consent.md).
-### Configuration reference
-Moved to [docs/configuration.md](docs/configuration.md).
-### Troubleshooting
-Moved to [docs/troubleshooting.md](docs/troubleshooting.md).
-### Development
-Moved to [docs/development.md](docs/development.md).
-### Roadmap
-Moved to [docs/development.md](docs/development.md#roadmap).
