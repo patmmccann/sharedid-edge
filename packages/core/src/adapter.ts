@@ -124,6 +124,7 @@ export const SETTING_NAMES: readonly string[] = [
   'SID_BASE_PATH', 'SID_COOKIE_NAME', 'SID_COOKIE_DOMAIN', 'SID_MAX_AGE_DAYS', 'SID_CREATE', 'SID_RECOVERY_COOKIE',
   'SID_OPTOUT_COOKIE', 'SID_VENDOR_ID', 'SID_ALLOWED_ORIGINS', 'SID_SYNC_CACHE_SECONDS', 'SID_MODULES', 'SID_SYNC_MODULES',
   'SID_MODULE_CONFIG', 'SID_MODULE_SECRETS', 'SID_MODULE_TIMEOUT_MS', 'SID_SKIP_BOTS', 'SID_HOSTS', 'SID_SKIP_BOTS_SCORE',
+  'SID_UPSTREAM_SECRETS', 'SID_UPSTREAM_AUTH_HEADER', 'SID_UPSTREAM_HOST_HEADER', 'SID_CLIENT_IP_HEADER', 'SID_LOCATION_HEADERS',
   'SID_PUBLIC_ORIGIN'
 ];
 
@@ -150,10 +151,11 @@ export function cachedByEnv<H>(build: (env: Readonly<Record<string, string | und
 export async function withPublicOrigin(request: Request, publicOrigin: string | undefined): Promise<Request> {
   if (publicOrigin === undefined) return request;
   const url = new URL(request.url);
+  return copyRequest(request, new URL(`${url.pathname}${url.search}`, publicOrigin), request.headers);
+}
+
+/** A copy of `request` at `url` with `headers`: the same method, and body (read into memory) unless it's a GET or HEAD. */
+export async function copyRequest(request: Request, url: URL, headers: Headers): Promise<Request> {
   const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
-  return new Request(new URL(`${url.pathname}${url.search}`, publicOrigin), {
-    method: request.method,
-    headers: request.headers,
-    ...(hasBody ? { body: await request.arrayBuffer() } : {})
-  });
+  return new Request(url, { method: request.method, headers, ...(hasBody ? { body: await request.arrayBuffer() } : {}) });
 }

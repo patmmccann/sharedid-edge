@@ -34,6 +34,26 @@ function expectsSecure(origin: URL): boolean {
 }
 
 /**
+ * The origin the implementation sees for a case's request, given the origin it builds request URLs from: in
+ * trusted-upstream mode (the file's SID_UPSTREAM_SECRETS), a request with one of the secrets in the auth header has
+ * the forwarded host header's hostname instead (spec/SPEC.md, "Trusted upstream"). It decides whether cookies must be
+ * `Secure`.
+ */
+export function caseOrigin(origin: string, config: Readonly<Record<string, string>>, headers: Readonly<Record<string, string>>): string {
+  const secretsText = config['SID_UPSTREAM_SECRETS'];
+  if (secretsText === undefined || secretsText.trim() === '') return origin;
+  const header = (name: string): string | undefined => Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
+  const secrets: unknown = JSON.parse(secretsText);
+  const auth = header(config['SID_UPSTREAM_AUTH_HEADER'] ?? 'x-sid-upstream-auth');
+  const host = header(config['SID_UPSTREAM_HOST_HEADER'] ?? 'x-forwarded-host');
+  if (!Array.isArray(secrets) || auth === undefined || !secrets.includes(auth) || host === undefined) return origin;
+  const url = new URL(origin);
+  url.hostname = host.split(':')[0] ?? host;
+  url.port = '';
+  return url.origin;
+}
+
+/**
  * Sends a case's request to `baseUrl` and returns the failures (empty when it passes). `unavailable` lists payload
  * paths (`ortb2.device.geo.metro`) the target's platform has no data for (see `RunningTarget.unavailable`): they're
  * removed from the expected JSON, and checked to be absent instead, so a platform can't pass by making them up.

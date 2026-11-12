@@ -362,6 +362,7 @@ function withCookies(response: Response, cookies: readonly string[]): Response {
   return response;
 }
 
-function text(status: number, body: string): Response {
+/** A plain-text response that isn't stored, for errors (`404 Not found`, and trusted upstream's `403` and `400`). */
+export function text(status: number, body: string): Response {
   return new Response(body, { status, headers: { 'Content-Type': 'text/plain; charset=utf-8', ...NO_STORE } });
 }

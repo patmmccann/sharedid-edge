@@ -300,6 +300,8 @@ describe('the example', () => {
     const coreDir = dirname(createRequire(import.meta.url).resolve('@sharedid-edge/core/package.json'));
     const core = readFileSync(join(coreDir, 'dist/config.js'), 'utf8');
     const settings = new Set(Array.from(core.matchAll(/'(SID_[A-Z_]+)'/g), m => m[1]));
+    // Trusted upstream (SID_UPSTREAM_*, with SID_CLIENT_IP_HEADER and SID_LOCATION_HEADERS): refused here, so not in the example.
+    for (const name of [...settings]) if (name === undefined || name.startsWith('SID_UPSTREAM_') || name === 'SID_CLIENT_IP_HEADER' || name === 'SID_LOCATION_HEADERS') settings.delete(name);
     const listed = new Set(Array.from(readFileSync(join(root, 'example/.env.example'), 'utf8').matchAll(/^#? ?(SID_[A-Z_]+)=/gm), m => m[1]));
     expect(settings.size).toBeGreaterThan(10);
     for (const setting of settings) expect(listed).toContain(setting);

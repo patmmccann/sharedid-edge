@@ -1,4 +1,4 @@
-import { cachedByEnv, handlerOrMisconfigured, publicOriginFromEnv, SETTING_NAMES, settingsFromEnv, type EdgeModule } from '@sharedid-edge/core';
+import { cachedByEnv, handlerOrMisconfigured, publicOriginFromEnv, refuseTrustedUpstream, SETTING_NAMES, settingsFromEnv, type EdgeModule } from '@sharedid-edge/core';
 import { builtInModules } from '@sharedid-edge/modules';
 import type { EdgeWorkerRequest } from './edgeworkers.js';
 import { createEdgeWorkerHandler, internalError, type EdgeWorkerHandler } from './handler.js';
@@ -30,7 +30,8 @@ export function handlerFromEnv(
   return handlerOrMisconfigured(
     () => createEdgeWorkerHandler({
       // The configuration, and with SID_HOSTS one per hostname.
-      ...settingsFromEnv(env, { requireCookieDomain: true }),
+      // Trusted upstream (SID_UPSTREAM_*) isn't available here: refused, not ignored.
+      ...settingsFromEnv(refuseTrustedUpstream(env), { requireCookieDomain: true }),
       modules,
       ...publicOriginFromEnv(env)
     }),

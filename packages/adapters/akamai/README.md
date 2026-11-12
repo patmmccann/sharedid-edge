@@ -186,6 +186,8 @@ EdgeWorkers hands the variables over with each request, so the EdgeWorker reads 
 
 **Size.** Akamai limits Property Manager variables' total length for EdgeWorkers: 1,024 characters by default, which Dynamic and Enterprise tiers can raise to 4,000 through Akamai ([limits](https://techdocs.akamai.com/edgeworkers/docs/limitations), [July 2025 change](https://techdocs.akamai.com/edgeworkers/changelog/increase-for-property-manager-user-defined-variables)); the documentation describes the limit for variables an EdgeWorker sets, and doesn't say whether it applies to reading. Most deployments set a few short values. Keep `SID_HOSTS` and `SID_MODULE_CONFIG` small, or use per-hostname rules (above) rather than one large `SID_HOSTS`.
 
+**Trusted-upstream mode** (`SID_UPSTREAM_SECRETS`, for an endpoint behind a publisher's CDN; see [Trusted upstream](../../../docs/configuration.md#trusted-upstream-behind-a-publishers-cdn)) isn't available on the EdgeWorker: EdgeWorkers read their settings from Property Manager variables with each request, which is no place for a shared secret. Setting `SID_UPSTREAM_SECRETS`, `SID_UPSTREAM_AUTH_HEADER` or `SID_UPSTREAM_HOST_HEADER` makes every request a 500, and the log names the setting. A sales house serving publishers behind their own CDNs can run the Cloudflare Worker, AWS Lambda, Fastly Compute or the Node.js server instead ([Sales houses](../cloudflare/README.md#sales-houses)).
+
 ## Secrets
 
 `SID_MODULE_SECRETS` (JSON secrets per module, like the `ec` module's passphrase) is `PMUSER_SID_MODULE_SECRETS`, with security **Hidden**:

@@ -198,6 +198,8 @@ Read only by the Azure Functions adapter:
 | `SID_PUBLIC_ORIGIN` | the request's own origin | The origin of request URLs. Behind Front Door it's `https://<app>.azurewebsites.net`; only its scheme matters, and cookies are `Secure` for a public hostname whatever the scheme, so it matters only for local development (see [Secure cookies](../../../docs/configuration.md#secure-cookies)). |
 | `SID_BEHIND_FRONT_DOOR` | `true` | `false` when Front Door isn't in front (local development): `X-Azure-ClientIP` and the location headers are then ignored, since anyone could send them. Don't serve a site that way: without Front Door the endpoint isn't on the site's IP addresses. |
 
+**Trusted-upstream mode** (`SID_UPSTREAM_SECRETS`, for an endpoint behind a publisher's CDN; see [Trusted upstream](../../../docs/configuration.md#trusted-upstream-behind-a-publishers-cdn)) isn't available on Azure Functions: Front Door is the trusted upstream here, checked by `SID_FRONT_DOOR_ID`, and the location headers its rule set adds already use `SID_LOCATION_HEADERS`. Setting `SID_UPSTREAM_SECRETS`, `SID_UPSTREAM_AUTH_HEADER` or `SID_UPSTREAM_HOST_HEADER` makes every request a 500, and the log names the setting. A sales house serving publishers behind their own CDNs can run the Cloudflare Worker, AWS Lambda, Fastly Compute or the Node.js server instead ([Sales houses](../cloudflare/README.md#sales-houses)).
+
 ## Secrets
 
 `SID_MODULE_SECRETS` (JSON secrets per module, like the `ec` module's passphrase) is an app setting. The template takes it as the `@secure()` parameter `sidModuleSecrets`, which Azure Resource Manager doesn't log or show in the deployment history:

@@ -1,6 +1,6 @@
 import { parseArgs } from 'node:util';
 import { loadCaseFiles, type CaseFile } from './cases.js';
-import { runCase, type HeaderAdapter } from './check.js';
+import { caseOrigin, runCase, type HeaderAdapter } from './check.js';
 import { startTarget, type TargetName } from './targets.js';
 
 const USAGE = `Usage:
@@ -26,7 +26,8 @@ interface TargetGaps {
 const NO_GAPS: TargetGaps = { unavailable: [], limitations: {} };
 
 /**
- * Runs a file's cases. A case in `limitations` (the target's known platform limitations, by `file#case name`) is
+ * Runs a file's cases. A case in `limitations` (the target's known platform limitations, by `file#case name`, or a
+ * whole file by its name) is
  * reported as TAP `# TODO` and doesn't count as a failure when it fails; when it passes, it does count, so the list
  * can't go stale.
  */
@@ -35,8 +36,10 @@ async function runFile(baseUrl: string, file: CaseFile, adaptHeaders?: HeaderAda
   let limited = 0;
   console.log(`# ${file.file}: ${file.description}`);
   for (const testCase of file.cases) {
-    const failures = await runCase(baseUrl, testCase, adaptHeaders, gaps.unavailable, gaps.publicOrigin);
-    const limitation = gaps.limitations[`${file.file}#${testCase.name}`];
+    const origin = caseOrigin(gaps.publicOrigin ?? baseUrl, file.config, testCase.request.headers ?? {});
+    const failures = await runCase(baseUrl, testCase, adaptHeaders, gaps.unavailable, origin);
+    // A limitation names one case (`file#case name`) or a whole file.
+    const limitation = gaps.limitations[`${file.file}#${testCase.name}`] ?? gaps.limitations[file.file];
     if (failures.length === 0 && limitation === undefined) {
       console.log(`ok - ${testCase.name}`);
     } else if (failures.length === 0) {
