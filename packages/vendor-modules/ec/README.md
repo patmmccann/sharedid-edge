@@ -81,6 +81,7 @@ On each `/_sid/v1` or `/_sid/sync` request, the module does one of three things 
 | --- | --- | --- |
 | Consent allows it and there's no valid `ts-ec` | sets a new `ts-ec` | the new EC as an EID, in `eids` and `ortb2.user.ext.eids` |
 | Consent allows it and a valid `ts-ec` exists | none (not refreshed) | the existing EC as an EID, in `eids` and `ortb2.user.ext.eids` |
+| The TC string consents to Purpose 1 but not Purpose 4 | sets a new `ts-ec` if there's no valid one | nothing: the EC isn't sent to bidders |
 | Consent withdrawn (see below) | deletes `ts-ec` | nothing |
 | Consent unclear (GDPR applies without a TC string, or the TC string can't be decoded) | none; an existing `ts-ec` is left alone | nothing |
 
@@ -141,7 +142,7 @@ With `SID_MODULES=ec`, a first `/_sid/v1` call from `192.0.2.77`:
 
 `ext.modules.ec.status` is:
 - `ok`: an EC was returned.
-- `empty`: none, because consent rules it out, there's no client IP, or the cookie was only deleted.
+- `empty`: none, because consent rules it out, there's no client IP, or the cookie was only deleted or only set (consent for Purpose 1 without Purpose 4; on `/_sid/sync`, `X-SharedID-Modules: ec=empty` with the `ts-ec` cookie).
 - `error`: a missing or short passphrase, or an invalid `domain`. No details are given. Withdrawal doesn’t need the passphrase, so even then GPC, COPPA, opt-out and withdrawn consent still delete an existing `ts-ec`.
 
 The EC is returned as an EID with the source `ts.iabtechlab.com` and `atype` 1 (a cookie ID), not as `user.id`. Trusted Server puts the EC in `user.id` of the OpenRTB requests it builds itself, but here the payload is merged into Prebid.js's first-party data, where `user.id` would become every bidder's exchange user ID. That isn't what the field is for. [OpenRTB 2.6](https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/2.6.md), Object: User, defines it as:
@@ -166,10 +167,21 @@ Trusted Server's rules, applied to the signals SharedID Edge has.
 - a TC string without consent for TCF **Purpose 1** in its core segment.
 
 **Fail closed:** nothing is set or returned, but an existing `ts-ec` is kept, when:
-- GDPR applies (`gdpr=1`, or an EU location on Cloudflare) and there's no TC string;
+- GDPR applies (see below) and there's no TC string;
 - the TC string can't be decoded.
 
-**Allowed** otherwise, including with a TC string that consents to Purpose 1.
+**Cookie but no EID:** with a TC string that consents to **Purpose 1** but not to **Purpose 4** (use profiles to select personalised advertising), `ts-ec` is set (or kept) as usual, but the EC isn't returned in `eids` or `ortb2.user.ext.eids`, so bidders don't get it. Trusted Server's `gate_eids_by_consent` does the same.
+
+**Allowed** otherwise: with a TC string that consents to Purposes 1 and 4, the cookie is set and the EID returned. Outside GDPR with no TC string, both are, as before.
+
+**Where GDPR applies.** For this module, GDPR applies when the request has `gdpr=1`, or, with no `gdpr` parameter, when the visitor is in one of these countries, Trusted Server's list (`GDPR_COUNTRIES`):
+- the 27 EU member states;
+- the rest of the EEA: Iceland (`IS`), Liechtenstein (`LI`) and Norway (`NO`);
+- the United Kingdom (`GB`), under UK GDPR.
+
+`gdpr=0` means it doesn't apply, wherever the visitor is. The country comes from the platform (on Cloudflare, `request.cf.country`; the other adapters' location headers). This is wider than SharedID Edge's own rule for the SharedID, which is EU membership only (Cloudflare's `isEUCountry`): a UK or Norwegian visitor with no TC string still gets `_pubcid`, but no EC.
+
+**Turkey and Switzerland aren't in the list,** as in Trusted Server. Turkey's KVKK and Switzerland's FADP are data protection laws of their own, not GDPR, and TCF consent banners are uncommon there, so treating them as GDPR (with no TC string, fail closed) would block nearly every EC. Visitors there are handled as outside GDPR: GPC, `us_privacy`, `coppa`, opt-out and any TC string the page does send still apply. If your site does run a TCF CMP for them, pass `gdpr=1` from the page.
 
 ## Settings
 
@@ -185,8 +197,13 @@ This module implements the cookie and its ID. It doesn't implement the rest of T
 
 - **When the EC is set:** on Prebid.js's `/_sid/sync` calls on page views (at most once per `SID_SYNC_CACHE_SECONDS` per browser) and on `/_sid/v1` calls, not on every page load proxied through Trusted Server.
 - **No server-side state:** no KV identity graph, partner ID sync, pull sync, `/identify` or batch-sync API, `ts-ec-pull-complete` marker, or tombstones.
-- **Consent signals:** this worker's (`gdpr`, the TC string, GPC, `us_privacy`, `coppa`), not Trusted Server's per-country and per-state jurisdiction lists. GPP isn't decoded yet, and GPC withdraws everywhere, not only in US states.
+- **Consent signals:** this worker's (`gdpr`, the TC string, GPC, `us_privacy`, `coppa`), not Trusted Server's per-state jurisdiction lists. GPP isn't decoded yet, and GPC withdraws everywhere, not only in US states. Any TC string counts wherever the visitor is: one without Purpose 1 deletes `ts-ec`, and one that can't be decoded fails closed, where Trusted Server ignores TCF outside regulated jurisdictions. On the other hand, Trusted Server also blocks an EC in US states with privacy laws when there's no privacy signal at all, and when the location is unknown; this module allows it there.
 - **No `x-ts-ec` header,** inbound or outbound. Trusted Server's current code doesn't set one either, though its draft spec describes it.
+
+**What matches Trusted Server** (compared with its code at commit [`06e51be`](https://github.com/IABTechLab/trusted-server/tree/06e51be17074475e2dcc5e34b5a249253eff3f57), the baseline for checking drift):
+- **GDPR countries:** the EU, the rest of the EEA and the UK, with Turkey and Switzerland left out ([`geo.rs`](https://github.com/IABTechLab/trusted-server/blob/06e51be17074475e2dcc5e34b5a249253eff3f57/crates/trusted-server-core/src/geo.rs), `GDPR_COUNTRIES`).
+- **The EID needs TCF Purposes 1 and 4;** the cookie, Purpose 1 ([`consent/mod.rs`](https://github.com/IABTechLab/trusted-server/blob/06e51be17074475e2dcc5e34b5a249253eff3f57/crates/trusted-server-core/src/consent/mod.rs), `gate_eids_by_consent` and `allows_ec_creation`).
+- The ID format, IPv6 /64 normalization, the cookie attributes, no refresh, and format-only validation.
 
 Where Trusted Server's draft specification and its code differ, this module follows the code. The code sets `HttpOnly`, and normalizes IPv6 to hex without separators.
 
@@ -209,7 +226,8 @@ if (ip) console.log(await ecPrefix(passphrase, normalizeIp(ip)));   // 64 hex ch
 Other exports:
 - `EC_COOKIE`, `EC_MAX_AGE_SECONDS`, `MIN_PASSPHRASE_BYTES`
 - `randomSuffix()`
-- `ecDecision(consent, optedOut)` (the consent rules)
+- `ecDecision(consent, optedOut)` and `ecEidAllowed(consent)` (the consent rules for the cookie and the EID)
+- `ecGdprApplies(url, platform)` and `EC_GDPR_COUNTRIES` (where GDPR applies for this module)
 - `ecModuleConfig()` and `ecPassphrase()` (settings parsing)
 
 ## Troubleshooting
@@ -219,5 +237,7 @@ Other exports:
 | `ext.modules.ec` is missing | `ec` isn't in `SID_MODULES`. |
 | `ext.modules.ec.status` is `error` | `SID_MODULE_SECRETS` has no `ec.passphrase`, or it's under 32 bytes, or `ec.domain` has a leading dot or isn't a domain. |
 | `status` is `empty` and no cookie is set | Consent rules it out (see above). Check the request's `gdpr`, `gdpr_consent`, `Sec-GPC`, `us_privacy` and `coppa`. Or the platform gave no client IP. |
+| No EC for UK, Norwegian, Icelandic or Liechtenstein visitors, though they get `_pubcid` | GDPR applies to them for this module, and there's no TC string. Pass the CMP's TC string (`gdpr_consent`, or the `euconsent-v2` cookie). |
+| `ts-ec` is set, but the EC isn't in the payload | The TC string consents to Purpose 1 but not Purpose 4. |
 | The cookie isn't sent back on later requests | `Domain` doesn't match the page's host. Check `ec.domain`, and that `/_sid/*` is served on your own domain. |
 | Two visitors in one office share a prefix | Expected: they share an IP address. The suffix tells them apart. |

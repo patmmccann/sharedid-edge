@@ -1,0 +1,118 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The ec module's GDPR countries and EID consent, as Trusted Server's: with no gdpr parameter, GDPR applies to a visitor in the EU, the rest of the EEA (IS, LI, NO) or the United Kingdom (GB), so without a TC string no EC is set or returned; Turkey and Switzerland aren't in the list. Core's own rule (the 27 EU member states) is unchanged, so a UK visitor still gets the SharedID. The EC is returned as an EID only with consent for TCF Purposes 1 and 4; with Purpose 1 alone the cookie is set, but the EID is left out. TC strings (core segment only): CAAAAAAAAAAAAAAAAAAAAAAAAJAAAAAAAAAAAAAAAAAA consents to Purposes 1 and 4, CAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAA to Purpose 1 only. Each country uses its own client IP, so the Fastly target's geolocation entries don't change between cases.",
+  "build": ["vendor-modules"],
+  "config": {
+    "SID_MODULES": "ec",
+    "SID_MODULE_CONFIG": "{\"ec\":{\"domain\":\"example.com\"}}",
+    "SID_MODULE_SECRETS": "{\"ec\":{\"passphrase\":\"conformance-passphrase-0123456789abcdef\"}}",
+    "SID_TRUST_PROXY": "true"
+  },
+  "cases": [
+    {
+      "name": "a UK visitor without a TC string gets no EC, but core still sets the SharedID",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.81", "cf-connecting-ip": "192.0.2.81", "cf-ipcountry": "GB" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }],
+        "onlyListedCookies": true,
+        "jsonIncludes": { "ext": { "modules": { "ec": { "status": "empty" } } } },
+        "jsonAbsent": ["ortb2"]
+      }
+    },
+    {
+      "name": "a Norwegian visitor without a TC string gets no EC, and an existing ts-ec is kept",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.82", "cf-connecting-ip": "192.0.2.82", "cf-ipcountry": "NO", "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }],
+        "onlyListedCookies": true,
+        "jsonIncludes": { "ext": { "modules": { "ec": { "status": "empty" } } } },
+        "jsonAbsent": ["ortb2"]
+      }
+    },
+    {
+      "name": "an explicit gdpr=0 still overrides a UK location",
+      "request": { "path": "/_sid/v1?gdpr=0", "headers": { "x-forwarded-for": "192.0.2.81", "cf-connecting-ip": "192.0.2.81", "cf-ipcountry": "GB" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "ts-ec", "valuePattern": "^[0-9a-f]{64}\\.[A-Za-z0-9]{6}$", "httpOnly": true }],
+        "jsonIncludes": { "ext": { "modules": { "ec": { "status": "ok" } } } }
+      }
+    },
+    {
+      "name": "an EU visitor with consent for Purposes 1 and 4 gets the cookie and the EID",
+      "request": { "path": "/_sid/v1?gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAJAAAAAAAAAAAAAAAAAA", "headers": { "x-forwarded-for": "192.0.2.83", "cf-connecting-ip": "192.0.2.83", "cf-ipcountry": "DE" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "ts-ec", "valuePattern": "^[0-9a-f]{64}\\.[A-Za-z0-9]{6}$", "maxAge": 31536000, "domain": ".example.com", "httpOnly": true }],
+        "jsonIncludes": { "ext": { "modules": { "ec": { "status": "ok" } } } }
+      }
+    },
+    {
+      "name": "an EU visitor with consent for Purposes 1 and 4 gets an existing ts-ec back as an EID",
+      "request": { "path": "/_sid/v1?gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAJAAAAAAAAAAAAAAAAAA", "headers": { "x-forwarded-for": "192.0.2.83", "cf-connecting-ip": "192.0.2.83", "cf-ipcountry": "DE", "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "ortb2": { "user": { "ext": { "eids": [{ "source": "ts.iabtechlab.com", "uids": [{ "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9", "atype": 1 }] }] } } }, "ext": { "modules": { "ec": { "status": "ok" } } } }
+      }
+    },
+    {
+      "name": "an EU visitor with consent for Purpose 1 only gets the cookie but no EID",
+      "request": { "path": "/_sid/v1?gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAA", "headers": { "x-forwarded-for": "192.0.2.83", "cf-connecting-ip": "192.0.2.83", "cf-ipcountry": "DE" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "ts-ec", "valuePattern": "^[0-9a-f]{64}\\.[A-Za-z0-9]{6}$", "maxAge": 31536000, "domain": ".example.com", "httpOnly": true }],
+        "jsonIncludes": { "ext": { "modules": { "ec": { "status": "empty" } } } },
+        "jsonAbsent": ["ortb2"]
+      }
+    },
+    {
+      "name": "an existing ts-ec is kept, but not returned, with consent for Purpose 1 only",
+      "request": { "path": "/_sid/v1?gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAA", "headers": { "x-forwarded-for": "192.0.2.83", "cf-connecting-ip": "192.0.2.83", "cf-ipcountry": "DE", "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "ext": { "modules": { "ec": { "status": "empty" } } } },
+        "jsonAbsent": ["ortb2"]
+      }
+    },
+    {
+      "name": "gdpr=1 with consent for Purpose 1 only sets the cookie on /sync",
+      "request": { "path": "/_sid/sync?gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAA", "headers": { "x-forwarded-for": "192.0.2.84", "cf-connecting-ip": "192.0.2.84", "cf-ipcountry": "US" } },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-modules": "ec=empty" },
+        "cookies": [{ "name": "ts-ec", "valuePattern": "^[0-9a-f]{64}\\.[A-Za-z0-9]{6}$", "httpOnly": true }]
+      }
+    },
+    {
+      "name": "outside GDPR without a TC string, the cookie and the EID are unchanged",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.84", "cf-connecting-ip": "192.0.2.84", "cf-ipcountry": "US" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }, { "name": "ts-ec", "valuePattern": "^[0-9a-f]{64}\\.[A-Za-z0-9]{6}$", "httpOnly": true }],
+        "onlyListedCookies": true,
+        "jsonIncludes": { "ext": { "modules": { "ec": { "status": "ok" } } } }
+      }
+    },
+    {
+      "name": "a visitor in Turkey is treated as outside GDPR",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.85", "cf-connecting-ip": "192.0.2.85", "cf-ipcountry": "TR" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }, { "name": "ts-ec", "valuePattern": "^[0-9a-f]{64}\\.[A-Za-z0-9]{6}$", "httpOnly": true }],
+        "onlyListedCookies": true,
+        "jsonIncludes": { "ext": { "modules": { "ec": { "status": "ok" } } } }
+      }
+    },
+    {
+      "name": "a visitor in Switzerland is treated as outside GDPR",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.86", "cf-connecting-ip": "192.0.2.86", "cf-ipcountry": "CH" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "ts-ec", "valuePattern": "^[0-9a-f]{64}\\.[A-Za-z0-9]{6}$", "httpOnly": true }],
+        "jsonIncludes": { "ext": { "modules": { "ec": { "status": "ok" } } } }
+      }
+    }
+  ]
+}

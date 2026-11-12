@@ -1,4 +1,4 @@
-import { defineModule, type ConsentContext, type EdgeModule, type ModuleContext, type ModuleCookie, type ModuleResult } from '@sharedid-edge/core';
+import { defineModule, EU_COUNTRY_CODES, type ConsentContext, type EdgeModule, type ModuleContext, type ModuleCookie, type ModuleResult, type PlatformInfo } from '@sharedid-edge/core';
 import { parseIp, type ParsedIp } from '@sharedid-edge/module-ip';
 
 /**
@@ -53,6 +53,36 @@ export function randomSuffix(): string {
   return out;
 }
 
+/**
+ * The countries where GDPR applies for this module, as Trusted Server lists them (`GDPR_COUNTRIES` in
+ * `crates/trusted-server-core/src/geo.rs`, at 06e51be): the 27 EU member states, the rest of the EEA (Iceland,
+ * Liechtenstein, Norway) and the United Kingdom (UK GDPR). Wider than core's `EU_COUNTRY_CODES`, which matches
+ * Cloudflare's `isEUCountry` and stays as it is. Turkey and Switzerland aren't in it, as in Trusted Server.
+ */
+export const EC_GDPR_COUNTRIES: ReadonlySet<string> = new Set([...EU_COUNTRY_CODES, 'GB', 'IS', 'LI', 'NO']);
+
+/**
+ * Whether GDPR applies for this module: `gdpr=1` or `gdpr=0` as sent; otherwise a country in `EC_GDPR_COUNTRIES` or
+ * the platform's EU flag; otherwise unknown. Used in place of core's `gdprApplies`, which only knows the EU.
+ */
+export function ecGdprApplies(url: URL, platform: Pick<PlatformInfo, 'country' | 'isEU'>): boolean | undefined {
+  const param = url.searchParams.get('gdpr');
+  if (param === '1') return true;
+  if (param === '0') return false;
+  if (platform.country !== undefined && EC_GDPR_COUNTRIES.has(platform.country)) return true;
+  return platform.isEU;
+}
+
+/**
+ * Whether the EC may be returned as an EID, once `ecDecision` allows it, following Trusted Server's
+ * `gate_eids_by_consent`: with a TC string, only with consent for Purposes 1 and 4 (core segment); without one, only
+ * when GDPR doesn't apply. The cookie itself needs Purpose 1 only.
+ */
+export function ecEidAllowed(consent: ConsentContext): boolean {
+  if (consent.tcString !== undefined) return consent.tcf?.purposeConsents.has(1) === true && consent.tcf.purposeConsents.has(4);
+  return consent.gdprApplies !== true;
+}
+
 export type EcDecision =
   | { readonly allowed: true }
   | { readonly allowed: false; readonly reason: string; /** Whether an existing `ts-ec` should be deleted. */ readonly withdraw: boolean };
@@ -63,6 +93,8 @@ export type EcDecision =
  * - opt-out, GPC, COPPA or a `us_privacy` opt-out of sale withdraws (deletes an existing EC);
  * - a TC string without consent for Purpose 1 (core segment) withdraws; an undecodable one fails closed without deleting;
  * - GDPR without a TC string fails closed without deleting.
+ *
+ * `consent.gdprApplies` should be the module's own (`ecGdprApplies`), as `run` passes it.
  */
 export function ecDecision(consent: ConsentContext, optedOut: boolean): EcDecision {
   if (optedOut) return { allowed: false, reason: 'opt-out', withdraw: true };
@@ -121,9 +153,11 @@ function ecCookie(value: string, maxAgeSeconds: number, settings: EcModuleConfig
   return { name: EC_COOKIE, value, maxAgeSeconds, httpOnly: true, ...(settings.domain === undefined ? {} : { domain: `.${settings.domain}` }) };
 }
 
-async function run({ platform, consent, cookies, optedOut, config, secrets }: ModuleContext): Promise<ModuleResult | undefined> {
+async function run({ url, platform, consent: coreConsent, cookies, optedOut, config, secrets }: ModuleContext): Promise<ModuleResult | undefined> {
   const settings = ecModuleConfig(config);
   const existing = cookies.get(EC_COOKIE);
+  // Trusted Server's GDPR countries (EU, EEA and UK), not core's EU-only rule.
+  const consent: ConsentContext = { ...coreConsent, gdprApplies: ecGdprApplies(url, platform) };
   const decision = ecDecision(consent, optedOut);
   if (!decision.allowed) {
     // Withdrawal needs no HMAC, so it doesn't depend on the passphrase: a missing or short secret must not keep an
@@ -131,12 +165,14 @@ async function run({ platform, consent, cookies, optedOut, config, secrets }: Mo
     return decision.withdraw && existing !== undefined ? { cookies: [ecCookie('', 0, settings)] } : undefined;
   }
   const passphrase = ecPassphrase(secrets);
+  // The cookie needs Purpose 1; the EID, Purposes 1 and 4 (Trusted Server's gate_eids_by_consent).
+  const eid = ecEidAllowed(consent);
   // An existing EC is used as is; like Trusted Server, it isn't refreshed.
-  if (isValidEcId(existing)) return ecOutput(existing);
+  if (isValidEcId(existing)) return eid ? ecOutput(existing) : undefined;
   const ip = platform.clientIp === undefined ? undefined : parseIp(platform.clientIp);
   if (ip === undefined) return undefined;
   const id = `${await ecPrefix(passphrase, normalizeIp(ip))}.${randomSuffix()}`;
-  return { ...ecOutput(id), cookies: [ecCookie(id, EC_MAX_AGE_SECONDS, settings)] };
+  return { ...(eid ? ecOutput(id) : {}), cookies: [ecCookie(id, EC_MAX_AGE_SECONDS, settings)] };
 }
 
 /**

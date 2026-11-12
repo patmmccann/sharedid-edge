@@ -1,7 +1,7 @@
 import { createHandler, resolveConfig, type ConsentContext, type PayloadV1, type PlatformInfo, type SharedIdEdgeHandler, type TcfConsents } from '@sharedid-edge/core';
 import { parseIp } from '@sharedid-edge/module-ip';
 import { describe, expect, it } from 'vitest';
-import { EC_COOKIE, EC_EID_SOURCE, ecDecision, ecModule, ecModuleConfig, ecPassphrase, ecPrefix, isValidEcId, normalizeIp, randomSuffix } from '../src/index.js';
+import { EC_COOKIE, EC_EID_SOURCE, EC_GDPR_COUNTRIES, ecDecision, ecEidAllowed, ecGdprApplies, ecModule, ecModuleConfig, ecPassphrase, ecPrefix, isValidEcId, normalizeIp, randomSuffix } from '../src/index.js';
 
 const PASSPHRASE = 'conformance-passphrase-0123456789abcdef';
 // Computed independently with Node.js: createHmac('sha256', PASSPHRASE).update(message).digest('hex')
@@ -10,6 +10,9 @@ const VECTORS: readonly (readonly [string, string, string])[] = [
   ['2001:db8:85a3:0:8a2e:370:7334:1234', '20010db885a30000', '53535a5d73a52082fa6be4418fff1ca1f0b3986ac180be1ffbfce280a0db284b'],
   ['192.168.1.100', '192.168.1.100', '6d72d453c324416ca19c36e0738596d62d00f531dd0d72961de438fbb5f6030a']
 ];
+/** TC strings with only a core segment: consent for Purposes 1 and 4, and for Purpose 1 only. */
+const TC_PURPOSES_1_4 = 'CAAAAAAAAAAAAAAAAAAAAAAAAJAAAAAAAAAAAAAAAAAA';
+const TC_PURPOSE_1 = 'CAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAA';
 const parsed = (text: string): NonNullable<ReturnType<typeof parseIp>> => parseIp(text) ?? expect.unreachable(text);
 /** The EC in a payload's eids (the `EC_EID_SOURCE` entry). */
 const ecId = (body: PayloadV1): string => body.eids.find(eid => eid.source === EC_EID_SOURCE)?.uids[0]?.id ?? expect.unreachable('no EC eid');
@@ -67,6 +70,36 @@ describe('ecDecision', () => {
   it('fails closed without deleting for an undecodable TC string, or GDPR without one', () => {
     expect(ecDecision(consent({ tcString: 'x' }), false)).toMatchObject({ allowed: false, withdraw: false });
     expect(ecDecision(consent({ gdprApplies: true }), false)).toMatchObject({ allowed: false, withdraw: false });
+  });
+  it('returns the EID only with Purposes 1 and 4 when there is a TC string, and outside GDPR without one', () => {
+    expect(ecEidAllowed(consent({ tcString: 'x', tcf: tcf([1, 4]) }))).toBe(true);
+    expect(ecEidAllowed(consent({ gdprApplies: true, tcString: 'x', tcf: tcf([1, 4]) }))).toBe(true);
+    expect(ecEidAllowed(consent({ gdprApplies: true, tcString: 'x', tcf: tcf([1]) }))).toBe(false);
+    expect(ecEidAllowed(consent({ gdprApplies: false, tcString: 'x', tcf: tcf([1, 2, 3]) }))).toBe(false);
+    expect(ecEidAllowed(consent({ tcString: 'x', tcf: tcf([4]) }))).toBe(false);
+    expect(ecEidAllowed(consent({ tcString: 'x' }))).toBe(false);
+    expect(ecEidAllowed(consent({ gdprApplies: true }))).toBe(false);
+    expect(ecEidAllowed(consent())).toBe(true);
+    expect(ecEidAllowed(consent({ gdprApplies: false }))).toBe(true);
+  });
+});
+
+describe('ecGdprApplies', () => {
+  const url = (query = ''): URL => new URL(`https://www.example.com/_sid/v1${query}`);
+  it('covers the EU, the rest of the EEA and the UK, as Trusted Server does', () => {
+    expect(EC_GDPR_COUNTRIES.size).toBe(31);
+    for (const country of ['DE', 'FR', 'IE', 'GB', 'IS', 'LI', 'NO']) expect(ecGdprApplies(url(), { country })).toBe(true);
+  });
+  it('leaves out Turkey, Switzerland and the rest of the world', () => {
+    for (const country of ['TR', 'CH', 'US', 'JP']) expect(ecGdprApplies(url(), { country })).toBeUndefined();
+    expect(ecGdprApplies(url(), { country: 'CH', isEU: false })).toBe(false);
+  });
+  it('follows an explicit gdpr parameter, then the platform\'s EU flag', () => {
+    expect(ecGdprApplies(url('?gdpr=0'), { country: 'GB', isEU: false })).toBe(false);
+    expect(ecGdprApplies(url('?gdpr=0'), { country: 'DE', isEU: true })).toBe(false);
+    expect(ecGdprApplies(url('?gdpr=1'), { country: 'US' })).toBe(true);
+    expect(ecGdprApplies(url(), { isEU: true })).toBe(true);
+    expect(ecGdprApplies(url(), {})).toBeUndefined();
   });
 });
 
@@ -136,6 +169,39 @@ describe('the ec module in the handler', () => {
     const { body, ec } = await call('/_sid/v1?gdpr=1', { clientIp: '192.0.2.77' }, { Cookie: `ts-ec=${'a'.repeat(64)}.Ab12z9` });
     expect(ec).toBeUndefined();
     expect(body.ext.modules['ec']?.status).toBe('empty');
+  });
+  it('treats a UK or EEA visitor without a TC string as GDPR, though core doesn\'t', async () => {
+    for (const country of ['GB', 'NO', 'IS', 'LI']) {
+      const response = await handler()(new Request('https://www.example.com/_sid/v1', { headers: { Cookie: `ts-ec=${'a'.repeat(64)}.Ab12z9` } }), { clientIp: '192.0.2.77', country, isEU: false });
+      const body = await response.json() as PayloadV1;
+      expect(response.headers.getSetCookie().map(c => c.slice(0, c.indexOf('=')))).toEqual(['_pubcid', '_pubcid_sv']);
+      expect(body.ortb2).toBeUndefined();
+      expect(body.ext.modules['ec']?.status).toBe('empty');
+    }
+  });
+  it('treats a visitor in Turkey or Switzerland, or a UK visitor with gdpr=0, as outside GDPR', async () => {
+    for (const [path, country] of [['/_sid/v1', 'TR'], ['/_sid/v1', 'CH'], ['/_sid/v1?gdpr=0', 'GB']] as const) {
+      const { body, ec } = await call(path, { clientIp: '192.0.2.77', country, isEU: false });
+      expect(ec).toMatch(/^ts-ec=7ef9/);
+      expect(body.ortb2).toEqual({ user: { ext: { eids: [{ source: EC_EID_SOURCE, uids: [{ id: ecId(body), atype: 1 }] }] } } });
+    }
+  });
+  it('returns the EID with consent for Purposes 1 and 4', async () => {
+    const { body, ec } = await call(`/_sid/v1?gdpr_consent=${TC_PURPOSES_1_4}`, { clientIp: '192.0.2.77', country: 'DE', isEU: true });
+    expect(ec).toMatch(/^ts-ec=7ef9/);
+    expect(body.ortb2).toEqual({ user: { ext: { eids: [{ source: EC_EID_SOURCE, uids: [{ id: ecId(body), atype: 1 }] }] } } });
+    expect(body.ext.modules['ec']?.status).toBe('ok');
+  });
+  it('sets the cookie but leaves the EID out with consent for Purpose 1 only', async () => {
+    const minted = await call(`/_sid/v1?gdpr_consent=${TC_PURPOSE_1}`, { clientIp: '192.0.2.77', country: 'DE', isEU: true });
+    expect(minted.ec).toMatch(/^ts-ec=7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc\.[A-Za-z0-9]{6}; Max-Age=31536000;/);
+    expect(minted.body.ortb2).toBeUndefined();
+    expect(minted.body.eids.some(eid => eid.source === EC_EID_SOURCE)).toBe(false);
+    expect(minted.body.ext.modules['ec']?.status).toBe('empty');
+    const kept = await call(`/_sid/v1?gdpr=1&gdpr_consent=${TC_PURPOSE_1}`, { clientIp: '192.0.2.77', country: 'US' }, { Cookie: `ts-ec=${'a'.repeat(64)}.Ab12z9` });
+    expect(kept.ec).toBeUndefined();
+    expect(kept.body.ortb2).toBeUndefined();
+    expect(kept.body.eids.some(eid => eid.source === EC_EID_SOURCE)).toBe(false);
   });
   it('reports an error, without details, when the passphrase is missing or short', async () => {
     const { body, ec } = await call('/_sid/v1', { clientIp: '192.0.2.77' }, {}, { SID_MODULE_SECRETS: '{"ec":{"passphrase":"short"}}' });
