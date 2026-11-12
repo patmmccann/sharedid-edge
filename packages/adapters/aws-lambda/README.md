@@ -301,7 +301,7 @@ Nothing is in front of the function URL, so the functions run with `SID_BEHIND_C
 
 - **No location:** that's CloudFront's, so there's no `geo` data and no GDPR from the visitor's country.
 - **The client IP is the connection's,** always the loopback address in a test, so the cases that set one, for the `ip`, `ec`, `dbip` and `maxmind` modules, can't pass.
-- **No CORS:** AWS Emulator refuses every request with an `Origin` header (its guard against web pages driving a local emulator), so the CORS cases never reach the function. Function URLs on AWS pass them on.
+- **No CORS or cross-site requests:** AWS Emulator refuses every request with an `Origin` header or `Sec-Fetch-Site: cross-site` (its guard against web pages driving a local emulator), so the CORS cases and the clickid module's cross-site case never reach the function. Function URLs on AWS pass them on.
 
 Two gaps of the emulator's runtime are filled in, without changing the bundle: it runs Node.js code in an embedded JavaScript engine that has neither the Fetch API (`Headers`, `Request`, `Response`) nor WebCrypto's HMAC (`crypto.subtle.importKey` and `sign`), both in Node.js 24. `conformance/src/aws-emulator-runtime.ts` adds them, preloaded through `NODE_OPTIONS`, and adds nothing a runtime already has. AWS Emulator can't yet run the stack in `template.yaml` (its Serverless transform doesn't create the function URL), or pass CloudFront's response headers, `Set-Cookie` included, back from a function URL origin, so the CloudFront path still needs a real deployment.
 
