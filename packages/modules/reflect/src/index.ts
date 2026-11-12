@@ -213,6 +213,9 @@ function keeperSettings(value: unknown, cookies: readonly ReflectedCookie[]): Ke
 
 /** Parses and validates the settings; throws a `TypeError` (an `error` status) on anything unexpected. */
 export function reflectModuleConfig(config: Readonly<Record<string, unknown>>): ReflectModuleConfig {
+  // The Cloudflare Snippet runs this when it's built and bundles the result as the module's config, with esbuild's
+  // `define` setting this flag, so there the entry is already parsed and the rest of the parser drops out of the bundle.
+  if ((globalThis as { __SID_PREVALIDATED__?: boolean }).__SID_PREVALIDATED__ === true) return config as unknown as ReflectModuleConfig;
   for (const key of Object.keys(config)) {
     if (key !== 'cookies' && key !== 'keeper') throw new TypeError('reflect: unknown setting');
   }

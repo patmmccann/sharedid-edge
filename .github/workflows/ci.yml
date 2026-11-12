@@ -74,6 +74,10 @@ jobs:
       # The Snippet build: the example configuration must fit the 32 KB Snippet limit and pass its smoke test.
       - name: Cloudflare Snippet build (example configuration, size limit and smoke test)
         run: npm run build:snippet -w @sharedid-edge/cloudflare -- --config snippet.config.example.json
+      # The Snippet ships settings validated when it's built: it must answer exactly as the Worker, which validates them
+      # at run time, and an invalid configuration must fail its build with the Worker's message.
+      - name: Cloudflare Snippet against the Worker (same responses; invalid settings fail the build)
+        run: npm run test:snippet -w @sharedid-edge/cloudflare
       - name: Lambda bundles (default and with Bowser), size budget, and conformance suite against them (local CloudFront stand-in)
         run: npm run conformance:lambda
       - name: Vercel bundles (default and with Bowser; no Node.js built-ins), size budget, and conformance suite against them (local Vercel proxy stand-in)
