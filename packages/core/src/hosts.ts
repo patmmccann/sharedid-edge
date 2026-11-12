@@ -5,21 +5,16 @@ type Env = Readonly<Record<string, unknown>>;
 /**
  * Settings that can't vary by host: secrets stay in the platform's secret store, `SID_HOSTS` doesn't nest, and the base
  * path is what the platform routes by (a Worker route, a CloudFront behaviour, a Front Door route, Vercel's middleware
- * predicate, a Snippet rule), which is the deployment's. Nor can trusted upstream's (`SID_UPSTREAM_*`, and the
- * forwarded headers it reads): the forwarded host that picks a site is read only once a request is authenticated.
+ * predicate, a Snippet rule), which is the deployment's. Trusted upstream's settings can't vary by host either; core's
+ * `upstream.ts` checks that, outside this file, so the Snippet doesn't carry it.
  */
-const NOT_PER_HOST: ReadonlySet<string> = new Set(['SID_HOSTS', 'SID_MODULE_SECRETS', 'SID_BASE_PATH', 'SID_CLIENT_IP_HEADER', 'SID_LOCATION_HEADERS']);
-
-/** The prefix of trusted upstream's own settings: `SID_UPSTREAM_SECRETS`, `SID_UPSTREAM_AUTH_HEADER`, `SID_UPSTREAM_HOST_HEADER`. */
-export const UPSTREAM_PREFIX = 'SID_UPSTREAM_';
+const NOT_PER_HOST: ReadonlySet<string> = new Set(['SID_HOSTS', 'SID_MODULE_SECRETS', 'SID_BASE_PATH']);
 
 /** A DNS hostname (or IPv4 address), lower case, without a trailing dot. */
-const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+// The type is spelled out for isolatedDeclarations (the regex is shared with upstream.ts).
+// eslint-disable-next-line @typescript-eslint/no-inferrable-types
+export const HOSTNAME: RegExp = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 
-/** Whether `host` (lower case, without a trailing dot) is a DNS hostname or an IPv4 address. */
-export function isHostname(host: string): boolean {
-  return HOSTNAME.test(host);
-}
 
 /** The host a request's settings are chosen by: the URL's hostname, lower case, without a port or a trailing dot. */
 export function hostKey(url: URL): string {
@@ -37,7 +32,7 @@ export function hostOverrides(value: unknown, where: string): Readonly<Record<st
   const overrides: Record<string, string> = {};
   for (const [key, setting] of Object.entries(value)) {
     if (!key.startsWith('SID_')) throw new ConfigError(`${where}: "${key}" isn't a SID_* setting`);
-    if (NOT_PER_HOST.has(key) || key.startsWith(UPSTREAM_PREFIX)) throw new ConfigError(`${where}: ${key} can't be set per host`);
+    if (NOT_PER_HOST.has(key)) throw new ConfigError(`${where}: ${key} can't be set per host`);
     if (typeof setting === 'string') overrides[key] = setting;
     else if (key === 'SID_MODULE_CONFIG' && typeof setting === 'object' && setting !== null) overrides[key] = JSON.stringify(setting);
     else throw new ConfigError(`${where}: ${key} must be a string`);
@@ -76,7 +71,7 @@ export function resolveHosts(env: Env, options: ResolveConfigOptions = {}): Read
   const hosts = new Map<string, SharedIdEdgeConfig>();
   for (const [name, settings] of Object.entries(parsed)) {
     const host = name.toLowerCase().replace(/\.$/, '');
-    if (!isHostname(host)) throw new ConfigError(`SID_HOSTS: "${name}" isn't a hostname`);
+    if (!HOSTNAME.test(host)) throw new ConfigError(`SID_HOSTS: "${name}" isn't a hostname`);
     if (hosts.has(host)) throw new ConfigError(`SID_HOSTS lists ${host} twice`);
     const where = `SID_HOSTS["${name}"]`;
     hosts.set(host, configForHost(env, hostOverrides(settings, where), where, options));

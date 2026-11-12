@@ -34,7 +34,7 @@ It sets the `ts-ec` cookie on the publisher's domain, on Prebid.js's `/_sid/sync
 
    It adds about 1 KB to a bundle, gzipped.
 
-2. **Create a passphrase** of at least 32 bytes, and keep it secret. For example:
+2. **Create a passphrase** of at least 32 bytes, random, and keep it secret. Placeholders from documentation (Trusted Server's, and this project's examples, listed under [Settings](#settings)) are refused. For example:
 
    ```sh
    openssl rand -hex 32
@@ -81,6 +81,7 @@ On each `/_sid/v1` or `/_sid/sync` request, the module does one of three things 
 | --- | --- | --- |
 | Consent allows it and there's no valid `ts-ec` | sets a new `ts-ec` | the new EC as an EID, in `eids` and `ortb2.user.ext.eids` |
 | Consent allows it and a valid `ts-ec` exists | none (not refreshed) | the existing EC as an EID, in `eids` and `ortb2.user.ext.eids` |
+| The TC string consents to Purpose 1 but not Purpose 4 | sets a new `ts-ec` if there's no valid one | nothing: the EC isn't sent to bidders |
 | Consent withdrawn (see below) | deletes `ts-ec` | nothing |
 | Consent unclear (GDPR applies without a TC string, or the TC string can't be decoded) | none; an existing `ts-ec` is left alone | nothing |
 
@@ -99,7 +100,8 @@ On each `/_sid/v1` or `/_sid/sync` request, the module does one of three things 
 - **Normalized IP:**
   - IPv4: dotted decimal, for example `192.0.2.77`.
   - IPv6: the first four hextets (the /64), each zero-padded to four lowercase hex digits, with no separators. `2001:db8:85a3:0:8a2e:370:7334:1234` becomes `20010db885a30000`.
-  - IPv4-mapped IPv6 (`::ffff:192.0.2.77`) counts as IPv4.
+  - Addresses in one IPv6 /64 share the prefix, whatever their interface ID: `2001:db8:abcd:1:1111:2222:3333:4444` and `2001:db8:abcd:1:aaaa:bbbb:cccc:dddd` both become `20010db8abcd0001`. So a device that rotates its IPv6 privacy address keeps the prefix.
+  - IPv4-mapped IPv6 (`::ffff:192.0.2.77`) is hashed as its IPv4 address (`192.0.2.77`), so a dual-stack client gets the same prefix whether the platform reports its address as IPv4 or mapped. Trusted Server's code would take the mapped address's first four hextets instead, and give every mapped address the same `0000000000000000`, one prefix for all such visitors.
 - **Suffix:** 6 characters drawn uniformly from `A-Za-z0-9`.
 - **Validation:** only the format is checked (`^[0-9a-f]{64}\.[A-Za-z0-9]{6}$`), as in Trusted Server. The HMAC isn't re-checked against the current IP, so an EC survives the visitor changing networks. A `ts-ec` with another format is replaced.
 
@@ -109,6 +111,8 @@ Test vector, passphrase `conformance-passphrase-0123456789abcdef`:
 | --- | --- | --- |
 | `192.0.2.77` | `192.0.2.77` | `7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc` |
 | `2001:db8:85a3:0:8a2e:370:7334:1234` | `20010db885a30000` | `53535a5d73a52082fa6be4418fff1ca1f0b3986ac180be1ffbfce280a0db284b` |
+| `2001:db8:abcd:1:1111:2222:3333:4444`, `2001:db8:abcd:1:aaaa:bbbb:cccc:dddd` | `20010db8abcd0001` | `884a602db18c75475e9908442a13fa49f8176700b4e3243c5a00bd462c1df852` |
+| `::ffff:192.0.2.77` | `192.0.2.77` | `7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc` |
 
 ## The cookie
 
@@ -141,8 +145,8 @@ With `SID_MODULES=ec`, a first `/_sid/v1` call from `192.0.2.77`:
 
 `ext.modules.ec.status` is:
 - `ok`: an EC was returned.
-- `empty`: none, because consent rules it out, there's no client IP, or the cookie was only deleted.
-- `error`: a missing or short passphrase, or an invalid `domain`. No details are given. Withdrawal doesn’t need the passphrase, so even then GPC, COPPA, opt-out and withdrawn consent still delete an existing `ts-ec`.
+- `empty`: none, because consent rules it out, there's no client IP, or the cookie was only deleted or only set (consent for Purpose 1 without Purpose 4; on `/_sid/sync`, `X-SharedID-Modules: ec=empty` with the `ts-ec` cookie).
+- `error`: a missing, short or placeholder passphrase, or an invalid `domain`. No details are given. Withdrawal doesn’t need the passphrase, so even then GPC, COPPA, opt-out and withdrawn consent still delete an existing `ts-ec`.
 
 The EC is returned as an EID with the source `ts.iabtechlab.com` and `atype` 1 (a cookie ID), not as `user.id`. Trusted Server puts the EC in `user.id` of the OpenRTB requests it builds itself, but here the payload is merged into Prebid.js's first-party data, where `user.id` would become every bidder's exchange user ID. That isn't what the field is for. [OpenRTB 2.6](https://github.com/InteractiveAdvertisingBureau/openrtb2.x/blob/main/2.6.md), Object: User, defines it as:
 
@@ -166,17 +170,31 @@ Trusted Server's rules, applied to the signals SharedID Edge has.
 - a TC string without consent for TCF **Purpose 1** in its core segment.
 
 **Fail closed:** nothing is set or returned, but an existing `ts-ec` is kept, when:
-- GDPR applies (`gdpr=1`, or an EU location on Cloudflare) and there's no TC string;
+- GDPR applies (see below) and there's no TC string;
 - the TC string can't be decoded.
 
-**Allowed** otherwise, including with a TC string that consents to Purpose 1.
+**Cookie but no EID:** with a TC string that consents to **Purpose 1** but not to **Purpose 4** (use profiles to select personalised advertising), `ts-ec` is set (or kept) as usual, but the EC isn't returned in `eids` or `ortb2.user.ext.eids`, so bidders don't get it. Trusted Server's `gate_eids_by_consent` does the same.
+
+**Allowed** otherwise: with a TC string that consents to Purposes 1 and 4, the cookie is set and the EID returned. Outside GDPR with no TC string, both are, as before.
+
+**Where GDPR applies.** The module uses SharedID Edge's own rule ([consent rules](../../../docs/consent.md)): GDPR applies when the request has `gdpr=1`, or, with no `gdpr` parameter, when the visitor is in one of these countries (core's `GDPR_COUNTRY_CODES`), or the platform reports an EU location:
+- the 27 EU member states;
+- the rest of the EEA: Iceland (`IS`), Liechtenstein (`LI`) and Norway (`NO`);
+- the United Kingdom (`GB`), under UK GDPR;
+- Turkey (`TR`), whose KVKK SharedID Edge treats as GDPR.
+
+`gdpr=0` means it doesn't apply, wherever the visitor is. The country comes from the platform (on Cloudflare, `request.cf.country`; the other adapters' location headers). The SharedID follows the same rule, so a visitor there with no TC string gets neither `_pubcid` nor an EC.
+
+**Turkey is stricter than Trusted Server,** whose list leaves it out: without a TC string, a visitor in Turkey gets no EC here. If your site has no TCF CMP for Turkish visitors and you've decided their consent is handled otherwise, send `gdpr=0` from the page. **Switzerland isn't in the list,** as in Trusted Server: the Swiss FADP isn't GDPR, so visitors there are handled as outside GDPR. GPC, `us_privacy`, `coppa`, opt-out and any TC string the page does send still apply, and if your site runs a TCF CMP for them, pass `gdpr=1` from the page.
 
 ## Settings
 
 | Where | Key | | |
 | --- | --- | --- | --- |
 | `SID_MODULES` | `ec` | required | Turns the module on. |
-| `SID_MODULE_SECRETS` | `ec.passphrase` | required | The HMAC key, at least 32 bytes. Set it as a platform secret. Changing it changes the prefix of new ECs only. |
+| `SID_MODULE_SECRETS` | `ec.passphrase` | required | The HMAC key, at least 32 bytes and random. Set it as a platform secret. Changing it changes the prefix of new ECs only. |
+
+**Placeholder passphrases are refused,** ignoring case, as Trusted Server refuses them: an `error` status, as for a short one, and the setting is named but the value never shown. The list is Trusted Server's (`secret-key`, `secret_key`, `trusted-server`, `trusted-server-placeholder-secret`, `replace-with-random-ec-passphrase`) and this project's examples (`a-local-passphrase-of-at-least-32-characters`, from the Fastly adapter's local `fastly.toml`; `<openssl rand -hex 32>`; `<your passphrase>`). The test vectors' passphrase above is public too: don't deploy it.
 | `SID_MODULE_CONFIG` | `ec.domain` | optional | Your registrable domain, such as `example.com`, without a leading dot. The cookie gets `Domain=.example.com`. |
 
 ## Differences from Trusted Server
@@ -185,10 +203,16 @@ This module implements the cookie and its ID. It doesn't implement the rest of T
 
 - **When the EC is set:** on Prebid.js's `/_sid/sync` calls on page views (at most once per `SID_SYNC_CACHE_SECONDS` per browser) and on `/_sid/v1` calls, not on every page load proxied through Trusted Server.
 - **No server-side state:** no KV identity graph, partner ID sync, pull sync, `/identify` or batch-sync API, `ts-ec-pull-complete` marker, or tombstones.
-- **Consent signals:** this worker's (`gdpr`, the TC string, GPC, `us_privacy`, `coppa`), not Trusted Server's per-country and per-state jurisdiction lists. GPP isn't decoded yet, and GPC withdraws everywhere, not only in US states.
+- **Consent signals:** this worker's (`gdpr`, the TC string, GPC, `us_privacy`, `coppa`), not Trusted Server's per-state jurisdiction lists. GPP isn't decoded yet, and GPC withdraws everywhere, not only in US states. Any TC string counts wherever the visitor is: one without Purpose 1 deletes `ts-ec`, and one that can't be decoded fails closed, where Trusted Server ignores TCF outside regulated jurisdictions. On the other hand, Trusted Server also blocks an EC in US states with privacy laws when there's no privacy signal at all, and when the location is unknown; this module allows it there.
 - **No `x-ts-ec` header,** inbound or outbound. Trusted Server's current code doesn't set one either, though its draft spec describes it.
 
-Where Trusted Server's draft specification and its code differ, this module follows the code. The code sets `HttpOnly`, and normalizes IPv6 to hex without separators.
+**What matches Trusted Server** (compared with its code at commit [`06e51be`](https://github.com/IABTechLab/trusted-server/tree/06e51be17074475e2dcc5e34b5a249253eff3f57), the baseline for checking drift):
+- **GDPR countries:** the EU, the rest of the EEA and the UK, with Switzerland left out ([`geo.rs`](https://github.com/IABTechLab/trusted-server/blob/06e51be17074475e2dcc5e34b5a249253eff3f57/crates/trusted-server-core/src/geo.rs), `GDPR_COUNTRIES`). SharedID Edge also treats Turkey as a GDPR country, which upstream doesn't: stricter, so a Turkish visitor without a TC string gets no EC here.
+- **The EID needs TCF Purposes 1 and 4;** the cookie, Purpose 1 ([`consent/mod.rs`](https://github.com/IABTechLab/trusted-server/blob/06e51be17074475e2dcc5e34b5a249253eff3f57/crates/trusted-server-core/src/consent/mod.rs), `gate_eids_by_consent` and `allows_ec_creation`).
+- Refusing placeholder passphrases (`PASSPHRASE_PLACEHOLDERS` and `reject_placeholder_secrets` in [`settings.rs`](https://github.com/IABTechLab/trusted-server/blob/06e51be17074475e2dcc5e34b5a249253eff3f57/crates/trusted-server-core/src/settings.rs)); this module adds its own examples to the list.
+- The ID format, IPv6 /64 normalization (with Trusted Server's test vectors), the cookie attributes, no refresh, and format-only validation.
+
+Where Trusted Server's draft specification and its code differ, this module follows the code. The code sets `HttpOnly`, and normalizes IPv6 to hex without separators. One deliberate difference in normalization: IPv4-mapped IPv6 addresses are hashed as IPv4 (see [The ID](#the-id)).
 
 ## Using it in code
 
@@ -207,17 +231,19 @@ if (ip) console.log(await ecPrefix(passphrase, normalizeIp(ip)));   // 64 hex ch
 ```
 
 Other exports:
-- `EC_COOKIE`, `EC_MAX_AGE_SECONDS`, `MIN_PASSPHRASE_BYTES`
+- `EC_COOKIE`, `EC_MAX_AGE_SECONDS`, `MIN_PASSPHRASE_BYTES`, `EC_PASSPHRASE_PLACEHOLDERS`
 - `randomSuffix()`
-- `ecDecision(consent, optedOut)` (the consent rules)
-- `ecModuleConfig()` and `ecPassphrase()` (settings parsing)
+- `ecDecision(consent, optedOut)` and `ecEidAllowed(consent)` (the consent rules for the cookie and the EID)
+- `ecModuleConfig()`, `ecPassphrase()` and `isPlaceholderPassphrase()` (settings parsing)
 
 ## Troubleshooting
 
 | Symptom | Cause |
 | --- | --- |
 | `ext.modules.ec` is missing | `ec` isn't in `SID_MODULES`. |
-| `ext.modules.ec.status` is `error` | `SID_MODULE_SECRETS` has no `ec.passphrase`, or it's under 32 bytes, or `ec.domain` has a leading dot or isn't a domain. |
+| `ext.modules.ec.status` is `error` | `SID_MODULE_SECRETS` has no `ec.passphrase`, or it's under 32 bytes or a placeholder from documentation (see [Settings](#settings)), or `ec.domain` has a leading dot or isn't a domain. |
 | `status` is `empty` and no cookie is set | Consent rules it out (see above). Check the request's `gdpr`, `gdpr_consent`, `Sec-GPC`, `us_privacy` and `coppa`. Or the platform gave no client IP. |
+| No EC (and no `_pubcid`) for visitors in the EU, the rest of the EEA, the UK or Turkey | GDPR applies to them, and there's no TC string. Pass the CMP's TC string (`gdpr_consent`, or the `euconsent-v2` cookie). |
+| `ts-ec` is set, but the EC isn't in the payload | The TC string consents to Purpose 1 but not Purpose 4. |
 | The cookie isn't sent back on later requests | `Domain` doesn't match the page's host. Check `ec.domain`, and that `/_sid/*` is served on your own domain. |
 | Two visitors in one office share a prefix | Expected: they share an IP address. The suffix tells them apart. |

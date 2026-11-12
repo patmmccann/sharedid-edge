@@ -6,6 +6,7 @@
   "type": "module",
   "sideEffects": [
     "./dist/main.js",
+    "./src/main.ts",
     "./deploy*/main.js"
   ],
   "exports": {
@@ -27,6 +28,7 @@
     "attw": "attw --pack . --profile esm-only --quiet || attw --pack . --profile esm-only",
     "bundle": "node scripts/bundle.mjs",
     "bundle:bowser": "node scripts/bundle.mjs --bowser",
+    "bundle:reusable": "node scripts/bundle.mjs --reusable-sandbox",
     "wasm": "node scripts/wasm.mjs"
   },
   "dependencies": {

@@ -27,6 +27,8 @@ export function isValidEcId(value: string | undefined): value is string {
 /**
  * The HMAC input for an address, as Trusted Server normalizes it: IPv4 in dotted decimal; IPv6 as its first four
  * hextets (the /64), zero-padded lowercase hex with no separators, e.g. `2001:db8:85a3::1` gives `20010db885a30000`.
+ * An IPv4-mapped address (`::ffff:192.0.2.1`), which `parseIp` returns as IPv4, gives its IPv4 address, so a dual-stack
+ * client gets the same prefix either way. Trusted Server would give every mapped address `0000000000000000`.
  */
 export function normalizeIp(ip: ParsedIp): string {
   if (ip.version === 4) return ip.octets.join('.');
@@ -53,6 +55,16 @@ export function randomSuffix(): string {
   return out;
 }
 
+/**
+ * Whether the EC may be returned as an EID, once `ecDecision` allows it, following Trusted Server's
+ * `gate_eids_by_consent`: with a TC string, only with consent for Purposes 1 and 4 (core segment); without one, only
+ * when GDPR doesn't apply. The cookie itself needs Purpose 1 only.
+ */
+export function ecEidAllowed(consent: ConsentContext): boolean {
+  if (consent.tcString !== undefined) return consent.tcf?.purposeConsents.has(1) === true && consent.tcf.purposeConsents.has(4);
+  return consent.gdprApplies !== true;
+}
+
 export type EcDecision =
   | { readonly allowed: true }
   | { readonly allowed: false; readonly reason: string; /** Whether an existing `ts-ec` should be deleted. */ readonly withdraw: boolean };
@@ -63,6 +75,8 @@ export type EcDecision =
  * - opt-out, GPC, COPPA or a `us_privacy` opt-out of sale withdraws (deletes an existing EC);
  * - a TC string without consent for Purpose 1 (core segment) withdraws; an undecodable one fails closed without deleting;
  * - GDPR without a TC string fails closed without deleting.
+ *
+ * Where GDPR applies is core's `consent.gdprApplies`: `gdpr=1`/`gdpr=0`, else a country in `GDPR_COUNTRY_CODES` or the EU flag.
  */
 export function ecDecision(consent: ConsentContext, optedOut: boolean): EcDecision {
   if (optedOut) return { allowed: false, reason: 'opt-out', withdraw: true };
@@ -91,11 +105,39 @@ export function ecModuleConfig(config: Readonly<Record<string, unknown>>): EcMod
   return { domain };
 }
 
-/** The passphrase from `SID_MODULE_SECRETS.ec`; throws (an `error` status) if it's missing or too short. */
+/**
+ * Passphrases refused as placeholders, compared ignoring ASCII case: Trusted Server's `PASSPHRASE_PLACEHOLDERS`
+ * (`crates/trusted-server-core/src/settings.rs`, at 06e51be), then this project's own examples, which deployers might
+ * copy as they are (the Fastly adapter's local `fastly.toml`, and the adapters' READMEs).
+ */
+export const EC_PASSPHRASE_PLACEHOLDERS: readonly string[] = Object.freeze([
+  'secret-key',
+  'secret_key',
+  'trusted-server',
+  'trusted-server-placeholder-secret',
+  'replace-with-random-ec-passphrase',
+  'a-local-passphrase-of-at-least-32-characters',
+  '<openssl rand -hex 32>',
+  '<your passphrase>'
+]);
+
+/** Whether a passphrase is one of `EC_PASSPHRASE_PLACEHOLDERS`, ignoring ASCII case, as Trusted Server compares. */
+export function isPlaceholderPassphrase(passphrase: string): boolean {
+  const lower = passphrase.replace(/[A-Z]/g, c => c.toLowerCase());
+  return EC_PASSPHRASE_PLACEHOLDERS.includes(lower);
+}
+
+/**
+ * The passphrase from `SID_MODULE_SECRETS.ec`; throws (an `error` status) if it's missing, too short or a placeholder.
+ * The messages name the setting, never the value.
+ */
 export function ecPassphrase(secrets: Readonly<Record<string, string>>): string {
   const passphrase = secrets['passphrase'];
   if (passphrase === undefined || new TextEncoder().encode(passphrase).byteLength < MIN_PASSPHRASE_BYTES) {
     throw new TypeError('ec: SID_MODULE_SECRETS.ec.passphrase must be at least 32 bytes');
+  }
+  if (isPlaceholderPassphrase(passphrase)) {
+    throw new TypeError('ec: SID_MODULE_SECRETS.ec.passphrase is a placeholder from the documentation; set a random one');
   }
   return passphrase;
 }
@@ -131,12 +173,14 @@ async function run({ platform, consent, cookies, optedOut, config, secrets }: Mo
     return decision.withdraw && existing !== undefined ? { cookies: [ecCookie('', 0, settings)] } : undefined;
   }
   const passphrase = ecPassphrase(secrets);
+  // The cookie needs Purpose 1; the EID, Purposes 1 and 4 (Trusted Server's gate_eids_by_consent).
+  const eid = ecEidAllowed(consent);
   // An existing EC is used as is; like Trusted Server, it isn't refreshed.
-  if (isValidEcId(existing)) return ecOutput(existing);
+  if (isValidEcId(existing)) return eid ? ecOutput(existing) : undefined;
   const ip = platform.clientIp === undefined ? undefined : parseIp(platform.clientIp);
   if (ip === undefined) return undefined;
   const id = `${await ecPrefix(passphrase, normalizeIp(ip))}.${randomSuffix()}`;
-  return { ...ecOutput(id), cookies: [ecCookie(id, EC_MAX_AGE_SECONDS, settings)] };
+  return { ...(eid ? ecOutput(id) : {}), cookies: [ecCookie(id, EC_MAX_AGE_SECONDS, settings)] };
 }
 
 /**

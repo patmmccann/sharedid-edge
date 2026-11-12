@@ -92,9 +92,9 @@ describe('trusted upstream: settings', () => {
     const bad = (overrides: Record<string, string>): (() => unknown) => () => trustedUpstreamFromEnv({ ...ENV, ...overrides });
     expect(bad({ SID_LOCATION_HEADERS: '' })).toThrow(/must name the country header/);
     expect(bad({ SID_LOCATION_HEADERS: '{"regionCode":"x-sid-region"}' })).toThrow(/must name the country header/);
-    expect(bad({ SID_LOCATION_HEADERS: '{"country":"cf-ipcountry"}' })).toThrow(/SID_LOCATION_HEADERS: .*starting with x-/);
-    expect(bad({ SID_CLIENT_IP_HEADER: 'cf-connecting-ip' })).toThrow(/SID_CLIENT_IP_HEADER: .*starting with x-/);
-    expect(bad({ SID_CLIENT_IP_HEADER: 'x-forwarded-for' })).toThrow(/SID_CLIENT_IP_HEADER: .*not "x-forwarded-for"/);
+    expect(bad({ SID_LOCATION_HEADERS: '{"country":"cf-ipcountry"}' })).toThrow(/SID_LOCATION_HEADERS: .*must start with x-/);
+    expect(bad({ SID_CLIENT_IP_HEADER: 'cf-connecting-ip' })).toThrow(/SID_CLIENT_IP_HEADER: .*must start with x-/);
+    expect(bad({ SID_CLIENT_IP_HEADER: 'x-forwarded-for' })).toThrow(/SID_CLIENT_IP_HEADER: "x-forwarded-for" must start/);
     expect(bad({ SID_UPSTREAM_AUTH_HEADER: 'authorization' })).toThrow(/SID_UPSTREAM_AUTH_HEADER/);
     expect(bad({ SID_UPSTREAM_HOST_HEADER: 'host' })).toThrow(/SID_UPSTREAM_HOST_HEADER/);
     expect(bad({ SID_CLIENT_IP_HEADER: 'x-sid-country' })).toThrow(/used twice/);
@@ -105,8 +105,8 @@ describe('trusted upstream: settings', () => {
   it('refuses its headers without SID_UPSTREAM_SECRETS, unless a trusted proxy reads them', () => {
     expect(() => trustedUpstreamFromEnv({ SID_UPSTREAM_AUTH_HEADER: 'x-a' })).toThrow(/SID_UPSTREAM_AUTH_HEADER needs SID_UPSTREAM_SECRETS/);
     expect(() => trustedUpstreamFromEnv({ SID_UPSTREAM_HOST_HEADER: 'x-a' })).toThrow(/needs SID_UPSTREAM_SECRETS/);
-    expect(() => trustedUpstreamFromEnv({ SID_CLIENT_IP_HEADER: 'x-a' })).toThrow(/SID_CLIENT_IP_HEADER is read only from an authenticated upstream/);
-    expect(() => trustedUpstreamFromEnv({ SID_LOCATION_HEADERS: LOCATION })).toThrow(/SID_LOCATION_HEADERS is read only/);
+    expect(() => trustedUpstreamFromEnv({ SID_CLIENT_IP_HEADER: 'x-a' })).toThrow(/SID_CLIENT_IP_HEADER needs SID_UPSTREAM_SECRETS/);
+    expect(() => trustedUpstreamFromEnv({ SID_LOCATION_HEADERS: LOCATION })).toThrow(/SID_LOCATION_HEADERS needs SID_UPSTREAM_SECRETS/);
     expect(trustedUpstreamFromEnv({ SID_CLIENT_IP_HEADER: 'fastly-client-ip', SID_LOCATION_HEADERS: LOCATION }, { trustProxy: true })).toBeUndefined();
   });
 
@@ -123,7 +123,8 @@ describe('trusted upstream: settings', () => {
     expect(refuseTrustedUpstream(env)).toBe(env);
     for (const name of ['SID_UPSTREAM_SECRETS', 'SID_CLIENT_IP_HEADER', 'SID_LOCATION_HEADERS']) {
       const hosts = JSON.stringify({ 'a.example': { SID_COOKIE_DOMAIN: 'a.example', [name]: 'x' } });
-      expect(() => settingsFromEnv({ SID_HOSTS: hosts })).toThrow(new RegExp(`${name} can't be set per host`));
+      expect(() => trustedUpstreamFromEnv({ SID_HOSTS: hosts })).toThrow(new RegExp(`a.example"]: ${name} can't be set per host`));
+      expect(() => refuseTrustedUpstream({ SID_HOSTS: hosts })).toThrow(new RegExp(`${name} can't be set per host`));
     }
   });
 });
@@ -176,6 +177,9 @@ describe('trusted upstream: requests', () => {
     const { handler } = build();
     const eu = await handler(request(`/_sid/sync?id=pubcid%3A${UUID}`, { ...authenticated, 'x-sid-country': 'DE' }), { country: 'US', isEU: false });
     expect(setCookies(eu)).toEqual([]);
+    // The UK, outside the EU, is a GDPR country too: the forwarded country goes through the same decision.
+    const uk = await handler(request(`/_sid/sync?id=pubcid%3A${UUID}`, { ...authenticated, 'x-sid-country': 'GB' }), { country: 'US', isEU: false });
+    expect(setCookies(uk)).toEqual([]);
     const us = await handler(request(`/_sid/sync?id=pubcid%3A${UUID}`, { ...authenticated, 'x-sid-country': 'US' }), PLATFORM);
     expect(cookieNamed(us, '_pubcid')?.value).toBe(UUID);
   });

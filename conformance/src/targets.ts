@@ -93,7 +93,7 @@ function asRequestCf(headers: Readonly<Record<string, string>>): Record<string, 
     if (field !== undefined) cf[field] = value;
   }
   // Cloudflare sets isEUCountry ("1" for the 27 EU member states) whenever it knows the country; the Worker reads it
-  // to decide whether GDPR applies.
+  // with the country code (GDPR_COUNTRY_CODES adds the EEA, the UK and Turkey) to decide whether GDPR applies.
   const country = cf['country'];
   if (country !== undefined && country !== '') cf['isEUCountry'] = EU_COUNTRY_CODES.has(country.toUpperCase()) ? '1' : '0';
   return { ...headers, 'MF-CF-Blob': JSON.stringify({ ...cf, clientAcceptEncoding: '' }) };
@@ -139,6 +139,9 @@ function limited(file: string, reason: string, names: readonly string[]): [strin
  *   AccessDenied (its guard against web pages driving a local emulator, with no setting to allow an origin), so the CORS
  *   cases and the clickid module's cross-site case never reach the function. Lambda function URLs on AWS pass them to
  *   the function.
+ * - Its function URL doesn't hand the function a single X-Forwarded-Host as the client sent it (a list does arrive), so
+ *   trusted-upstream mode's per-site cases see another host and get a 404. Whether Lambda function URLs on AWS pass it
+ *   unchanged needs the live test; the Lambda README says how to use another header if not.
  */
 const NO_LOCATION = 'no location without CloudFront in front of the function URL';
 const CLIENT_IP = "the client IP is the connection's, which the suite can't set";
@@ -148,7 +151,12 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
   'lambda-aws-emulator': Object.fromEntries([
     ...limited('consent-eu-location.json', NO_LOCATION, [
       'an EU visitor without a TC string gets no ID cookies',
-      "an EU visitor's existing ID cookies are deleted without a TC string"
+      "an EU visitor's existing ID cookies are deleted without a TC string",
+      'a UK visitor without a TC string gets no ID cookies',
+      'a Norwegian visitor without a TC string gets no ID cookies',
+      'a visitor in Turkey without a TC string gets no ID cookies',
+      "a UK visitor's existing ID cookies are deleted without a TC string",
+      "a visitor in Turkey's existing ID cookies are deleted without a TC string"
     ]),
     ...limited('module-geo.json', NO_LOCATION, [
       'returns the location as device.geo, precise fields included',
@@ -174,7 +182,14 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
     ...limited('module-ec.json', CLIENT_IP, [
       'mints ts-ec from an IPv4 address',
       "mints ts-ec from an IPv6 address's /64",
+      'mints the same prefix for an IPv6 address in 2001:db8:abcd:1::/64',
+      'mints the same prefix for another interface ID in the same /64',
       "mints ts-ec on /sync (Prebid.js's pixelUrl call), with the pixel response otherwise unchanged"
+    ]),
+    ...limited('module-ec-gdpr.json', NO_LOCATION, [
+      'a UK visitor without a TC string gets no EC and no SharedID',
+      'a Norwegian visitor without a TC string gets no EC or SharedID, and an existing ts-ec is kept',
+      'a visitor in Turkey without a TC string gets no EC or SharedID'
     ]),
     ...limited('module-dbip.json', CLIENT_IP, [
       'fills in the country for an IPv4 address when the CDN has none',
@@ -198,6 +213,15 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
     ]),
     ...limited('module-clickid.json', 'AWS Emulator refuses requests with Sec-Fetch-Site: cross-site before they reach the function', [
       'ignores the url parameter on a request from another site (Sec-Fetch-Site: cross-site), even naming an allowed host'
+    ]),
+    ...limited('trusted-upstream.json', "AWS Emulator's function URL doesn't pass on a single X-Forwarded-Host as the client sent it, so the function sees another host (SID_HOSTS then answers 404)", [
+      "the forwarded country decides GDPR, not the CDN edge's (a US visitor through an EU edge gets the ID)",
+      'an EU visitor through a US edge gets no ID cookies without a TC string',
+      'a UK visitor (outside the EU, where GDPR applies) through a US edge gets no ID cookies without a TC string',
+      "the payload has the forwarded IPv4 address and location, not the edge's",
+      'the payload has a forwarded IPv6 address, with the rotated secret',
+      "no forwarded client IP means none, not the edge's",
+      "the forwarded host picks another publisher's settings and cookie domain"
     ]),
     ...limited('forwarded-headers-untrusted.json', NO_LOCATION, [
       "a forged country doesn't override the platform's EU country",

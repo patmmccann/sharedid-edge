@@ -293,6 +293,52 @@ describe('v1 payload', () => {
     expect(JSON.stringify(payload)).not.toContain('secret');
   });
 
+  it("keeps one request's data out of the next through the same handler: module config and secrets are frozen", async () => {
+    // A module that tries to remember the last visitor in its config or secrets, nested or not. A handler can serve
+    // many requests (a cached handler, a reused Fastly sandbox), so the attempt must fail rather than leak.
+    const remembers = defineModule({
+      name: 'remembers',
+      run: ({ config, secrets, platform }) => {
+        const seen = config['seen'];
+        const last = (config['nested'] as { last?: string } | undefined)?.last;
+        if (Array.isArray(seen)) seen.push(platform.clientIp);
+        Object.assign(config['nested'] as object, { last: platform.clientIp });
+        Object.assign(secrets, { last: platform.clientIp });
+        return { ortb2: { seen, last } };
+      }
+    });
+    const h = handler(
+      { SID_MODULES: 'remembers,ok', SID_MODULE_CONFIG: '{"remembers":{"seen":[],"nested":{}}}', SID_MODULE_SECRETS: '{"remembers":{"key":"k"}}' },
+      { modules: [remembers, defineModule({ name: 'ok', run: () => ({ ortb2: { fine: true } }) })], mintId: () => crypto.randomUUID() }
+    );
+    const first = await (await h(get('/_sid/v1', { Cookie: `_pubcid=${UUID}` }), { clientIp: '192.0.2.1' })).json() as PayloadV1;
+    expect(first.ext.modules['remembers']?.status).toBe('error');
+    // Like a throw: the module's output is dropped, and the rest of the payload is returned.
+    expect(first.ortb2).toEqual({ fine: true });
+    expect(first.sharedid).toBe(UUID);
+    const second = await (await h(get('/_sid/v1'), { clientIp: '198.51.100.2' })).json() as PayloadV1;
+    expect(second.ext.modules['remembers']?.status).toBe('error');
+    expect(second.sharedid).not.toBe(UUID);
+    expect(JSON.stringify(second)).not.toContain('192.0.2.1');
+    const config = resolveConfig({ SID_MODULE_CONFIG: '{"m":{"a":{"b":[1]}}}', SID_MODULE_SECRETS: '{"m":{"s":"x"}}' });
+    expect(Object.isFrozen(config.moduleConfig['m']?.['a'])).toBe(true);
+    expect(Object.isFrozen((config.moduleConfig['m']?.['a'] as { b: unknown }).b)).toBe(true);
+    expect(Object.isFrozen(config.moduleSecrets['m'])).toBe(true);
+  });
+
+  it('answers two visitors through the same handler independently', async () => {
+    const echo = defineModule({ name: 'echo', run: ({ platform, cookies }) => ({ ortb2: { device: { ip: platform.clientIp }, cookies: [...cookies.keys()].sort() } }) });
+    const h = handler({ SID_MODULES: 'echo' }, { modules: [echo], mintId: () => crypto.randomUUID() });
+    const first = await h(get('/_sid/v1', { Cookie: `_pubcid=${UUID}; first_party=a` }), { clientIp: '192.0.2.1' });
+    const firstPayload = await first.json() as PayloadV1;
+    expect(firstPayload.sharedid).toBe(UUID);
+    const second = await h(get('/_sid/v1'), { clientIp: '198.51.100.2' });
+    const secondPayload = await second.json() as PayloadV1;
+    expect(secondPayload.sharedid).not.toBe(UUID);
+    expect(secondPayload.ortb2).toEqual({ device: { ip: '198.51.100.2' }, cookies: [] });
+    expect(second.headers.getSetCookie().join('\n')).not.toContain(UUID);
+  });
+
   it('skips modules whose TCF purposes lack publisher consent, and vendor modules when GDPR applies', async () => {
     const needs4 = defineModule({ name: 'needs4', purposes: [1, 4], run: () => ({ ortb2: { a: 1 } }) });
     const vendor = defineModule({ name: 'vendor', gvlid: 1, run: () => ({ ortb2: { b: 1 } }) });

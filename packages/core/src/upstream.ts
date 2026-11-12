@@ -6,7 +6,7 @@
 import { copyRequest, isHeaderName, parseHeaderMap, parseViewerAddress } from './adapter.js';
 import { ConfigError, str } from './config.js';
 import { text, type SharedIdEdgeHandler } from './handler.js';
-import { isHostname, UPSTREAM_PREFIX } from './hosts.js';
+import { HOSTNAME } from './hosts.js';
 import { parseIp } from './ip.js';
 import { LOCATION_FIELDS, locationWithEU, type LocationField, type LocationHeaders, type LocationSource } from './location.js';
 import type { PlatformInfo } from './types.js';
@@ -102,6 +102,34 @@ function parseLocationHeaders(value: string | undefined): LocationHeaders {
   return parseHeaderMap(value, 'SID_LOCATION_HEADERS', LOCATION_FIELDS, '{"country":"x-sid-country"}');
 }
 
+/** The prefix of trusted upstream's own settings: `SID_UPSTREAM_SECRETS`, `SID_UPSTREAM_AUTH_HEADER`, `SID_UPSTREAM_HOST_HEADER`. */
+const UPSTREAM_PREFIX = 'SID_UPSTREAM_';
+
+/**
+ * Trusted upstream's settings belong to the deployment: the forwarded host that picks a site in `SID_HOSTS` is read only
+ * once a request is authenticated. Throws a `ConfigError` naming the host and setting when an entry of `SID_HOSTS` has
+ * one (`SID_UPSTREAM_*`, `SID_CLIENT_IP_HEADER`, `SID_LOCATION_HEADERS`). `SID_HOSTS` that isn't a JSON object is left
+ * to `settingsFromEnv` to refuse.
+ */
+function refusePerHost(env: Env): void {
+  let hosts: unknown;
+  try {
+    hosts = JSON.parse(str(env, 'SID_HOSTS') ?? '{}');
+  } catch {
+    return;
+  }
+  if (typeof hosts !== 'object' || hosts === null) return;
+  const entries: [string, unknown][] = Object.entries(hosts);
+  for (const [host, settings] of entries) {
+    if (typeof settings !== 'object' || settings === null) continue;
+    for (const key of Object.keys(settings)) {
+      if (key.startsWith(UPSTREAM_PREFIX) || key === 'SID_CLIENT_IP_HEADER' || key === 'SID_LOCATION_HEADERS') {
+        throw new ConfigError(`SID_HOSTS["${host}"]: ${key} can't be set per host`);
+      }
+    }
+  }
+}
+
 /**
  * For adapters without trusted-upstream mode: throws a `ConfigError` naming the setting when `SID_UPSTREAM_SECRETS`,
  * `SID_UPSTREAM_AUTH_HEADER` or `SID_UPSTREAM_HOST_HEADER` is set, so the platform refuses them rather than ignore
@@ -109,6 +137,7 @@ function parseLocationHeaders(value: string | undefined): LocationHeaders {
  * `settingsFromEnv(refuseTrustedUpstream(env), options)`.
  */
 export function refuseTrustedUpstream<E extends Env>(env: E): E {
+  refusePerHost(env);
   for (const name of Object.keys(env)) {
     if (name.startsWith(UPSTREAM_PREFIX) && str(env, name) !== undefined) {
       throw new ConfigError(`${name}: trusted-upstream mode isn't available on this platform (the Cloudflare Worker, AWS Lambda, Fastly Compute and the Node.js server have it)`);
@@ -135,26 +164,22 @@ export interface TrustedUpstreamOptions {
  * secret (without its value).
  */
 export function trustedUpstreamFromEnv(env: Env, options: TrustedUpstreamOptions = {}): TrustedUpstream | undefined {
+  refusePerHost(env);
   const secretsText = str(env, 'SID_UPSTREAM_SECRETS');
   const authHeader = headerSetting(env, 'SID_UPSTREAM_AUTH_HEADER', DEFAULT_UPSTREAM_AUTH_HEADER);
   const hostHeader = headerSetting(env, 'SID_UPSTREAM_HOST_HEADER', DEFAULT_UPSTREAM_HOST_HEADER);
   const clientIp = headerSetting(env, 'SID_CLIENT_IP_HEADER');
   const locationText = str(env, 'SID_LOCATION_HEADERS');
   if (secretsText === undefined) {
-    // Without the secret, nothing reads these: say so rather than run as if they weren't there.
-    for (const name of ['SID_UPSTREAM_AUTH_HEADER', 'SID_UPSTREAM_HOST_HEADER']) {
-      if (str(env, name) !== undefined) throw new ConfigError(`${name} needs SID_UPSTREAM_SECRETS`);
-    }
-    if (options.trustProxy !== true) {
-      for (const name of ['SID_CLIENT_IP_HEADER', 'SID_LOCATION_HEADERS']) {
-        if (str(env, name) !== undefined) throw new ConfigError(`${name} is read only from an authenticated upstream: it needs SID_UPSTREAM_SECRETS`);
-      }
-    }
+    // Without the secret, nothing reads these: say so rather than run as if they weren't there. A trusted proxy reads
+    // the last two.
+    const orphans = ['SID_UPSTREAM_AUTH_HEADER', 'SID_UPSTREAM_HOST_HEADER', ...(options.trustProxy === true ? [] : ['SID_CLIENT_IP_HEADER', 'SID_LOCATION_HEADERS'])];
+    for (const name of orphans) if (str(env, name) !== undefined) throw new ConfigError(`${name} needs SID_UPSTREAM_SECRETS`);
     return undefined;
   }
   const location = parseLocationHeaders(locationText);
   if (location.country === undefined) {
-    throw new ConfigError('SID_LOCATION_HEADERS must name the country header with SID_UPSTREAM_SECRETS, like {"country":"x-sid-country"}: the country decides whether GDPR applies');
+    throw new ConfigError('SID_LOCATION_HEADERS must name the country header (it decides GDPR)');
   }
   const headers: [setting: string, name: string | undefined][] = [
     ['SID_UPSTREAM_AUTH_HEADER', authHeader],
@@ -168,12 +193,13 @@ export function trustedUpstreamFromEnv(env: Env, options: TrustedUpstreamOptions
     // A header the endpoint's own platform sets (CF-Connecting-IP, CloudFront-Viewer-*, True-Client-IP) would describe
     // the publisher's CDN, not the visitor; X-Forwarded-For is a list proxies append to.
     if (!name.startsWith('x-') || name === 'x-forwarded-for') {
-      throw new ConfigError(`${setting}: with SID_UPSTREAM_SECRETS, name a header starting with x- that the publisher's CDN sets, not "${name}"`);
+      throw new ConfigError(`${setting}: "${name}" must start with x- (not x-forwarded-for)`);
     }
-    if (seen.has(name)) throw new ConfigError(`${setting}: "${name}" is used twice; the upstream's headers must all differ`);
+    if (seen.has(name)) throw new ConfigError(`${setting}: "${name}" is used twice`);
     seen.add(name);
   }
-  return { authHeader, secrets: parseSecrets(secretsText), hostHeader, forwarded: { clientIp, location } };
+  // Frozen like the module secrets: the handler keeps it for every request.
+  return Object.freeze({ authHeader, secrets: parseSecrets(secretsText), hostHeader, forwarded: Object.freeze({ clientIp, location: Object.freeze(location) }) });
 }
 
 /** `SID_UPSTREAM_SECRETS`: a JSON array of secrets. Errors never include a value. */
@@ -184,12 +210,12 @@ function parseSecrets(value: string): readonly string[] {
   } catch {
     parsed = undefined;
   }
-  if (!Array.isArray(parsed) || parsed.length === 0) throw new ConfigError('SID_UPSTREAM_SECRETS must be a JSON array of secrets, like ["<openssl rand -hex 32>"]');
+  if (!Array.isArray(parsed) || parsed.length === 0) throw new ConfigError('SID_UPSTREAM_SECRETS must be a JSON array of secrets');
   const list: readonly unknown[] = parsed;
   const secrets: string[] = [];
   for (const [index, secret] of list.entries()) {
     if (typeof secret !== 'string' || !SECRET.test(secret)) {
-      throw new ConfigError(`SID_UPSTREAM_SECRETS: secret ${String(index + 1)} must be 32 to 256 letters, digits or -._~+/= (openssl rand -hex 32 makes one)`);
+      throw new ConfigError(`SID_UPSTREAM_SECRETS: secret ${String(index + 1)} must be 32 to 256 of A-Za-z0-9-._~+/=`);
     }
     secrets.push(secret);
   }
@@ -212,7 +238,7 @@ export function parseForwardedHost(value: string): string | undefined {
   const match = /^([^:]+)(?::(\d{1,5}))?$/.exec(value.trim());
   const host = match?.[1]?.toLowerCase().replace(/\.$/, '');
   const port = Number(match?.[2] ?? 0);
-  return host !== undefined && isHostname(host) && port <= 65_535 ? host : undefined;
+  return host !== undefined && HOSTNAME.test(host) && port <= 65_535 ? host : undefined;
 }
 
 /**

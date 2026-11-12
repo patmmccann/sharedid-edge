@@ -19,6 +19,8 @@ SID_COOKIE_DOMAIN = "host-only"
 SID_MODULES = "ip,geo"
 
 # Module secrets, such as the ec module's passphrase: SID_MODULE_SECRETS, a JSON object by module.
+# The ec module refuses this placeholder passphrase (status error): to try ec locally, put a random one here,
+# e.g. from openssl rand -hex 32.
 [[local_server.secret_stores.sharedid_secrets]]
 key = "SID_MODULE_SECRETS"
 data = '{"ec":{"passphrase":"a-local-passphrase-of-at-least-32-characters"}}'
