@@ -173,7 +173,13 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
     ...limited('module-ec.json', CLIENT_IP, [
       'mints ts-ec from an IPv4 address',
       "mints ts-ec from an IPv6 address's /64",
+      'mints the same prefix for an IPv6 address in 2001:db8:abcd:1::/64',
+      'mints the same prefix for another interface ID in the same /64',
       "mints ts-ec on /sync (Prebid.js's pixelUrl call), with the pixel response otherwise unchanged"
+    ]),
+    ...limited('module-ec-gdpr.json', NO_LOCATION, [
+      'a UK visitor without a TC string gets no EC, but core still sets the SharedID',
+      'a Norwegian visitor without a TC string gets no EC, and an existing ts-ec is kept'
     ]),
     ...limited('module-dbip.json', CLIENT_IP, [
       'fills in the country for an IPv4 address when the CDN has none',
