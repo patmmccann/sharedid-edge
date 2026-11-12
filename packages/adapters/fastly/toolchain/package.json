@@ -1,0 +1,10 @@
+{
+  "name": "sharedid-edge-fastly-toolchain",
+  "private": true,
+  "description": "Fastly's JavaScript SDK, pinned, to compile the SharedID Edge bundle to a Fastly Compute package. A separate install (about 500 MB, with Wizer, weval and Wasmtime), kept out of the workspace: scripts/wasm.mjs installs it on first use.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "dependencies": {
+    "@fastly/js-compute": "4.2.0"
+  }
+}

@@ -1,4 +1,4 @@
-import { createHandler, DEFAULT_CONFIG, logRequestFailure, type HandlerOptions, ROUTES } from '@sharedid-edge/core';
+import { createHandler, DEFAULT_CONFIG, logRequestFailure, type HandlerOptions, ROUTES, withPublicOrigin } from '@sharedid-edge/core';
 import { platformInfo, type PlatformOptions } from './platform.js';
 
 export interface VercelHandlerOptions extends HandlerOptions, PlatformOptions {
@@ -27,7 +27,7 @@ export function createVercelHandler(options: VercelHandlerOptions = {}): VercelH
   const handler = createHandler(options);
   return async request => {
     try {
-      return await handler(await withOrigin(request, options.publicOrigin), platformInfo(request.headers, options));
+      return await handler(await withPublicOrigin(request, options.publicOrigin), platformInfo(request.headers, options));
     } catch (error) {
       logRequestFailure(error);
       return internalError('Internal error');
@@ -80,17 +80,5 @@ export function internalError(message: string): Response {
   return new Response(message, {
     status: 500,
     headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' }
-  });
-}
-
-/** The request, with its URL moved to `publicOrigin` when one is set. */
-async function withOrigin(request: Request, publicOrigin: string | undefined): Promise<Request> {
-  if (publicOrigin === undefined) return request;
-  const url = new URL(request.url);
-  const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
-  return new Request(new URL(`${url.pathname}${url.search}`, publicOrigin), {
-    method: request.method,
-    headers: request.headers,
-    ...(hasBody ? { body: await request.arrayBuffer() } : {})
   });
 }

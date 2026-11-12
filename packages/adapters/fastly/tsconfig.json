@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    // Fastly Compute provides the web platform's globals (Request, Response, Headers, URL, crypto); its own modules
+    // (fastly:*) are declared in src/builtins.d.ts. No Node types.
+    "lib": ["ES2023", "WebWorker"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../core" },
+    { "path": "../../modules/all" }
+  ]
+}

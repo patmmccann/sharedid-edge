@@ -9,6 +9,7 @@
 //
 // The stand-in reads the case convention: with SID_TRUST_PROXY the first X-Forwarded-For entry is the connecting
 // address, and later entries are what the visitor sent.
+import { checkCacheControl, Checks } from './checks.js';
 import { startTarget } from './targets.js';
 
 interface Payload {
@@ -18,13 +19,8 @@ interface Payload {
 const CONNECTING = '192.0.2.77';
 const LOCATION = { 'cf-ipcountry': 'US', 'cf-region-code': 'TX', 'cf-ipcity': 'Austin', 'cf-timezone': 'America/Chicago' };
 
-let failures = 0;
-let count = 0;
-function check(name: string, ok: boolean, detail = ''): void {
-  count++;
-  if (!ok) failures++;
-  console.log(`${ok ? 'ok' : 'not ok'} - ${name}${ok || detail === '' ? '' : `\n  # ${detail}`}`);
-}
+const checks = new Checks();
+const check = checks.check.bind(checks);
 
 const target = await startTarget('akamai', { SID_TRUST_PROXY: '1', SID_MODULES: 'ip,geo', SID_COOKIE_DOMAIN: 'host-only' });
 try {
@@ -42,14 +38,9 @@ try {
   check('keeps the connecting address from PMUSER_SID_CLIENT_IP', spoofed.ortb2?.device?.ip === CONNECTING, JSON.stringify(spoofed.ortb2));
 
   console.log('# akamai: no response may be shared by caches');
-  for (const [method, path] of [['GET', '/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d'], ['GET', '/_sid/v1'], ['HEAD', '/_sid/sync'], ['GET', '/_sid/optout'], ['GET', '/_sid/nothing'], ['POST', '/_sid/v1']] as const) {
-    const response = await fetch(new URL(path, target.baseUrl), { method, headers: { 'x-forwarded-for': CONNECTING } });
-    const cacheControl = response.headers.get('cache-control') ?? '';
-    check(`${method} ${path.split('?')[0] ?? path} (${String(response.status)}) has Cache-Control no-store or private`, /\b(no-store|private)\b/.test(cacheControl), `Cache-Control: ${cacheControl}`);
-  }
+  await checkCacheControl(checks, target.baseUrl, { 'x-forwarded-for': CONNECTING });
 } finally {
   await target.stop();
 }
 
-console.log(`\n${String(count - failures)}/${String(count)} Akamai checks passed`);
-if (failures > 0) process.exitCode = 1;
+checks.done('Akamai');

@@ -14,7 +14,7 @@
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { bundleAdapter } from '../../../../scripts/bundle-adapter.mjs';
+import { bundleAdapter, checkImports } from '../../../../scripts/bundle-adapter.mjs';
 
 /** The EdgeWorkers built-in modules the bundle imports; the runtime provides them. */
 const BUILT_IN_MODULES = ['create-response', 'crypto', 'encoding', 'log', 'streams'];
@@ -38,13 +38,8 @@ const { outdir, outfile, pkg } = await bundleAdapter({
 });
 
 // The bundle may import nothing but the built-in modules: anything else wouldn't resolve on EdgeWorkers.
+checkImports(outfile, name => BUILT_IN_MODULES.includes(name), 'EdgeWorkers');
 const code = readFileSync(outfile, 'utf8');
-const imports = [...code.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)["']([^"']+)["']/g)].map(match => match[1]);
-const unknown = imports.filter(name => !BUILT_IN_MODULES.includes(name));
-if (unknown.length > 0) {
-  console.error(`${basename(outdir)}/main.js imports modules EdgeWorkers doesn't have: ${unknown.join(', ')}`);
-  process.exitCode = 1;
-}
 
 // Version strings must match ^(?!.*?\.{2})[.a-zA-Z0-9_~-]{1,32}$ (the EdgeWorkers CLI's check).
 const hash = createHash('sha256').update(code).digest('hex').slice(0, 12);

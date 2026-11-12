@@ -1,7 +1,8 @@
-// What the local platform stand-ins (lambda-emulator.ts, vercel-emulator.ts) share: loading the adapter's bundle,
+// What the local platform stand-ins (lambda-emulator.ts, vercel-emulator.ts, …, and fastly-viceroy.ts) share: loading the adapter's bundle,
 // serving it, and turning the cases' client IP and Cloudflare location headers into what the platform would send.
 // Each emulator keeps only its platform's own header names and request and response shapes.
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer as createNetServer } from 'node:net';
 import { pathToFileURL } from 'node:url';
 
 /** The Cloudflare visitor location headers the cases send. */
@@ -38,11 +39,14 @@ export async function loadBundleExport(bundle: string, exportName: string, comma
   return value as (...args: never[]) => unknown;
 }
 
+/** What `caseClientIp` and `caseLocation` read of a request: its headers, and the connecting address. */
+export type CaseRequest = Pick<IncomingMessage, 'headers'> & { readonly socket: { readonly remoteAddress?: string | undefined } };
+
 /**
  * The client IP the platform would see: the connecting address or (with SID_TRUST_PROXY, as the conformance cases
  * use it to set the client IP) the first X-Forwarded-For entry the client sent.
  */
-export function caseClientIp(req: IncomingMessage, trustProxy: boolean): string | undefined {
+export function caseClientIp(req: CaseRequest, trustProxy: boolean): string | undefined {
   const forwarded = req.headers['x-forwarded-for'];
   const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim();
   return trustProxy && first !== undefined && first !== '' ? first : req.socket.remoteAddress;
@@ -54,7 +58,7 @@ export function caseClientIp(req: IncomingMessage, trustProxy: boolean): string 
  * Node reads header bytes as Latin-1 and the cases send city names as UTF-8, so the city is decoded back to UTF-8.
  */
 export function caseLocation(
-  req: IncomingMessage,
+  req: Pick<IncomingMessage, 'headers'>,
   trustProxy: boolean,
   names: Readonly<Partial<Record<CaseLocationHeader, string>>>
 ): [name: string, value: string][] {
@@ -80,7 +84,7 @@ export async function readBody(req: IncomingMessage): Promise<Buffer> {
  * Serves `handle` on 127.0.0.1:`port`. A failed invocation is logged and answered with a 502 and `failure`, as the
  * platform would answer a function that crashed.
  */
-export function serve(port: number, failure: string, handle: (req: IncomingMessage, res: ServerResponse) => Promise<void>): void {
+export function serve(port: number, failure: string, handle: (req: IncomingMessage, res: ServerResponse) => Promise<void>): Server {
   const server = createServer((req, res) => {
     handle(req, res).catch((error: unknown) => {
       console.error(`emulator: ${failure}`, error);
@@ -89,4 +93,19 @@ export function serve(port: number, failure: string, handle: (req: IncomingMessa
     });
   });
   server.listen(port, '127.0.0.1');
+  return server;
+}
+
+/** A free TCP port on `host`. */
+export async function freePort(host = '127.0.0.1'): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createNetServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, host, () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address !== null ? address.port : 0;
+      server.close(() => { resolve(port); });
+    });
+  });
 }
