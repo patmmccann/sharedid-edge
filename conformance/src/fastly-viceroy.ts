@@ -16,8 +16,8 @@
 //
 // The entries are seeded from the case file's requests, so Viceroy usually starts once per file; when a request needs
 // a location its address's entry doesn't have, Viceroy restarts with it. The case's SID_* settings become the config
-// store `sharedid_config`, and SID_MODULE_SECRETS the secret store `sharedid_secrets`, as the adapter's README sets them
-// up (`stores: false` links neither, for fastly-checks.ts). The Cloudflare location headers the cases send, and the
+// store `sharedid_config`, and SID_MODULE_SECRETS and SID_UPSTREAM_SECRETS the secret store `sharedid_secrets`, as the
+// adapter's README sets them up (`stores: false` links neither, for fastly-checks.ts). The Cloudflare location headers the cases send, and the
 // first X-Forwarded-For entry, are dropped: they describe the connection, which is real here.
 //
 // Runs in the runner's process (targets.ts), so stopping the target stops Viceroy too.
@@ -201,15 +201,20 @@ export interface FastlyTargetOptions {
   readonly log?: (line: string) => void;
 }
 
-/** The fastly.toml lines for the stores: the settings in the config store, SID_MODULE_SECRETS in the secret store. */
+/** The settings the adapter reads from the secret store, as its README sets them. */
+const SECRET_SETTINGS: readonly string[] = ['SID_MODULE_SECRETS', 'SID_UPSTREAM_SECRETS'];
+
+/** The fastly.toml lines for the stores: the settings in the config store, SECRET_SETTINGS in the secret store. */
 function storeLines(config: Readonly<Record<string, string>>): string[] {
   const lines = ['[local_server.config_stores.sharedid_config]', 'format = "inline-toml"', '[local_server.config_stores.sharedid_config.contents]'];
   for (const [name, value] of Object.entries(config)) {
-    if (name.startsWith('SID_') && name !== 'SID_MODULE_SECRETS' && name !== 'SID_TRUST_PROXY') lines.push(`${name} = ${tomlString(value)}`);
+    if (name.startsWith('SID_') && !SECRET_SETTINGS.includes(name) && name !== 'SID_TRUST_PROXY') lines.push(`${name} = ${tomlString(value)}`);
   }
-  const secrets = config['SID_MODULE_SECRETS'];
-  if (secrets === undefined) return [...lines, '[local_server.secret_stores]', 'sharedid_secrets = []'];
-  return [...lines, '[[local_server.secret_stores.sharedid_secrets]]', 'key = "SID_MODULE_SECRETS"', `data = ${tomlString(secrets)}`];
+  const secrets = SECRET_SETTINGS.flatMap(name => {
+    const value = config[name];
+    return value === undefined ? [] : ['[[local_server.secret_stores.sharedid_secrets]]', `key = "${name}"`, `data = ${tomlString(value)}`];
+  });
+  return secrets.length === 0 ? [...lines, '[local_server.secret_stores]', 'sharedid_secrets = []'] : [...lines, ...secrets];
 }
 
 /** Starts Viceroy with the package and the relay in front of it; resolves once both answer, to a function that stops them. */

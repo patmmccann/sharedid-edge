@@ -69,6 +69,7 @@ for (const [key, value] of Object.entries(raw)) {
   if (key.startsWith('$')) continue; // "$comment" and the like
   if (!key.startsWith('SID_')) fail(`${key}: only SID_* settings go in a Snippet's configuration.`, 2);
   if (key === 'SID_MODULE_SECRETS') fail('SID_MODULE_SECRETS: Snippets have no secrets, and a secret baked into the script is readable by anyone who can see it. Use the Worker for modules that need one (ec).', 2);
+  if (key.startsWith('SID_UPSTREAM_') || key === 'SID_CLIENT_IP_HEADER' || key === 'SID_LOCATION_HEADERS') fail(`${key}: trusted-upstream mode needs a shared secret (SID_UPSTREAM_SECRETS), and Snippets have none: a secret baked into the script is readable by anyone who can see it. Use the Worker behind a publisher's CDN.`, 2);
   env[key] = typeof value === 'string' ? value : JSON.stringify(value);
 }
 let settings;

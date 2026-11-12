@@ -12,6 +12,7 @@ Responses carry two debug headers: `X-SharedID-Source` (`cookie`, `recovery`, `p
 | Cookie set but gone after a week in Safari | Run `verify-deployment`: the endpoint's IP addresses probably don't match the site's. |
 | Cookie not readable by Prebid.js | The cookie name or domain doesn't match Prebid.js's `storage` config, or the page and the route are on hosts the cookie's domain doesn't cover. |
 | A 500 with "misconfigured" | A setting is invalid: `npm exec -w @sharedid-edge/cloudflare -- wrangler tail` shows the reason (on AWS, the function's CloudWatch logs; on Vercel, the project's logs; on Azure, the function app's logs; on Google Cloud, the function's logs in Cloud Logging). |
+| `403 Forbidden` on every request, with nothing else configured wrong | Trusted-upstream mode is on (`SID_UPSTREAM_SECRETS`) and the request lacks one of its secrets in `X-SID-Upstream-Auth`: the publisher's CDN must add it. A `400` means its `X-Forwarded-Host` isn't one hostname. See [Trusted upstream](configuration.md#trusted-upstream-behind-a-publishers-cdn) and the sales-house guide's [failure modes](sales-houses.md#failure-modes-and-troubleshooting). |
 | `getUserIdsAsync()` never resolves | A Prebid.js issue in 11.48.0 and earlier, fixed in 11.49.0 (prebid/Prebid.js#16135); see [Configure Prebid.js](prebid.md). |
 
 Each adapter's README has a troubleshooting table for its platform, and each module's README one for the module.

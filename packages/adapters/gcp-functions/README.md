@@ -195,6 +195,8 @@ Read only by the Google Cloud adapter:
 | `SID_PUBLIC_ORIGIN` | `https://` and the `Host` header | The origin of request URLs. Only its scheme matters, and cookies are `Secure` for a public hostname whatever the scheme, so it matters only for local development (see [Secure cookies](../../../docs/configuration.md#secure-cookies)). |
 | `SID_BEHIND_LOAD_BALANCER` | `true` | `false` when no load balancer is in front (local development): `X-Forwarded-For` and the location headers are then ignored, and there's no client IP or location. Don't serve a site that way: without the load balancer the endpoint isn't on the site's IP address. |
 
+**Trusted-upstream mode** (`SID_UPSTREAM_SECRETS`, for an endpoint behind a publisher's CDN; see [Trusted upstream](../../../docs/configuration.md#trusted-upstream-behind-a-publishers-cdn)) isn't available on the Cloud Run function: the load balancer is the trusted upstream here, and `SID_CLIENT_IP_HEADER` and `SID_LOCATION_HEADERS` already name its headers. Setting `SID_UPSTREAM_SECRETS`, `SID_UPSTREAM_AUTH_HEADER` or `SID_UPSTREAM_HOST_HEADER` makes every request a 500, and the log names the setting. A sales house serving publishers behind their own CDNs can run the Cloudflare Worker, AWS Lambda, Fastly Compute or the Node.js server instead ([SharedID Edge for sales houses](../../../docs/sales-houses.md)).
+
 ## Secrets
 
 `SID_MODULE_SECRETS` (JSON secrets per module, like the `ec` module's passphrase) comes from **Secret Manager**. Cloud Run resolves it into the environment variable when an instance starts, so SharedID Edge still reads a plain setting and makes no network calls:

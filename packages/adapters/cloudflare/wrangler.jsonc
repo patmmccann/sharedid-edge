@@ -31,7 +31,13 @@
     "SID_MODULE_TIMEOUT_MS": "50",
     "SID_SKIP_BOTS": "",
     "SID_SKIP_BOTS_SCORE": "",
-    "SID_HOSTS": ""
+    "SID_HOSTS": "",
+    // Trusted-upstream mode, for a Worker behind publishers' CDNs (README, "Sales houses"): on with the Worker secret
+    // SID_UPSTREAM_SECRETS (wrangler secret put SID_UPSTREAM_SECRETS), never a var. Empty: the defaults.
+    "SID_UPSTREAM_AUTH_HEADER": "",
+    "SID_UPSTREAM_HOST_HEADER": "",
+    "SID_CLIENT_IP_HEADER": "",
+    "SID_LOCATION_HEADERS": ""
   },
   // This project's own live tests (.github/workflows/e2e-cloudflare.yml), on the sharedid.dev test zone. Deployers
   // don't need these. Wrangler doesn't inherit vars into an environment, so each lists them all.
@@ -58,7 +64,11 @@
         "SID_MODULE_TIMEOUT_MS": "50",
         "SID_SKIP_BOTS": "",
         "SID_SKIP_BOTS_SCORE": "",
-        "SID_HOSTS": ""
+        "SID_HOSTS": "",
+        "SID_UPSTREAM_AUTH_HEADER": "",
+        "SID_UPSTREAM_HOST_HEADER": "",
+        "SID_CLIENT_IP_HEADER": "",
+        "SID_LOCATION_HEADERS": ""
       }
     },
     // The Prebid.js browser tests (e2e/), next to the test page the e2e/site Worker serves on the same hostname,
@@ -84,7 +94,11 @@
         "SID_MODULE_TIMEOUT_MS": "50",
         "SID_SKIP_BOTS": "",
         "SID_SKIP_BOTS_SCORE": "",
-        "SID_HOSTS": ""
+        "SID_HOSTS": "",
+        "SID_UPSTREAM_AUTH_HEADER": "",
+        "SID_UPSTREAM_HOST_HEADER": "",
+        "SID_CLIENT_IP_HEADER": "",
+        "SID_LOCATION_HEADERS": ""
       }
     }
   }

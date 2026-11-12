@@ -14,6 +14,7 @@ This is the full guide. The other platforms are listed under [Pick your platform
 - [A new distribution](#a-new-distribution)
 - [Configuration](#configuration)
 - [Secrets](#secrets)
+- [Behind a publisher's CDN (trusted upstream)](#behind-a-publishers-cdn-trusted-upstream)
 - [Verify](#verify)
 - [How events map to requests and responses](#how-events-map-to-requests-and-responses)
 - [Platform information](#platform-information)
@@ -173,6 +174,10 @@ With origin access control, CloudFront must send the function URL's own hostname
 
 So set `SidPublicOrigin` to your site's origin (`https://www.example.com`). [`SID_HOSTS`](../../../docs/configuration.md#several-sites-from-one-deployment) (several hostnames on one distribution) needs the site's host per request instead: leave `SidPublicOrigin` empty and have CloudFront set `X-Forwarded-Host` from the viewer's `Host` (for example with a CloudFront Function on the behaviour's viewer requests), which also replaces a visitor's own.
 
+Trusted-upstream mode, for a function behind publishers' CDNs, has its own settings and template parameters: see [Behind a publisher's CDN](#behind-a-publishers-cdn-trusted-upstream).
+
+**Several sites on one distribution** (`SidHosts`, `SID_HOSTS`): the function picks the site from `X-Forwarded-Host`, which CloudFront doesn't add, and which `AllViewerExceptHostHeader` passes on as the visitor sent it. Add a CloudFront Function on viewer request to the `/_sid/*` behaviour that sets it from `Host`; [Amazon CloudFront and Lambda](../../../docs/hosting-companies.md#amazon-cloudfront-and-lambda) has the function. Lambda's environment variables share a 4 KB limit, so `SID_HOSTS` fits a few dozen sites.
+
 Configuration is read once per cold start. An invalid setting makes every request return `500 SharedID Edge is misconfigured`, and the reason is logged once per cold start to the function's CloudWatch log group, rather than setting wrong cookies.
 
 ## Secrets
@@ -188,6 +193,27 @@ The parameter is `NoEcho`, so CloudFormation doesn't display it. Lambda stores i
 **Why an environment variable and not Secrets Manager:** SharedID Edge reads its configuration synchronously when the function starts, and makes no network calls. Fetching from Secrets Manager or Parameter Store at start-up would add the AWS SDK or the parameters-and-secrets extension, a network call on every cold start, and a failure mode where the function can't start. The secret changes rarely, so setting it at deploy time is simpler and as safe for this use. If your policy requires Secrets Manager as the source of truth, keep the value there and pass it to `sam deploy` from it (`aws secretsmanager get-secret-value --query SecretString --output text`) when you deploy or rotate.
 
 To rotate, deploy with the new value; new execution environments use it straight away.
+
+## Behind a publisher's CDN (trusted upstream)
+
+A sales house can run one function for the publishers it represents, with each publisher's CDN passing `/_sid/*` to it ([SharedID Edge for sales houses](../../../docs/sales-houses.md) has the whole setup, and the configuration for each publisher CDN). Deploy the template with its own distribution (`CreateDistribution=true`): the publishers' CDNs send `/_sid/*` to that distribution's domain (or your alias on it), and the function URL still accepts only your distribution.
+
+Behind the publisher's CDN, the `CloudFront-Viewer-*` headers your distribution adds describe the publisher's CDN, not the visitor. So turn on trusted-upstream mode: the publisher's CDN sends a shared secret, and the visitor's IP address, country and site in headers of its own, and the function trusts those headers on requests with the secret only. Requests without it get `403 Forbidden` and no cookies.
+
+```sh
+sam deploy --parameter-overrides CreateDistribution=true \
+  'SidUpstreamSecrets=["<publisher A secret>","<publisher B secret>"]' \
+  SidClientIpHeader=x-sid-client-ip \
+  'SidLocationHeaders={"country":"x-sid-country","regionCode":"x-sid-region"}' \
+  'SidHosts={"www.pub-a.com":{"SID_COOKIE_DOMAIN":"pub-a.com"},"www.pub-b.com":{"SID_COOKIE_DOMAIN":"pub-b.com"}}'
+```
+
+- **`SidUpstreamSecrets`** (`SID_UPSTREAM_SECRETS`): a JSON array of secrets, 32 or more characters each (`openssl rand -hex 32`), one per publisher if you like. Like `SidModuleSecrets` it's `NoEcho` and stored as an encrypted environment variable ([Secrets](#secrets)).
+- **`SidClientIpHeader`** and **`SidLocationHeaders`** name the headers the publishers' CDNs set; the country's is required. `SidUpstreamAuthHeader` (`x-sid-upstream-auth`) and `SidUpstreamHostHeader` (`x-forwarded-host`) can stay at their defaults.
+- **The site** comes from `X-Forwarded-Host`, which picks the publisher in `SidHosts` and makes cookies `Secure` on its hostname. On AWS Emulator, the function URL doesn't hand the function a single `X-Forwarded-Host` as sent, so those conformance cases are listed as its limitation; whether Lambda function URLs on AWS pass it unchanged isn't tested yet. If the function sees another host (every request gets a 404), have the publishers' CDNs send the hostname in a header of your own, such as `X-SID-Host`, and set `SidUpstreamHostHeader=x-sid-host`.
+- **Headers through your distribution:** the template's `AllViewerExceptHostHeader` origin request policy forwards the publisher CDN's headers to the function. A custom policy must forward `X-SID-Upstream-Auth`, `X-Forwarded-Host` and the client IP and location headers.
+
+Check it: `curl -sI https://<your distribution>/_sid/v1` answers `403`; through a publisher's site, `/_sid/v1` with the `ip` and `geo` modules shows your own IP address and country. Not yet tested with a real publisher CDN in front of a real distribution and function.
 
 ## Verify
 
@@ -260,6 +286,7 @@ Core's `locationInfo` validates the location values the same way as on the other
 
 - **`requestContext.http.sourceIp` is never used behind CloudFront:** it's CloudFront's address, not the visitor's. Nor is `X-Forwarded-For`.
 - **`isEU`** comes from a bundled list of the 27 EU member states (`EU_COUNTRY_CODES`), the same meaning as Cloudflare's `request.cf.isEUCountry`, so both platforms treat a visitor the same way. It's EU membership, not the EEA (Iceland, Liechtenstein, Norway), the UK or Turkey. Whether GDPR applies is core's decision from the country: it applies to all of these, with or without `isEU`, unless the request says `gdpr=0` (the [consent rules](../../../docs/consent.md)). When CloudFront sends no country (the header isn't forwarded, or the location is unknown) `isEU` is unknown, as on the other platforms.
+- **In trusted-upstream mode** (`SID_UPSTREAM_SECRETS`), none of the above is used: the `CloudFront-Viewer-*` headers describe the publisher's CDN. The client IP and location come from the headers `SID_CLIENT_IP_HEADER` and `SID_LOCATION_HEADERS` name, on requests carrying the secret ([Behind a publisher's CDN](#behind-a-publishers-cdn-trusted-upstream)).
 - **Without CloudFront** (`SID_BEHIND_CLOUDFRONT=false`, for example behind an HTTP API on its own), the `CloudFront-Viewer-*` headers are ignored, since anyone could send them, and the client IP is `requestContext.http.sourceIp`. There's no location.
 
 ## Using it in code
@@ -412,6 +439,8 @@ aws s3 rb s3://sharedid-e2e-deploy-<account> --force
 | Responses served from cache, or one visitor's cookie on another's response | The behaviour's cache policy isn't `CachingDisabled`. |
 | Cookie set but gone after a week in Safari | `/_sid/*` is not on the site's own distribution. Run `verify-deployment`. |
 | The `clickid` module keeps no click IDs (`_sid_*` cookies) | `SidPublicOrigin` isn't set, so the function sees the function URL's host, not the site's ([The site's host](#the-sites-host)). |
+| `403 Forbidden` (text, not JSON) behind a publisher's CDN | Trusted-upstream mode: the request doesn't carry one of `SID_UPSTREAM_SECRETS` in `X-SID-Upstream-Auth`. Check the publisher's CDN sets it, and that a custom origin request policy forwards it. |
+| `404` behind a publisher's CDN | `X-Forwarded-Host` doesn't reach the function, or names a host `SidHosts` doesn't list. |
 | Two cookies merged into one, or only one set | Something between CloudFront and the browser joins `Set-Cookie` headers. The function returns them separately in `cookies[]`. |
 
 ## Lambda@Edge

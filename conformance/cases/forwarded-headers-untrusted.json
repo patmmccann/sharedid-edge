@@ -1,0 +1,17 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "Without trusted-upstream mode, a visitor can't choose their country, client IP or site with the headers an upstream would send (x-sid-country, x-sid-client-ip, x-sid-upstream-auth): the platform's own location (the cf-* headers, which each target turns into its platform's; the Node.js target reads them with SID_TRUST_PROXY) still decides GDPR, so an EU visitor claiming to be in the US gets no ID cookies without a TC string.",
+  "config": { "SID_TRUST_PROXY": "true", "SID_MODULES": "geo" },
+  "cases": [
+    {
+      "name": "a forged country doesn't override the platform's EU country",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "cf-ipcountry": "DE", "x-sid-country": "US", "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef", "x-sid-client-ip": "203.0.113.5" } },
+      "expect": { "status": 200, "noCookies": true }
+    },
+    {
+      "name": "the payload has the platform's location, not the forged one",
+      "request": { "path": "/_sid/v1", "headers": { "cf-ipcountry": "JP", "x-sid-country": "US", "x-sid-region": "AZ", "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef" } },
+      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "geo": { "country": "JPN" } } } } }
+    }
+  ]
+}

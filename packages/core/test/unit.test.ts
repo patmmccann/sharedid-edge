@@ -29,7 +29,7 @@ import {
   withPublicOrigin,
   storageDecision,
   type SharedIdEdgeConfig,
-  type StorageDecision, settingsFromEnv } from '../src/index.js';
+  type StorageDecision, settingsFromEnv, trustedUpstreamFromEnv } from '../src/index.js';
 import { publisherTc, tcString } from './helpers.js';
 
 const UUID = 'c29cb2ae-769d-42f6-891a-f53cadee823d';
@@ -116,6 +116,8 @@ describe('resolveConfig', () => {
     });
     // Adapters read their settings through settingsFromEnv: resolveConfig's, and SID_HOSTS.
     settingsFromEnv(env);
+    // And trusted upstream's (SID_UPSTREAM_SECRETS and the headers it reads) through trustedUpstreamFromEnv.
+    trustedUpstreamFromEnv(env);
     expect([...read].sort()).toEqual(SETTINGS.map(setting => setting.name).sort());
     expect(new Set(SETTINGS.map(setting => setting.name)).size).toBe(SETTINGS.length);
   });

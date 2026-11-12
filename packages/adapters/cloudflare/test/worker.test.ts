@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { utcOffsetMinutes } from '@sharedid-edge/module-geo';
 import { builtInModules as modules } from '@sharedid-edge/modules';
 import { botManagementTraffic, platformInfo } from '../src/platform.js';
+import { createWorker } from '../src/worker.js';
 
 const UUID = 'c29cb2ae-769d-42f6-891a-f53cadee823d';
 
@@ -135,5 +136,50 @@ describe('Cloudflare for SaaS custom hostname metadata', () => {
     const response = await withMetadata({ sharedid: { SID_COOKIE_DOMAIN: 'saas-customer.example', SID_MAX_AGE_DAYS: 'forever' } });
     expect(response.status).toBe(500);
     expect(response.headers.getSetCookie()).toEqual([]);
+  });
+});
+
+describe('trusted upstream (a sales house behind publishers\' CDNs)', () => {
+  const SECRET = 'f'.repeat(64);
+  const worker = createWorker(modules);
+  const env = {
+    SID_COOKIE_DOMAIN: 'host-only',
+    SID_MODULES: 'ip,geo',
+    SID_UPSTREAM_SECRETS: JSON.stringify([SECRET]),
+    SID_CLIENT_IP_HEADER: 'x-sid-client-ip',
+    SID_LOCATION_HEADERS: '{"country":"x-sid-country","regionCode":"x-sid-region"}',
+    SID_HOSTS: JSON.stringify({ 'www.example.com': { SID_COOKIE_DOMAIN: 'example.com' } })
+  } as unknown as Env;
+  const call = (headers: Record<string, string>, path = '/_sid/v1'): Promise<Response> => {
+    const fetchHandler = worker.fetch;
+    if (fetchHandler === undefined) throw new Error('no fetch handler');
+    // request.cf and CF-Connecting-IP describe the publisher's CDN here.
+    const request = new Request(`https://sid.sales-house.example${path}`, { headers: { 'CF-Connecting-IP': '198.51.100.1', ...headers }, cf: { country: 'DE', isEUCountry: '1' } });
+    return Promise.resolve(fetchHandler(request as Parameters<typeof fetchHandler>[0], env, {} as ExecutionContext));
+  };
+
+  it('answers 403 without the secret, and sets nothing', async () => {
+    for (const headers of [{}, { 'x-sid-upstream-auth': 'f'.repeat(63) }]) {
+      const response = await call({ ...headers, 'x-forwarded-host': 'www.example.com', 'x-sid-country': 'US' }, `/_sid/sync?id=pubcid%3A${UUID}`);
+      expect(response.status).toBe(403);
+      expect(response.headers.getSetCookie()).toEqual([]);
+    }
+  });
+
+  it("uses the CDN's forwarded IP, location and host, not request.cf, with the secret", async () => {
+    const auth = { 'x-sid-upstream-auth': SECRET, 'x-forwarded-host': 'www.example.com' };
+    for (const ip of ['203.0.113.7', '2001:db8::7']) {
+      const response = await call({ ...auth, 'x-sid-client-ip': ip, 'x-sid-country': 'US', 'x-sid-region': 'TX' });
+      expect(await response.json()).toMatchObject({ ortb2: { device: { ...(ip.includes(':') ? { ipv6: ip } : { ip }), geo: { country: 'USA', region: 'TX' } } } });
+    }
+    const sync = await call({ ...auth, 'x-sid-country': 'US' }, `/_sid/sync?id=pubcid%3A${UUID}`);
+    expect(sync.headers.getSetCookie().find(c => c.startsWith('_pubcid='))).toMatch(/Domain=example\.com;.*Secure/);
+  });
+
+  it('refuses SID_UPSTREAM_SECRETS without the country header', async () => {
+    const fetchHandler = worker.fetch;
+    if (fetchHandler === undefined) throw new Error('no fetch handler');
+    const response = await fetchHandler(new Request('https://www.example.com/_sid/v1'), { ...env, SID_LOCATION_HEADERS: '' }, {} as ExecutionContext);
+    expect(response.status).toBe(500);
   });
 });

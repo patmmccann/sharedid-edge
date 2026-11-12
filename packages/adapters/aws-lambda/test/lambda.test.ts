@@ -302,3 +302,37 @@ describe('template.yaml', () => {
     expect(template).toMatch(/^ {6}Handler: lambda\.handler$/m);
   });
 });
+
+describe('trusted upstream (a sales house behind publishers\' CDNs)', () => {
+  const SECRET = 'e'.repeat(48);
+  const handler = handlerFromEnv({
+    SID_COOKIE_DOMAIN: 'host-only',
+    SID_MODULES: 'ip',
+    SID_UPSTREAM_SECRETS: JSON.stringify([SECRET]),
+    SID_CLIENT_IP_HEADER: 'x-sid-client-ip',
+    SID_LOCATION_HEADERS: '{"country":"x-sid-country"}',
+    SID_HOSTS: JSON.stringify({ 'www.example.com': { SID_COOKIE_DOMAIN: 'example.com' } })
+  });
+  // CloudFront-Viewer-* (US, 198.51.100.23 in the recorded event) describe the publisher's CDN here.
+  const upstream = { 'x-sid-upstream-auth': SECRET, 'x-forwarded-host': 'www.example.com' };
+
+  it('answers 403 without the secret, and sets nothing', async () => {
+    const result = await handler(cloudFrontEvent({ query: `id=pubcid%3A${UUID}`, headers: { 'x-forwarded-host': 'www.example.com', 'x-sid-country': 'US' } }));
+    expect(result.statusCode).toBe(403);
+    expect(result.cookies).toEqual([]);
+  });
+
+  it("takes the client IP from the upstream's header, IPv4 and IPv6, not CloudFront-Viewer-Address", async () => {
+    for (const [ip, field] of [['203.0.113.7', 'ip'], ['2001:db8::7', 'ipv6']] as const) {
+      const result = await handler(cloudFrontEvent({ path: '/_sid/v1', headers: { ...upstream, 'x-sid-client-ip': ip, 'x-sid-country': 'US' } }));
+      expect(payload(result.body).ortb2?.device?.[field]).toBe(ip);
+    }
+  });
+
+  it("decides GDPR from the upstream's country, and the cookie domain from its host", async () => {
+    const eu = await handler(cloudFrontEvent({ query: `id=pubcid%3A${UUID}`, headers: { ...upstream, 'x-sid-country': 'DE' } }));
+    expect(eu.cookies).toEqual([]);
+    const us = await handler(cloudFrontEvent({ query: `id=pubcid%3A${UUID}`, headers: { ...upstream, 'x-sid-country': 'US' } }));
+    expect(us.cookies.find(c => c.startsWith('_pubcid='))).toMatch(/Domain=example\.com;.*Secure/);
+  });
+});

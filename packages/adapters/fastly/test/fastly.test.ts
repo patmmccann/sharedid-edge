@@ -8,6 +8,7 @@ import {
   handlerFromEnv,
   platformInfo,
   SECRET_SETTING,
+  SECRET_SETTINGS,
   SECRET_STORE
 } from '../src/index.js';
 import { REUSABLE_SANDBOX_DEFAULTS, reusableSandboxOptions } from '../src/sandbox.js';
@@ -257,6 +258,31 @@ describe('settings from the config and secret stores', () => {
       await misconfigured(request(), client('203.0.113.9'))
     ];
     for (const response of responses) expect(response.headers.get('cache-control')).toMatch(/\b(no-store|private)\b/);
+  });
+});
+
+describe('trusted upstream (service chaining, or behind another CDN)', () => {
+  const SECRET = 'd'.repeat(64);
+  const UPSTREAM = { SID_CLIENT_IP_HEADER: 'x-sid-client-ip', SID_LOCATION_HEADERS: '{"country":"x-sid-country"}', SID_MODULES: 'ip,geo' };
+
+  it(`reads SID_UPSTREAM_SECRETS from ${SECRET_STORE}, and refuses it in ${CONFIG_STORE}`, async () => {
+    const env = await envFromStores(stores({ ...SETTINGS, ...UPSTREAM }, { SID_UPSTREAM_SECRETS: JSON.stringify([SECRET]) }));
+    expect(env['SID_UPSTREAM_SECRETS']).toBe(JSON.stringify([SECRET]));
+    expect(SECRET_SETTINGS).toContain('SID_UPSTREAM_SECRETS');
+    await expect(envFromStores(stores({ ...SETTINGS, SID_UPSTREAM_SECRETS: JSON.stringify([SECRET]) }))).rejects.toThrow(/SID_UPSTREAM_SECRETS must be in the secret store/);
+  });
+
+  it("answers 403 without the secret; with it, uses the front service's headers, not event.client", async () => {
+    const handler = createStoresHandler(stores({ ...SETTINGS, ...UPSTREAM }, { SID_UPSTREAM_SECRETS: JSON.stringify([SECRET]) }));
+    const forbidden = await handler(request(`/_sid/sync?id=pubcid%3A${UUID}`, { headers: { 'x-sid-country': 'US' } }), client('203.0.113.9', BERLIN));
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.headers.getSetCookie()).toEqual([]);
+    for (const [ip, field] of [['192.0.2.44', 'ip'], ['2001:db8::44', 'ipv6']] as const) {
+      const response = await handler(request('/_sid/v1', { headers: { 'x-sid-upstream-auth': SECRET, 'x-sid-client-ip': ip, 'x-sid-country': 'US' } }), client('203.0.113.9', BERLIN));
+      const body = await payload(response);
+      expect(body.ortb2?.device?.[field]).toBe(ip);
+      expect(body.ortb2?.device?.geo).toMatchObject({ country: 'USA' });
+    }
   });
 });
 

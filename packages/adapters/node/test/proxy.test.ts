@@ -5,7 +5,7 @@
 import type { AddressInfo } from 'node:net';
 import { createServer, request as httpRequest, type IncomingHttpHeaders, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ConfigError, defineModule, resolveConfig, type PlatformInfo } from '@sharedid-edge/core';
+import { ConfigError, defineModule, resolveConfig, trustedUpstreamFromEnv, type PlatformInfo } from '@sharedid-edge/core';
 import { clientIpFromHeader, createNodeServer, type NodeServerOptions } from '../src/index.js';
 
 const UUID = 'c29cb2ae-769d-42f6-891a-f53cadee823d';
@@ -166,5 +166,36 @@ describe('clientIpHeader', () => {
     for (const bad of [undefined, '', 'unknown', '192.0.2.1:443', '192.0.2.1, 198.51.100.1', '999.0.0.1']) {
       expect(clientIpFromHeader('fastly-client-ip', bad)).toBeUndefined();
     }
+  });
+});
+
+describe('trusted upstream (a server any publisher CDN can reach)', () => {
+  const SECRET = 'c'.repeat(64);
+  const upstream = trustedUpstreamFromEnv({
+    SID_UPSTREAM_SECRETS: JSON.stringify([SECRET]),
+    SID_CLIENT_IP_HEADER: 'x-sid-client-ip',
+    SID_LOCATION_HEADERS: '{"country":"x-sid-country"}'
+  });
+  const server = (): Promise<string> => listen(createNodeServer({
+    config: resolveConfig({ SID_MODULES: 'platform', SID_COOKIE_DOMAIN: 'host-only' }),
+    modules: [echo],
+    now: () => NOW,
+    upstream
+  }));
+
+  it('answers 403 without the secret, whatever the visitor sends', async () => {
+    const base = await server();
+    const response = await fetch(`${base}/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d`, { headers: { ...SPOOFED, 'x-sid-country': 'US', 'x-sid-upstream-auth': 'nope' } });
+    expect(response.status).toBe(403);
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+
+  it("takes the client IP and country from the upstream's headers only, IPv4 and IPv6", async () => {
+    const base = await server();
+    for (const ip of ['203.0.113.70', '2001:db8::70']) {
+      expect(await platformVia(base, { ...SPOOFED, 'x-sid-upstream-auth': SECRET, 'x-sid-client-ip': ip, 'x-sid-country': 'de' }))
+        .toEqual({ clientIp: ip, country: 'DE', isEU: true });
+    }
+    expect(await platformVia(base, { ...SPOOFED, 'x-sid-upstream-auth': SECRET })).toEqual({});
   });
 });

@@ -72,6 +72,23 @@ Every row needs `SID_TRUST_PROXY=true`, and the server reachable only through th
 `SID_CLIENT_IP_HEADER` takes the header's value as an IP address. `CloudFront-Viewer-Address` is read as CloudFront writes it, `ip:port` (`198.51.100.10:46532`, or for IPv6 `2001:db8::1:46532`, the port after the last colon). When the header is missing or isn't a valid IP, the request has no client IP (the `ip` module returns nothing): the server never falls back to `X-Forwarded-For`, which the visitor controls.
 
 These settings are tested against a local stand-in for a CDN that overwrites these headers and appends to `X-Forwarded-For` (`test/proxy.test.ts`), not against the CDNs themselves: after deploying, check `/_sid/v1` with the `ip` and `geo` modules on from a known location.
+### Trusted upstream
+
+`SID_TRUST_PROXY` trusts whatever reaches the server, so the server must be reachable only through your proxy. A server that more than one proxy reaches over the internet, such as a sales house's behind each publisher's CDN ([SharedID Edge for sales houses](../../../docs/sales-houses.md)), uses trusted-upstream mode instead: each CDN sends a shared secret in `X-SID-Upstream-Auth`, and the server trusts the CDN's headers only on requests with one of the secrets in `SID_UPSTREAM_SECRETS`. Anything else gets `403 Forbidden` and no cookies.
+
+```sh
+SID_UPSTREAM_SECRETS='["<publisher A secret>","<publisher B secret>"]' \
+SID_CLIENT_IP_HEADER=x-sid-client-ip \
+SID_LOCATION_HEADERS='{"country":"x-sid-country"}' \
+SID_HOSTS='{"www.pub-a.com":{"SID_COOKIE_DOMAIN":"pub-a.com"},"www.pub-b.com":{"SID_COOKIE_DOMAIN":"pub-b.com"}}' \
+HOST=0.0.0.0 node packages/adapters/node/dist/cli.js
+```
+
+- The client IP and location come only from the headers `SID_CLIENT_IP_HEADER` and `SID_LOCATION_HEADERS` name, which must start with `x-` (not `X-Forwarded-For`), and `SID_LOCATION_HEADERS` must name the country's. With no client-IP header there's no client IP, never the connection's.
+- The site comes from `X-Forwarded-Host` (`SID_UPSTREAM_HOST_HEADER`), or from `Host` when the CDN doesn't send it.
+- `SID_TRUST_PROXY` isn't needed, and doesn't change anything for requests with the secret.
+- Keep the secrets in your secret manager, not a committed file. Put TLS in front of the server: the secret travels in a header.
+
 - **Process management:** run it under systemd, in a container, or with another process manager, like any Node.js service. It needs Node.js 24 or later.
 
 ## Configuration and secrets
@@ -84,8 +101,9 @@ From the environment:
 | `HOST` | `127.0.0.1` | Listening address. Keep it local behind a proxy. |
 | `SID_PUBLIC_ORIGIN` | `http://<Host header>` | Your public origin, for example `https://www.example.com`. TLS ends at your proxy, so the server sees http; cookies are `Secure` anyway for a public hostname (see [Secure cookies](../../../docs/configuration.md#secure-cookies)), so this is optional. Set it to make request URLs, and so what modules see, match the visitor's. |
 | `SID_TRUST_PROXY` | `false` | Trust the proxy's headers: the client IP from the first `X-Forwarded-For` entry (or `SID_CLIENT_IP_HEADER`), and the location from `SID_LOCATION_HEADERS`. Only behind a proxy that overwrites them. |
-| `SID_CLIENT_IP_HEADER` | unset (`X-Forwarded-For`) | The proxy's own client-IP header, used instead of `X-Forwarded-For` behind a CDN that appends to it: `cloudfront-viewer-address` (read as `ip:port`), `fastly-client-ip`, `true-client-ip`, `cf-connecting-ip`. Its value must be an IP address; a missing or invalid one gives no client IP. Needs `SID_TRUST_PROXY=true`. See [Per CDN](#per-cdn). |
-| `SID_LOCATION_HEADERS` | Cloudflare's visitor location headers (`cf-ipcountry` and the rest) | JSON: location field → the request header it comes from, for a proxy other than Cloudflare, like `{"country":"cloudfront-viewer-country"}`. Fields: `country`, `regionCode`, `city`, `postalCode`, `metroCode`, `latitude`, `longitude`, `timezone`, `continent`; a field left out isn't read. Needs `SID_TRUST_PROXY=true`. An invalid value is a configuration error. |
+| `SID_CLIENT_IP_HEADER` | unset (`X-Forwarded-For`) | The proxy's own client-IP header, used instead of `X-Forwarded-For` behind a CDN that appends to it: `cloudfront-viewer-address` (read as `ip:port`), `fastly-client-ip`, `true-client-ip`, `cf-connecting-ip`. Its value must be an IP address; a missing or invalid one gives no client IP. Needs `SID_TRUST_PROXY=true` (see [Per CDN](#per-cdn)) or `SID_UPSTREAM_SECRETS` (see [Trusted upstream](#trusted-upstream)). |
+| `SID_LOCATION_HEADERS` | Cloudflare's visitor location headers (`cf-ipcountry` and the rest) | JSON: location field → the request header it comes from, for a proxy other than Cloudflare, like `{"country":"cloudfront-viewer-country"}`. Fields: `country`, `regionCode`, `city`, `postalCode`, `metroCode`, `latitude`, `longitude`, `timezone`, `continent`; a field left out isn't read. Needs `SID_TRUST_PROXY=true`, or `SID_UPSTREAM_SECRETS`, which needs it with `country`. An invalid value is a configuration error. |
+| `SID_UPSTREAM_SECRETS`, `SID_UPSTREAM_AUTH_HEADER`, `SID_UPSTREAM_HOST_HEADER` | off, `x-sid-upstream-auth`, `x-forwarded-host` | [Trusted upstream](#trusted-upstream): a JSON array of secrets, from your secret store, and the headers carrying the secret and the site's hostname. |
 | `SID_COOKIE_DOMAIN` | **required** | The domain Prebid.js writes `_pubcid` on, normally your registrable domain (`example.com`), or `host-only`. Without it the server doesn't start. |
 | `SID_*` | | Every other core setting, as in the [Configuration reference](../../../docs/configuration.md). |
 | `SID_MODULE_PACKAGES` | none | Opt-in modules to add to the built-in ones, comma-separated, each `<package>#<export>`, like `@sharedid-edge/module-ec#ecModule`: `ec` and [vendor modules](../../vendor-modules/README.md). Each package must be installed next to the server. A missing package or export stops the server at start-up. |
@@ -104,6 +122,8 @@ Invalid settings stop the server at start-up with `Configuration error: …`.
 | `timezone`, `continent` | none | `cf-timezone`, `cf-ipcontinent` |
 | `isEU` | none | From the country: one of the 27 EU member states. Without a `gdpr` parameter, GDPR applies when it's set, or when the country is in Iceland, Liechtenstein, Norway, the UK or Turkey |
 | `traffic` | none | none: there is no platform bot verdict; the `bot` module and other modules still report to the traffic signal |
+
+In [trusted-upstream mode](#trusted-upstream), a request with the secret gets its client IP and location from the headers `SID_CLIENT_IP_HEADER` and `SID_LOCATION_HEADERS` name, and nothing else.
 
 Core's `locationInfo` validates the values the same way for every adapter, dropping empty, `XX`/`T1` and out-of-range ones. IPv4 clients on a dual-stack socket appear as `::ffff:192.0.2.1`, which the `ip` module reports as IPv4.
 
@@ -152,5 +172,6 @@ Locally, `npm run conformance` runs the whole conformance suite against this ser
 | `ip` returns nothing with `SID_CLIENT_IP_HEADER` set | The header doesn't reach the server (CloudFront: add `CloudFront-Viewer-Address` to the origin request policy), or its value isn't an IP address. |
 | `geo` returns nothing | No location headers reach the server (Cloudflare's, or those in `SID_LOCATION_HEADERS`), or `SID_TRUST_PROXY` is off. |
 | EU visitors without consent get cookies | The server doesn't know their country: pass it on (see [Deploy behind your proxy](#deploy-behind-your-proxy)). |
+| Every request gets `403 Forbidden` | `SID_UPSTREAM_SECRETS` is set, and the request doesn't carry one of its secrets in `X-SID-Upstream-Auth`. |
 | Visitors share one ID or one cookie | Something caches `/_sid/` responses. Turn caching off for that path. |
 | `verify-deployment` says the IPs differ | `/_sid/` is served from a different host or IP than your pages. Route it through the same proxy. |
