@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  This project's AWS live tests (.github/workflows/e2e-aws.yml), not for deployers: the test site. A private S3 bucket
+  with the e2e page and its Prebid.js bundle (e2e/site/public), behind a CloudFront distribution with origin access
+  control, plus two behaviours to SharedID Edge function URLs from template.yaml stacks: /_sid/* (the e2e settings)
+  and /_sid-platform/* (the modules that read CloudFront's data). deploy.sh deploys it; see README.md, Live tests.
+
+Parameters:
+  SidOriginDomainName:
+    Type: String
+    Description: The e2e function stack's OriginDomainName output (<id>.lambda-url.<region>.on.aws).
+  SidOriginAccessControlId:
+    Type: String
+    Description: The e2e function stack's OriginAccessControlId output.
+  PlatformBasePath:
+    Type: String
+    Default: /_sid-platform
+    AllowedPattern: '^/[A-Za-z0-9._~-]+$'
+    Description: The platform function stack's SidBasePath.
+  PlatformOriginDomainName:
+    Type: String
+    Description: The platform function stack's OriginDomainName output.
+  PlatformOriginAccessControlId:
+    Type: String
+    Description: The platform function stack's OriginAccessControlId output.
+
+Resources:
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # Only this distribution may read the bucket (origin access control); the bucket itself stays private.
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CloudFrontReadsTheSite
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${SiteBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+
+  SiteOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-s3
+        Description: CloudFront signs requests to the test site's bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub ${AWS::StackName} (SharedID Edge live tests)
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        # The cheapest price class: North America and Europe edge locations.
+        PriceClass: PriceClass_100
+        DefaultRootObject: index.html
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+        Origins:
+          - Id: site
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt SiteOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+          - Id: sharedid-edge
+            DomainName: !Ref SidOriginDomainName
+            OriginAccessControlId: !Ref SidOriginAccessControlId
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+          - Id: sharedid-edge-platform
+            DomainName: !Ref PlatformOriginDomainName
+            OriginAccessControlId: !Ref PlatformOriginAccessControlId
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+        DefaultCacheBehavior:
+          TargetOriginId: site
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          Compress: true
+          # Managed CachingOptimized. deploy.sh invalidates the cache after uploading the site.
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        # The /_sid/* behaviour as README.md describes it for an existing distribution, and the same for the platform
+        # function: managed CachingDisabled and AllViewerExceptHostHeader.
+        CacheBehaviors:
+          - PathPattern: /_sid/*
+            TargetOriginId: sharedid-edge
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+          - PathPattern: !Sub ${PlatformBasePath}/*
+            TargetOriginId: sharedid-edge-platform
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+
+Outputs:
+  DistributionId:
+    Description: The test site's distribution, which the function stacks allow to invoke them (DistributionId).
+    Value: !Ref Distribution
+  DistributionDomainName:
+    Description: The test site, https://<this>/, and the function stacks' SidCookieDomain.
+    Value: !GetAtt Distribution.DomainName
+  BucketName:
+    Description: The bucket deploy.sh uploads e2e/site/public to.
+    Value: !Ref SiteBucket
+  BucketRegionalDomainName:
+    Description: The bucket's regional domain, the conformance stack's SiteOriginDomainName.
+    Value: !GetAtt SiteBucket.RegionalDomainName

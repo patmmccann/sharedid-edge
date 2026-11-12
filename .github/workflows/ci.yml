@@ -249,8 +249,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Lint packages/adapters/aws-lambda/template.yaml
-        run: pipx run --spec 'cfn-lint>=1,<2' cfn-lint packages/adapters/aws-lambda/template.yaml
+      # template.yaml, and the live tests' test site (live/site.yaml; e2e-aws.yml deploys it, never from a pull request).
+      - name: Lint packages/adapters/aws-lambda/template.yaml and live/site.yaml
+        run: pipx run --spec 'cfn-lint>=1,<2' cfn-lint packages/adapters/aws-lambda/template.yaml packages/adapters/aws-lambda/live/site.yaml
 
   azure-template:
     name: Bicep templates (az bicep build, no Azure account)

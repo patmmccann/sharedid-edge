@@ -41,6 +41,16 @@ Parameters:
     Default: /_sid
     AllowedPattern: '^/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$'
     Description: SID_BASE_PATH, the path prefix. The CloudFront behaviour's path pattern is this plus /*.
+  SidPublicOrigin:
+    Type: String
+    Default: ''
+    AllowedPattern: '^(https?://[A-Za-z0-9.-]+(:[0-9]+)?)?$'
+    ConstraintDescription: your site's origin, like https://www.example.com
+    Description: >-
+      SID_PUBLIC_ORIGIN, your site's origin (https://www.example.com). Recommended: CloudFront can't forward the Host
+      header to the function URL, so without it the function sees the function URL's host instead of the site's, and
+      the clickid module ignores every landing page (it reads only pages on the site's own host). Empty: the
+      X-Forwarded-Host header, else the function URL's host.
   SidCookieName:
     Type: String
     Default: ''
@@ -115,7 +125,7 @@ Parameters:
   SidHosts:
     Type: String
     Default: ''
-    Description: "SID_HOSTS, several sites from one deployment, as JSON from hostname to settings (empty: one site). The function sees the site's host only when CloudFront passes it in X-Forwarded-Host."
+    Description: "SID_HOSTS, several sites from one deployment, as JSON from hostname to settings (empty: one site). The function sees the site's host only when CloudFront passes it in X-Forwarded-Host (leave SidPublicOrigin empty; see README.md, The site's host)."
   SidUpstreamSecrets:
     Type: String
     Default: ''
@@ -171,6 +181,7 @@ Resources:
       Environment:
         Variables:
           SID_BASE_PATH: !Ref SidBasePath
+          SID_PUBLIC_ORIGIN: !Ref SidPublicOrigin
           SID_COOKIE_NAME: !Ref SidCookieName
           SID_COOKIE_DOMAIN: !Ref SidCookieDomain
           SID_MAX_AGE_DAYS: !Ref SidMaxAgeDays

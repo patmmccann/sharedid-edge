@@ -247,6 +247,31 @@ describe('handlerFromEnv', () => {
   });
 });
 
+describe("the site's host behind CloudFront", () => {
+  // Recorded on a real distribution (the live tests): with origin access control, CloudFront sends the function URL's
+  // own Host and no X-Forwarded-Host, so without SID_PUBLIC_ORIGIN the request URL is on the function URL's host.
+  const landing = cloudFrontEvent({
+    path: '/_sid/sync',
+    query: 'id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d',
+    headers: { 'referer': 'https://www.example.com/?gclid=abc123', 'sec-fetch-site': 'same-origin' }
+  });
+  const env = { SID_COOKIE_DOMAIN: 'example.com', SID_MODULES: 'clickid' };
+
+  it('needs SID_PUBLIC_ORIGIN for the clickid module to read a landing page on the site', async () => {
+    const without = await handlerFromEnv(env)(landing);
+    expect(without.cookies.some(c => c.startsWith('_sid_gclid='))).toBe(false);
+    const withOrigin = await handlerFromEnv({ ...env, SID_PUBLIC_ORIGIN: 'https://www.example.com' })(landing);
+    expect(withOrigin.cookies.find(c => c.startsWith('_sid_gclid='))).toMatch(/^_sid_gclid=[0-9]{10}.abc123;/);
+  });
+
+  it("ignores a visitor's X-Forwarded-Host once SID_PUBLIC_ORIGIN is set", async () => {
+    const forged = { ...landing, headers: { ...landing.headers, 'x-forwarded-host': 'attacker.example' } };
+    const forgedReferer = { ...forged, headers: { ...forged.headers, referer: 'https://attacker.example/?gclid=planted' } };
+    const result = await handlerFromEnv({ ...env, SID_PUBLIC_ORIGIN: 'https://www.example.com' })(forgedReferer);
+    expect(result.cookies.some(c => c.startsWith('_sid_gclid='))).toBe(false);
+  });
+});
+
 describe('template.yaml', () => {
   it('sends /_sid/* through the managed CachingDisabled and AllViewerExceptHostHeader policies', () => {
     const template = readFileSync(join(import.meta.dirname, '..', 'template.yaml'), 'utf8');
@@ -267,7 +292,8 @@ describe('template.yaml', () => {
     const template = readFileSync(join(root, 'template.yaml'), 'utf8');
     const passed = new Set(Array.from(template.matchAll(/^ {10}(SID_[A-Z_]+): !Ref /gm), m => m[1]));
     expect(settings.size).toBeGreaterThan(10);
-    expect([...passed].sort()).toEqual([...settings].sort());
+    // Plus SID_PUBLIC_ORIGIN, which the adapter reads: behind CloudFront the function never sees the site's host.
+    expect([...passed].sort()).toEqual([...settings, 'SID_PUBLIC_ORIGIN'].sort());
   });
   it('uploads only the bundle directory, never dist/ with its unbundled lambda.js', () => {
     // Lambda's loader tries lambda.js before lambda.mjs, so uploading dist/ would load the unbundled entry.

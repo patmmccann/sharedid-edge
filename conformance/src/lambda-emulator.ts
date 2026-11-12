@@ -1,7 +1,9 @@
 // A local stand-in for CloudFront and a Lambda function URL, for running the conformance suite against the bundled
 // Lambda handler (packages/adapters/aws-lambda/deploy/lambda.mjs) without an AWS account. Each HTTP request becomes a payload
-// format 2.0 event, as a function URL would send it, with the CloudFront-Viewer-Address header CloudFront adds; the
-// handler's result is written back the way the function URL would.
+// format 2.0 event, as a function URL would send it, with the CloudFront-Viewer-Address header CloudFront adds and,
+// as CloudFront sends with origin access control, the function URL's own Host rather than the site's (so the handler
+// sees the site's host only through SID_PUBLIC_ORIGIN, as on AWS); the handler's result is written back the way the
+// function URL would.
 //
 // Started by targets.ts with the case file's configuration as environment variables (read by the handler at
 // "cold start", when the bundle is imported), plus PORT, SID_PUBLIC_ORIGIN and CONFORMANCE_LAMBDA_BUNDLE (the bundle's
@@ -47,6 +49,9 @@ const LOCATION_HEADERS: Readonly<Partial<Record<CaseLocationHeader, string>>> = 
   'cf-timezone': 'cloudfront-viewer-time-zone'
 };
 
+/** The function URL's host, which CloudFront sends as Host (the managed AllViewerExceptHostHeader policy). */
+const FUNCTION_URL_HOST = 'conformance.lambda-url.us-east-1.on.aws';
+
 async function toEvent(req: IncomingMessage, trustProxy: boolean): Promise<LambdaEventV2> {
   const headers: Record<string, string> = {};
   const cookies: string[] = [];
@@ -55,11 +60,12 @@ async function toEvent(req: IncomingMessage, trustProxy: boolean): Promise<Lambd
     const values = Array.isArray(value) ? value : [value];
     if (name === 'cookie') {
       cookies.push(...values.flatMap(v => v.split(';')).map(c => c.trim()).filter(c => c !== ''));
-    } else if (!name.startsWith('cloudfront-viewer-')) {
+    } else if (name !== 'host' && !name.startsWith('cloudfront-viewer-')) {
       // CloudFront replaces any CloudFront-Viewer-* headers the visitor sends; drop them the same way.
       headers[name] = values.join(',');
     }
   }
+  headers['host'] = FUNCTION_URL_HOST;
   const address = viewerAddress(req, trustProxy);
   if (address !== undefined) headers['cloudfront-viewer-address'] = address;
   for (const [name, value] of caseLocation(req, trustProxy, LOCATION_HEADERS)) headers[name] = value;
@@ -72,7 +78,7 @@ async function toEvent(req: IncomingMessage, trustProxy: boolean): Promise<Lambd
     ...(cookies.length > 0 ? { cookies } : {}),
     ...(body.byteLength > 0 ? { body: body.toString('base64'), isBase64Encoded: true } : { isBase64Encoded: false }),
     requestContext: {
-      domainName: 'conformance.lambda-url.us-east-1.on.aws',
+      domainName: FUNCTION_URL_HOST,
       http: { method: req.method ?? 'GET', sourceIp: '127.0.0.1' }
     }
   };

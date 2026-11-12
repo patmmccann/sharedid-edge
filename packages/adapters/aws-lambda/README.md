@@ -20,6 +20,7 @@ This is the full guide. The other platforms are listed under [Pick your platform
 - [Platform information](#platform-information)
 - [Using it in code](#using-it-in-code)
 - [Testing without an AWS account](#testing-without-an-aws-account)
+- [Live tests](#live-tests)
 - [Troubleshooting](#troubleshooting)
 - [Lambda@Edge](#lambdaedge)
 
@@ -62,7 +63,7 @@ npm run build                                  # compiles core and the modules
 npm run bundle -w @sharedid-edge/aws-lambda    # bundles the function into packages/adapters/aws-lambda/deploy/lambda.mjs
 ```
 
-The bundle is a single ESM file with no dependencies (about 19 KB gzipped, minified; CI fails it over 32 KB). There's no `sam build` step: the template's `CodeUri` is `dist/`, and `sam deploy` zips it as it is. Rebuild and bundle after updating the code.
+The bundle is a single ESM file with no dependencies (about 19 KB gzipped, minified; CI fails it over 32 KB). There's no `sam build` step: the template's `CodeUri` is `deploy/` (the bundle alone), and `sam deploy` zips it as it is. Rebuild and bundle after updating the code.
 
 **`ec` and vendor modules (opt-in).** The bundle has the built-in modules (`ip`, `geo`, `reflect`, `bot`, `ua`, `clickid`). [`ec`](../../vendor-modules/ec/README.md) (Trusted Server Edge Cookies, whose ID is derived from the IP address) and [vendor modules](../../vendor-modules/README.md) aren't in it: add each with `--module <package>#<export>`, in place of `npm run bundle -w @sharedid-edge/aws-lambda`:
 
@@ -95,6 +96,7 @@ The prompts:
 | `DistributionId` | Your distribution's ID. Only it may invoke the function. |
 | `SiteOriginDomainName`, `Aliases`, `AcmCertificateArn` | Leave empty unless `CreateDistribution` is `true`. |
 | `SidBasePath` | `/_sid`, unless you use another path. The behaviour's path pattern is this plus `/*`. |
+| `SidPublicOrigin` | Your site's origin, like `https://www.example.com`. Recommended, and needed for the `clickid` module: see [The site's host](#the-sites-host). |
 | `SidCookieDomain` | **Required:** the domain Prebid.js writes `_pubcid` on, normally your registrable domain (`example.com`), or `host-only`. See [Configure Prebid.js](../../../docs/prebid.md). |
 | Other `Sid*` | The [settings](#configuration). Empty means the default. |
 | `SidModuleSecrets` | Only for modules that need a secret; see [Secrets](#secrets). |
@@ -156,12 +158,21 @@ sam deploy --parameter-overrides SidModules=ip SidCookieDomain=.example.com
 
 (Parameters not listed keep their saved values; `sam deploy --guided` prompts for all of them.)
 
-Two more variables are read only by the Lambda adapter. The template doesn't set them, since the defaults are right behind CloudFront:
+Two more variables are read only by the Lambda adapter:
 
 | Variable | Default | |
 | --- | --- | --- |
-| `SID_PUBLIC_ORIGIN` | `https://` + `X-Forwarded-Host`, else `Host` | The origin of request URLs. Only its scheme matters, and cookies are `Secure` for a public hostname whatever the scheme, so it matters only for local development (see [Secure cookies](../../../docs/configuration.md#secure-cookies)). |
-| `SID_BEHIND_CLOUDFRONT` | `true` | `false` when nothing is in front of the function (see [Platform information](#platform-information)). Don't use it for `/_sid/*` on a site: without CloudFront the endpoint isn't on the site's IP addresses. |
+| `SID_PUBLIC_ORIGIN` | `https://` + `X-Forwarded-Host`, else `Host` | The origin of request URLs: your site's, like `https://www.example.com` (the template's `SidPublicOrigin`). Set it: behind CloudFront the function doesn't see your site's host (see [The site's host](#the-sites-host)). Its scheme also decides `Secure` cookies for local development ([Secure cookies](../../../docs/configuration.md#secure-cookies)). |
+| `SID_BEHIND_CLOUDFRONT` | `true` | `false` when nothing is in front of the function (see [Platform information](#platform-information)). Don't use it for `/_sid/*` on a site: without CloudFront the endpoint isn't on the site's IP addresses. The template doesn't set it, since the default is right behind CloudFront. |
+
+### The site's host
+
+With origin access control, CloudFront must send the function URL's own hostname as `Host` (the reason for `AllViewerExceptHostHeader`), and it adds no `X-Forwarded-Host`. So, unless `SID_PUBLIC_ORIGIN` says otherwise, the function sees request URLs on `<id>.lambda-url.<region>.on.aws`, not on your site. Cookies don't mind: they belong to the host the browser asked. But anything that compares a URL with the site's host does:
+
+- **The `clickid` module** reads landing pages only on the request's own host (and its `hosts` setting), and ignores a request whose `Referer` is on another one. Without `SID_PUBLIC_ORIGIN`, every page on your site is on another host, so it never keeps a click ID.
+- **A visitor's own `X-Forwarded-Host`** reaches the function (`AllViewerExceptHostHeader` forwards it), and without `SID_PUBLIC_ORIGIN` it becomes the request URL's host. It can only change that visitor's own response, but with `SID_PUBLIC_ORIGIN` set it's ignored.
+
+So set `SidPublicOrigin` to your site's origin (`https://www.example.com`). [`SID_HOSTS`](../../../docs/configuration.md#several-sites-from-one-deployment) (several hostnames on one distribution) needs the site's host per request instead: leave `SidPublicOrigin` empty and have CloudFront set `X-Forwarded-Host` from the viewer's `Host` (for example with a CloudFront Function on the behaviour's viewer requests), which also replaces a visitor's own.
 
 Trusted-upstream mode, for a function behind publishers' CDNs, has its own settings and template parameters: see [Behind a publisher's CDN](#behind-a-publishers-cdn-trusted-upstream).
 
@@ -235,7 +246,7 @@ The handler takes Lambda function URL events, which use the API Gateway HTTP API
 | `headers` | Headers. Lambda joins repeated headers with commas. |
 | `cookies[]` | The `Cookie` header, joined with `; `. Payload 2.0 moves cookies out of `headers`. |
 | `body`, `isBase64Encoded` | The body (decoded from base64 if flagged), for methods other than GET and HEAD. The handler answers those with 405 anyway. |
-| URL origin | `publicOrigin` (`SID_PUBLIC_ORIGIN`), else `https://` with `X-Forwarded-Host`, else `Host`, else `requestContext.domainName`. Always https: CloudFront terminates TLS, and function URLs are https-only. With origin access control the host is the function URL's, which doesn't matter: cookies without a `Domain` belong to the host the browser asked, and the handler uses only the scheme. |
+| URL origin | `publicOrigin` (`SID_PUBLIC_ORIGIN`), else `https://` with `X-Forwarded-Host`, else `Host`, else `requestContext.domainName`. Always https: CloudFront terminates TLS, and function URLs are https-only. With origin access control `Host` is the function URL's, so set `SID_PUBLIC_ORIGIN` ([The site's host](#the-sites-host)). |
 
 **`Response` to result:**
 
@@ -304,12 +315,12 @@ export const handler = createLambdaHandler({
 Nothing here needs an account:
 
 - `npm test -w @sharedid-edge/aws-lambda`: unit tests with recorded-style function URL events (`test/events.ts`).
-- `npm run conformance:lambda`: bundles the function, then runs the whole conformance suite against `deploy/lambda.mjs` behind a local stand-in for CloudFront and the function URL (`conformance/src/lambda-emulator.ts`). It turns each HTTP request into a payload 2.0 event, moves cookies into `cookies[]`, drops any `CloudFront-Viewer-*` headers the client sent, and adds `CloudFront-Viewer-Address` from the connection (or, as the conformance cases need, from `X-Forwarded-For` when the case sets `SID_TRUST_PROXY`), then writes the result back.
+- `npm run conformance:lambda`: bundles the function, then runs the whole conformance suite against `deploy/lambda.mjs` behind a local stand-in for CloudFront and the function URL (`conformance/src/lambda-emulator.ts`). It turns each HTTP request into a payload 2.0 event, moves cookies into `cookies[]`, drops any `CloudFront-Viewer-*` headers the client sent, sends the function URL's host as `Host` (as CloudFront does; the target sets `SID_PUBLIC_ORIGIN`), and adds `CloudFront-Viewer-Address` from the connection (or, as the conformance cases need, from `X-Forwarded-For` when the case sets `SID_TRUST_PROXY`), then writes the result back.
 - `npm run conformance:lambda-aws-emulator`: deploys the same bundles to [AWS Emulator](https://github.com/aws/aws-emulator), AWS's open-source local emulator of the AWS APIs, and runs the suite through its Lambda function URL (`conformance/src/aws-emulator.ts`). See [On AWS Emulator](#on-aws-emulator).
 - CI also runs `cfn-lint` on `template.yaml`.
 - Against a real deployment: `node conformance/dist/run.js --base-url https://www.example.com` runs the default-configuration cases.
 
-What these don't cover, and a first deployment should check: origin access control signing, the function URL's resource policy, and CloudFront's actual header values.
+What these don't cover, and a first deployment should check: origin access control signing, the function URL's resource policy, and CloudFront's actual header values. This project checks them on a real distribution in its [live tests](#live-tests).
 
 ### On AWS Emulator
 
@@ -332,6 +343,90 @@ Nothing is in front of the function URL, so the functions run with `SID_BEHIND_C
 
 Two gaps of the emulator's runtime are filled in, without changing the bundle: it runs Node.js code in an embedded JavaScript engine that has neither the Fetch API (`Headers`, `Request`, `Response`) nor WebCrypto's HMAC (`crypto.subtle.importKey` and `sign`), both in Node.js 24. `conformance/src/aws-emulator-runtime.ts` adds them, preloaded through `NODE_OPTIONS`, and adds nothing a runtime already has. AWS Emulator can't yet run the stack in `template.yaml` (its Serverless transform doesn't create the function URL), or pass CloudFront's response headers, `Set-Cookie` included, back from a function URL origin, so the CloudFront path still needs a real deployment.
 
+## Live tests
+
+Some things can only be checked on a real CloudFront distribution:
+
+- that the template deploys;
+- origin access control signing and the function URL's resource policy;
+- the headers CloudFront actually passes: the `CloudFront-Viewer-*` address and location, `User-Agent` and the Client Hints, `Origin` and `Sec-GPC`, but not `Host`;
+- the [Safari rule](#architecture), with unmodified Prebid.js on a page from the same distribution.
+
+The [Live tests (AWS) workflow](../../../.github/workflows/e2e-aws.yml) checks them in this project's AWS test account after every merge to `main`, nightly and on demand from the Actions tab, like the [Cloudflare live tests](../cloudflare/README.md#live-tests). It never runs on pull requests, which stay account-free, and runs don't overlap, since they deploy to the same stacks. Until the `AWS_E2E_ROLE_ARN` repository variable is set, it skips with a notice.
+
+[`live/deploy.sh`](live/deploy.sh) deploys with the AWS CLI alone. There's no SAM CLI: `aws cloudformation package` uploads the bundle, and CloudFormation runs the Serverless transform.
+
+| Stack | What |
+| --- | --- |
+| `sharedid-e2e` | This package's `template.yaml` with the Cloudflare `e2e` environment's settings (no pixel caching, `reflect` with `uid1` and `_ga`, `clickid`), on `/_sid` |
+| `sharedid-e2e-platform` | `template.yaml` with `SID_MODULES=ip,geo,ua,bot` and an allowed origin, on `/_sid-platform`: the modules that read what CloudFront passes |
+| `sharedid-e2e-site` | [`live/site.yaml`](live/site.yaml): a private S3 bucket with the test page and its Prebid.js bundle (`e2e/site/public`), behind a distribution with S3 origin access control. Both functions' behaviours are added as [for an existing distribution](#add-the-behaviour-to-an-existing-distribution), with the managed `CachingDisabled` and `AllViewerExceptHostHeader` policies. |
+| `sharedid-e2e-conformance` | `template.yaml` with `CreateDistribution=true` and the default settings, on a distribution of its own, for the conformance suite's default-configuration cases |
+
+The packaged code goes in one more S3 bucket, `sharedid-e2e-deploy-<account>`. The script then uploads the site and invalidates its cache. The function stacks need the site distribution's ID (the only distribution allowed to invoke them) and its domain. Both exist only once the site stack does, so the first deployment deploys the function stacks twice. Then the workflow runs:
+
+- `npm run verify-deployment -- --site https://<distribution>.cloudfront.net`.
+- [`scripts/check-cloudfront.ts`](../../../scripts/check-cloudfront.ts) against `/_sid-platform`. It checks that:
+  - the client IP is the address `checkip.amazonaws.com` sees;
+  - there's a `device.geo` country;
+  - Chrome's Client Hints become `device.sua`;
+  - an allowed `Origin` gets CORS;
+  - `Sec-GPC: 1` gets `denied: gpc`;
+  - forged `CloudFront-Viewer-*` and `X-Forwarded-For` headers change nothing;
+  - each request reaches the function (no caching);
+  - the function URL refuses direct requests.
+- The conformance suite's default-configuration cases, against the conformance distribution (`node conformance/dist/run.js --base-url https://<distribution>.cloudfront.net/_sid`). These cases need no client IP or location of their own. The cases that do need them run against the local stand-ins, since a live run only has the runner's real address and location. The Cloudflare live run does the same.
+- The Playwright tests in [`e2e/`](../../../e2e/AGENTS.md), against the test site, in Chromium, Firefox and WebKit.
+
+A failing run, after a merge or overnight, opens an issue, or comments on the open one.
+
+**The cookie domain on `cloudfront.net`.** The test site has no domain of its own yet, so it's served on the distribution's `<id>.cloudfront.net` hostname. Because `cloudfront.net` is on the [Public Suffix List](https://publicsuffix.org/):
+
+- browsers refuse cookies with `Domain=cloudfront.net`;
+- Prebid.js's probe for the highest domain it can write on settles on the hostname itself, and writes `_pubcid` with `Domain=<id>.cloudfront.net`.
+
+That's a domain cookie, not a host-only one. So `SID_COOKIE_DOMAIN` is the distribution's hostname, and so is `E2E_COOKIE_DOMAIN`; `host-only` would leave two `_pubcid` cookies. On a site's own domain, use the registrable domain as usual.
+
+### Setting it up
+
+In the AWS account (us-east-1). The stacks, functions, roles and buckets are all named `sharedid-*`, which is what the permissions are scoped to.
+
+1. **The GitHub OIDC provider.** Once per account: IAM → Identity providers → Add provider. Choose OpenID Connect, with provider URL `https://token.actions.githubusercontent.com` and audience `sts.amazonaws.com`.
+2. **The permission policy.** IAM → Policies → Create policy, with the JSON in [`live/iam-policy.json`](live/iam-policy.json), `ACCOUNT_ID` replaced by the account's ID.
+   - It must be a customer-managed policy, because it's over IAM's 2,048-character limit for a user's inline policy.
+   - It allows CloudFormation on `sharedid-*` stacks and the Serverless transform, Lambda on `sharedid-*` functions, S3 on `sharedid-*` buckets, the functions' log groups, and CloudFront distributions, origin access controls and invalidations.
+   - It also allows the functions' execution roles (`sharedid-*`), with limits so the role can't grant itself more: only `AWSLambdaBasicExecutionRole` can be attached, and the roles can be passed only to Lambda.
+3. **The role.** IAM → Roles → Create role → Custom trust policy, with [`live/trust-policy.json`](live/trust-policy.json) (`ACCOUNT_ID` replaced).
+   - Only workflow runs on `main` of `patmmccann/sharedid-edge` may assume it: pushes, the nightly schedule, and runs started from the Actions tab on `main`.
+   - A fork changes the repository in `sub`.
+   - Attach the policy from step 2.
+4. **The repository variables.** Under Settings → Secrets and variables → Actions → Variables (they're not secrets, since nothing here is secret), set `AWS_E2E_ROLE_ARN` to the role's ARN. `AWS_E2E_REGION` is optional (default `us-east-1`).
+5. **A budget alarm** on the account is worth having. At test volumes, Lambda, CloudFront and S3 cost cents a month.
+
+To deploy and test by hand, use credentials allowed by the same policy (a profile, say):
+
+```sh
+npm ci && npm run build && npm run bundle -w @sharedid-edge/aws-lambda
+npm ci --prefix e2e
+AWS_PROFILE=<profile> packages/adapters/aws-lambda/live/deploy.sh      # prints the site and conformance URLs
+npm run verify-deployment -- --site https://<site>.cloudfront.net
+npx tsx scripts/check-cloudfront.ts --endpoint https://<site>.cloudfront.net/_sid-platform
+node conformance/dist/run.js --base-url https://<conformance>.cloudfront.net/_sid
+cd e2e && E2E_BASE_URL=https://<site>.cloudfront.net E2E_COOKIE_DOMAIN=<site>.cloudfront.net npx playwright test
+```
+
+To remove everything, empty the site bucket first. Deleting a stack with a distribution takes a while, since CloudFormation disables the distribution and waits for that to deploy.
+
+```sh
+aws s3 rm s3://sharedid-e2e-site-<account> --recursive
+aws cloudformation delete-stack --stack-name sharedid-e2e-conformance
+aws cloudformation delete-stack --stack-name sharedid-e2e-site
+aws cloudformation wait stack-delete-complete --stack-name sharedid-e2e-site
+aws cloudformation delete-stack --stack-name sharedid-e2e
+aws cloudformation delete-stack --stack-name sharedid-e2e-platform
+aws s3 rb s3://sharedid-e2e-deploy-<account> --force
+```
+
 ## Troubleshooting
 
 | Symptom | Check |
@@ -343,6 +438,7 @@ Two gaps of the emulator's runtime are filled in, without changing the bundle: i
 | EU visitors get cookies without consent, or the reverse | `CloudFront-Viewer-Country` isn't forwarded (GDPR is then unknown), or the page sends `gdpr=`. See `X-SharedID-Status`. |
 | Responses served from cache, or one visitor's cookie on another's response | The behaviour's cache policy isn't `CachingDisabled`. |
 | Cookie set but gone after a week in Safari | `/_sid/*` is not on the site's own distribution. Run `verify-deployment`. |
+| The `clickid` module keeps no click IDs (`_sid_*` cookies) | `SidPublicOrigin` isn't set, so the function sees the function URL's host, not the site's ([The site's host](#the-sites-host)). |
 | `403 Forbidden` (text, not JSON) behind a publisher's CDN | Trusted-upstream mode: the request doesn't carry one of `SID_UPSTREAM_SECRETS` in `X-SID-Upstream-Auth`. Check the publisher's CDN sets it, and that a custom origin request policy forwards it. |
 | `404` behind a publisher's CDN | `X-Forwarded-Host` doesn't reach the function, or names a host `SidHosts` doesn't list. |
 | Two cookies merged into one, or only one set | Something between CloudFront and the browser joins `Set-Cookie` headers. The function returns them separately in `cookies[]`. |
