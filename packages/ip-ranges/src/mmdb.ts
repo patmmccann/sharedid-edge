@@ -102,7 +102,7 @@ export class MmdbReader {
   /**
    * Every network in the tree, in address order, each with its record offset (undefined for no data). In an IPv6
    * database, IPv4 addresses are the subtree at `::/96`; other paths to that subtree (MaxMind aliases `::ffff:0:0/96`
-   * and `2002::/16` to it) are left out, so each IPv4 network is listed once.
+   * and `2002::/16` to it) are listed as networks without data, so each IPv4 network is listed once.
    */
   *networks(): Generator<MmdbNetwork> {
     const { nodeCount, ipVersion } = this.metadata;
@@ -116,8 +116,13 @@ export class MmdbReader {
         yield { start, prefixLength, record: record === nodeCount ? undefined : this.recordOffset(record) };
         continue;
       }
-      // Another path to the IPv4 subtree (an alias such as ::ffff:0:0/96): its networks are listed under ::/96.
-      if (record === ipv4Root && !(prefixLength === 96 && start === 0n)) continue;
+      // Another path to the IPv4 subtree (an alias such as ::ffff:0:0/96 or 2002::/16): its networks are listed under
+      // ::/96, so the alias is listed as one network without data. Leaving it out would let the network before it run on
+      // into its addresses in a range table.
+      if (record === ipv4Root && !(prefixLength === 96 && start === 0n)) {
+        yield { start, prefixLength, record: undefined };
+        continue;
+      }
       if (prefixLength >= bits) throw new Error('MMDB search tree is deeper than the address');
       const [left, right] = this.node(record);
       stack.push(

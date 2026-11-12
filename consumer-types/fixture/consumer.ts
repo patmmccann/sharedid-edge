@@ -12,6 +12,9 @@ import {
   locationWithEU,
   logRequestFailure,
   parseHeaderMap,
+  parseIp,
+  parseViewerAddress,
+  type ParsedIp,
   mergeTraffic,
   preciseLocationDenial,
   publicOriginFromEnv,
@@ -137,6 +140,9 @@ export function platformFromHeaders(headers: Headers, env: Readonly<Record<strin
 }
 export const geoHeaders: Partial<Record<'country' | 'city', string>> = parseHeaderMap('{"country":"x-geo"}', 'SID_LOCATION_HEADERS', ['country', 'city'], '{"country":"x-geo"}');
 export const validName: boolean = isHeaderName('x-geo');
+export const viewerIp: string | undefined = parseViewerAddress('2001:db8::1:443');
+const parsedIp: ParsedIp | undefined = parseIp('192.0.2.1');
+export const ipVersion: 4 | 6 | undefined = parsedIp?.version;
 
 export const booleanSetting: boolean = booleanFromEnv('true', false);
 

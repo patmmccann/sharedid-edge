@@ -84,6 +84,20 @@ describe('MmdbReader', () => {
     expect(aliased.lookup((0xffffn << 32n) | 0x05010203n)).toBe(aliased.lookup(0x05010203n));
   });
 
+  it('lists an alias as a network without data, so the network before it does not run into it', () => {
+    // Reported in review: 2001:ffff::/32 ends right where the 2002::/16 alias starts.
+    const reader = new MmdbReader(writeMmdb({ databaseType: 'T', ipVersion: 6, ipv4Aliases: true, networks: [
+      { network: '5.0.0.0/8', record: country('DE') },
+      { network: '2001:ffff::/32', record: country('FR') }
+    ] }));
+    expect([...reader.networks()].filter(n => n.start === 0x2002n << 112n)).toEqual([{ start: 0x2002n << 112n, prefixLength: 16, record: undefined }]);
+    const t = decodeRangeTable(encodeRangeTable(buildRangeTable(reader, countryCode).source));
+    expect(lookupRange(t, ip('2001:ffff:ffff::1'))).toBe('FR');
+    expect(lookupRange(t, ip('2002:500::'))).toBeUndefined();
+    expect(lookupRange(t, ip('2002:ffff:ffff::1'))).toBeUndefined();
+    expect(lookupRange(t, ip('5.0.0.1'))).toBe('DE');
+  });
+
   it('decodes records, following pointers', () => {
     const reader = new MmdbReader(writeMmdb({ databaseType: 'T', ipVersion: 4, networks: [
       { network: '10.0.0.0/8', record: { a: 'x', n: 7, big: 2n ** 70n, f: 1.5, yes: true, list: [1, 'two'], bytes: new Uint8Array([1, 2]) } },
