@@ -173,7 +173,8 @@ export function trustedUpstreamFromEnv(env: Env, options: TrustedUpstreamOptions
     if (seen.has(name)) throw new ConfigError(`${setting}: "${name}" is used twice; the upstream's headers must all differ`);
     seen.add(name);
   }
-  return { authHeader, secrets: parseSecrets(secretsText), hostHeader, forwarded: { clientIp, location } };
+  // Frozen like the module secrets: the handler keeps it for every request.
+  return Object.freeze({ authHeader, secrets: parseSecrets(secretsText), hostHeader, forwarded: Object.freeze({ clientIp, location: Object.freeze(location) }) });
 }
 
 /** `SID_UPSTREAM_SECRETS`: a JSON array of secrets. Errors never include a value. */

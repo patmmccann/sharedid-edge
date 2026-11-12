@@ -27,11 +27,11 @@ export interface ModuleContext {
    * follow it.
    */
   readonly storage: StorageDecision;
-  /** This module's entry from `SID_MODULE_CONFIG`, or `{}`. */
+  /** This module's entry from `SID_MODULE_CONFIG`, or `{}`. Frozen all the way down: writing to it throws. */
   readonly config: Readonly<Record<string, unknown>>;
   /**
    * This module's entry from `SID_MODULE_SECRETS` (set as a platform secret, not a plain variable), or `{}`. Never put
-   * these in the output or in errors.
+   * these in the output or in errors. Frozen, like `config`.
    */
   readonly secrets: Readonly<Record<string, string>>;
 }

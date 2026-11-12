@@ -12,6 +12,9 @@
 //                   to .sharedid-modules/ and @sharedid-edge/modules is aliased to it. The size budget is reported,
 //                   not enforced: a build with opt-in modules answers to the platform's limit.
 //   --vendor-modules  add every module in packages/vendor-modules/ (the conformance suite's build).
+//
+// An adapter can add options of its own (`args`, parsed with these) and change the build from them (`variant`): the
+// Fastly adapter's --reusable-sandbox builds another entry point.
 import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -28,20 +31,26 @@ export const BUDGET = 32 * 1024;
  * bundles `<root>/<entry>` into `<file>` there as minified ESM with esbuild (`options` add to or override the
  * defaults; `--bowser` aliases the module list), and checks the gzipped size. Sets a failing exit code when it's over
  * budget, so the caller can run its own checks first. Returns the output directory, the bundle's path and the
- * package's package.json, for writing the rest of the deployment.
+ * package's package.json, for writing the rest of the deployment, and the parsed options.
  *
- * @param {{ root: string, entry: string, file: string, label: string, options?: import('esbuild').BuildOptions }} bundle
- * @returns {Promise<{ outdir: string, outfile: string, pkg: { version: string, devDependencies: Record<string, string> } }>}
+ * `args` are the adapter's own options, in `parseArgs`'s form. `variant`, given their values, can replace the entry
+ * point, add to the label and add esbuild options.
+ *
+ * @typedef {{ entry?: string, label?: string, options?: import('esbuild').BuildOptions }} Variant
+ * @param {{ root: string, entry: string, file: string, label: string, options?: import('esbuild').BuildOptions, args?: import('node:util').ParseArgsOptionsConfig, variant?: (values: Record<string, unknown>) => Variant }} bundle
+ * @returns {Promise<{ outdir: string, outfile: string, pkg: { version: string, devDependencies: Record<string, string> }, args: Record<string, unknown> }>}
  */
-export async function bundleAdapter({ root, entry, file, label, options = {} }) {
+export async function bundleAdapter({ root, entry, file, label, options = {}, args: own = {}, variant = () => ({}) }) {
   const { values: args } = parseArgs({
     options: {
       bowser: { type: 'boolean', default: false },
       outdir: { type: 'string', default: 'deploy' },
       module: { type: 'string', multiple: true, default: [] },
-      'vendor-modules': { type: 'boolean', default: false }
+      'vendor-modules': { type: 'boolean', default: false },
+      ...own
     }
   });
+  const chosen = variant(args);
   const extra = [...(args['vendor-modules'] ? vendorModuleSpecs() : []), ...args.module];
   const outdir = resolve(root, args.outdir);
   // The directory is emptied first, so it must be a deploy* directory of this package.
@@ -52,7 +61,7 @@ export async function bundleAdapter({ root, entry, file, label, options = {} }) 
   rmSync(outdir, { recursive: true, force: true });
   mkdirSync(outdir);
   await build({
-    entryPoints: [join(root, entry)],
+    entryPoints: [join(root, chosen.entry ?? entry)],
     outfile,
     bundle: true,
     format: 'esm',
@@ -63,11 +72,12 @@ export async function bundleAdapter({ root, entry, file, label, options = {} }) 
     legalComments: 'none',
     logLevel: 'warning',
     ...options,
+    ...chosen.options,
     ...moduleAlias(root, args.bowser, extra)
   });
-  const labelled = `${label}${args.bowser ? ' with Bowser' : ''}${extra.length > 0 ? ` with ${extra.map(spec => spec.slice(0, spec.indexOf('#'))).join(', ')}` : ''}`;
+  const labelled = `${label}${chosen.label === undefined ? '' : ` ${chosen.label}`}${args.bowser ? ' with Bowser' : ''}${extra.length > 0 ? ` with ${extra.map(spec => spec.slice(0, spec.indexOf('#'))).join(', ')}` : ''}`;
   checkBudget(outfile, labelled, root, { enforce: extra.length === 0 });
-  return { outdir, outfile, pkg: JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) };
+  return { outdir, outfile, pkg: JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')), args };
 }
 
 /**
