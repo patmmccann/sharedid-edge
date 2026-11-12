@@ -72,7 +72,7 @@ jobs:
       # CloudFormation returns once the distributions are deployed; the script waits for the cache invalidation.
       - name: Deploy (packages/adapters/aws-lambda/live/deploy.sh)
         id: deploy
-        run: packages/adapters/aws-lambda/live/deploy.sh
+        run: bash packages/adapters/aws-lambda/live/deploy.sh
       - name: verify-deployment
         run: npm run verify-deployment -- --site "${{ steps.deploy.outputs.site }}"
       - name: What CloudFront passes to the function
