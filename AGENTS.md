@@ -7,7 +7,7 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | Folder | What | Notes |
 | --- | --- | --- |
 | `spec/` | The specification: `SPEC.md`, and `modules/<name>.md` per module | Behaviour changes start here. |
-| `docs/` | Topic docs for publishers (Prebid.js, responses, configuration, consent, modules, migrating, troubleshooting, development) | Linked from [README.md](README.md). |
+| `docs/` | Topic docs for publishers (Prebid.js, responses, configuration, consent, modules, migrating, troubleshooting, development) and the guides for hosting companies and sales houses | Linked from [README.md](README.md). |
 | `conformance/` | HTTP cases and their runner | The contract; every implementation must pass. |
 | `packages/core/` | Platform-neutral handler, consent, cookies, module interface | Published as `@sharedid-edge/core`. Depends on no module. |
 | `packages/ip-ranges/` | IP range tables, the MMDB reader and the country module that IP database vendor modules share | Published as `@sharedid-edge/ip-ranges`. Not a module; see its [`AGENTS.md`](packages/ip-ranges/AGENTS.md). |
@@ -78,6 +78,7 @@ Every pull request that adds or changes something users touch ships its document
   | Core responses (`/sync`, `/v1`, opt-out, the debugging headers) | [`docs/responses.md`](docs/responses.md) |
   | Core settings | `SETTINGS` in [`packages/core/src/config.ts`](packages/core/src/config.ts); [`docs/configuration.md`](docs/configuration.md) is generated from it |
   | Consent, modules in general, migrating, troubleshooting, development | [`docs/consent.md`](docs/consent.md), [`docs/modules.md`](docs/modules.md), [`docs/migrating.md`](docs/migrating.md), [`docs/troubleshooting.md`](docs/troubleshooting.md), [`docs/development.md`](docs/development.md) |
+  | Running it for many publishers: hosting companies, sales houses (the canonical publisher-CDN recipes for trusted-upstream mode) | [`docs/hosting-companies.md`](docs/hosting-companies.md), [`docs/sales-houses.md`](docs/sales-houses.md); the platform steps stay in each adapter's README, which links to them |
   | Core behaviour | [spec/SPEC.md](spec/SPEC.md) |
   | A module's behaviour | `spec/modules/<name>.md` |
 

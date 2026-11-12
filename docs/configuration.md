@@ -53,7 +53,7 @@ Cookies get `Secure` on https, and also when a public hostname arrives over plai
 
 ## Several sites from one deployment
 
-A hosting company, or anyone serving several publishers' sites from the same platform account, can run one deployment for all of them. `SID_HOSTS` lists each site's hostname with the settings that differ, on top of the deployment's own:
+A hosting company, or anyone serving several publishers' sites from the same platform account, can run one deployment for all of them ([SharedID Edge for hosting companies](hosting-companies.md) is the guide). `SID_HOSTS` lists each site's hostname with the settings that differ, on top of the deployment's own:
 
 ```json
 {
@@ -71,7 +71,7 @@ A hosting company, or anyone serving several publishers' sites from the same pla
 
 ## Trusted upstream: behind a publisher's CDN
 
-A sales house can run one endpoint for the publishers it represents, with each publisher's CDN passing `/_sid/*` to it. The browser still sees the publisher's hostname and IP addresses, so the cookies are first-party. Setting it up, with the CDN configuration for CloudFront, Fastly, Akamai, Cloudflare and nginx, is in the Cloudflare adapter's [Sales houses](../packages/adapters/cloudflare/README.md#sales-houses) section. What the settings do:
+A sales house can run one endpoint for the publishers it represents, with each publisher's CDN passing `/_sid/*` to it. The browser still sees the publisher's hostname and IP addresses, so the cookies are first-party. Setting it up, with the configuration for each publisher CDN (CloudFront, Fastly, Akamai, Cloudflare, nginx and others), is in [SharedID Edge for sales houses](sales-houses.md). What the settings do:
 
 - **The endpoint only trusts requests with the secret.** The publisher's CDN adds a header, `X-SID-Upstream-Auth` by default, holding one of the secrets in `SID_UPSTREAM_SECRETS`. A request without it, or with a wrong or repeated one, gets a `403 Forbidden` and no cookies, whatever its path. Nothing about the request is logged. Without the secret, nobody can call the endpoint directly with a made-up country, IP address or site.
 - **Each secret is a JSON array entry,** like `["<first>", "<second>"]`: 32 to 256 letters, digits or `-._~+/=` (`openssl rand -hex 32` makes one). Any of them is accepted for any site, so you can give each publisher its own (and remove one publisher's without touching the others), or add a new secret before removing the old one when you rotate. Keep it in the platform's secret store: a Worker secret, a Lambda parameter that isn't echoed, Fastly's secret store, or the Node.js server's environment. It's never shown in errors or logs.

@@ -155,7 +155,7 @@ This is the clean setup: the Compute service sees the visitor's own connection a
 - The Compute service then answers requests without the secret with `403 Forbidden`, and takes the client IP and location from those headers, not `event.client`, and the site from `X-Forwarded-Host` (no `SID_PUBLIC_ORIGIN` needed). There's no time zone, as with Fastly's own data.
 - If the VCL service is itself behind another CDN, `client.ip` is that CDN's: the address and country are then authenticated but wrong.
 
-The same mode serves a sales house's Compute service behind several publishers' CDNs ([Sales houses](../cloudflare/README.md#sales-houses)). It's tested in Viceroy and with unit tests, not yet with a real VCL service in front. The VCL condition uses the base path (`req.url.path ~ "^/_sid/"`), and with `/`, exactly the four routes.
+The same mode serves a sales house's Compute service behind several publishers' CDNs ([SharedID Edge for sales houses](../../../docs/sales-houses.md), with the configuration for each publisher CDN). It's tested in Viceroy and with unit tests, not yet with a real VCL service in front. The VCL condition uses the base path (`req.url.path ~ "^/_sid/"`), and with `/`, exactly the four routes.
 
 A third option, a Compute service that owns the whole domain and forwards everything else to your origin, takes over the site and forwards requests; it's out of scope. Sites that already run their own Compute app on the domain can instead call this package's handler for the base path ([Using it in code](#using-it-in-code)).
 

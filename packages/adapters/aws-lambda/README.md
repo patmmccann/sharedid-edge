@@ -165,6 +165,8 @@ Two more variables are read only by the Lambda adapter. The template doesn't set
 
 Trusted-upstream mode, for a function behind publishers' CDNs, has its own settings and template parameters: see [Behind a publisher's CDN](#behind-a-publishers-cdn-trusted-upstream).
 
+**Several sites on one distribution** (`SidHosts`, `SID_HOSTS`): the function picks the site from `X-Forwarded-Host`, which CloudFront doesn't add, and which `AllViewerExceptHostHeader` passes on as the visitor sent it. Add a CloudFront Function on viewer request to the `/_sid/*` behaviour that sets it from `Host`; [Amazon CloudFront and Lambda](../../../docs/hosting-companies.md#amazon-cloudfront-and-lambda) has the function. Lambda's environment variables share a 4 KB limit, so `SID_HOSTS` fits a few dozen sites.
+
 Configuration is read once per cold start. An invalid setting makes every request return `500 SharedID Edge is misconfigured`, and the reason is logged once per cold start to the function's CloudWatch log group, rather than setting wrong cookies.
 
 ## Secrets
@@ -183,7 +185,7 @@ To rotate, deploy with the new value; new execution environments use it straight
 
 ## Behind a publisher's CDN (trusted upstream)
 
-A sales house can run one function for the publishers it represents, with each publisher's CDN passing `/_sid/*` to it ([Sales houses](../cloudflare/README.md#sales-houses) has the whole setup, and the configuration for each CDN). Deploy the template with its own distribution (`CreateDistribution=true`): the publishers' CDNs send `/_sid/*` to that distribution's domain (or your alias on it), and the function URL still accepts only your distribution.
+A sales house can run one function for the publishers it represents, with each publisher's CDN passing `/_sid/*` to it ([SharedID Edge for sales houses](../../../docs/sales-houses.md) has the whole setup, and the configuration for each publisher CDN). Deploy the template with its own distribution (`CreateDistribution=true`): the publishers' CDNs send `/_sid/*` to that distribution's domain (or your alias on it), and the function URL still accepts only your distribution.
 
 Behind the publisher's CDN, the `CloudFront-Viewer-*` headers your distribution adds describe the publisher's CDN, not the visitor. So turn on trusted-upstream mode: the publisher's CDN sends a shared secret, and the visitor's IP address, country and site in headers of its own, and the function trusts those headers on requests with the secret only. Requests without it get `403 Forbidden` and no cookies.
 
