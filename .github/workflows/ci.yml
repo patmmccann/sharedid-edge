@@ -84,10 +84,10 @@ jobs:
         run: npm run conformance:azure
       - name: Akamai EdgeWorker bundles (default and with Bowser; no web or Node.js globals), size budget, and conformance suite against them (local EdgeWorkers stand-in)
         run: npm run conformance:akamai
-      # The JavaScript bundle the Fastly Compute package is compiled from; the package itself runs in the
-      # conformance-fastly job.
-      - name: Fastly Compute bundle and size budget
-        run: npm run bundle -w @sharedid-edge/fastly
+      # The JavaScript bundles the Fastly Compute package is compiled from, with reusable sandboxes and without (the
+      # default, built last); the packages themselves run in the conformance-fastly job.
+      - name: Fastly Compute bundles (with reusable sandboxes, and default) and size budget
+        run: npm run bundle:reusable -w @sharedid-edge/fastly && npm run bundle -w @sharedid-edge/fastly
 
   # The real Lambda bundles deployed to AWS Emulator (AWS's open-source local emulator of the AWS APIs; no AWS account,
   # no credentials) and run through its Lambda function URL: see conformance/src/aws-emulator.ts. Not required while it
@@ -147,10 +147,16 @@ jobs:
   # packages/adapters/fastly/toolchain/) in Viceroy, Fastly's local runtime: no Fastly account, no credentials. Viceroy
   # is a pinned release binary, checked against its SHA-256. The client IP comes from the connection, so the cases'
   # documentation-range addresses are made local first: conformance/src/fastly-viceroy.ts sends each request from them.
+  # Twice, in parallel: the default packages, and the --reusable-sandbox build, where one sandbox answers several
+  # requests in turn (fastly-checks.ts checks that it does, and that nothing of one visitor reaches the next).
   conformance-fastly:
-    name: Conformance (Fastly Compute package in Viceroy)
+    name: Conformance (Fastly Compute package in Viceroy${{ matrix.reusable && ', reusable sandboxes' || '' }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        reusable: [false, true]
     env:
       VICEROY_VERSION: 0.22.0
       VICEROY_SHA256: 03f66f27275e8adc0c1857c4f571bd6f5ae997e38cc43760b19c6840a92b298d
@@ -194,7 +200,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Fastly Compute packages (default, Bowser and vendor modules), sizes, and the conformance suite in Viceroy
-        run: npm run conformance:fastly
+        run: npm run ${{ matrix.reusable && 'conformance:fastly:reusable' || 'conformance:fastly' }}
 
   # Vendor modules (packages/vendor-modules/*) are tested in their own job, so one vendor's failing tests don't block
   # changes elsewhere; branch protection can leave this job not required. Their types and lint are still checked in

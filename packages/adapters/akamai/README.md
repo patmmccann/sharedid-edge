@@ -272,7 +272,7 @@ The handler gets the client IP and location (`PlatformInfo`) from the request ob
 
 Core's `locationInfo` validates the location the same way as on the other platforms (dropping empty values, `XX`, and out-of-range coordinates).
 
-- **`isEU`** comes from a bundled list of the 27 EU member states (`EU_COUNTRY_CODES`), the same meaning as Cloudflare's `request.cf.isEUCountry`. It's EU membership, not the EEA (Iceland, Liechtenstein, Norway) or the UK: pages there should send `gdpr=1` (the [consent rules](../../../docs/consent.md)). When it's `true`, GDPR applies unless the request says `gdpr=0`. Without a country `isEU` is unknown, as on the other platforms.
+- **`isEU`** comes from a bundled list of the 27 EU member states (`EU_COUNTRY_CODES`), the same meaning as Cloudflare's `request.cf.isEUCountry`. It's EU membership, not the EEA (Iceland, Liechtenstein, Norway), the UK or Turkey. Whether GDPR applies is core's decision from the country: it applies to all of these, with or without `isEU`, unless the request says `gdpr=0` (the [consent rules](../../../docs/consent.md)). Without a country `isEU` is unknown, as on the other platforms.
 - **`X-Forwarded-For`** turns the location off, and `PMUSER_SID_CLIENT_IP` decides the client IP: [Location and X-Forwarded-For](#location-and-x-forwarded-for).
 - **The `ua` module** reads the visitor's `User-Agent` and User-Agent Client Hints from the request headers, which reach the EdgeWorker unchanged.
 

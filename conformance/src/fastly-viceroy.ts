@@ -88,7 +88,8 @@ class Viceroy {
     private readonly binary: string,
     private readonly wasm: string,
     private readonly dir: string,
-    private readonly stores: readonly string[]
+    private readonly stores: readonly string[],
+    private readonly log: ((line: string) => void) | undefined
   ) {
     this.#host = ipv6 ? '::1' : '127.0.0.1';
   }
@@ -106,8 +107,18 @@ class Viceroy {
     for (const [address, entry] of this.geo) lines.push(`[local_server.geolocation.addresses.${tomlString(address)}]`, ...entry);
     writeFileSync(config, `${lines.join('\n')}\n`);
     const addr = this.#host === '::1' ? `[::1]:${String(this.#port)}` : `127.0.0.1:${String(this.#port)}`;
-    const child = spawn(this.binary, ['serve', '-C', config, '--addr', addr, this.wasm], { stdio: ['ignore', 'ignore', 'inherit'] });
+    const log = this.log;
+    const child = spawn(this.binary, ['serve', ...(log === undefined ? [] : ['-v']), '-C', config, '--addr', addr, this.wasm], { stdio: ['ignore', log === undefined ? 'ignore' : 'pipe', 'inherit'] });
     this.#child = child;
+    if (log !== undefined) {
+      // Lines can straddle chunks: keep the unfinished one for the next.
+      let rest = '';
+      child.stdout?.setEncoding('utf8').on('data', (chunk: string) => {
+        const lines = (rest + chunk).split('\n');
+        rest = lines.pop() ?? '';
+        for (const line of lines) if (line !== '') log(line);
+      });
+    }
     const failed = new Promise<never>((_, reject) => {
       child.once('error', reject);
       child.once('exit', code => { reject(new Error(`viceroy exited (${String(code)}) before it was ready`)); });
@@ -183,6 +194,11 @@ export interface FastlyTargetOptions {
   readonly requests: readonly Readonly<Record<string, string>>[];
   /** Link the config and secret stores (default true); false checks a service without them. */
   readonly stores?: boolean;
+  /**
+   * Gets Viceroy's log (`viceroy serve -v`), a line at a time. It logs `request{id=N}: request completed` when a
+   * sandbox ends, N being the first request it answered, which shows how many requests each sandbox answered.
+   */
+  readonly log?: (line: string) => void;
 }
 
 /** The fastly.toml lines for the stores: the settings in the config store, SID_MODULE_SECRETS in the secret store. */
@@ -202,8 +218,8 @@ export async function startFastlyTarget(options: FastlyTargetOptions): Promise<(
   const dir = mkdtempSync(join(tmpdir(), 'sharedid-viceroy-'));
   const stores = options.stores === false ? [] : storeLines(options.config);
   const viceroys = {
-    v4: new Viceroy(false, options.viceroy, options.wasm, dir, stores),
-    v6: new Viceroy(true, options.viceroy, options.wasm, dir, stores)
+    v4: new Viceroy(false, options.viceroy, options.wasm, dir, stores, options.log),
+    v6: new Viceroy(true, options.viceroy, options.wasm, dir, stores, options.log)
   };
   const viceroyFor = (address: string): Viceroy => (isIPv6(address) ? viceroys.v6 : viceroys.v4);
 

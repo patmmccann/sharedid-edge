@@ -1,5 +1,6 @@
-// Types for the Fastly Compute modules the entry point (src/main.ts) imports, as far as it uses them. The JavaScript
-// SDK provides them when it compiles the bundle; the bundle leaves them as imports (scripts/bundle.mjs).
+// Types for the Fastly Compute modules the entry points (src/main.ts, src/reusable.ts) import, as far as they use
+// them. The JavaScript SDK provides them when it compiles the bundle; the bundle leaves them as imports
+// (scripts/bundle.mjs).
 // https://js-compute-reference-docs.edgecompute.app/docs/
 
 /** https://js-compute-reference-docs.edgecompute.app/docs/fastly:config-store/ConfigStore/ */
@@ -28,4 +29,15 @@ declare module 'fastly:secret-store' {
 /** https://js-compute-reference-docs.edgecompute.app/docs/fastly:backend/enforceExplicitBackends */
 declare module 'fastly:backend' {
   export function enforceExplicitBackends(defaultBackend?: string): void;
+}
+
+/** https://js-compute-reference-docs.edgecompute.app/docs/fastly:experimental/setReusableSandboxOptions */
+declare module 'fastly:experimental' {
+  /** Experimental. Only during build-time initialization, not while handling a request. */
+  export function setReusableSandboxOptions(options: {
+    maxRequests?: number;
+    betweenRequestTimeoutMs?: number;
+    maxMemoryMiB?: number;
+    sandboxTimeoutMs?: number;
+  }): void;
 }

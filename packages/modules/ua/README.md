@@ -236,7 +236,7 @@ Device data isn't personal on its own, but high-entropy hints and models add to 
 - the visitor sends Global Privacy Control (`Sec-GPC: 1`), or the request has `coppa=1`;
 - a `us_privacy` string opts out of sale (third character `Y`);
 - a TCF TC string is invalid;
-- GDPR applies (`gdpr=1`, or an EU location on Cloudflare) and there's no TC string.
+- GDPR applies (`gdpr=1`, or a visitor in the EU, the rest of the EEA, the UK or Turkey) and there's no TC string.
 
 **The traffic signal is always sent**, under GPC and COPPA too. It describes the traffic, not the person, and it helps the page and bidders avoid serving or paying for invalid traffic.
 

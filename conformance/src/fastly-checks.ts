@@ -6,10 +6,15 @@
 // - Every Set-Cookie reaches the client as its own header.
 // - Every response tells caches not to share it: `Cache-Control` has `no-store` or `private`.
 // - A service without the config store linked answers 500, without cookies.
+// - One visitor's request leaves nothing for the next: two visitors in turn, with different cookies, click IDs and
+//   locations, each get only their own. With the --reusable-sandbox build (deploy/main.js imports
+//   fastly:experimental), Viceroy's log must show one sandbox answering both in turn; without it, a sandbox per request.
 //
 // The target reads the case convention: with SID_TRUST_PROXY the first X-Forwarded-For entry is the connecting
 // address, and later entries are what the visitor sent. Only loopback addresses are used, so this runs anywhere.
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 import { freePort } from './emulator.js';
 import { startFastlyTarget } from './fastly-viceroy.js';
 import { checkCacheControl, Checks } from './checks.js';
@@ -55,13 +60,78 @@ try {
   await target.stop();
 }
 
+const PACKAGE = join(import.meta.dirname, '..', '..', 'packages/adapters/fastly/deploy');
+const reusable = readFileSync(join(PACKAGE, 'main.js'), 'utf8').includes('fastly:experimental');
+console.log(`# fastly: one visitor's request leaves nothing for the next (${reusable ? 'reusable sandboxes' : 'a sandbox per request'})`);
+{
+  // With SID_TRUST_PROXY, the relay sends each visitor's request from the X-Forwarded-For address, located as the cf-*
+  // headers say: visitor A from 127.0.0.1 in Texas, visitor B from 127.0.0.2 in Quebec.
+  const visitorA = { 'x-forwarded-for': '127.0.0.1', 'cf-ipcountry': 'US', 'cf-region-code': 'TX' };
+  const visitorB = { 'x-forwarded-for': '127.0.0.2', 'cf-ipcountry': 'CA', 'cf-region-code': 'QC' };
+  const lines: string[] = [];
+  const port = await freePort();
+  const base = `http://127.0.0.1:${String(port)}`;
+  const stop = await startFastlyTarget({
+    port,
+    config: {
+      SID_TRUST_PROXY: '1',
+      SID_COOKIE_DOMAIN: 'host-only',
+      SID_MODULES: 'ip,geo,reflect,clickid',
+      SID_MODULE_CONFIG: JSON.stringify({ reflect: { cookies: [{ name: 'uid1', maxAgeDays: 365 }] }, clickid: { hosts: ['127.0.0.1'] } })
+    },
+    viceroy: process.env['VICEROY'] ?? 'viceroy',
+    wasm: join(PACKAGE, 'main.wasm'),
+    requests: [visitorA, visitorB],
+    log: line => { lines.push(line); }
+  });
+  try {
+    for (let round = 1; round <= 3; round++) {
+      const landing = encodeURIComponent(`http://127.0.0.1/?gclid=VisitorA${String(round)}`);
+      const a = await fetch(`${base}/_sid/v1?url=${landing}`, { headers: { ...visitorA, cookie: `_pubcid=${UUID}; uid1=visitor-a-${String(round)}` } });
+      const aText = JSON.stringify([await a.json(), a.headers.getSetCookie()]);
+      check(`visitor A (${String(round)}) gets its own cookies, click ID, address and location`, [UUID, `visitor-a-${String(round)}`, `VisitorA${String(round)}`, '"127.0.0.1"', '"USA"'].every(marker => aText.includes(marker)), aText);
+      const b = await fetch(`${base}/_sid/v1`, { headers: visitorB });
+      const bPayload = await b.json() as Payload & { readonly sharedid?: string };
+      const bText = JSON.stringify([bPayload, b.headers.getSetCookie()]);
+      check(`visitor B (${String(round)}), next, gets nothing of visitor A's`, ![UUID, 'visitor-a', 'VisitorA', '"127.0.0.1"', '"USA"', '"TX"'].some(marker => bText.includes(marker)), bText);
+      check(`visitor B (${String(round)}) gets a new ID, its own address and location`, bPayload.sharedid !== undefined && bPayload.sharedid !== UUID && bPayload.ortb2?.device?.ip === '127.0.0.2' && bPayload.ortb2.device.geo?.country === 'CAN', bText);
+    }
+    // A sandbox that's waiting for another request ends after its 2 s between-request timeout, and logs it then.
+    await new Promise(resolve => setTimeout(resolve, 3000));
+  } finally {
+    await stop();
+  }
+  // Viceroy numbers requests from 0, in the order they come (the relay sends one at a time), and logs
+  // "request{id=N}: response status" for each, and "request{id=N}: request completed" when a sandbox ends, N being
+  // the sandbox's first request. The last six requests are the visits: A, B, A, B, A, B.
+  const ids = new Set<number>();
+  // A sandbox's end is logged twice (memory and time), with the same N.
+  const ended = new Set<number>();
+  for (const colored of lines) {
+    const line = stripVTControlCharacters(colored);
+    const answered = /request\{id=(\d+)\}: response status/.exec(line);
+    if (answered !== null) ids.add(Number(answered[1]));
+    const completed = /request\{id=(\d+)\}: request completed/.exec(line);
+    if (completed !== null) ended.add(Number(completed[1]));
+  }
+  const firsts = [...ended];
+  const visits = [...ids].sort((x, y) => x - y).slice(-6);
+  const sandboxOf = (id: number): number => Math.max(-1, ...firsts.filter(first => first <= id));
+  // Visitor B's requests (the 2nd, 4th and 6th visit) answered by the sandbox that answered visitor A just before.
+  const shared = [1, 3, 5].filter(i => sandboxOf(visits[i] ?? -1) === sandboxOf(visits[i - 1] ?? -2)).length;
+  const detail = `${String(ids.size)} requests, ${String(firsts.length)} sandboxes, ${String(shared)} of 3 B visits in A's sandbox`;
+  check('Viceroy logged every request and the sandboxes that answered them', visits.length === 6 && firsts.length > 0 && Math.min(...firsts) <= Math.min(...visits), detail);
+  if (reusable) check('one sandbox answered visitor A, then visitor B (reuse happened)', shared > 0, detail);
+  else check('each request had a sandbox of its own (no reuse)', firsts.length === ids.size && shared === 0, detail);
+}
+
 console.log('# fastly: a service without its config store');
 const port = await freePort();
 const stop = await startFastlyTarget({
   port,
   config: {},
   viceroy: process.env['VICEROY'] ?? 'viceroy',
-  wasm: join(import.meta.dirname, '..', '..', 'packages/adapters/fastly/deploy/main.wasm'),
+  wasm: join(PACKAGE, 'main.wasm'),
   requests: [],
   stores: false
 });
