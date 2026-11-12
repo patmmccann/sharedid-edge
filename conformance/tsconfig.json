@@ -8,11 +8,12 @@
   },
   "include": ["src"],
   // The emulators use core's splitHeaders and their adapter's types: lambda-emulator.ts the Lambda events,
-  // vercel-emulator.ts and azure-emulator.ts the handlers.
+  // vercel-emulator.ts and azure-emulator.ts the handlers, akamai-emulator.ts the EdgeWorkers request type.
   "references": [
     { "path": "../packages/core" },
     { "path": "../packages/adapters/aws-lambda" },
     { "path": "../packages/adapters/vercel" },
-    { "path": "../packages/adapters/azure-functions" }
+    { "path": "../packages/adapters/azure-functions" },
+    { "path": "../packages/adapters/akamai" }
   ]
 }

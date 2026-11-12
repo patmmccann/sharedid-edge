@@ -119,6 +119,9 @@ export default defineConfig({
   title: 'SharedID Edge',
   description: 'A durable Prebid SharedID, set as a first-party cookie from your own domain\'s CDN edge.',
   srcDir: ROOT,
+  // All site configuration lives here. VitePress 2's automatic per-directory config lookup would also load
+  // packages/core/src/config.ts, which configures the worker rather than the website.
+  additionalConfig: {},
   rewrites: pages,
   // Only the pages above. Everything else in the repository (AGENTS.md, CLAUDE.md, e2e, node_modules) stays out.
   srcExclude: ['**/node_modules/**', '**/dist/**', 'website/**', ...unpublished()],
@@ -140,6 +143,15 @@ export default defineConfig({
     // punctuation into hyphens, so `#modules-on-_sidsync` would miss 'Modules on /_sid/sync'.
     anchor: { slugify: githubSlug },
     config(md) {
+      // Inline code in the repository's Markdown is literal, including Akamai's {{builtin.AK_CLIENT_REAL_IP}}.
+      // Keep Vue from treating these examples as template expressions; fenced code already gets v-pre.
+      md.core.ruler.push('literal-inline-code', state => {
+        for (const token of state.tokens) {
+          for (const child of token.children ?? []) {
+            if (child.type === 'code_inline') child.attrSet('v-pre', '');
+          }
+        }
+      });
       // The SharedID adoption chart (theme/AdoptionChart.vue) goes on the home page between the introduction and "How
       // it works". Inserted here rather than written in the README, which stays plain Markdown for GitHub and npm.
       md.core.ruler.push('adoption-chart', state => {

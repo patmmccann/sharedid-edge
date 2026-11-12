@@ -32,7 +32,7 @@ export interface RunningTarget {
   stop(): Promise<void>;
 }
 
-export type TargetName = 'node' | 'wrangler' | 'lambda' | 'lambda-aws-emulator' | 'vercel' | 'azure' | 'gcp';
+export type TargetName = 'node' | 'wrangler' | 'lambda' | 'lambda-aws-emulator' | 'vercel' | 'azure' | 'gcp' | 'akamai';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -125,7 +125,9 @@ const UNAVAILABLE: Readonly<Record<TargetName, readonly string[]>> = {
   azure: [],
   // The load balancer's location variables are the country, subdivision, city and coordinates: no metro code, postal
   // code or time zone (so no utcoffset).
-  gcp: ['ortb2.device.geo.metro', 'ortb2.device.geo.zip', 'ortb2.device.geo.utcoffset']
+  gcp: ['ortb2.device.geo.metro', 'ortb2.device.geo.zip', 'ortb2.device.geo.utcoffset'],
+  // EdgeScape's userLocation has every location field (its zipCode only when it names one postal code).
+  akamai: []
 };
 
 /** The cases of `file` named in `names`, each with `reason`. */
@@ -235,8 +237,9 @@ const AZURE_LOCATION_HEADERS: Readonly<Record<string, string>> = {
 
 /**
  * Starts a target configured with `config` (SID_* environment variables) and built with `build`. With `bowser`, the
- * Worker runs its Bowser entry point (src/bowser.ts), and the Lambda, Vercel, Azure and Google Cloud targets load the
- * bundles `npm run conformance:lambda`, `conformance:vercel`, `conformance:azure` and `conformance:gcp` build into
+ * Worker runs its Bowser entry point (src/bowser.ts), and the Lambda, Vercel, Azure, Google Cloud and Akamai targets load
+ * the bundles `npm run conformance:lambda`, `conformance:vercel`, `conformance:azure`, `conformance:gcp` and
+ * `conformance:akamai` build into
  * deploy-bowser/. The Node.js
  * server always has Bowser.
  */
@@ -300,6 +303,14 @@ export async function startTarget(target: TargetName, caseConfig: Readonly<Recor
         SID_LOCATION_HEADERS: JSON.stringify(AZURE_LOCATION_HEADERS),
         ...config
       },
+      stdio: ['ignore', 'ignore', 'inherit']
+    });
+  } else if (target === 'akamai') {
+    // The bundled EdgeWorker in a V8 context of its own, behind a local stand-in for EdgeWorkers (akamai-emulator.ts)
+    // that calls its responseProvider with the request object, EdgeScape's location and the PMUSER_SID_* variables.
+    // node:vm's SourceTextModule needs --experimental-vm-modules. Plain http, so cookies aren't Secure.
+    child = spawn(process.execPath, ['--experimental-vm-modules', '--disable-warning=ExperimentalWarning', join(ROOT, 'conformance/dist/akamai-emulator.js')], {
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_AKAMAI_BUNDLE: bundle, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else if (target === 'gcp') {

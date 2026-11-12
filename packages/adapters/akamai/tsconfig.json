@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    // Core's declarations use the web-standard types (Request, Response, URL). EdgeWorkers itself provides none of
+    // them as globals: the bundle gets them from src/globals.ts (see scripts/bundle.mjs). No Node types.
+    "lib": ["ES2023", "WebWorker"]
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../core" },
+    { "path": "../../modules/all" }
+  ]
+}

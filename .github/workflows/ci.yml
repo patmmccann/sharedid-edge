@@ -82,6 +82,8 @@ jobs:
         run: npm run conformance:gcp
       - name: Azure Functions bundle, size budget, and conformance suite against it (local Front Door and Functions host stand-in)
         run: npm run conformance:azure
+      - name: Akamai EdgeWorker bundles (default and with Bowser; no web or Node.js globals), size budget, and conformance suite against them (local EdgeWorkers stand-in)
+        run: npm run conformance:akamai
 
   # The real Lambda bundles deployed to AWS Emulator (AWS's open-source local emulator of the AWS APIs; no AWS account,
   # no credentials) and run through its Lambda function URL: see conformance/src/aws-emulator.ts. Not required while it
