@@ -9,7 +9,11 @@ import { defineModule, TCF_COOKIE, type ConsentContext, type EdgeModule, type Mo
 
 /** The parameters read by default, each kept in `_sid_<name>`. */
 export const DEFAULT_PARAMS: readonly string[] = Object.freeze(['gclid', 'gbraid', 'wbraid', 'dclid', 'fbclid', 'msclkid', 'ttclid']);
-/** The default lifetime in days, counted from the click: the attribution window of Google, Meta and Microsoft. */
+/**
+ * The default lifetime in days, counted from the click: the longest click-through conversion window Google Ads allows
+ * (its default is 30), the retention Microsoft suggests for `msclkid`, and the lifetime of Google's `_gcl_aw` and Meta's
+ * `_fbc` cookies. Meta's and TikTok's attribution windows are shorter.
+ */
 export const DEFAULT_CLICK_AGE_DAYS = 90;
 /** At most this many parameters, defaults included. */
 export const MAX_PARAMS = 20;
