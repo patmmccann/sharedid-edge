@@ -15,5 +15,5 @@ Rules:
 - Request URLs are https unless `publicOrigin` says otherwise.
 - Published like core: ESM, `isolatedDeclarations`, attw-clean (`npm run attw`). It runs on Lambda's Node.js 24 runtime, so Node types are allowed here, unlike core.
 - **`template.yaml`** must pass every `SID_*` setting core reads (a unit test checks) and stay valid for `cfn-lint` (CI). The function URL stays `AWS_IAM` with origin access control; the `/_sid/*` behaviour stays `CachingDisabled` with the managed `AllViewerExceptHostHeader` origin request policy (never one that forwards `Host`; a custom policy would exceed CloudFront's default quota of 10 headers).
-- **Conformance** without an AWS account: `npm run conformance:lambda` runs the suite against the bundle through `conformance/src/lambda-emulator.ts`.
+- **Conformance** without an AWS account: `npm run conformance:lambda` runs the suite against the bundle through `conformance/src/lambda-emulator.ts`, and `npm run conformance:lambda-aws-emulator` deploys it to AWS Emulator, which must be running, and runs the suite through its function URL (`conformance/src/aws-emulator.ts`).
 - **Tests** (`test/lambda.test.ts`) use recorded-style events from `test/events.ts`. Cover IPv4 and IPv6 viewer addresses when the client IP matters.
