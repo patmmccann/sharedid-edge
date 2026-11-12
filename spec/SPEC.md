@@ -254,9 +254,11 @@ Each module's behaviour is specified in its own file under [`modules/`](modules)
 <!-- generated:spec-modules:start -->
 - [The `bot` module](modules/bot.md)
 - [The `clickid` module](modules/clickid.md)
+- [The `dbip` module](modules/dbip.md)
 - [The `ec` module](modules/ec.md)
 - [The `geo` module](modules/geo.md)
 - [The `ip` module](modules/ip.md)
+- [The `maxmind` module](modules/maxmind.md)
 - [The `reflect` module](modules/reflect.md)
 - [The `ua` module](modules/ua.md)
 <!-- generated:spec-modules:end -->

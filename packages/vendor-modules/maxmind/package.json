@@ -1,0 +1,56 @@
+{
+  "name": "@sharedid-edge/module-maxmind",
+  "version": "0.1.0",
+  "description": "SharedID Edge module: the visitor's country from MaxMind's GeoLite2 Country database, downloaded with your licence key at build time and built in, as ortb2.device.geo",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.tsbuildinfo",
+    "scripts"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "data": "node scripts/build-data.mjs",
+    "attw": "attw --pack . --profile esm-only --quiet || attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "@sharedid-edge/core": "0.1.0",
+    "@sharedid-edge/ip-ranges": "0.1.0"
+  },
+  "devDependencies": {
+    "@sharedid-edge/module-geo": "0.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patmmccann/sharedid-edge.git",
+    "directory": "packages/vendor-modules/maxmind"
+  },
+  "sharedidEdge": {
+    "kind": "module",
+    "name": "maxmind",
+    "title": "MaxMind GeoLite2 country",
+    "summary": "`ortb2.device.geo.country` (with `ipservice` 3) from MaxMind's GeoLite2 Country database, downloaded with your licence key and built in at build time",
+    "export": "maxmindModule",
+    "network": "none",
+    "buildCredentials": [
+      "MAXMIND_ACCOUNT_ID",
+      "MAXMIND_LICENSE_KEY"
+    ],
+    "settings": "`mode`: `fill` (default) or `replace`; build-time `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY`",
+    "routes": [
+      "v1"
+    ]
+  }
+}

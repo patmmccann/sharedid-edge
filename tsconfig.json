@@ -8,6 +8,8 @@
   "references": [
     { "path": "packages/core" },
     { "path": "packages/core/test" },
+    { "path": "packages/ip-ranges" },
+    { "path": "packages/ip-ranges/test" },
     { "path": "packages/adapters/aws-lambda" },
     { "path": "packages/adapters/aws-lambda/test" },
     { "path": "packages/adapters/azure-functions" },
@@ -32,8 +34,12 @@
     { "path": "packages/modules/reflect/test" },
     { "path": "packages/modules/ua" },
     { "path": "packages/modules/ua/test" },
+    { "path": "packages/vendor-modules/dbip" },
+    { "path": "packages/vendor-modules/dbip/test" },
     { "path": "packages/vendor-modules/ec" },
     { "path": "packages/vendor-modules/ec/test" },
+    { "path": "packages/vendor-modules/maxmind" },
+    { "path": "packages/vendor-modules/maxmind/test" },
     { "path": "conformance" },
     { "path": "scripts" }
   ]
