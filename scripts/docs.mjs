@@ -4,7 +4,7 @@
 //
 // - the `sharedidEdge` block in each adapter's and module's package.json (the platform table and module lists);
 // - `SETTINGS` in packages/core/src/config.ts (the configuration reference);
-// - the files in spec/modules/ (the spec's list of module specifications).
+// - the files in spec/modules/ (the spec's list of module specifications, grouped by where each module lives).
 //
 // `node scripts/docs.mjs` checks that every section is up to date (`npm run check:docs`); `--write` rewrites them.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -129,17 +129,29 @@ function settingsTable(settings) {
   return ['| Variable | Default | Description |', '| --- | --- | --- |', ...rows].join('\n');
 }
 
-function specModules() {
+/**
+ * The spec's list of module specifications, in two groups as on the website's sidebar: project modules
+ * (`packages/modules/`) and vendor modules (`packages/vendor-modules/`), by where the module named after the file lives.
+ */
+function specModules(modules) {
   const dir = join(root, 'spec/modules');
-  return readdirSync(dir)
-    .filter(name => name.endsWith('.md'))
-    .sort()
-    .map(name => {
-      const heading = /^#\s+(.+)$/m.exec(readFileSync(join(dir, name), 'utf8'));
-      if (heading === null) problems.push(`spec/modules/${name}: no heading`);
-      return `- [${heading?.[1] ?? name}](modules/${name})`;
-    })
-    .join('\n');
+  const groups = { modules: [], 'vendor-modules': [] };
+  for (const file of readdirSync(dir).filter(name => name.endsWith('.md')).sort()) {
+    const name = file.slice(0, -'.md'.length);
+    const heading = /^#\s+(.+)$/m.exec(readFileSync(join(dir, file), 'utf8'));
+    if (heading === null) problems.push(`spec/modules/${file}: no heading`);
+    const module = modules.find(m => m.meta.name === name);
+    if (module === undefined) {
+      problems.push(`spec/modules/${file}: no module named ${name} in packages/modules or packages/vendor-modules`);
+      continue;
+    }
+    groups[module.parent].push(`  - [${heading?.[1] ?? file}](modules/${file})`);
+  }
+  const list = items => (items.length > 0 ? items.join('\n') : '  - none yet');
+  return [
+    `- **Core modules** (\`packages/modules/\`):\n${list(groups.modules)}`,
+    `- **Vendor modules** (\`packages/vendor-modules/\`):\n${list(groups['vendor-modules'])}`
+  ].join('\n');
 }
 
 function packageList(file, adapters, modules, lists) {
@@ -163,7 +175,7 @@ const sections = {
   'README.md': { platforms: platformTable('README.md', adapters), modules: moduleList('README.md', modules) },
   'docs/modules.md': { 'module-index': moduleIndex('docs/modules.md', modules) },
   'docs/configuration.md': { settings: settingsTable(SETTINGS) },
-  'spec/SPEC.md': { 'spec-modules': specModules() },
+  'spec/SPEC.md': { 'spec-modules': specModules(modules) },
   'AGENTS.md': { packages: packageList('AGENTS.md', adapters, modules, lists) }
 };
 

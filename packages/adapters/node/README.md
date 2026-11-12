@@ -74,7 +74,7 @@ Every row needs `SID_TRUST_PROXY=true`, and the server reachable only through th
 These settings are tested against a local stand-in for a CDN that overwrites these headers and appends to `X-Forwarded-For` (`test/proxy.test.ts`), not against the CDNs themselves: after deploying, check `/_sid/v1` with the `ip` and `geo` modules on from a known location.
 ### Trusted upstream
 
-`SID_TRUST_PROXY` trusts whatever reaches the server, so the server must be reachable only through your proxy. A server that more than one proxy reaches over the internet, such as a sales house's behind each publisher's CDN ([Sales houses](../cloudflare/README.md#sales-houses)), uses trusted-upstream mode instead: each CDN sends a shared secret in `X-SID-Upstream-Auth`, and the server trusts the CDN's headers only on requests with one of the secrets in `SID_UPSTREAM_SECRETS`. Anything else gets `403 Forbidden` and no cookies.
+`SID_TRUST_PROXY` trusts whatever reaches the server, so the server must be reachable only through your proxy. A server that more than one proxy reaches over the internet, such as a sales house's behind each publisher's CDN ([SharedID Edge for sales houses](../../../docs/sales-houses.md)), uses trusted-upstream mode instead: each CDN sends a shared secret in `X-SID-Upstream-Auth`, and the server trusts the CDN's headers only on requests with one of the secrets in `SID_UPSTREAM_SECRETS`. Anything else gets `403 Forbidden` and no cookies.
 
 ```sh
 SID_UPSTREAM_SECRETS='["<publisher A secret>","<publisher B secret>"]' \

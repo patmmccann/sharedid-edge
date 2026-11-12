@@ -187,6 +187,8 @@ A company running SharedID Edge for several publishers can deploy one Worker per
 
 #### Hosting companies
 
+[SharedID Edge for hosting companies](../../../docs/hosting-companies.md) is the guide for this, on every platform: choosing a deployment, per-publisher settings and consent, onboarding, verifying and operations. This section has the Cloudflare steps.
+
 A host that serves its customers' sites through [Cloudflare for SaaS](https://developers.cloudflare.com/cloudflare-for-platforms/cloudflare-for-saas/) already answers `www.publisher.example` from its own zone, as a custom hostname. That's the IP rule met for every hosted site: a Worker on that zone's `/_sid/*` answers from the same Cloudflare addresses as the pages, and the publisher changes nothing. Each publisher still needs its own settings, `SID_COOKIE_DOMAIN` at least, and one deployment has one configuration, so the Worker has to be picked per hostname.
 
 **With [Workers for Platforms](https://developers.cloudflare.com/cloudflare-for-platforms/workers-for-platforms/)** (a paid add-on), one Worker per publisher, picked by a dispatch Worker:
@@ -242,94 +244,41 @@ Not yet tested on a live SaaS zone; [#110](https://github.com/patmmccann/sharedi
 
 #### Sales houses
 
-A sales house (an ad network representing many publishers, without hosting their sites) can run SharedID Edge for them, but not from its own domain. The endpoint has to answer on each publisher's site hostname, from the site's IP addresses. A CNAME from `sid.publisher.example` to you doesn't do it: the addresses differ from the site's, and Safari caps the cookies (`verify-deployment` reports it). Workers for Platforms doesn't change that. It helps you manage many Workers in your own account, but they still have to be reached on the publisher's hostname.
+A sales house (an ad network representing many publishers, without hosting their sites) can run SharedID Edge for them, but not from its own domain: the endpoint has to answer on each publisher's site hostname, from the site's IP addresses, or Safari caps the cookies. **[SharedID Edge for sales houses](../../../docs/sales-houses.md)** is the full guide: the two models, the architecture, a worked example, the configuration for each publisher CDN (CloudFront, Fastly, Akamai, Cloudflare, nginx and others), secrets and rotation, onboarding, consent, operations and the security model. What's specific to Cloudflare:
 
-**When the publisher is on Cloudflare,** run it in their account:
+**Model A: when the publisher is on Cloudflare,** run it in their account:
 
 - The publisher creates an API token for you, limited to their zone: **Workers Scripts: Edit** and **Workers Routes: Edit** for a Worker, or **Snippets: Edit** for a Snippet.
 - **A Worker:** you deploy one per publisher, on `www.publisher.example/_sid/*`, with that publisher's `vars`, as in [Deploying for many publishers](#deploying-for-many-publishers). It runs on any plan, and the Workers bill is the publisher's (free up to 100,000 requests a day).
 - **A Snippet,** on Pro or higher: build one per publisher from a configuration file (`SID_COOKIE_DOMAIN` and the rest; [Build and deploy the Snippet](#build-and-deploy-the-snippet)), then upload it and its rule through the API or Terraform. It's included in the publisher's plan at no extra cost. Changing a setting means rebuilding and re-uploading, and `ec` isn't available.
 - Updating SharedID Edge is a rebuild and redeploy per publisher; a script over your publisher list does it.
 
-**When the publisher isn't on Cloudflare,** SharedID Edge may run on their own platform ([Pick your platform](../../../README.md#pick-your-platform): AWS, Azure, Google Cloud, Vercel, Fastly and [Akamai EdgeWorkers](../akamai/README.md) have adapters). Otherwise their CDN or proxy can pass `/_sid/*` to one endpoint you run for all your publishers, in **trusted-upstream mode** ([what it does](../../../docs/configuration.md#trusted-upstream-behind-a-publishers-cdn)). The browser still sees the publisher's hostname and IP addresses, so the cookies are first-party, and the visitor's cookies travel with the request, so the TC string cookie, opt-out and the recovery cookie reach you.
+Workers for Platforms doesn't remove the need for this: it helps you manage many Workers in your own account, but they'd still have to be reached on the publisher's hostname.
 
-```text
-Browser ──► www.pub-a.com (the publisher's CDN: CloudFront, Fastly, Akamai, Cloudflare, nginx)
-              ├─ /_sid/*  ──► your endpoint, + X-SID-Upstream-Auth, X-Forwarded-Host, X-SID-Client-IP, X-SID-Country
-              └─ anything else ──► the publisher's site, as before
-```
+**Model B: this Worker as the endpoint behind publishers' CDNs,** in **trusted-upstream mode** ([what it does](../../../docs/configuration.md#trusted-upstream-behind-a-publishers-cdn)). Each publisher's CDN sends `/_sid/*` to the Worker, adding a shared secret and the visitor's IP address, country and site hostname; the Worker trusts those only with the secret, and answers anything else with a 403 and no cookies. Behind another CDN, the Worker's own `CF-Connecting-IP` and `request.cf` describe that CDN's edge, so they're ignored in this mode. The Worker runs in every Cloudflare location, so the hop from a publisher's CDN stays short ([Where to run the sales-house endpoint](../../../docs/sales-houses.md#where-to-run-the-sales-house-endpoint)).
 
-Behind another CDN, the endpoint's own idea of the visitor is the CDN's edge server: `CF-Connecting-IP` and `request.cf` on a Worker, `CloudFront-Viewer-*` on Lambda. The visitor's country decides whether GDPR applies to a request without a TC string, so it has to come from the publisher's CDN, and the endpoint must trust those headers only from it. Trusted-upstream mode does that with a shared secret: the CDN adds it in a header, and a request without it gets a 403 and no cookies.
+1. **Give it a hostname of yours,** a [custom domain](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) such as `sid.sales-house.example`, instead of `routes`: `"routes": [{ "pattern": "sid.sales-house.example", "custom_domain": true }]`.
+2. **The secrets,** one per publisher, as a Worker secret, never a var:
 
-**1. Pick the endpoint.** Any of these works the same way; the settings are the same `SID_*` variables:
+   ```sh
+   openssl rand -hex 32                       # once per publisher
+   npx wrangler secret put SID_UPSTREAM_SECRETS
+   # paste: ["<publisher A's secret>","<publisher B's secret>"]
+   ```
 
-| Endpoint | Where the secret goes | Its hostname, for the publisher's CDN |
-| --- | --- | --- |
-| **This Worker** | `npx wrangler secret put SID_UPSTREAM_SECRETS` | A [custom domain](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) such as `sid.sales-house.example`, or its `workers.dev` hostname |
-| **[AWS Lambda](../aws-lambda/README.md#behind-a-publishers-cdn-trusted-upstream)** behind your own CloudFront distribution (the template's) | The `SidUpstreamSecrets` parameter (`NoEcho`) | The distribution's domain, or your alias on it |
-| **[Fastly Compute](../fastly/README.md)** | The `SID_UPSTREAM_SECRETS` key of the `sharedid_secrets` secret store | The service's domain |
-| **[The Node.js server](../node/README.md#trusted-upstream)** | `SID_UPSTREAM_SECRETS` in its environment, from your secret manager | Your own |
+3. **The vars:** the headers the publishers' CDNs set, and each publisher's site in `SID_HOSTS`, with its cookie domain:
 
-Not the Cloudflare Snippet (it has no secrets), and not the Vercel, Azure, Google Cloud or Akamai adapters, which refuse the setting.
+   ```jsonc
+   "SID_CLIENT_IP_HEADER": "x-sid-client-ip",
+   "SID_LOCATION_HEADERS": "{\"country\":\"x-sid-country\",\"regionCode\":\"x-sid-region\"}",
+   "SID_HOSTS": "{\"www.pub-a.com\":{\"SID_COOKIE_DOMAIN\":\"pub-a.com\"},\"www.pub-b.com\":{\"SID_COOKIE_DOMAIN\":\"pub-b.com\"}}"
+   ```
 
-**2. Configure it** for every publisher at once. Give each publisher its own secret, so you can drop one without touching the others:
+   `SID_UPSTREAM_AUTH_HEADER` (`x-sid-upstream-auth`) and `SID_UPSTREAM_HOST_HEADER` (`x-forwarded-host`) can stay at their defaults. `SID_LOCATION_HEADERS` must name the country header. Then deploy, and regenerate the types if you added vars.
+4. **Each publisher's CDN** passes `/_sid/*` to the Worker's hostname, uncached, setting `X-SID-Upstream-Auth`, `X-Forwarded-Host`, `X-SID-Client-IP` and `X-SID-Country`: the recipe for each CDN is in [Publisher CDN recipes](../../../docs/sales-houses.md#publisher-cdn-recipes).
+5. **Check:** `curl -sI https://sid.sales-house.example/_sid/v1` answers `403`, and for each publisher, `npm run verify-deployment -- --site https://www.pub-a.com` passes ([Verify in the guide](../../../docs/sales-houses.md#3-verify) has the forged-header and EU checks).
 
-```sh
-openssl rand -hex 32                       # once per publisher
-npx wrangler secret put SID_UPSTREAM_SECRETS
-# paste: ["<publisher A's secret>","<publisher B's secret>"]
-```
-
-and in `wrangler.jsonc` `vars` (each publisher's site in `SID_HOSTS`, with its cookie domain):
-
-```jsonc
-"SID_CLIENT_IP_HEADER": "x-sid-client-ip",
-"SID_LOCATION_HEADERS": "{\"country\":\"x-sid-country\",\"regionCode\":\"x-sid-region\"}",
-"SID_HOSTS": "{\"www.pub-a.com\":{\"SID_COOKIE_DOMAIN\":\"pub-a.com\"},\"www.pub-b.com\":{\"SID_COOKIE_DOMAIN\":\"pub-b.com\"}}"
-```
-
-`SID_UPSTREAM_AUTH_HEADER` (`x-sid-upstream-auth`) and `SID_UPSTREAM_HOST_HEADER` (`x-forwarded-host`) can stay at their defaults. `SID_LOCATION_HEADERS` must name the country header; add the region, city and the rest if the CDN has them and you use the `geo` module. Leave `SID_CLIENT_IP_HEADER` out and there's no client IP (the `ip` module returns nothing); consent doesn't need it.
-
-**3. Have each publisher's CDN pass `/_sid/*` to it.** On every `/_sid/*` request (and only there), the CDN sends the request to your endpoint's hostname, doesn't cache it, and **sets** these headers, overwriting any the visitor sent:
-
-| Header | Value |
-| --- | --- |
-| `X-SID-Upstream-Auth` | That publisher's secret, kept where the CDN keeps secrets |
-| `X-Forwarded-Host` | The site's hostname, the `Host` the visitor asked for |
-| `X-SID-Client-IP` | The visitor's IP address, one address |
-| `X-SID-Country` | The visitor's country, ISO 3166-1 alpha-2 (`DE`) |
-| `X-SID-Region` | Optional: the region (subdivision) code |
-
-| Publisher's CDN | How |
-| --- | --- |
-| **Amazon CloudFront** | A `/_sid/*` behaviour with your endpoint as a custom origin, the managed `CachingDisabled` cache policy, and an origin request policy that forwards cookies and query strings. Add `X-SID-Upstream-Auth` as an [origin custom header](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/add-origin-custom-headers.html) (CloudFront overwrites a viewer's header of the same name). Set the others in a CloudFront Function on viewer request: `X-SID-Client-IP` from `event.viewer.ip` (the connection's address, as in `CloudFront-Viewer-Address`; never `X-Forwarded-For`), `X-SID-Country` from the `cloudfront-viewer-country` header (include it in the origin request policy so the function sees it), and `X-Forwarded-Host` from `host`. |
-| **Fastly (VCL)** | A backend for your endpoint, with its hostname as the override host and TLS. In `vcl_recv`, for `/_sid/` only, `return(pass)` and, on the first Fastly hop (`if (fastly.ff.visits_this_service == 0)`; with shielding, `client.ip` on a later hop is a Fastly POP): `set req.http.X-SID-Upstream-Auth = table.lookup(sharedid_secrets, "upstream");` (a private, write-only edge dictionary), `set req.http.X-SID-Client-IP = client.ip;` (not `Fastly-Client-IP` or `X-Forwarded-For`, which a visitor can send), `set req.http.X-SID-Country = client.geo.country_code;` and `set req.http.X-Forwarded-Host = req.http.host;`. The same works in front of a Fastly Compute endpoint (service chaining). |
-| **Akamai** | A rule matching `/_sid/*` with your endpoint as its origin (forwarding its hostname), caching off, and *Modify Outgoing Request Header* behaviours: `X-SID-Upstream-Auth` from a sensitive user-defined variable, `X-SID-Client-IP` from `{{builtin.AK_CLIENT_REAL_IP}}` (never `AK_CLIENT_IP`, which a visitor's `X-Forwarded-For` or `Akamai-Client-IP` overrides), `X-Forwarded-Host` from `{{builtin.AK_HOST}}`, and `X-SID-Country` from EdgeScape's country, but only on requests without an `X-Forwarded-For` header: EdgeScape locates that header's address, which the visitor chooses ([Location and X-Forwarded-For](../akamai/README.md#location-and-x-forwarded-for)). Without it the country is unknown, and GDPR follows the page's signal. |
-| **Cloudflare** (the publisher's zone, your endpoint elsewhere) | Running this Worker in the publisher's account (above) is simpler. Otherwise: a *Request Header Transform Rule* for `/_sid/*` that sets `X-SID-Client-IP` to `ip.src` (the visitor's address, as in `CF-Connecting-IP`; never `X-Forwarded-For`), `X-SID-Country` to `ip.src.country`, `X-Forwarded-Host` to `http.host` and `X-SID-Upstream-Auth` to the secret (a static value, visible to the zone's admins), plus an *Origin Rule* sending `/_sid/*` to your endpoint, and a Cache Rule that bypasses the cache. An Origin Rule's host header override needs an Enterprise plan; without one, use a small Worker on `/_sid/*` that adds the headers and fetches your endpoint. |
-| **nginx** | Below. |
-
-```nginx
-location /_sid/ {
-    proxy_pass https://sid.sales-house.example;
-    proxy_ssl_server_name on;
-    proxy_set_header Host sid.sales-house.example;
-    proxy_set_header X-SID-Upstream-Auth "<this publisher's secret>";
-    proxy_set_header X-Forwarded-Host $host;
-    proxy_set_header X-SID-Client-IP $remote_addr;
-    proxy_set_header X-SID-Country $geoip2_data_country_code;   # the GeoIP2 module, or your own source
-    proxy_cache off;
-}
-```
-
-`proxy_set_header` replaces a header the visitor sent. Use `$remote_addr`, never `$http_x_forwarded_for` or `$proxy_add_x_forwarded_for`, which carry what the visitor sent. If nginx itself sits behind another CDN, `$remote_addr` and the country are that CDN's: take them from that CDN's own headers instead. The same applies anywhere: when the publisher's CDN is behind yet another CDN, it sees that CDN's edge as the client, and passes on an authenticated but wrong address and country.
-
-**4. Check each publisher** before going live, through the publisher's site:
-
-- `curl -sI https://<your endpoint>/_sid/v1` answers `403`: the endpoint refuses direct calls.
-- `npm run verify-deployment -- --site https://www.pub-a.com` passes: `/_sid/*` on the site's IP addresses, `Secure` cookies with the site's domain.
-- With the `ip` and `geo` modules on, `/_sid/v1` from a known location shows your IP address and country; from an EU, EEA, UK or Turkish location without a TC string, `/_sid/sync` sets no cookie.
-
-Either way, nothing changes on the page: Prebid.js's SharedID `pixelUrl` stays `/_sid/sync` on the publisher's own site ([Configure Prebid.js](../../../docs/prebid.md)). Trusted-upstream mode is tested against local stand-ins (the conformance suite's `trusted-upstream.json` on the Worker in `wrangler dev`, the Lambda, Fastly and Node.js targets), not yet against a real publisher CDN in front of a real Worker or Lambda function, and the CDN rows above follow each CDN's documentation, so check each publisher's deployment as above.
+Not the Snippet: it has no secrets, and its build refuses trusted-upstream settings. Nothing changes on the page either way: Prebid.js's SharedID `pixelUrl` stays `/_sid/sync` on the publisher's own site ([Configure Prebid.js](../../../docs/prebid.md)). Trusted-upstream mode is tested against local stand-ins (the conformance suite's `trusted-upstream.json` on the Worker in `wrangler dev`), not yet behind a real publisher CDN ([#136](https://github.com/patmmccann/sharedid-edge/issues/136)).
 
 ## Configuration and secrets
 
@@ -342,7 +291,7 @@ Either way, nothing changes on the page: Prebid.js's SharedID `pixelUrl` stays `
   ```
 
   For local development, put it in `packages/adapters/cloudflare/.dev.vars` (git-ignored).
-- **Trusted upstream** (a sales house's Worker behind publishers' CDNs, [Sales houses](#sales-houses)): `SID_UPSTREAM_SECRETS` is a Worker secret too (`wrangler secret put SID_UPSTREAM_SECRETS`), never a var. `SID_UPSTREAM_AUTH_HEADER`, `SID_UPSTREAM_HOST_HEADER`, `SID_CLIENT_IP_HEADER` and `SID_LOCATION_HEADERS` are vars, and need the secret.
+- **Trusted upstream** (a sales house's Worker behind publishers' CDNs, [Sales houses](#sales-houses) and the [sales-house guide](../../../docs/sales-houses.md)): `SID_UPSTREAM_SECRETS` is a Worker secret too (`wrangler secret put SID_UPSTREAM_SECRETS`), never a var. `SID_UPSTREAM_AUTH_HEADER`, `SID_UPSTREAM_HOST_HEADER`, `SID_CLIENT_IP_HEADER` and `SID_LOCATION_HEADERS` are vars, and need the secret.
 
 ## Platform data: what the Worker knows about each request
 

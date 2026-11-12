@@ -110,9 +110,16 @@ const vendorModuleItems: DefaultTheme.SidebarItem[] = vendorModules
 const docItems: DefaultTheme.SidebarItem[] = Object.keys(pages)
   .filter(path => path.startsWith('docs/'))
   .map(path => ({ text: firstHeading(path), link: pageUrl(path) }));
+// Module specifications, grouped like the module READMEs above: a spec is a vendor module's when the module it's named
+// after lives in packages/vendor-modules/.
+const specModuleItems = (vendor: boolean): DefaultTheme.SidebarItem[] => Object.keys(pages)
+  .filter(path => path.startsWith('spec/modules/'))
+  .filter(path => vendorModules.includes(path.slice('spec/modules/'.length, -'.md'.length)) === vendor)
+  .map(path => ({ text: firstHeading(path), link: pageUrl(path) }));
 const specItems: DefaultTheme.SidebarItem[] = [
   { text: 'Specification', link: '/spec/' },
-  ...Object.keys(pages).filter(path => path.startsWith('spec/modules/')).map(path => ({ text: firstHeading(path), link: pageUrl(path) }))
+  { text: 'Core modules', collapsed: true, items: specModuleItems(false) },
+  { text: 'Vendor modules', collapsed: true, items: specModuleItems(true) }
 ];
 
 export default defineConfig({

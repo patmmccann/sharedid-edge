@@ -271,15 +271,17 @@ Without Bot Management the object is absent, or has no score and false flags, an
 Each module's behaviour is specified in its own file under [`modules/`](modules), named after the module:
 
 <!-- generated:spec-modules:start -->
-- [The `bot` module](modules/bot.md)
-- [The `clickid` module](modules/clickid.md)
-- [The `dbip` module](modules/dbip.md)
-- [The `ec` module](modules/ec.md)
-- [The `geo` module](modules/geo.md)
-- [The `ip` module](modules/ip.md)
-- [The `maxmind` module](modules/maxmind.md)
-- [The `reflect` module](modules/reflect.md)
-- [The `ua` module](modules/ua.md)
+- **Core modules** (`packages/modules/`):
+  - [The `bot` module](modules/bot.md)
+  - [The `clickid` module](modules/clickid.md)
+  - [The `geo` module](modules/geo.md)
+  - [The `ip` module](modules/ip.md)
+  - [The `reflect` module](modules/reflect.md)
+  - [The `ua` module](modules/ua.md)
+- **Vendor modules** (`packages/vendor-modules/`):
+  - [The `dbip` module](modules/dbip.md)
+  - [The `ec` module](modules/ec.md)
+  - [The `maxmind` module](modules/maxmind.md)
 <!-- generated:spec-modules:end -->
 
 ## Versioning
