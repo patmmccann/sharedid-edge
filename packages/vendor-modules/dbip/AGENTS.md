@@ -2,7 +2,7 @@
 
 User documentation is in [README.md](README.md) (also the npm package page); keep it in step with behaviour changes. The rules for every module are in [`../../modules/AGENTS.md`](../../modules/AGENTS.md), and those for vendor modules, which this is, in [`../AGENTS.md`](../AGENTS.md).
 
-The `dbip` module (`@sharedid-edge/module-dbip`): the visitor's country from DB-IP's IP to Country Lite database (CC BY 4.0), as `ortb2.device.geo.country`. Maintained by the project. Issue #12.
+The `dbip` module (`@sharedid-edge/module-dbip`): the visitor's country from DB-IP's IP to Country Lite database (CC BY 4.0), as `ortb2.device.geo.country`. Maintained by the project. Issue #12. Its behaviour is specified in [`spec/modules/dbip.md`](../../../spec/modules/dbip.md): change it with the code.
 
 - **Offline: data at build time.** `scripts/build-data.mjs` (`npm run data`) downloads the month's MMDB from `download.db-ip.com`, or reads `--file`, and writes `dist/data.js`, replacing what TypeScript compiled from `src/data.ts`, the fixture. Requests never touch the network: keep `network: "none"`. The build script is the only code here that downloads anything, and tests never run it with the network (they use `--file` with a generated database).
 - **No DB-IP data in the repository**, not even a slice. `src/data.ts` is the hand-made fixture from `@sharedid-edge/ip-ranges` (`FIXTURE_TABLE`, documentation addresses only); the test checks it matches. Change the fixture there, not here.
