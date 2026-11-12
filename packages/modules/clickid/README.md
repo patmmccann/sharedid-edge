@@ -11,6 +11,8 @@ Click IDs are **never** put in the `/_sid/v1` payload: no `eids`, no `ortb2`, no
 - [Turning it on](#turning-it-on)
 - [The cookies](#the-cookies)
 - [Reading a click ID](#reading-a-click-id)
+- [Who uses the click IDs](#who-uses-the-click-ids)
+  - [Why it pays, and for whom](#why-it-pays-and-for-whom)
 - [Where the URL comes from](#where-the-url-comes-from)
 - [Response](#response)
 - [Consent and opt-out](#consent-and-opt-out)
@@ -67,7 +69,7 @@ The module is built into every adapter. It does nothing until you list it in `SI
 
 - **Value:** `<click time>.<id>`: the time the worker saw the click, in Unix seconds, a dot, and the click ID exactly as it came, after one round of URL decoding. For example `_sid_gclid=1794447131.EAIaIQobChMIexample_BwE`.
 - **Only safe values are stored:** letters, digits and `.`, `_`, `~`, `-`, at most 512 characters. Anything else (a value still percent-encoded, with spaces, or too long) is ignored, never rewritten. When a parameter appears twice in the URL, the first is used.
-- **Lifetime:** `maxAgeDays`, 90 days by default, counted from the click: the window Google, Meta and Microsoft use for click attribution. Later visits **don't** extend it. The same click ID seen again (a reload, a bookmarked landing URL) leaves the cookie as it is; a different click ID for the same parameter replaces it.
+- **Lifetime:** `maxAgeDays`, 90 days by default, counted from the click. That's the longest click-through conversion window Google Ads allows (the default is 30 days), the retention Microsoft suggests for `msclkid`, and the lifetime of Google's `_gcl_aw` and Meta's `_fbc` cookies; Meta's and TikTok's attribution windows are shorter (see [Who uses the click IDs](#who-uses-the-click-ids)). Later visits **don't** extend it. The same click ID seen again (a reload, a bookmarked landing URL) leaves the cookie as it is; a different click ID for the same parameter replaces it.
 - **Attributes:** `Path=/`, `SameSite=Lax`, `Secure` (over https), `Domain` from the module's `domain` (else `SID_COOKIE_DOMAIN`, else host-only), and `HttpOnly` only if you set `httpOnly: true`. They're readable by page scripts by default, since the usual consumer is a conversion tag.
 - Cookies of other parameters are left alone: a `fbclid` landing doesn't touch `_sid_gclid`.
 
@@ -90,6 +92,34 @@ if (gclid !== undefined) rudderanalytics.track('Order Completed', { gclid: gclid
 ```
 
 Server-side tagging on the same registrable domain (with `SID_COOKIE_DOMAIN` or `domain` set so the cookie reaches it) reads the same cookie from the request; with `httpOnly: true`, only server-side code can.
+
+## Who uses the click IDs
+
+Vendor tags don't read `_sid_*` cookies: they keep writing their own. Send the stored ID to the platform from your own code, typically with a server-side conversion:
+
+| Parameter | The vendor tag's own cookie | Sending a stored ID |
+| --- | --- | --- |
+| `gclid`, `gbraid`, `wbraid` | `_gcl_aw`, `_gcl_gb` ([Google's cookie list](https://business.safety.google/adscookies/), 90 days; Google doesn't document which holds `gbraid` or `wbraid`) | Google Ads API click conversions: `gclid`, `gbraid`, `wbraid`; send every one you have ([Google](https://developers.google.com/google-ads/api/docs/conversions/upload-clicks)) |
+| `dclid` | `_gcl_dc` (90 days) | Floodlight (Campaign Manager 360) |
+| `fbclid` | `_fbc` = `fb.<n>.<milliseconds>.<fbclid>` | Conversions API `fbc`. Build it as `fb.1.<click time × 1000>.<id>` and don't change the ID's case ([Meta](https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/fbp-and-fbc/)) |
+| `msclkid` | `_uetmsclkid` | Conversions API `userData.msclkid`; Microsoft suggests keeping the latest one for 90 days, as this module does ([Microsoft](https://learn.microsoft.com/en-us/advertising/guides/uet-conversion-api-integration)) |
+| `ttclid` | `ttclid` ([TikTok](https://ads.tiktok.com/help/article/using-cookies-with-tiktok-pixel?lang=en)) | Events API `ttclid`, on every web event |
+
+**IDs the browser strips can't be kept:** see [Troubleshooting](#troubleshooting). Firefox's Strict mode also strips `fbclid` ([Mozilla](https://firefox-source-docs.mozilla.org/toolkit/components/antitracking/anti-tracking/query-stripping/index.html)), and Brave strips `fbclid`, `gclid` and `msclkid` ([Brave](https://brave.com/privacy-updates-5/)).
+
+**Other platforms** can be added with [`params`](#settings): LinkedIn `li_fat_id`, X `twclid`, Pinterest `epik`, Snapchat `ScCid` and Reddit `rdt_cid`.
+
+### Why it pays, and for whom
+
+**The mechanism.** Safari caps cookies written by `document.cookie` at 7 days ([WebKit](https://webkit.org/blog/8613/intelligent-tracking-prevention-2-1/)), and at 24 hours on a page reached from a known tracker through a URL with a query string ([WebKit](https://webkit.org/blog/8828/intelligent-tracking-prevention-2-2/)), which is how most ad clicks arrive. A conversion after that, but still inside the platform's attribution window, has no click to be credited to. The platform then under-reports the campaign's conversions, and its automated bidding, which targets conversions or conversion value ([Google](https://support.google.com/google-ads/answer/7065882?hl=en)), learns that the campaign returns less than it does: it bids lower, wins fewer of the auctions that actually convert, and the campaign looks less profitable to whoever sets its budget. Uploading the stored click ID with the conversion gives the platform back the click.
+
+**A click ID lands where the ad's click goes.** The platform adds it to the advertiser's landing URL, so it reaches the site the visitor clicks *to*, not the site the ad was shown *on*. What this module keeps is the attribution of ads **the site runs itself** that bring visitors to its own pages. So it helps, directly, a site that buys traffic:
+
+- **A store or any advertiser** sending paid clicks to its own pages: more of its Safari conversions are credited, so its smart bidding and reported return on ad spend reflect what the campaigns actually earn.
+- **A publisher that advertises itself:** subscriptions, newsletters, app installs or events promoted on Google, Meta, Microsoft or TikTok, landing on its own site.
+- **A publisher that buys traffic to monetize it** (traffic arbitrage): it pays the platforms for clicks and earns from the ads its pages show. It is the advertiser for that traffic. Platforms optimize its campaigns on the conversion events it reports back, such as engaged sessions or revenue per visit, so events that happen after Safari's caps, on a return visit or a later page, get credited to the campaign that bought the visitor, and its bidding buys more of the visitors who earn.
+
+**It doesn't, by itself, make a site's ad space worth more.** Ads shown on your pages send their clicks, and their click IDs, to the advertisers' sites, so running this module on your site doesn't change how those advertisers measure your inventory. Click IDs never go to bidders either. There is an indirect effect when **advertisers** keep their click IDs: Google's display network and Meta's and Microsoft's audience networks tag clicks from publisher placements too, so an advertiser that keeps click IDs past Safari's caps credits more late conversions to the placements that drove them, and automated bidding pays more for placements that convert. That raises demand for inventory that drives Safari conversions, but it comes from advertisers adopting this kind of storage on their own sites, not from the publisher running it.
 
 ## Where the URL comes from
 
@@ -189,13 +219,13 @@ Its routes are `v1` and `sync`. On `/_sid/sync`, the call Prebid.js makes on pag
 They do different jobs:
 
 - **`reflect`** keeps cookies the page **already wrote**. If Google's tag (with the conversion linker) writes `_gcl_aw` and your Google Ads conversions read it, [`reflect`](../reflect/README.md#restore-google-analytics-and-ads-cookies-after-safari-deletes-them-_ga-_gcl_aw-_gcl_au) with `restore` keeps that cookie server-set and brings it back after Safari deletes it. Google's tags keep working unchanged.
-- **`clickid`** writes cookies **of its own** from the URL, which no tag has to have written. Use it when the consumer is your code: an analytics or event pipeline (RudderStack's `properties.gclid`, Jitsu), offline conversion uploads, server-side tagging, or a platform whose tag you don't run. It covers `gbraid` and `wbraid`, which have no documented cookie of Google's, and non-Google platforms.
+- **`clickid`** writes cookies **of its own** from the URL, which no tag has to have written. Use it when the consumer is your code: an analytics or event pipeline (RudderStack's `properties.gclid`, Jitsu), offline conversion uploads, server-side tagging, or a platform whose tag you don't run. It covers `gbraid` and `wbraid`, whose cookie Google doesn't document, and non-Google platforms.
 
 Using both is fine: they set different cookies. For `gclid` you rarely need both.
 
 ## Not yet supported
 
-- **Vendor cookie formats.** Writing the platforms' own cookies (`_gcl_aw=GCL.<seconds>.<gclid>`, `_fbc=fb.1.<milliseconds>.<fbclid>`, `_uetmsclkid=_uet<msclkid>`), so vendor tags pick them up unchanged, is a planned follow-up. Each format has to be checked against the vendor's current documentation, and the cookies compete with the vendors' own tags and server-side copies.
+- **Vendor cookie formats.** Writing the platforms' own cookies (`_gcl_aw=GCL.<seconds>.<gclid>`, `_fbc=fb.1.<milliseconds>.<fbclid>`, `_uetmsclkid=_uet<msclkid>`), so vendor tags pick them up unchanged, is a planned follow-up. Meta documents `_fbc`; the `_gcl_aw` and `_uetmsclkid` value formats aren't documented by Google or Microsoft (`GCL.<seconds>.<gclid>` is what third-party implementations write), so each has to be checked against the vendor's tag, and the cookies compete with the vendors' own tags and server-side copies.
 - **Per-vendor TCF consent** (above).
 
 ## Using it in code
