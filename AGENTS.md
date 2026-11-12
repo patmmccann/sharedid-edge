@@ -45,6 +45,7 @@ npm run typecheck:ts7                           # the same with TypeScript 7
 npm run typecheck:cloudflare                    # the Worker against the Workers runtime types
 npm run types:check -w @sharedid-edge/cloudflare # worker-configuration.d.ts matches wrangler.jsonc
 npm test                                        # unit tests; the Worker's run inside workerd
+npm run test:snippet -w @sharedid-edge/cloudflare # the Snippet (pre-validated settings) answers as the Worker
 npm run conformance                             # conformance suite against the Node.js server
 npm run consumer-types                          # packed @sharedid-edge/core, strict consumers, each module resolution
 npm run attw                                    # published types resolve

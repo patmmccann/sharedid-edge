@@ -16,7 +16,8 @@
     "types:check": "wrangler types --strict-vars=false --check worker-configuration.d.ts",
     "typecheck": "tsc -p tsconfig.json && tsc -p test/tsconfig.json",
     "test": "vitest run",
-    "build:snippet": "node scripts/build-snippet.mjs"
+    "build:snippet": "node scripts/build-snippet.mjs",
+    "test:snippet": "node scripts/test-snippet.mjs"
   },
   "dependencies": {
     "@sharedid-edge/core": "0.1.0",

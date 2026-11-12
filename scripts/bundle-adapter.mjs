@@ -73,6 +73,9 @@ export async function bundleAdapter({ root, entry, file, label, options = {}, ar
     logLevel: 'warning',
     ...options,
     ...chosen.options,
+    // Settings are validated at run time here: only the Cloudflare Snippet, which validates them when it's built, sets
+    // this to true. Defined false so the modules' check for it compiles away.
+    define: { 'globalThis.__SID_PREVALIDATED__': 'false', ...options.define, ...chosen.options?.define },
     ...moduleAlias(root, args.bowser, extra)
   });
   const labelled = `${label}${chosen.label === undefined ? '' : ` ${chosen.label}`}${args.bowser ? ' with Bowser' : ''}${extra.length > 0 ? ` with ${extra.map(spec => spec.slice(0, spec.indexOf('#'))).join(', ')}` : ''}`;

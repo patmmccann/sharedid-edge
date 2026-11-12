@@ -46,20 +46,23 @@ Pick the Snippet when you're on a paid plan, your modules fit, and you don't nee
 
 ### What fits in a Snippet
 
-The size limit is checked on the minified file, before gzip (the bytes you deploy): Cloudflare doesn't say whether its 32 KB is measured compressed, so the build takes the safe reading. Sizes today:
+The size limit is checked on the minified file, before gzip (the bytes you deploy): Cloudflare doesn't say whether its 32 KB is measured compressed, so the build takes the safe reading. Sizes today, with `reflect` configured as in `snippet.config.example.json`:
 
 | `SID_MODULES` | Minified | Fits? |
 | --- | --- | --- |
-| none (SharedID only) | about 24 KB | Yes |
-| `clickid` | about 28 KB | Yes |
-| `ip,clickid` | about 30 KB | Yes |
-| `ip,geo,bot` | about 31 KB | Yes |
-| `reflect` | about 32 KB | Yes, with little room to spare |
-| `ua` (the default parser: isbot, the bot flag only) | about 32 KB | Yes, with little room to spare |
-| `ip,reflect` | about 34 KB | No: `reflect` fits only on its own. Use the Worker |
-| `reflect,clickid` | about 36 KB | No: use the Worker |
-| `ua` with Bowser (`"parser": "bowser"`) | about 66 KB | No: Bowser alone is about 33 KB. Use the default parser, or the Worker |
-| `ip,geo,reflect,bot,ua,clickid` | about 51 KB | No: use the Worker |
+| none (SharedID only) | about 19 KB | Yes |
+| `clickid` | about 21 KB | Yes |
+| `ip,clickid` | about 23 KB | Yes |
+| `ip,geo,bot` | about 25 KB | Yes |
+| `reflect` | about 23 KB | Yes |
+| `ua` (the default parser: isbot, the bot flag only) | about 26 KB | Yes |
+| `ip,reflect` | about 24 KB | Yes |
+| `reflect,clickid` | about 25 KB |
+| `ip,geo,reflect,bot,clickid` | about 31 KB | Yes, with little room to spare | Yes |
+| `ua` with Bowser (`"parser": "bowser"`) | about 61 KB | No: Bowser alone is about 33 KB. Use the default parser, or the Worker |
+| `ip,geo,reflect,bot,ua,clickid` | about 39 KB | No: drop `ua`, or use the Worker |
+
+The Snippet ships its settings already validated. The build checks them as the Worker checks its variables (core's settings and each module's `SID_MODULE_CONFIG` entry, with the same error messages), and bundles the result rather than the code that checks it, so the Snippet doesn't carry the validators, their patterns or their error messages. It also leaves out code your settings can't reach: the per-site handling without `SID_HOSTS`, and `reflect`'s per-cookie backups and `prefer` comparisons when no cookie uses them. So the sizes above depend a little on the settings, and the build prints yours. An invalid setting therefore fails the build, never a live request: the build is the only place a Snippet's settings are checked. `npm run test:snippet` (in CI) builds Snippets for the conformance cases' configurations and others, checks each answers exactly as the Worker with the same settings, and checks that invalid settings fail the build with the Worker's message.
 
 The User-Agent parser is part of the size: the `ua` module bundles only `isbot` by default, and Bowser (the Worker's [Bowser build](#build)) only when `SID_MODULE_CONFIG` sets `{"ua":{"parser":"bowser"}}`. The build prints which one it bundled. You don't need to work this out: the build prints the size of each part, and when the result is over 32 KB it writes nothing, lists the modules by size, and names a set that fits.
 
@@ -69,7 +72,7 @@ SharedID Edge is far under it. The handler does no I/O: it reads cookies and hea
 
 - a request takes about 0.03 to 0.05 ms typically, and under 0.3 ms at the 99th percentile;
 - the first request after the Snippet loads takes about 1 to 1.5 ms;
-- loading the Snippet (parsing it and validating the baked-in settings) takes about 2.5 to 3 ms, once per isolate, not per request. Cloudflare doesn't say whether that counts against the first request's 5 ms.
+- loading the Snippet takes about 2.5 to 3 ms, once per isolate, not per request (measured when it still validated its settings on load; it now ships them validated, so loading does less). Cloudflare doesn't say whether that counts against the first request's 5 ms.
 
 The geo module adds about 0.2 to 0.5 ms the first time it sees a time zone, and about 0.01 ms after that. Every build times 300 requests and prints the median and the 99th percentile, warning when the 99th percentile is over half the limit. These are estimates on the build machine; a live Snippet hasn't been measured yet ([#105](https://github.com/patmmccann/sharedid-edge/issues/105)).
 
@@ -77,7 +80,7 @@ The geo module adds about 0.2 to 0.5 ms the first time it sees a time zone, and 
 
 1. Build the repository (`npm ci && npm run build`, as in [Build](#build)).
 2. Copy `snippet.config.example.json` to `snippet.config.json` in this folder and set your values: the same `SID_*` settings as the Worker's `vars` ([Configuration](../../../docs/configuration.md)), with `SID_COOKIE_DOMAIN` required and `SID_MODULE_CONFIG` as JSON or a string. Keys starting with `$` are comments.
-3. Run `npm run build:snippet -w @sharedid-edge/cloudflare`. It validates the settings as a deployment would, bundles only the modules in `SID_MODULES`, checks the size, smoke-tests the result (a first sync sets the cookie, `/v1` reports no module errors), and writes `dist-snippet/snippet.js` and the rule expression to `dist-snippet/snippet.rule.txt`. It replaces only those two files, so `--out` can point anywhere. It prints the trade-offs above on every build.
+3. Run `npm run build:snippet -w @sharedid-edge/cloudflare`. It validates the settings as a deployment would (and fails, with the setting at fault, when one is invalid), bundles them validated, bundles only the modules in `SID_MODULES`, checks the size, smoke-tests the result (a first sync sets the cookie, `/v1` reports no module errors), and writes `dist-snippet/snippet.js` and the rule expression to `dist-snippet/snippet.rule.txt`. It replaces only those two files, so `--out` can point anywhere. It prints the trade-offs above on every build.
 4. In the dashboard, go to **Rules > Snippets**, create a snippet, and paste `dist-snippet/snippet.js` (or upload it with the API or Terraform).
 5. Set its **snippet rule** to your hostname and the base path, for example `(http.host eq "www.example.com" and starts_with(http.request.uri.path, "/_sid/"))`: the rule decides which requests run the Snippet, as the Worker's route does. Don't set it wider: a Snippet that answers every request takes your site offline.
 6. Verify as for the Worker ([Verify](#verify)), and turn it on in Prebid.js ([step 5](#5-turn-it-on-in-prebidjs)).

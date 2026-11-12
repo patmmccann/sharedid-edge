@@ -126,6 +126,9 @@ function hostSettings(value: unknown): string[] {
 
 /** Parses and validates the settings; throws a `TypeError` (an `error` status) on anything unexpected. */
 export function clickIdModuleConfig(config: Readonly<Record<string, unknown>>): ClickIdModuleConfig {
+  // The Cloudflare Snippet runs this when it's built and bundles the result as the module's config, with esbuild's
+  // `define` setting this flag, so there the entry is already parsed and the rest of the parser drops out of the bundle.
+  if ((globalThis as { __SID_PREVALIDATED__?: boolean }).__SID_PREVALIDATED__ === true) return config as unknown as ClickIdModuleConfig;
   checkKeys(config, SETTINGS, 'the settings');
   const age = config['maxAgeDays'] ?? DEFAULT_CLICK_AGE_DAYS;
   if (typeof age !== 'number' || !Number.isInteger(age) || age < 1 || age > 400) fail('"maxAgeDays" must be a whole number from 1 to 400');

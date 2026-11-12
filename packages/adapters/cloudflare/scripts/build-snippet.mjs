@@ -4,9 +4,9 @@
 //   npm run build:snippet -w @sharedid-edge/cloudflare -- [--config snippet.config.json] [--out dist-snippet/snippet.js]
 //
 // The configuration file is a JSON object of SID_* settings, as the Worker's vars (SID_MODULE_CONFIG may be an object).
-// It's validated as a deployment validates it, SID_COOKIE_DOMAIN included, and only the modules SID_MODULES names are
-// bundled. Snippets have no environment variables or secrets, so changing a setting means rebuilding and redeploying,
-// and the ec module (which needs a secret) can't be used. See README.md, "Worker or Snippet?".
+// It's validated as a deployment validates it, SID_COOKIE_DOMAIN included, and the Snippet ships it validated, without
+// the code that validates it (see PREVALIDATED). Only the modules SID_MODULES names are bundled. Snippets have no
+// environment variables or secrets, so changing a setting means rebuilding and redeploying, and the ec module (which needs a secret) can't be used. See README.md, "Worker or Snippet?".
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -19,15 +19,26 @@ import { ConfigError, settingsFromEnv } from '@sharedid-edge/core';
 const ROOT = resolve(import.meta.dirname, '..');
 /** Cloudflare's limit on a Snippet's total package size. Measured on the minified file before gzip (the bytes you paste into the dashboard): the docs don't say whether the limit is compressed, and this is the safe reading. */
 const SNIPPET_LIMIT = 32 * 1024;
-/** Modules a Snippet can bundle, by name: package and export. ec isn't here: it needs a secret, and Snippets have none. */
+/**
+ * Modules a Snippet can bundle, by name: package, export, and the export that parses its SID_MODULE_CONFIG entry, when
+ * the module reads one through a parser that `PREVALIDATED` builds skip (see below). ec isn't here: it needs a secret,
+ * and Snippets have none.
+ */
 const MODULES = {
   ip: ['@sharedid-edge/module-ip', 'ipModule'],
   geo: ['@sharedid-edge/module-geo', 'geoModule'],
-  reflect: ['@sharedid-edge/module-reflect', 'reflectModule'],
-  bot: ['@sharedid-edge/module-bot', 'botModule'],
-  ua: ['@sharedid-edge/module-ua', 'uaModule'],
-  clickid: ['@sharedid-edge/module-clickid', 'clickIdModule']
+  reflect: ['@sharedid-edge/module-reflect', 'reflectModule', 'reflectModuleConfig'],
+  bot: ['@sharedid-edge/module-bot', 'botModule', 'botSettings'],
+  ua: ['@sharedid-edge/module-ua', 'uaModule', 'uaSettings'],
+  clickid: ['@sharedid-edge/module-clickid', 'clickIdModule', 'clickIdModuleConfig']
 };
+/**
+ * The build-time flag, `true` in the Snippet: its settings are validated here, when it's built, so the bundle ships
+ * them already parsed and leaves out the validators (core's `settingsFromEnv` and the modules' parsers, with their
+ * patterns and error messages). Each parser in `MODULES` returns its entry as is when it's set, since the entry is
+ * then what the parser returned here. Every other build (the Worker, the other adapters) leaves it unset and validates at run time.
+ */
+const PREVALIDATED = 'globalThis.__SID_PREVALIDATED__';
 /** The ua module with Bowser, bundled instead when SID_MODULE_CONFIG sets {"ua":{"parser":"bowser"}}, as the Worker's Bowser build. */
 const UA_WITH_BOWSER = ['@sharedid-edge/module-ua/bowser', 'uaModuleWithBowser'];
 /** Third-party packages a module brings, so the over-limit advice counts them with it. */
@@ -96,13 +107,73 @@ const parserLine = !moduleNames.includes('ua') ? 'none (no ua module)'
   : bowser ? 'Bowser (SID_MODULE_CONFIG ua.parser "bowser": parses the User-Agent fully; the larger option)'
     : 'isbot only (the default: the bot flag; set ua.parser to "bowser" to parse the User-Agent fully, which is larger)';
 
+// The modules' settings, parsed now by each bundled module's own parser, as the Worker parses them on each request. A
+// site that runs a module with invalid settings fails the build with the parser's message: the Worker would report that
+// module as an error on every request. Settings a site doesn't run the module with (only its opt-out reads them, as
+// the Worker's does for every installed module) are kept as {}, which the module rejects on use as the Worker's
+// parser would, so the opt-out leaves that module's cookies out in both.
+// Loading the modules here also checks their definitions (core's defineModule), which the Snippet then leaves out.
+const parsers = Object.fromEntries(await Promise.all(moduleNames.map(async name => {
+  const loaded = await import(moduleSource(name)[0]);
+  if (loaded[moduleSource(name)[1]] === undefined) fail(`${moduleSource(name)[0]} has no ${moduleSource(name)[1]}.`);
+  return [name, MODULES[name][2] === undefined ? undefined : loaded[MODULES[name][2]]];
+})).then(entries => entries.filter(([, parse]) => parse !== undefined)));
+function parsedSettings(siteConfig, where) {
+  const moduleConfig = { ...siteConfig.moduleConfig };
+  for (const [name, parse] of Object.entries(parsers)) {
+    try {
+      moduleConfig[name] = parse(siteConfig.moduleConfig[name] ?? {});
+    } catch (error) {
+      if (!(error instanceof Error)) throw error;
+      if (where !== undefined && siteConfig.modules.includes(name)) fail(`${where}${error.message} (in SID_MODULE_CONFIG, ${show(configFile)}).`, 2);
+      moduleConfig[name] = {};
+    }
+  }
+  return { ...siteConfig, moduleConfig };
+}
+// Without SID_HOSTS the deployment's configuration answers every request; with it, only the hosts' do.
+const prevalidated = settings.hosts === undefined
+  ? { config: parsedSettings(settings.config, '') }
+  : { config: parsedSettings(settings.config, undefined), hosts: new Map(sites.map(([host, siteConfig]) => [host, parsedSettings(siteConfig, `SID_HOSTS["${host}"]: `)])) };
+
+// Features no bundled setting uses: the Snippet defines these true (with PREVALIDATED), so their code compiles away.
+// Only code these settings can't reach is gated: each flag is derived from every configuration the Snippet serves.
+const served = prevalidated.hosts === undefined ? [prevalidated.config] : [...prevalidated.hosts.values()];
+const reflectCookies = served.flatMap(c => c.moduleConfig['reflect']?.cookies ?? []);
+const unused = {
+  // One configuration, for every host: no SID_HOSTS (a Snippet has no other source of per-host settings).
+  HOSTS: prevalidated.hosts === undefined,
+  REFLECT_PREFER: reflectCookies.every(c => c.prefer === 'browser'),
+  REFLECT_OLDER: reflectCookies.every(c => c.prefer !== 'older'),
+  // Sites that don't run reflect get {} (no keeper), and it throws before reaching per-cookie code.
+  REFLECT_PER_COOKIE: served.every(c => c.moduleConfig['reflect']?.keeper?.mode !== 'per-cookie')
+};
+const define = { [PREVALIDATED]: 'true', ...Object.fromEntries(Object.entries(unused).map(([name, value]) => [`globalThis.__SID_UNUSED_${name}__`, String(value)])) };
+
+/** `value` as a JavaScript expression: JSON, with `undefined` and Maps, which the settings have. */
+function literal(value) {
+  if (value === undefined) return 'void 0';
+  if (value instanceof Map) return `new Map(${literal([...value])})`;
+  if (Array.isArray(value)) return `[${value.map(literal).join(',')}]`;
+  if (typeof value === 'object' && value !== null) return `{${Object.entries(value).map(([key, v]) => `${JSON.stringify(key)}:${literal(v)}`).join(',')}}`;
+  return JSON.stringify(value);
+}
+
 // 2. The bundle: the Snippet entry, the validated settings, and only the listed modules.
 const imports = moduleNames.map(name => `import { ${moduleSource(name)[1]} } from '${moduleSource(name)[0]}';`).join('\n');
 const entry = `${imports}
-import { settingsFromEnv } from '@sharedid-edge/core';
 import { createSnippet } from './src/snippet.ts';
-// Generated by scripts/build-snippet.mjs from ${show(configFile)}: Snippets have no environment variables.
-export default createSnippet(settingsFromEnv(${JSON.stringify(env)}, { requireCookieDomain: true }), [${moduleNames.map(name => moduleSource(name)[1]).join(', ')}]);
+// Generated by scripts/build-snippet.mjs from ${show(configFile)}: Snippets have no environment variables. The settings
+// were validated by the build and are frozen all the way down, as settingsFromEnv freezes them.
+const freeze = value => {
+  if (value instanceof Map) value.forEach(freeze);
+  else if (typeof value === 'object' && value !== null) {
+    Object.values(value).forEach(freeze);
+    Object.freeze(value);
+  }
+  return value;
+};
+export default createSnippet(freeze(${literal(prevalidated)}), [${moduleNames.map(name => moduleSource(name)[1]).join(', ')}]);
 `;
 // Only the files this build writes are replaced or removed, never the folder: --out may point anywhere.
 if (!/\.m?js$/.test(outfile)) fail(`--out must name a .js or .mjs file, not ${show(outfile)}.`, 2);
@@ -116,6 +187,7 @@ const result = await build({
   platform: 'neutral',
   mainFields: ['module', 'main'],
   minify: true,
+  define,
   legalComments: 'none',
   metafile: true,
   logLevel: 'warning'

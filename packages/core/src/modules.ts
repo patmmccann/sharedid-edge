@@ -113,17 +113,19 @@ const MODULE_NAME = /^[a-z][a-z0-9-]{0,63}$/;
 
 /** Validates a module definition, so mistakes surface when the worker is built rather than per request. */
 export function defineModule(module: EdgeModule): EdgeModule {
-  if (!MODULE_NAME.test(module.name)) throw new TypeError(`Invalid module name "${module.name}"`);
-  for (const purpose of module.purposes ?? []) {
-    if (!Number.isInteger(purpose) || purpose < 1 || purpose > 24) throw new TypeError(`Module ${module.name}: invalid TCF purpose ${String(purpose)}`);
-  }
-  if (module.routes !== undefined) {
-    const routes: readonly unknown[] = module.routes;
-    if (routes.length === 0 || new Set(routes).size !== routes.length || !routes.every(r => r === 'v1' || r === 'sync')) {
+  // The Cloudflare Snippet's build loads its modules before bundling them, which checks them here; in the Snippet, whose
+  // esbuild `define` sets this flag, the checks compile away.
+  if ((globalThis as { __SID_PREVALIDATED__?: boolean }).__SID_PREVALIDATED__ !== true) {
+    if (!MODULE_NAME.test(module.name)) throw new TypeError(`Invalid module name "${module.name}"`);
+    for (const purpose of module.purposes ?? []) {
+      if (!Number.isInteger(purpose) || purpose < 1 || purpose > 24) throw new TypeError(`Module ${module.name}: invalid TCF purpose ${String(purpose)}`);
+    }
+    const routes: readonly unknown[] | undefined = module.routes;
+    if (routes !== undefined && (routes.length === 0 || new Set(routes).size !== routes.length || !routes.every(r => r === 'v1' || r === 'sync'))) {
       throw new TypeError(`Module ${module.name}: routes must be a non-empty list of "v1" and "sync" without repeats`);
     }
-    return Object.freeze({ ...module, routes: Object.freeze([...module.routes]) });
   }
+  if (module.routes !== undefined) return Object.freeze({ ...module, routes: Object.freeze([...module.routes]) });
   return Object.freeze({ ...module });
 }
 

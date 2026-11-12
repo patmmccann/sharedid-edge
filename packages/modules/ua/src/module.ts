@@ -65,6 +65,9 @@ export interface UaSettings {
  * fails loudly; the worker then reports the module as an `error`.
  */
 export function uaSettings(config: Readonly<Record<string, unknown>>): UaSettings {
+  // The Cloudflare Snippet runs this when it's built and bundles the result as the module's config, with esbuild's
+  // `define` setting this flag, so there the entry is already parsed and the rest of the parser drops out of the bundle.
+  if ((globalThis as { __SID_PREVALIDATED__?: boolean }).__SID_PREVALIDATED__ === true) return config as unknown as UaSettings;
   for (const key of Object.keys(config)) {
     if (key !== 'ua' && key !== 'parser') throw new TypeError(`ua: unknown setting "${key}"`);
   }
