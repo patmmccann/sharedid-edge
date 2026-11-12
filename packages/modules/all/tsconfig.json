@@ -13,6 +13,7 @@
     { "path": "../ip" },
     { "path": "../geo" },
     { "path": "../reflect" },
+    { "path": "../clickid" },
     { "path": "../bot" },
     { "path": "../ua" }
   ]

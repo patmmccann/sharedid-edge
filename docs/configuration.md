@@ -16,7 +16,7 @@ These are the core settings, which every platform reads. The table is generated 
 | `SID_OPTOUT_COOKIE` | `_pubcid_optout` | The opt-out cookie; Prebid.js reads `_pubcid_optout`. |
 | `SID_VENDOR_ID` | (empty: publisher mode) | Your TCF vendor ID (1 to 65535), for vendor mode. |
 | `SID_ALLOWED_ORIGINS` | none | Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin. |
-| `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. Also limits how often modules run on `/_sid/sync`. |
+| `SID_SYNC_CACHE_SECONDS` | `86400` | How long a browser may reuse a sync response (privately). `0` re-syncs on every call. Also limits how often modules run on `/_sid/sync`, except a sync the `clickid` module runs on, which is never cached. |
 | `SID_MODULES` | none | Comma-separated modules to run, in order. |
 | `SID_SYNC_MODULES` | the modules in `SID_MODULES` that run on `/_sid/sync` | Comma-separated modules to run on `/_sid/sync`, each also in `SID_MODULES`, or `none`. |
 | `SID_MODULE_CONFIG` | `{}` | JSON settings per module, keyed by module name. |

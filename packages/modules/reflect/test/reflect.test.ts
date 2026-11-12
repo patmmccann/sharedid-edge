@@ -333,7 +333,8 @@ describe('duplicates (a host-only copy next to the domain one)', () => {
 
 describe('the reflect module in the handler', () => {
   const env = { SID_MODULES: 'reflect', SID_MODULE_CONFIG: JSON.stringify({ reflect: { cookies: [UID1, FPID] } }) };
-  const handler = (overrides: Record<string, string> = {}): SharedIdEdgeHandler => createHandler({ config: resolveConfig({ ...env, ...overrides }), modules: [reflectModule] });
+  // A fixed SharedID: a random one can contain abc or def, which some tests check the payload leaves out.
+  const handler = (overrides: Record<string, string> = {}): SharedIdEdgeHandler => createHandler({ config: resolveConfig({ ...env, ...overrides }), modules: [reflectModule], mintId: () => '11111111-2222-4333-8444-555555555555' });
   const call = async (path: string, headers: Record<string, string> = {}, overrides: Record<string, string> = {}): Promise<{ body: PayloadV1; cookies: string[]; response: Response }> => {
     const response = await handler(overrides)(new Request(`https://www.example.com${path}`, { headers }));
     const cookies = response.headers.getSetCookie().filter(c => !c.startsWith('_pubcid'));

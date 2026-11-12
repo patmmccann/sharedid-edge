@@ -62,7 +62,7 @@ All routes are under `SID_BASE_PATH`; a trailing slash is accepted. Any other pa
 | `GET /optout` | `204`. Sets the opt-out cookie (`1`, script-readable, `SID_MAX_AGE_DAYS`) and expires the ID cookies. |
 | `GET /optin` | `204`. Expires the opt-out cookie. |
 
-Every response carries `Cache-Control`: `no-store`, except a successful sync that set an ID, which MAY be `private, max-age=SID_SYNC_CACHE_SECONDS` so a browser doesn't re-sync on every page view. Module cookies don't change this; the cache also limits how often modules run on `/sync` (see [Modules on `/sync`](#modules-on-sync)).
+Every response carries `Cache-Control`: `no-store`, except a successful sync that set an ID, which MAY be `private, max-age=SID_SYNC_CACHE_SECONDS` so a browser doesn't re-sync on every page view. Module cookies don't change this, but a module that ran on the sync can make it `no-store` (`noStore`); the cache also limits how often modules run on `/sync` (see [Modules on `/sync`](#modules-on-sync)).
 
 ### The `id` parameter
 
@@ -188,7 +188,7 @@ A module has:
 - a `name` (`^[a-z][a-z0-9-]{0,63}$`), used in `SID_MODULES` and `SID_MODULE_CONFIG`;
 - optionally `purposes` (TCF purposes it needs publisher consent for when GDPR applies) and `gvlid` (its IAB vendor ID);
 - optionally `routes`, the routes it runs on: a non-empty list of `v1` and `sync` without repeats, defaulting to `v1` only (see [Modules on `/sync`](#modules-on-sync));
-- a `run(context)` function returning `{ eids?, ortb2?, cookies?, traffic? }` or nothing (`traffic`: see [Traffic signal](#traffic-signal)).
+- a `run(context)` function returning `{ eids?, ortb2?, cookies?, traffic?, noStore? }` or nothing (`traffic`: see [Traffic signal](#traffic-signal); `noStore`: see [Modules on `/sync`](#modules-on-sync)).
 
 The context has the request, its URL and cookies, the platform information (see [Platform information](#platform-information)), the SharedID (when storage is allowed), whether the browser opted out, the consent signals, and the module's configuration and secrets.
 
@@ -214,6 +214,7 @@ Prebid.js calls `/sync` (its `pixelUrl`) on page views without any page code, so
 - **Cookies and traffic reports only:** the cookies of each module that succeeded are set, after the same checks as on `/v1`, and its traffic report joins the platform's verdict for [Skipping bots](#skipping-bots); its `eids` and `ortb2` (apart from a traffic report in `ortb2.device.ext.traffic`) are ignored, and the merged signal isn't returned. A module that fails, times out or returns a bad cookie or report sets and reports nothing.
 - **Otherwise the response is unchanged:** status `200`, the GIF, and the same headers and `Cache-Control`, plus the module cookies and, when any module was selected to run, `X-SharedID-Modules`: each module's name and status (as in `ext.modules`, without reasons), in order, such as `X-SharedID-Modules: reflect=empty, ec=ok, bot=empty`. It MUST NOT contain cookie names, values or error details.
 - **Caching:** a successful sync that set an ID is still cached privately for `SID_SYNC_CACHE_SECONDS` (one day by default), so from `/sync` a browser runs these modules about once per cache lifetime at most. A response served from the browser's cache sets no cookies. A lower `SID_SYNC_CACHE_SECONDS` runs them more often, for more requests; `0` runs them on every call.
+- **`noStore`:** a module whose result has `noStore: true` needs to see every sync (the [`clickid`](modules/clickid.md) module reads the landing page from the `Referer`, and a browser reuses a cached sync for any page). When a module that succeeded on `/sync` returns it, the response MUST be `Cache-Control: no-store`; its status, body and other headers are unchanged. It's ignored from a module that fails, times out or returns a bad cookie or report, and on other routes, whose responses are `no-store` already. A `noStore` that isn't a boolean makes the module an `error`.
 
 ### Platform information
 
@@ -252,6 +253,7 @@ Each module's behaviour is specified in its own file under [`modules/`](modules)
 
 <!-- generated:spec-modules:start -->
 - [The `bot` module](modules/bot.md)
+- [The `clickid` module](modules/clickid.md)
 - [The `dbip` module](modules/dbip.md)
 - [The `ec` module](modules/ec.md)
 - [The `geo` module](modules/geo.md)

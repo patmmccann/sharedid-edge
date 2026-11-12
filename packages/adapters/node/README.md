@@ -109,7 +109,7 @@ Core's `locationInfo` validates the values the same way for every adapter, dropp
 
 ## Built-in modules
 
-The CLI builds in `ip`, `geo`, `reflect`, `bot` and `ua`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the [Modules](../../../docs/modules.md).
+The CLI builds in `ip`, `geo`, `reflect`, `bot`, `ua` and `clickid`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the [Modules](../../../docs/modules.md).
 
 The server isn't bundled, so its `ua` module always has [Bowser](../../modules/ua/README.md#full-parsing-with-bowser) (from `@sharedid-edge/modules/bowser`): `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` turns on full `User-Agent` parsing with no build step.
 

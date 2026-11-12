@@ -505,6 +505,37 @@ describe('modules on /sync', () => {
     expect(setCookies(response).find(c => c.name === 'owned')?.attributes.get('max-age')).toBe('0');
   });
 
+  it('keeps a sync out of the browser cache when a module that ran asks (noStore), with everything else unchanged', async () => {
+    const fresh = defineModule({ name: 'fresh', routes: ['v1', 'sync'], run: () => ({ noStore: true }) });
+    const setting = defineModule({ name: 'setting', routes: ['sync'], run: () => ({ cookies: [cookie('kept')], noStore: true }) });
+    const plain = await handler()(get(`/_sid/sync?id=pubcid:${UUID}`));
+    for (const [names, modules] of [['fresh', [fresh]], ['setting', [setting]]] as const) {
+      const response = await handler({ SID_MODULES: names }, { modules })(get(`/_sid/sync?id=pubcid:${UUID}`));
+      expect(response.status).toBe(200);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array(await plain.clone().arrayBuffer()));
+      for (const header of ['Content-Type', 'Content-Length', 'X-Robots-Tag', 'X-SharedID-Source']) {
+        expect(response.headers.get(header)).toBe(plain.headers.get(header));
+      }
+      expect(response.headers.get('X-SharedID-Modules')).toBe(`${names}=empty`);
+      expect(setCookies(response).filter(c => c.name.startsWith('_pubcid')).map(c => c.value)).toEqual([UUID, UUID]);
+    }
+    // On /v1 the response is no-store anyway, and the payload is unchanged.
+    const v1 = await handler({ SID_MODULES: 'fresh' }, { modules: [fresh] })(get('/_sid/v1', { Cookie: `_pubcid=${UUID}` }));
+    expect(v1.headers.get('Cache-Control')).toBe('no-store');
+    expect(((await v1.json()) as PayloadV1).ext.modules['fresh']?.status).toBe('empty');
+  });
+
+  it('ignores noStore from a module that fails, is skipped, or says false; and makes a non-boolean an error', async () => {
+    const failing = defineModule({ name: 'failing', routes: ['sync'], run: () => ({ cookies: [cookie('_pubcid', 'stolen')], noStore: true }) });
+    const no = defineModule({ name: 'no', routes: ['sync'], run: () => ({ noStore: false }) });
+    const v1Only = defineModule({ name: 'v1only', run: () => ({ noStore: true }) });
+    const odd = defineModule({ name: 'odd', routes: ['sync'], run: () => JSON.parse('{"noStore":"yes"}') as { noStore?: boolean } });
+    const response = await handler({ SID_MODULES: 'failing,no,v1only,odd' }, { modules: [failing, no, v1Only, odd] })(get(`/_sid/sync?id=pubcid:${UUID}`));
+    expect(response.headers.get('Cache-Control')).toBe('private, max-age=86400');
+    expect(response.headers.get('X-SharedID-Modules')).toBe('failing=error, no=empty, odd=error');
+  });
+
   it('validates routes', () => {
     expect(defineModule({ name: 'r', routes: ['sync', 'v1'], run: () => undefined }).routes).toEqual(['sync', 'v1']);
     expect(defineModule({ name: 'r', run: () => undefined }).routes).toBeUndefined();

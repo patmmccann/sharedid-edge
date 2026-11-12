@@ -1,0 +1,515 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The clickid module (SID_MODULES=clickid): stores ad click IDs from the landing page's URL (the url parameter, else the Referer) in server-set first-party cookies, as <unix seconds>.<id>, for 90 days from the click, and never in the payload. Configured with hosts [\"www.example.com\"] (so the landing URLs below are on an allowed host whatever host the target sees) and domain example.com. Click IDs are stored only when storage is allowed, there's no us_privacy opt-out of sale, and, with a TC string, there's publisher consent for Purposes 1 and 7; otherwise those the browser has are deleted. TC strings from publisherTc() in packages/core/test/helpers.ts: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.cEAAAAAAAA consents to Purposes 1 and 7; CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA to 1 and 2 (storage allowed, no Purpose 7).",
+  "config": {
+    "SID_MODULES": "clickid",
+    "SID_MODULE_CONFIG": "{\"clickid\":{\"hosts\":[\"www.example.com\"],\"domain\":\"example.com\"}}"
+  },
+  "cases": [
+    {
+      "name": "a landing URL in the url parameter sets _sid_gclid with the click time, a Max-Age of 90 days and the configured attributes, the first of repeated values, and nothing in the payload",
+      "request": {
+        "path": "/_sid/v1?url=https%3A%2F%2Fwww.example.com%2Flanding%3Futm_source%3Dads%26gclid%3DTeSt-123_x.y~z%26gclid%3Dsecond",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_sid_gclid",
+            "valuePattern": "^[0-9]{10}\\.TeSt-123_x\\.y\\~z$",
+            "maxAge": 7776000,
+            "domain": ".example.com",
+            "httpOnly": false,
+            "sameSite": "Lax",
+            "path": "/"
+          }
+        ],
+        "onlyListedCookies": true,
+        "jsonIncludes": {
+          "eids": [
+            {
+              "source": "pubcid.org",
+              "uids": [
+                {
+                  "id": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+                  "atype": 1
+                }
+              ]
+            }
+          ],
+          "ext": {
+            "modules": {
+              "clickid": {
+                "status": "empty"
+              }
+            }
+          }
+        },
+        "jsonAbsent": [
+          "ortb2",
+          "ext.clickid"
+        ]
+      }
+    },
+    {
+      "name": "a landing URL in the Referer sets the cookie of every click ID in it",
+      "request": {
+        "path": "/_sid/v1",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d",
+          "referer": "https://www.example.com/?fbclid=IwAR0_abc-def&msclkid=0123abcd"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_sid_fbclid",
+            "valuePattern": "^[0-9]{10}\\.IwAR0_abc-def$",
+            "maxAge": 7776000,
+            "domain": ".example.com",
+            "httpOnly": false,
+            "sameSite": "Lax",
+            "path": "/"
+          },
+          {
+            "name": "_sid_msclkid",
+            "valuePattern": "^[0-9]{10}\\.0123abcd$",
+            "maxAge": 7776000,
+            "domain": ".example.com",
+            "httpOnly": false,
+            "sameSite": "Lax",
+            "path": "/"
+          }
+        ],
+        "onlyListedCookies": true,
+        "jsonAbsent": [
+          "ortb2"
+        ]
+      }
+    },
+    {
+      "name": "ignores a landing URL on another host",
+      "request": {
+        "path": "/_sid/v1?url=https%3A%2F%2Fevil.example%2F%3Fgclid%3Dabc",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d",
+          "referer": "https://other.example/?gclid=def"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "ignores the url parameter on a request from another site (Sec-Fetch-Site: cross-site), even naming an allowed host",
+      "request": {
+        "path": "/_sid/v1?url=https%3A%2F%2Fwww.example.com%2F%3Fgclid%3Dplanted",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d",
+          "sec-fetch-site": "cross-site"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "ignores the url parameter when the Referer is on another host, even naming an allowed host",
+      "request": {
+        "path": "/_sid/v1?url=https%3A%2F%2Fwww.example.com%2F%3Fgclid%3Dplanted",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d",
+          "referer": "https://evil.example/"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "ignores double-encoded and over-long values rather than fixing them",
+      "request": {
+        "path": "/_sid/v1?url=https%3A%2F%2Fwww.example.com%2F%3Fgclid%3Dabc%25252Fdef%26fbclid%3Daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "doesn't refresh a click it already has",
+      "request": {
+        "path": "/_sid/v1?url=https%3A%2F%2Fwww.example.com%2F%3Fgclid%3Dsame",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; _sid_gclid=1760000000.same"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "replaces an older click with a newer one",
+      "request": {
+        "path": "/_sid/v1?url=https%3A%2F%2Fwww.example.com%2F%3Fgclid%3Dnewer",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; _sid_gclid=1760000000.older"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_sid_gclid",
+            "valuePattern": "^[0-9]{10}\\.newer$",
+            "maxAge": 7776000,
+            "domain": ".example.com",
+            "httpOnly": false,
+            "sameSite": "Lax",
+            "path": "/"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "stores with publisher consent for Purposes 1 and 7",
+      "request": {
+        "path": "/_sid/v1?url=https%3A%2F%2Fwww.example.com%2F%3Fgclid%3Dabc&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.cEAAAAAAAA",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_sid_gclid",
+            "valuePattern": "^[0-9]{10}\\.abc$",
+            "maxAge": 7776000,
+            "domain": ".example.com",
+            "httpOnly": false,
+            "sameSite": "Lax",
+            "path": "/"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "with Global Privacy Control, stores nothing and deletes the click IDs the browser has",
+      "request": {
+        "path": "/_sid/v1?url=https%3A%2F%2Fwww.example.com%2F%3Fgclid%3Dabc",
+        "headers": {
+          "sec-gpc": "1",
+          "cookie": "_sid_gclid=1760000000.old; _sid_fbclid=1760000000.old"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_sid_gclid",
+            "value": "",
+            "maxAge": 0,
+            "domain": ".example.com",
+            "httpOnly": false
+          },
+          {
+            "name": "_sid_fbclid",
+            "value": "",
+            "maxAge": 0,
+            "domain": ".example.com",
+            "httpOnly": false
+          }
+        ],
+        "onlyListedCookies": true,
+        "jsonAbsent": [
+          "ortb2"
+        ]
+      }
+    },
+    {
+      "name": "with us_privacy=1YYN (an opt-out of sale), stores nothing and deletes the click IDs, while the SharedID is kept",
+      "request": {
+        "path": "/_sid/v1?url=https%3A%2F%2Fwww.example.com%2F%3Fgclid%3Dabc&us_privacy=1YYN",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; _sid_gclid=1760000000.old"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_sid_gclid",
+            "value": "",
+            "maxAge": 0,
+            "domain": ".example.com",
+            "httpOnly": false
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "with a TC string without Purpose 7, stores nothing and deletes the click IDs",
+      "request": {
+        "path": "/_sid/v1?url=https%3A%2F%2Fwww.example.com%2F%3Fgclid%3Dabc&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; _sid_gclid=1760000000.old"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_sid_gclid",
+            "value": "",
+            "maxAge": 0,
+            "domain": ".example.com",
+            "httpOnly": false
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "/optout deletes the click IDs the browser sent",
+      "request": {
+        "path": "/_sid/optout",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; _sid_gclid=1760000000.old; _sid_ttclid=1760000000.old; other=1"
+        }
+      },
+      "expect": {
+        "status": 204,
+        "cookies": [
+          {
+            "name": "_pubcid_optout",
+            "value": "1"
+          },
+          {
+            "name": "_sid_gclid",
+            "value": "",
+            "maxAge": 0,
+            "domain": ".example.com",
+            "httpOnly": false
+          },
+          {
+            "name": "_sid_ttclid",
+            "value": "",
+            "maxAge": 0,
+            "domain": ".example.com",
+            "httpOnly": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "on /sync (Prebid.js's pixelUrl), stores the click ID in the Referer, and the pixel isn't cached, so a later landing page is seen",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d",
+        "headers": {
+          "referer": "https://www.example.com/landing?gclid=FromSync-1"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "content-type": "image/gif",
+          "cache-control": "no-store",
+          "x-sharedid-modules": "clickid=empty"
+        },
+        "bodyLength": 43,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_sid_gclid",
+            "valuePattern": "^[0-9]{10}\\.FromSync-1$",
+            "maxAge": 7776000,
+            "domain": ".example.com",
+            "httpOnly": false,
+            "sameSite": "Lax",
+            "path": "/"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "on /sync without a click ID, sets no click cookie and still keeps the pixel out of the cache",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d",
+        "headers": {
+          "referer": "https://www.example.com/article"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "cache-control": "no-store",
+          "x-sharedid-modules": "clickid=empty"
+        },
+        "bodyLength": 43,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "on /sync, the usprivacy cookie's opt-out of sale deletes the click IDs",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d",
+        "headers": {
+          "referer": "https://www.example.com/?gclid=abc",
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; usprivacy=1YYN; _sid_gclid=1760000000.old"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_sid_gclid",
+            "value": "",
+            "maxAge": 0,
+            "domain": ".example.com",
+            "httpOnly": false
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    }
+  ]
+}

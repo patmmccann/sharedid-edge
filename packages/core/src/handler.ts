@@ -263,7 +263,8 @@ const NO_STORE = { 'Cache-Control': 'no-store' } as const;
 /**
  * The `pixelUrl` response: a 1x1 GIF, like the WordPress and Drupal plugins. When an ID was set, the browser may cache
  * it privately for `syncCacheSeconds`, which limits how often it re-syncs (and so how often modules run here);
- * otherwise it isn't cached. Modules that run on `/sync` add only their cookies, and `X-SharedID-Modules` gives each
+ * otherwise it isn't cached, nor when a module that ran asked for that (`noStore`). Modules that run on `/sync` add only
+ * their cookies (and that flag), and `X-SharedID-Modules` gives each
  * one's name and status, never cookie names, values or reasons. Their traffic reports count only towards
  * `SID_SKIP_BOTS`: there's no payload to return the signal in.
  */
@@ -278,7 +279,8 @@ interface SyncInputs {
 
 function syncResponse(inputs: SyncInputs): Response {
   const { modules, state, allowed, config, secure, date } = inputs;
-  const cacheable = allowed && state.id !== undefined && config.syncCacheSeconds > 0;
+  // A module that must see every sync (`noStore`) keeps it out of the browser's cache.
+  const cacheable = allowed && state.id !== undefined && config.syncCacheSeconds > 0 && !modules.noStore;
   const response = new Response(PIXEL, {
     status: 200,
     headers: {

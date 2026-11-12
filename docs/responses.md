@@ -9,7 +9,7 @@ A 1×1 GIF (`200`, `Content-Type: image/gif`), plus the cookies:
 ```http
 HTTP/1.1 200 OK
 Content-Type: image/gif
-Cache-Control: private, max-age=86400        (no-store when no ID was set)
+Cache-Control: private, max-age=86400        (no-store when no ID was set, or a module asks for it)
 Set-Cookie: _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=…; Path=/; SameSite=Lax; Secure
 Set-Cookie: _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=…; Path=/; SameSite=Lax; Secure; HttpOnly
 X-SharedID-Source: param
@@ -30,6 +30,25 @@ Set-Cookie: _ga=GA1.1.1234567890.1700000000; Max-Age=34560000; Expires=Wed, 15 D
 Set-Cookie: _sid_keep=eyJfZ2EiOiJHQTEuMS4xMjM0NTY3ODkwLjE3MDAwMDAwMDAifQ; Max-Age=34560000; Expires=Wed, 15 Dec 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
 Set-Cookie: _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=Wed, 10 Nov 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure
 Set-Cookie: _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=Wed, 10 Nov 2027 21:57:46 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
+```
+
+A module that needs to see every sync can keep it out of the browser's cache: the [`clickid`](../packages/modules/clickid/README.md) module reads the landing page from the `Referer`, and a browser would reuse a cached sync on the next landing page. Then `Cache-Control` is `no-store`, and nothing else changes. With `SID_COOKIE_DOMAIN=.example.com` and `SID_MODULES=clickid`, real output:
+
+```http
+GET /_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d
+Referer: https://www.example.com/shoes?utm_source=google&gclid=EAIaIQobChMIexample_BwE
+Cookie: _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d
+
+HTTP/1.1 200 OK
+Cache-Control: no-store
+Content-Length: 43
+Content-Type: image/gif
+X-Robots-Tag: noindex
+X-SharedID-Modules: clickid=empty
+X-SharedID-Source: cookie
+Set-Cookie: _sid_gclid=1794447131.EAIaIQobChMIexample_BwE; Max-Age=7776000; Expires=Wed, 10 Feb 2027 01:32:11 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure
+Set-Cookie: _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=Fri, 12 Nov 2027 01:32:11 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure
+Set-Cookie: _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; Max-Age=31536000; Expires=Fri, 12 Nov 2027 01:32:11 GMT; Path=/; Domain=.example.com; SameSite=Lax; Secure; HttpOnly
 ```
 
 ### Duplicate ID cookies

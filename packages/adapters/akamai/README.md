@@ -1,6 +1,6 @@
 # @sharedid-edge/akamai
 
-[SharedID Edge](../../../README.md) on Akamai: an [EdgeWorker](https://techdocs.akamai.com/edgeworkers/docs) on a `/_sid/*` rule of the property that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the other adapters, with built-in modules `ip`, `geo`, `reflect`, `bot` and `ua` (`ec` and vendor modules are added at build time), and it passes the same conformance suite.
+[SharedID Edge](../../../README.md) on Akamai: an [EdgeWorker](https://techdocs.akamai.com/edgeworkers/docs) on a `/_sid/*` rule of the property that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the other adapters, with built-in modules `ip`, `geo`, `reflect`, `bot`, `ua` and `clickid` (`ec` and vendor modules are added at build time), and it passes the same conformance suite.
 
 This is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform). It covers EdgeWorkers, Akamai's JavaScript product; Akamai Functions (WebAssembly) is a different product, not covered here.
 
@@ -70,7 +70,7 @@ npm run bundle -w @sharedid-edge/akamai    # writes packages/adapters/akamai/dep
 tar -czf sharedid-edge.tgz -C packages/adapters/akamai/deploy main.js bundle.json
 ```
 
-**`ec` and vendor modules (opt-in).** The bundle has the built-in modules (`ip`, `geo`, `reflect`, `bot`, `ua`). [`ec`](../../vendor-modules/ec/README.md) (Trusted Server Edge Cookies, whose ID is derived from the IP address) and [vendor modules](../../vendor-modules/README.md) aren't in it: add each with `--module <package>#<export>`, in place of `npm run bundle -w @sharedid-edge/akamai`:
+**`ec` and vendor modules (opt-in).** The bundle has the built-in modules (`ip`, `geo`, `reflect`, `bot`, `ua`, `clickid`). [`ec`](../../vendor-modules/ec/README.md) (Trusted Server Edge Cookies, whose ID is derived from the IP address) and [vendor modules](../../vendor-modules/README.md) aren't in it: add each with `--module <package>#<export>`, in place of `npm run bundle -w @sharedid-edge/akamai`:
 
 ```sh
 npm run bundle -w @sharedid-edge/akamai -- --module @sharedid-edge/module-ec#ecModule

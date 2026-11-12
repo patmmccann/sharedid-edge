@@ -1,6 +1,6 @@
 # Vendor modules
 
-This folder is for [SharedID Edge](../../README.md) modules contributed and maintained by vendors: IP intelligence databases, bot detection, device databases and other data a publisher licenses from a third party. The project's own modules (`ip`, `geo`, `reflect`, `bot`, `ua`) are in [`../modules/`](../modules/AGENTS.md) and are built into every adapter; vendor modules aren't. The rules below are in full in [AGENTS.md](AGENTS.md).
+This folder is for [SharedID Edge](../../README.md) modules contributed and maintained by vendors: IP intelligence databases, bot detection, device databases and other data a publisher licenses from a third party. The project's own modules (`ip`, `geo`, `reflect`, `bot`, `ua`, `clickid`) are in [`../modules/`](../modules/AGENTS.md) and are built into every adapter; vendor modules aren't. The rules below are in full in [AGENTS.md](AGENTS.md).
 
 One module here is maintained by the project rather than a vendor: [`ec`](ec/README.md), IAB Tech Lab's Trusted Server Edge Cookies, ported. It's here because its ID is derived from the visitor's IP address, which the project's own modules never do.
 

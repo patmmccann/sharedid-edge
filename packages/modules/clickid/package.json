@@ -1,0 +1,48 @@
+{
+  "name": "@sharedid-edge/module-clickid",
+  "version": "0.1.0",
+  "description": "SharedID Edge module: keeps ad click IDs (gclid, gbraid, wbraid, dclid, fbclid, msclkid, ttclid) from the landing page's URL in server-set first-party cookies",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.tsbuildinfo"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "attw": "attw --pack . --profile esm-only --quiet || attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "@sharedid-edge/core": "0.1.0"
+  },
+  "devDependencies": {
+    "@sharedid-edge/module-reflect": "0.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patmmccann/sharedid-edge.git",
+    "directory": "packages/modules/clickid"
+  },
+  "sharedidEdge": {
+    "kind": "module",
+    "name": "clickid",
+    "title": "keep ad click IDs from the landing page",
+    "summary": "Nothing in the payload: stores the ad click IDs in the landing page's URL (`gclid`, `gbraid`, `wbraid`, `dclid`, `fbclid`, `msclkid`, `ttclid`, and any you add) in server-set first-party cookies for 90 days from the click, for conversion and analytics tags on later page views; never sent to bidders",
+    "settings": "`params`, `maxAgeDays`, `domain`, `httpOnly`, `hosts`",
+    "routes": [
+      "v1",
+      "sync"
+    ]
+  }
+}
