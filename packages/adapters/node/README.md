@@ -51,11 +51,11 @@ location /_sid/ {
 - **Overwrite `X-Forwarded-For`:** use `$remote_addr`, not `$proxy_add_x_forwarded_for`. Appending keeps whatever the visitor sent first, and that's the entry the server trusts.
 - **Or name the CDN's client-IP header.** CDNs such as CloudFront append the connecting address to `X-Forwarded-For` rather than overwrite it, so its first entry is whatever the visitor sent. Set `SID_CLIENT_IP_HEADER` to the CDN's own client-IP header instead (see [Per CDN](#per-cdn)); the server then ignores `X-Forwarded-For`. The client IP feeds the `ip` module and IP-based vendor modules such as `ec`, not consent.
 - **No shared cache:** neither a CDN nor `proxy_cache` may store `/_sid/` responses; they carry per-visitor cookies.
-- **Pass the visitor's country on.** Without a `gdpr` signal, GDPR applies when the visitor is in the EU, and the server knows that only from its location headers. With no country, GDPR's scope is unknown and storage is allowed, so an EU visitor without a TC string would get cookies ([Consent](../../../docs/consent.md)). It also feeds the `geo` module.
+- **Pass the visitor's country on.** Without a `gdpr` signal, GDPR applies when the visitor is in the EU, the rest of the EEA, the UK or Turkey, and the server knows that only from its location headers. With no country, GDPR's scope is unknown and storage is allowed, so such a visitor without a TC string would get cookies ([Consent](../../../docs/consent.md)). It also feeds the `geo` module.
   - **Behind Cloudflare,** with an origin running this server: enable Cloudflare's **"Add visitor location headers"** managed transform. Cloudflare sends `cf-ipcountry`, `cf-ipcity` and the rest, which the server reads with `SID_TRUST_PROXY` by default.
   - **Behind another CDN,** point `SID_LOCATION_HEADERS` at the CDN's own headers (see [Per CDN](#per-cdn)).
   - Either way, the proxy must **overwrite** these headers on every request, and only it may reach the server, or visitors could send them themselves.
-  - **Check it** from an EU location without a TC string: `/_sid/sync` should set no cookie.
+  - **Check it** from an EU, EEA, UK or Turkish location without a TC string: `/_sid/sync` should set no cookie.
 
 ### Per CDN
 
@@ -120,7 +120,7 @@ Invalid settings stop the server at start-up with `Configuration error: …`.
 | `city`, `postalCode`, `metroCode` | none | `cf-ipcity` (UTF-8 decoded), `cf-postal-code`, `cf-metro-code` |
 | `latitude`, `longitude` | none | `cf-iplatitude`, `cf-iplongitude` |
 | `timezone`, `continent` | none | `cf-timezone`, `cf-ipcontinent` |
-| `isEU` | none | From the country: one of the 27 EU member states. Without a `gdpr` parameter, it decides whether GDPR applies |
+| `isEU` | none | From the country: one of the 27 EU member states. Without a `gdpr` parameter, GDPR applies when it's set, or when the country is in Iceland, Liechtenstein, Norway, the UK or Turkey |
 | `traffic` | none | none: there is no platform bot verdict; the `bot` module and other modules still report to the traffic signal |
 
 In [trusted-upstream mode](#trusted-upstream), a request with the secret gets its client IP and location from the headers `SID_CLIENT_IP_HEADER` and `SID_LOCATION_HEADERS` name, and nothing else.

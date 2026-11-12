@@ -93,7 +93,7 @@ function asRequestCf(headers: Readonly<Record<string, string>>): Record<string, 
     if (field !== undefined) cf[field] = value;
   }
   // Cloudflare sets isEUCountry ("1" for the 27 EU member states) whenever it knows the country; the Worker reads it
-  // to decide whether GDPR applies.
+  // with the country code (GDPR_COUNTRY_CODES adds the EEA, the UK and Turkey) to decide whether GDPR applies.
   const country = cf['country'];
   if (country !== undefined && country !== '') cf['isEUCountry'] = EU_COUNTRY_CODES.has(country.toUpperCase()) ? '1' : '0';
   return { ...headers, 'MF-CF-Blob': JSON.stringify({ ...cf, clientAcceptEncoding: '' }) };
@@ -151,7 +151,12 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
   'lambda-aws-emulator': Object.fromEntries([
     ...limited('consent-eu-location.json', NO_LOCATION, [
       'an EU visitor without a TC string gets no ID cookies',
-      "an EU visitor's existing ID cookies are deleted without a TC string"
+      "an EU visitor's existing ID cookies are deleted without a TC string",
+      'a UK visitor without a TC string gets no ID cookies',
+      'a Norwegian visitor without a TC string gets no ID cookies',
+      'a visitor in Turkey without a TC string gets no ID cookies',
+      "a UK visitor's existing ID cookies are deleted without a TC string",
+      "a visitor in Turkey's existing ID cookies are deleted without a TC string"
     ]),
     ...limited('module-geo.json', NO_LOCATION, [
       'returns the location as device.geo, precise fields included',
@@ -182,8 +187,9 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
       "mints ts-ec on /sync (Prebid.js's pixelUrl call), with the pixel response otherwise unchanged"
     ]),
     ...limited('module-ec-gdpr.json', NO_LOCATION, [
-      'a UK visitor without a TC string gets no EC, but core still sets the SharedID',
-      'a Norwegian visitor without a TC string gets no EC, and an existing ts-ec is kept'
+      'a UK visitor without a TC string gets no EC and no SharedID',
+      'a Norwegian visitor without a TC string gets no EC or SharedID, and an existing ts-ec is kept',
+      'a visitor in Turkey without a TC string gets no EC or SharedID'
     ]),
     ...limited('module-dbip.json', CLIENT_IP, [
       'fills in the country for an IPv4 address when the CDN has none',
@@ -211,6 +217,7 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
     ...limited('trusted-upstream.json', "AWS Emulator's function URL doesn't pass on a single X-Forwarded-Host as the client sent it, so the function sees another host (SID_HOSTS then answers 404)", [
       "the forwarded country decides GDPR, not the CDN edge's (a US visitor through an EU edge gets the ID)",
       'an EU visitor through a US edge gets no ID cookies without a TC string',
+      'a UK visitor (outside the EU, where GDPR applies) through a US edge gets no ID cookies without a TC string',
       "the payload has the forwarded IPv4 address and location, not the edge's",
       'the payload has a forwarded IPv6 address, with the rotated secret',
       "no forwarded client IP means none, not the edge's",

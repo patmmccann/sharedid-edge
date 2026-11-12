@@ -243,7 +243,7 @@ Core's `locationInfo` validates every value the same way as on the other platfor
 
 **The trust model.** The load balancer appends the client's address to `X-Forwarded-For`, and its custom request headers **overwrite** headers of the same name that a visitor sends. Both are only trustworthy because the function's ingress admits the load balancer and the project's own network alone. That's why the adapter reads no location header unless `SID_LOCATION_HEADERS` names it: without the backend service's custom headers, those names would be visitor-controlled. With `SID_BEHIND_LOAD_BALANCER=false`, nothing is trusted.
 
-**GDPR.** With the location headers, EU visitors get GDPR from their country. Without them (`location_headers = false`), `isEU` is unknown, and GDPR applies only when the page sends `gdpr=1`, as on the other platforms when the location is unknown. EEA countries outside the EU (Iceland, Liechtenstein, Norway) and the UK aren't in the list: pages there should send `gdpr=1` (the [consent rules](../../../docs/consent.md)).
+**GDPR.** With the location headers, visitors get GDPR from their country: EU visitors through `isEU`, and, by country, the EEA countries outside the EU (Iceland, Liechtenstein, Norway), the UK and Turkey, which `isEU` doesn't cover (the [consent rules](../../../docs/consent.md)). Without them (`location_headers = false`), the country and `isEU` are unknown, and GDPR applies only when the page sends `gdpr=1`, as on the other platforms when the location is unknown.
 
 ## Using it in code
 

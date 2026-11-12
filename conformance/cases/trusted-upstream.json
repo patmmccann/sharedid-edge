@@ -1,6 +1,6 @@
 {
   "$schema": "../case-file.schema.json",
-  "description": "Trusted-upstream mode (SID_UPSTREAM_SECRETS): an endpoint behind a publisher's CDN, such as a sales house's serving several publishers. A request without one of the secrets in x-sid-upstream-auth gets a 403 and no cookies. With one, the client IP, location and site come from the CDN's headers (x-sid-client-ip, x-sid-country and the rest, X-Forwarded-Host), and the platform's own (sent here as the cf-* headers, X-Forwarded-For and CF-Connecting-IP, which each target turns into its platform's) describe the CDN's edge and are ignored. The forwarded host picks the site in SID_HOSTS, its cookie domain, and Secure (a public hostname). Targets that don't support the mode refuse the setting (every request gets a 500) and list this file as a limitation.",
+  "description": "Trusted-upstream mode (SID_UPSTREAM_SECRETS): an endpoint behind a publisher's CDN, such as a sales house's serving several publishers. A request without one of the secrets in x-sid-upstream-auth gets a 403 and no cookies. With one, the client IP, location and site come from the CDN's headers (x-sid-client-ip, x-sid-country and the rest, X-Forwarded-Host), and the platform's own (sent here as the cf-* headers, X-Forwarded-For and CF-Connecting-IP, which each target turns into its platform's) describe the CDN's edge and are ignored. The forwarded country goes through the same GDPR decision as a platform's (the EU, the rest of the EEA, the UK and Turkey). The forwarded host picks the site in SID_HOSTS, its cookie domain, and Secure (a public hostname). Targets that don't support the mode refuse the setting (every request gets a 500) and list this file as a limitation.",
   "config": {
     "SID_UPSTREAM_SECRETS": "[\"conformance-upstream-0123456789abcdef0123456789abcdef\",\"conformance-rotated-0123456789abcdef0123456789abcdef\"]",
     "SID_CLIENT_IP_HEADER": "x-sid-client-ip",
@@ -40,6 +40,11 @@
     {
       "name": "an EU visitor through a US edge gets no ID cookies without a TC string",
       "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef", "x-forwarded-host": "www.example.com", "x-sid-country": "DE", "cf-ipcountry": "US", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
+      "expect": { "status": 200, "noCookies": true }
+    },
+    {
+      "name": "a UK visitor (outside the EU, where GDPR applies) through a US edge gets no ID cookies without a TC string",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef", "x-forwarded-host": "www.example.com", "x-sid-country": "GB", "cf-ipcountry": "US", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
       "expect": { "status": 200, "noCookies": true }
     },
     {

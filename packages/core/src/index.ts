@@ -34,7 +34,7 @@ export {
   type PreciseLocationDenial,
   type StorageDecision
 } from './consent.js';
-export { EU_COUNTRY_CODES, LOCATION_FIELDS, locationInfo, locationWithEU, type LocationField, type LocationHeaders, type LocationSource, type PlatformLocation } from './location.js';
+export { EU_COUNTRY_CODES, GDPR_COUNTRY_CODES, gdprFromLocation, LOCATION_FIELDS, locationInfo, locationWithEU, type LocationField, type LocationHeaders, type LocationSource, type PlatformLocation } from './location.js';
 export { parseIp, type ParsedIp } from './ip.js';
 export { decodeTcf, type TcfConsents } from './tcf.js';
 export { cookieValues, parseCookies, serializeCookie, type CookieOptions } from './cookies.js';

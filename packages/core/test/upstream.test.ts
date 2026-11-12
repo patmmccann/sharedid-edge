@@ -176,6 +176,9 @@ describe('trusted upstream: requests', () => {
     const { handler } = build();
     const eu = await handler(request(`/_sid/sync?id=pubcid%3A${UUID}`, { ...authenticated, 'x-sid-country': 'DE' }), { country: 'US', isEU: false });
     expect(setCookies(eu)).toEqual([]);
+    // The UK, outside the EU, is a GDPR country too: the forwarded country goes through the same decision.
+    const uk = await handler(request(`/_sid/sync?id=pubcid%3A${UUID}`, { ...authenticated, 'x-sid-country': 'GB' }), { country: 'US', isEU: false });
+    expect(setCookies(uk)).toEqual([]);
     const us = await handler(request(`/_sid/sync?id=pubcid%3A${UUID}`, { ...authenticated, 'x-sid-country': 'US' }), PLATFORM);
     expect(cookieNamed(us, '_pubcid')?.value).toBe(UUID);
   });

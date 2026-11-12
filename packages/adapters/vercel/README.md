@@ -221,7 +221,7 @@ Core's `locationInfo` validates the location values the same way as on the other
 - **A proxy in front of Vercel** (another CDN) makes Vercel see the proxy's address, not the visitor's; Vercel only forwards a client IP from a proxy with its Enterprise trusted-proxy feature. Don't put another CDN in front: it also breaks the Safari IP rule unless that CDN serves the whole site.
 - **`x-vercel-forwarded-for`**, which Vercel also sets, isn't needed: `x-real-ip` comes first.
 
-**GDPR.** `isEU` comes from the country. When Vercel sends no country (an unknown location), `isEU` is unknown and GDPR applies only if the page sends `gdpr=1`, as on the other platforms. EEA countries outside the EU (Iceland, Liechtenstein, Norway) and the UK aren't in the list: pages there should send `gdpr=1` (the [consent rules](../../../docs/consent.md)).
+**GDPR.** `isEU` comes from the country. When Vercel sends no country (an unknown location), `isEU` is unknown and GDPR applies only if the page sends `gdpr=1`, as on the other platforms. GDPR also applies by country to the EEA countries outside the EU (Iceland, Liechtenstein, Norway), the UK and Turkey, which `isEU` doesn't cover (the [consent rules](../../../docs/consent.md)).
 
 ## Using it in code
 

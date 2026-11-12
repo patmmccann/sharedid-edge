@@ -327,7 +327,7 @@ location /_sid/ {
 
 - `curl -sI https://<your endpoint>/_sid/v1` answers `403`: the endpoint refuses direct calls.
 - `npm run verify-deployment -- --site https://www.pub-a.com` passes: `/_sid/*` on the site's IP addresses, `Secure` cookies with the site's domain.
-- With the `ip` and `geo` modules on, `/_sid/v1` from a known location shows your IP address and country; from an EU location without a TC string, `/_sid/sync` sets no cookie.
+- With the `ip` and `geo` modules on, `/_sid/v1` from a known location shows your IP address and country; from an EU, EEA, UK or Turkish location without a TC string, `/_sid/sync` sets no cookie.
 
 Either way, nothing changes on the page: Prebid.js's SharedID `pixelUrl` stays `/_sid/sync` on the publisher's own site ([Configure Prebid.js](../../../docs/prebid.md)). Trusted-upstream mode is tested against local stand-ins (the conformance suite's `trusted-upstream.json` on the Worker in `wrangler dev`, the Lambda, Fastly and Node.js targets), not yet against a real publisher CDN in front of a real Worker or Lambda function, and the CDN rows above follow each CDN's documentation, so check each publisher's deployment as above.
 
@@ -351,7 +351,7 @@ Either way, nothing changes on the page: Prebid.js's SharedID `pixelUrl` stays `
 | `PlatformInfo` | From | Used by |
 | --- | --- | --- |
 | `clientIp` | `CF-Connecting-IP` header | `ip`, and `ec` when added |
-| `isEU` | `request.cf.isEUCountry` (`"1"` in an EU member state) | GDPR scope when there's no `gdpr` parameter |
+| `isEU` | `request.cf.isEUCountry` (`"1"` in an EU member state) | GDPR scope when there's no `gdpr` parameter, with the country: GDPR also applies in Iceland, Liechtenstein, Norway, the UK and Turkey, where `isEUCountry` isn't set |
 | `country` | `request.cf.country` (ISO 3166-1 alpha-2; `XX` and Tor's `T1` are dropped) | `geo` |
 | `region` | `request.cf.regionCode` | `geo` |
 | `city`, `postalCode`, `metroCode` | `request.cf.city`, `.postalCode`, `.metroCode` | `geo` |
