@@ -116,26 +116,46 @@ const LOCATION_FIELDS: Readonly<Partial<Record<CaseLocationHeader, keyof EdgeWor
   'cf-ipcontinent': 'continent'
 };
 
-/** The request object EdgeWorkers passes to responseProvider. */
+/**
+ * The request object EdgeWorkers passes to responseProvider.
+ *
+ * With SID_TRUST_PROXY, the first X-Forwarded-For entry is the connecting address, as for every target, and is
+ * removed; any further entries reach the EdgeWorker as the X-Forwarded-For header the visitor sent. For such a
+ * request this stand-in does what Akamai documents or allows: `userLocation` describes the forwarded address
+ * (here, the case's location stands for it), and `clientIp` is the forwarded address too (Akamai lets
+ * X-Forwarded-For override its client IP, AK_CLIENT_IP, and doesn't say whether `clientIp` follows). The property
+ * rule in the adapter's README sets PMUSER_SID_CLIENT_IP to the connecting address (AK_CLIENT_REAL_IP), so
+ * getVariable returns it; the other PMUSER_SID_* variables are the case's SID_* settings.
+ */
 function toRequest(req: IncomingMessage, trustProxy: boolean): EdgeWorkerRequest {
   const headers: Record<string, string[]> = {};
   for (const [name, values] of Object.entries(req.headersDistinct)) {
     if (values !== undefined) headers[name] = [...values];
   }
+  const connecting = caseClientIp(req, trustProxy);
+  let forwarded: string | undefined;
+  if (trustProxy) {
+    const rest = (headers['x-forwarded-for'] ?? []).join(',').split(',').slice(1).map(entry => entry.trim()).filter(entry => entry !== '');
+    forwarded = rest[0];
+    if (rest.length > 0) headers['x-forwarded-for'] = [rest.join(', ')];
+    else Reflect.deleteProperty(headers, 'x-forwarded-for');
+  }
   const userLocation: Record<string, string> = {};
   for (const [field, value] of caseLocation(req, trustProxy, LOCATION_FIELDS)) userLocation[field] = value;
-  const url = req.url ?? '/';
-  const clientIp = caseClientIp(req, trustProxy);
+  const clientIp = forwarded ?? connecting;
   return {
     method: req.method ?? 'GET',
     scheme: 'http',
     host: req.headers.host ?? '',
-    url,
+    url: req.url ?? '/',
     ...(clientIp === undefined ? {} : { clientIp }),
     userLocation,
     getHeaders: () => headers,
-    // PMUSER_SID_BASE_PATH reads SID_BASE_PATH, and so on. Variables that don't exist are undefined.
-    getVariable: name => name.startsWith('PMUSER_SID_') ? process.env[name.slice('PMUSER_'.length)] : undefined
+    getVariable: name => {
+      if (name === 'PMUSER_SID_CLIENT_IP') return connecting;
+      // PMUSER_SID_BASE_PATH reads SID_BASE_PATH, and so on. Variables that don't exist are undefined.
+      return name.startsWith('PMUSER_SID_') ? process.env[name.slice('PMUSER_'.length)] : undefined;
+    }
   };
 }
 

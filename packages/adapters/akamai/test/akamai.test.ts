@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveConfig, SETTINGS } from '@sharedid-edge/core';
 import {
+  CLIENT_IP_VARIABLE,
   createEdgeWorkerHandler,
   createVariablesHandler,
   envFromVariables,
@@ -133,6 +134,25 @@ describe('createEdgeWorkerHandler', () => {
     expect(JSON.stringify(errors.mock.calls)).not.toContain('secret');
   });
 
+  it('keeps Cache-Control on every response, so no cache shares one', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const handler = createVariablesHandler();
+    const requests: readonly EdgeWorkerRequest[] = [
+      edgeWorkerRequest({ url: `/_sid/sync?id=pubcid%3A${UUID}` }),
+      edgeWorkerRequest({ method: 'HEAD', url: '/_sid/sync' }),
+      edgeWorkerRequest(),
+      edgeWorkerRequest({ url: '/_sid/optout' }),
+      edgeWorkerRequest({ url: '/_sid/optin' }),
+      edgeWorkerRequest({ url: '/_sid/other' }),
+      edgeWorkerRequest({ method: 'POST' }),
+      edgeWorkerRequest({ variables: { PMUSER_SID_COOKIE_DOMAIN: '' } })
+    ];
+    for (const request of requests) {
+      const result = await handler(request);
+      expect(header(result, 'cache-control'), `${request.method} ${request.url} (${String(result.status)})`).toMatch(/\b(no-store|private)\b/);
+    }
+  });
+
   it('routes the default base path, a custom one and /', async () => {
     const cases: readonly (readonly [basePath: string | undefined, url: string, status: number])[] = [
       [undefined, '/_sid/v1', 200],
@@ -154,7 +174,7 @@ describe('createEdgeWorkerHandler', () => {
 
 describe('platformInfo', () => {
   it('maps an IPv4 client and EdgeScape location, with isEU from the country', () => {
-    expect(platformInfo({ clientIp: '198.51.100.10', userLocation: CAMBRIDGE })).toEqual({
+    expect(platformInfo(edgeWorkerRequest({ clientIp: '198.51.100.10', userLocation: CAMBRIDGE }))).toEqual({
       clientIp: '198.51.100.10',
       country: 'US',
       region: 'MA',
@@ -170,7 +190,7 @@ describe('platformInfo', () => {
   });
 
   it('maps an IPv6 client and an EU country', () => {
-    expect(platformInfo({ clientIp: '2001:db8::7', userLocation: { country: 'FR', region: 'IDF', city: 'PARIS', continent: 'EU', zipCode: '75001', timezone: 'Europe/Paris' } })).toEqual({
+    expect(platformInfo(edgeWorkerRequest({ clientIp: '2001:db8::7', userLocation: { country: 'FR', region: 'IDF', city: 'PARIS', continent: 'EU', zipCode: '75001', timezone: 'Europe/Paris' } }))).toEqual({
       clientIp: '2001:db8::7',
       country: 'FR',
       region: 'IDF',
@@ -183,9 +203,43 @@ describe('platformInfo', () => {
   });
 
   it('drops what core drops, and anything that is not an IP address', () => {
-    expect(platformInfo({ clientIp: 'unknown', userLocation: { country: 'XX', latitude: '91', longitude: '0', dma: 'boston', continent: 'ZZ' } })).toEqual({});
-    expect(platformInfo({ clientIp: ' ', userLocation: {} })).toEqual({});
-    expect(platformInfo({})).toEqual({});
+    expect(platformInfo(edgeWorkerRequest({ clientIp: 'unknown', userLocation: { country: 'XX', latitude: '91', longitude: '0', dma: 'boston', continent: 'ZZ' } }))).toEqual({});
+    expect(platformInfo(edgeWorkerRequest({ clientIp: ' ', userLocation: {} }))).toEqual({});
+  });
+
+  it('takes the client IP from PMUSER_SID_CLIENT_IP (AK_CLIENT_REAL_IP) first, IPv4 and IPv6', () => {
+    for (const real of ['203.0.113.5', '2001:db8::5']) {
+      const request = edgeWorkerRequest({ clientIp: '198.51.100.10', variables: { [CLIENT_IP_VARIABLE]: real }, headers: { 'x-forwarded-for': ['192.0.2.1'] } });
+      expect(platformInfo(request).clientIp).toBe(real);
+    }
+    // Not an address (the rule's expression is wrong, say): request.clientIp, as without it.
+    expect(platformInfo(edgeWorkerRequest({ variables: { [CLIENT_IP_VARIABLE]: '{{builtin.AK_CLIENT_REAL_IP}}' } })).clientIp).toBe('198.51.100.10');
+  });
+
+  it('ignores the location when the visitor sent X-Forwarded-For, which EdgeScape then follows', () => {
+    // A visitor in Paris claiming a US address: no location at all, so GDPR isn't decided by the visitor's choice.
+    const spoofed = platformInfo(edgeWorkerRequest({ headers: { 'x-forwarded-for': ['198.51.100.200'] }, userLocation: CAMBRIDGE, variables: { [CLIENT_IP_VARIABLE]: '203.0.113.5' } }));
+    expect(spoofed).toEqual({ clientIp: '203.0.113.5' });
+    expect(spoofed).not.toHaveProperty('isEU');
+    // An empty header changes nothing.
+    expect(platformInfo(edgeWorkerRequest({ headers: { 'x-forwarded-for': [' '] } })).country).toBe('US');
+  });
+
+  it('without PMUSER_SID_CLIENT_IP, ignores request.clientIp when X-Forwarded-For or Akamai-Client-IP could have set it', () => {
+    expect(platformInfo(edgeWorkerRequest({ headers: { 'x-forwarded-for': ['192.0.2.1'] } }))).toEqual({});
+    expect(platformInfo(edgeWorkerRequest({ headers: { 'akamai-client-ip': ['192.0.2.1'] } }))).toMatchObject({ country: 'US' });
+    expect(platformInfo(edgeWorkerRequest({ headers: { 'akamai-client-ip': ['192.0.2.1'] } }))).not.toHaveProperty('clientIp');
+    expect(platformInfo(edgeWorkerRequest()).clientIp).toBe('198.51.100.10');
+  });
+
+  it('applies the guard end to end: a spoofed X-Forwarded-For leaves the GDPR default undecided rather than chosen by the visitor', async () => {
+    const handler = createVariablesHandler();
+    const variables = { PMUSER_SID_MODULES: 'geo' };
+    const paris = { country: 'FR', city: 'PARIS', continent: 'EU' };
+    const honest = await handler(edgeWorkerRequest({ variables, userLocation: paris }));
+    expect(header(honest, 'x-sharedid-status')).toMatch(/^denied/);
+    const spoofed = await handler(edgeWorkerRequest({ variables, userLocation: paris, headers: { 'x-forwarded-for': ['198.51.100.200'] } }));
+    expect(payload(spoofed).ortb2?.device?.geo).toBeUndefined();
   });
 
   it('keeps a single postal code, but not several or a range', () => {

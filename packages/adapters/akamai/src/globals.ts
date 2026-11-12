@@ -7,9 +7,9 @@
 import { crypto as platformCrypto } from 'crypto';
 import { atob, btoa, TextDecoder, TextEncoder } from 'encoding';
 import { logger } from 'log';
-import { Headers, Request, Response, URL, URLSearchParams, uuidFromBytes } from './web.js';
+import { Headers, Request, Response, URL, uuidFromBytes } from './web.js';
 
-export { atob, btoa, Headers, Request, Response, TextDecoder, TextEncoder, URL, URLSearchParams };
+export { atob, btoa, Headers, Request, Response, TextDecoder, TextEncoder, URL };
 
 /**
  * Web Crypto from the `crypto` built-in module, plus `randomUUID`, which EdgeWorkers doesn't document: a version 4
@@ -34,10 +34,8 @@ function line(data: readonly unknown[]): string {
  * `console`, writing to the `log` built-in module, which is where EdgeWorkers logs go (shown with enhanced debug
  * headers or sent to DataStream 2). Core logs only errors, and never request data.
  */
-export const console: Pick<Console, 'debug' | 'error' | 'info' | 'log' | 'warn'> = {
-  debug: (...data: unknown[]) => { logger.debug('%s', line(data)); },
+export const console: Pick<Console, 'error' | 'log' | 'warn'> = {
   error: (...data: unknown[]) => { logger.error('%s', line(data)); },
-  info: (...data: unknown[]) => { logger.info('%s', line(data)); },
   log: (...data: unknown[]) => { logger.log('%s', line(data)); },
   warn: (...data: unknown[]) => { logger.warn('%s', line(data)); }
 };

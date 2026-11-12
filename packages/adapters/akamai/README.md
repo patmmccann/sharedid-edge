@@ -34,8 +34,9 @@ Browser ── https://www.example.com/_sid/sync?id=pubcid:<id>
    ▼
 Akamai edge: your site's property (www.example.com)
    ├─ rule "SharedID Edge": path /_sid/*
+   │     Caching: No store (required: responseProvider runs only on a cache miss)
+   │     Set Variable: PMUSER_SID_CLIENT_IP = {{builtin.AK_CLIENT_REAL_IP}}
    │     EdgeWorkers behavior → the SharedID Edge EdgeWorker
-   │     Caching: no-store
    │        └─ responseProvider(request): request object → Request → SharedID Edge handler → Response
    │                                      → createResponse(status, headers with one entry per Set-Cookie, bytes)
    └─ everything else → your site's origin, unchanged
@@ -43,9 +44,9 @@ Akamai edge: your site's property (www.example.com)
 
 - **On your site's own property.** Since Safari 16.4, cookies set by a server whose IP address doesn't match the website's are capped at 7 days. A rule on the property that serves `www.example.com` answers from the same Akamai edge addresses as your pages; a separate property or hostname doesn't.
 - **Answered at the edge, never forwarded.** The EdgeWorker uses only [`responseProvider`](https://techdocs.akamai.com/edgeworkers/docs/event-handler-functions), which "acts as a surrogate origin": it builds the response itself with [`createResponse`](https://techdocs.akamai.com/edgeworkers/docs/create-response). It catches every error and answers it with a 500, because EdgeWorkers [forwards the request to the origin](https://techdocs.akamai.com/edgeworkers/docs/response-orchestration) when `responseProvider` fails. For failures EdgeWorkers itself raises (a resource limit exceeded), add [Site Failover](#when-the-edgeworker-fails).
-- **Nothing cached.** `responseProvider` runs only when the response isn't in cache, and responses carry per-visitor cookies, so the rule's caching is `no-store`. The handler also sends `Cache-Control: no-store` or `private`.
+- **Nothing cached, required.** `responseProvider` runs only when the response isn't in Akamai's cache, and responses carry each visitor's cookies: a cached `/_sid/*` response would hand one visitor's ID to others. So the rule **must** set the *Caching* behavior to *No store* ([The property rule](#the-property-rule)). Every response also carries `Cache-Control: no-store` or `private` (the tests check it), but whether Akamai honours that depends on the property's caching settings, so it's a second line of defence, not the fix.
 - **Settings from Property Manager.** EdgeWorkers has no environment variables; the settings are [user-defined variables](https://techdocs.akamai.com/property-mgr/docs/user-defined-vars), `PMUSER_SID_COOKIE_DOMAIN` and so on, which the EdgeWorker reads with [`request.getVariable`](https://techdocs.akamai.com/edgeworkers/docs/request-object).
-- **Client IP and location from Akamai.** `request.clientIp` and EdgeScape's [`request.userLocation`](https://techdocs.akamai.com/edgeworkers/docs/user-location-object), never request headers.
+- **Client IP and location from Akamai, not the visitor.** The client IP comes from `AK_CLIENT_REAL_IP`, which ignores request headers, through a variable the rule sets; the location from EdgeScape's [`request.userLocation`](https://techdocs.akamai.com/edgeworkers/docs/user-location-object), but **not** when the request carries an `X-Forwarded-For` header, because EdgeScape then locates that header's address, which the visitor chooses. See [Location and X-Forwarded-For](#location-and-x-forwarded-for).
 
 ## Prerequisites
 
@@ -63,7 +64,7 @@ npm run build                              # compiles core and the modules
 npm run bundle -w @sharedid-edge/akamai    # writes packages/adapters/akamai/deploy/main.js and bundle.json
 ```
 
-`deploy/` is an EdgeWorkers [code bundle](https://techdocs.akamai.com/edgeworkers/docs/code-bundle-format): `main.js` (one ES module with no imports but EdgeWorkers' built-in modules; about 23 KB gzipped, minified; CI fails it over 32 KB) and `bundle.json`, the manifest. Its `edgeworker-version` is the package version and a hash of `main.js` (like `0.1.0-9a4a742ab489`): every upload needs a new version, and the same code gets the same one. To pack it as a `.tgz` (for `akamai edgeworkers validate`, the sandbox or Control Center):
+`deploy/` is an EdgeWorkers [code bundle](https://techdocs.akamai.com/edgeworkers/docs/code-bundle-format): `main.js` (one ES module with no imports but EdgeWorkers' built-in modules; about 22 KB gzipped, minified; CI fails it over 32 KB) and `bundle.json`, the manifest. Its `edgeworker-version` is the package version and a hash of `main.js` (like `0.1.0-9a4a742ab489`): every upload needs a new version, and the same code gets the same one. To pack it as a `.tgz` (for `akamai edgeworkers validate`, the sandbox or Control Center):
 
 ```sh
 tar -czf sharedid-edge.tgz -C packages/adapters/akamai/deploy main.js bundle.json
@@ -81,9 +82,9 @@ Then list it in `PMUSER_SID_MODULES`, with its settings and secrets (the [`ec` R
 
 | Bundle | Default (no Bowser) | With Bowser |
 | --- | --- | --- |
-| EdgeWorker (`deploy/main.js`) | 23.1 KB | 31.6 KB (close to the budget) |
+| EdgeWorker (`deploy/main.js`) | 21.8 KB | 30.2 KB |
 
-The EdgeWorker is a few KB larger than the Lambda function because it carries its own `Request`, `Response`, `Headers` and `URL` ([The EdgeWorkers runtime](#the-edgeworkers-runtime)).
+The EdgeWorker is about 1.7 KB larger than the Lambda function because it carries its own `Request`, `Response`, `Headers` and `URL` ([The EdgeWorkers runtime](#the-edgeworkers-runtime)).
 
 ## Deploy
 
@@ -139,20 +140,33 @@ In Property Manager, edit a new version of your site's property.
 | Variable | Value | Security |
 | --- | --- | --- |
 | `PMUSER_SID_COOKIE_DOMAIN` | **Required:** the domain Prebid.js writes `_pubcid` on, normally your registrable domain (`example.com`), or `host-only`. See [Configure Prebid.js](../../../docs/prebid.md). | Hidden |
+| `PMUSER_SID_CLIENT_IP` | **Required:** leave the initial value empty; the rule sets it (below). | Hidden |
 
 Set the value as the variable's initial value. Leave a setting out (or empty) for its default. Use *Hidden* so values don't appear in Akamai's debug headers; not *Sensitive*, which [EdgeWorkers can't read](https://techdocs.akamai.com/edgeworkers/docs/request-object).
 
 **2. The rule.** Add a rule, `SharedID Edge`, near the top of the rule tree so later rules don't change it:
 
 - **Criteria:** *If Path matches one of* `/_sid/*` (your `SID_BASE_PATH` plus `/*`; for `/`, see [Base path](#base-path)).
-- **Behaviors:**
+- **Behaviors,** in this order:
+  - **[Caching](https://techdocs.akamai.com/property-mgr/docs/caching-2): *No store*. Required.** Akamai: "serve the content from the origin and clear any versions from the edge cache". `responseProvider` runs only on a cache miss, so with a caching option that stores responses, one visitor's cookies could be served to others. *Bypass cache* also stores nothing new, but leaves older cached copies in place; use *No store*.
+  - **[Downstream Cacheability](https://techdocs.akamai.com/property-mgr/docs/downstream-cacheability):** *Pass cacheability headers from origin*, so browsers get the response's own `Cache-Control` (`/_sid/sync` is `private` for `SID_SYNC_CACHE_SECONDS`, the rest `no-store`). Akamai documents that with *No store* it "attempts to prevent downstream caching" with cache-busting headers, which may replace `private, max-age` on `/_sid/sync`: browsers then sync on every call, which is safe, only less efficient.
+  - **Set Variable: `PMUSER_SID_CLIENT_IP`. Required.** Create value from: *Expression*, `{{builtin.AK_CLIENT_REAL_IP}}`: the visitor's address as Akamai's edge sees it, where ["request headers are ignored"](https://techdocs.akamai.com/property-mgr/docs/built-vars). Not `AK_CLIENT_IP`, which `X-Forwarded-For` and `Akamai-Client-IP` headers can override. See [Location and X-Forwarded-For](#location-and-x-forwarded-for).
   - **EdgeWorkers:** on, with the EdgeWorker ID from [Deploy](#deploy).
-  - **Caching:** *No store*. `responseProvider` only runs on a cache miss, and responses carry each visitor's cookies.
-  - **Downstream Cacheability:** pass the response's own `Cache-Control` on to browsers, so `/_sid/sync` stays `private` and the rest `no-store`.
   - **Allow OPTIONS:** only if you set `SID_ALLOWED_ORIGINS`, for CORS preflights on `/_sid/v1` from other origins.
-- Don't add behaviors that change the request or response for this path (redirects, header rewrites, compression changes, other EdgeWorkers: only one EdgeWorker runs per request).
+- Don't add behaviors that change the request or response for this path (redirects, header rewrites, compression changes, other EdgeWorkers: only one EdgeWorker runs per request). In particular, don't remove or rewrite `X-Forwarded-For` here: the EdgeWorker needs to see it to know when EdgeScape's location can't be trusted.
 
 **3. Per site,** if the property serves several hostnames with different settings: either set `PMUSER_SID_HOSTS` ([Several sites from one deployment](../../../docs/configuration.md#several-sites-from-one-deployment)), or add child rules matching each hostname with a *Set Variable* behavior for that site's `PMUSER_SID_COOKIE_DOMAIN`.
+
+### Location and X-Forwarded-For
+
+Akamai [documents](https://techdocs.akamai.com/edgeworkers/docs/user-location-object) which address EdgeScape locates for an EdgeWorker: "If the HTTP request contains an `X-Forwarded-For` header, this header will be used to provide the location. Otherwise the connecting IP address will be used." Anyone can send that header. A visitor in the EU who sends `X-Forwarded-For` with a US address would get a US location, `isEU: false`, and cookies without a consent signal, where core would otherwise apply GDPR.
+
+Akamai documents no setting that makes `userLocation` ignore the header (the *X-Forwarded-For* options of the [User Location](https://techdocs.akamai.com/property-mgr/docs/user-loc-data) match and of *Content Targeting - Protection* apply to those features only). So the EdgeWorker guards itself:
+
+- **When the request has an `X-Forwarded-For` header, the EdgeWorker ignores `userLocation`:** no country, no `isEU`, no `geo` data. GDPR then applies when the page says so (`gdpr=1`, or a TC string), as on any platform when the location is unknown. That's the same for every visitor whose request goes through a proxy that adds the header; a visitor can't choose to be outside the EU.
+- **The client IP comes from `PMUSER_SID_CLIENT_IP`** (`AK_CLIENT_REAL_IP`, set by the rule). Akamai lets `X-Forwarded-For` and `Akamai-Client-IP` override `AK_CLIENT_IP`, and doesn't document which one `request.clientIp` is. Without the variable, the EdgeWorker uses `request.clientIp` only for requests that carry neither header, and none otherwise.
+
+Don't strip `X-Forwarded-For` with a *Modify Incoming Request Header* behavior to get the location back: Akamai doesn't document whether EdgeScape's lookup happens before or after that behavior, and the EdgeWorker would no longer see the header and know to distrust the location.
 
 ### When the EdgeWorker fails
 
@@ -244,8 +258,8 @@ The handler gets the client IP and location (`PlatformInfo`) from the request ob
 
 | Field | From | Notes |
 | --- | --- | --- |
-| `clientIp` | `request.clientIp` | IPv4 or IPv6. Anything else is ignored. |
-| `country` | `userLocation.country` | ISO 3166-1 alpha-2, like `US`. |
+| `clientIp` | `PMUSER_SID_CLIENT_IP` (`AK_CLIENT_REAL_IP`), else `request.clientIp` | IPv4 or IPv6; anything else is ignored. `request.clientIp` only when the request has no `X-Forwarded-For` or `Akamai-Client-IP` header ([why](#location-and-x-forwarded-for)). |
+| `country` | `userLocation.country` | ISO 3166-1 alpha-2, like `US`. This and the other location fields only when the request has no `X-Forwarded-For` header ([why](#location-and-x-forwarded-for)). |
 | `region` | `userLocation.region` | The subdivision code without the country, like `MA`. |
 | `city` | `userLocation.city` | As EdgeScape gives it, upper case (`CAMBRIDGE`). For the `geo` module. |
 | `postalCode` | `userLocation.zipCode` | Only when it's one code (`02138`, or a Canadian forward sortation area like `M5V`). EdgeScape lists every code an address may be in (`02114+02134-02138`); a list or range isn't one postal code, so then there's none. |
@@ -259,7 +273,7 @@ The handler gets the client IP and location (`PlatformInfo`) from the request ob
 Core's `locationInfo` validates the location the same way as on the other platforms (dropping empty values, `XX`, and out-of-range coordinates).
 
 - **`isEU`** comes from a bundled list of the 27 EU member states (`EU_COUNTRY_CODES`), the same meaning as Cloudflare's `request.cf.isEUCountry`. It's EU membership, not the EEA (Iceland, Liechtenstein, Norway) or the UK: pages there should send `gdpr=1` (the [consent rules](../../../docs/consent.md)). When it's `true`, GDPR applies unless the request says `gdpr=0`. Without a country `isEU` is unknown, as on the other platforms.
-- **`X-Forwarded-For`.** Akamai [documents](https://techdocs.akamai.com/edgeworkers/docs/user-location-object) that `userLocation` describes the address in a request's `X-Forwarded-For` header when there is one, rather than the connecting address. A visitor (or a proxy in front of them, such as a corporate one) can therefore change the location this adapter sees, and so the GDPR default for their own requests; they can't change anyone else's. The client IP (`request.clientIp`, for the `ip` module) is the original client's address.
+- **`X-Forwarded-For`** turns the location off, and `PMUSER_SID_CLIENT_IP` decides the client IP: [Location and X-Forwarded-For](#location-and-x-forwarded-for).
 - **The `ua` module** reads the visitor's `User-Agent` and User-Agent Client Hints from the request headers, which reach the EdgeWorker unchanged.
 
 ## The EdgeWorkers runtime
@@ -268,7 +282,7 @@ EdgeWorkers runs JavaScript modules in V8 with ECMAScript's built-ins but [none 
 
 | Core uses | In the bundle |
 | --- | --- |
-| `Request`, `Response`, `Headers`, `URL`, `URLSearchParams` | Minimal implementations in `src/web.ts`, of what SharedID Edge calls, following the WHATWG standards, and tested against Node.js's. `URL` supports absolute URLs with a host and `/path`, `?query` or `#fragment` relative to one; no internationalized domain names. |
+| `Request`, `Response`, `Headers`, `URL`, `URLSearchParams` | Minimal implementations in `src/web.ts` of only what SharedID Edge calls (`URLSearchParams.get`, `Headers` `get`/`set`/`append`/`has`/`forEach`/`getSetCookie`, and so on), following the WHATWG standards and tested against Node.js's. `URL` takes absolute URLs with a host; no relative URLs or internationalized domain names. A vendor module that needs more must add it there. |
 | `TextEncoder`, `TextDecoder`, `atob`, `btoa` | The [`encoding`](https://techdocs.akamai.com/edgeworkers/docs/encoding) built-in module. |
 | `crypto.getRandomValues`, `crypto.subtle` (the `ec` module's HMAC) | The [`crypto`](https://techdocs.akamai.com/edgeworkers/docs/crypto) built-in module. |
 | `crypto.randomUUID` (new IDs) | Not documented by EdgeWorkers: a version 4 UUID from `crypto.getRandomValues`, the same format. |
@@ -303,7 +317,7 @@ A custom entry point must be bundled the way `scripts/bundle.mjs` does it, with 
 Nothing here needs an account:
 
 - `npm test -w @sharedid-edge/akamai`: unit tests with recorded-style request objects (`test/requests.ts`), and the `src/web.ts` classes against Node.js's.
-- `npm run conformance:akamai`: bundles the EdgeWorker (default, with Bowser, and with the vendor modules), then runs the whole conformance suite against `deploy/main.js` behind a local stand-in for EdgeWorkers (`conformance/src/akamai-emulator.ts`). It loads the bundle as an ES module in a V8 context of its own (`node:vm`), with ECMAScript's globals only (no `URL`, `TextEncoder`, `crypto`, `setTimeout` or fetch), answers its imports with stand-ins for the built-in modules that check their arguments as documented (a `createResponse` status from 100 to 599, header values as strings or arrays of strings, a body that is a string up to 16 KB or a stream of bytes; `crypto` without `randomUUID`), and calls `responseProvider` with a request object: `getHeaders()`, `clientIp`, `userLocation` and `getVariable()` reading `PMUSER_SID_*` from the case's settings.
+- `npm run conformance:akamai`: bundles the EdgeWorker (default, with Bowser, and with the vendor modules), then runs the whole conformance suite against `deploy/main.js` behind a local stand-in for EdgeWorkers (`conformance/src/akamai-emulator.ts`). It loads the bundle as an ES module in a V8 context of its own (`node:vm`), with ECMAScript's globals only (no `URL`, `TextEncoder`, `crypto`, `setTimeout` or fetch), answers its imports with stand-ins for the built-in modules that check their arguments as documented (a `createResponse` status from 100 to 599, header values as strings or arrays of strings, a body that is a string up to 16 KB or a stream of bytes; `crypto` without `randomUUID`), and calls `responseProvider` with a request object: `getHeaders()`, `clientIp`, `userLocation` and `getVariable()` reading `PMUSER_SID_*` from the case's settings (and `PMUSER_SID_CLIENT_IP` as the rule sets it). Then `conformance/src/akamai-checks.ts` checks what the shared cases can't: that a visitor-sent `X-Forwarded-For` turns EdgeScape's location off and doesn't change the client IP, and that every response, 404 and 405 included, carries `Cache-Control: no-store` or `private`.
 - Against a real deployment: `node conformance/dist/run.js --base-url https://www.example.com` runs the default-configuration cases.
 - **Akamai's sandbox** runs your property and EdgeWorker locally against your real configuration (an account is needed): `akamai install sandbox`, `akamai sandbox create --hostname www.example.com`, `akamai sandbox add-edgeworker <edgeworker-id> sharedid-edge.tgz`, `akamai sandbox start`, then send requests for your hostname to it ([Sandbox for EdgeWorkers](https://techdocs.akamai.com/sandbox/docs/test-edgeworkers-functions-sandbox)). After a rebuild, `akamai sandbox update-edgeworker <edgeworker-id> sharedid-edge.tgz`.
 
@@ -313,6 +327,8 @@ Without a live Akamai test, these come from Akamai's documentation, or are open,
 
 - **`createResponse` with array header values** writes one header line per entry, so both `Set-Cookie` headers arrive separately. Akamai documents arrays of strings as `createResponse` header values, and its [examples](https://github.com/akamai/edgeworkers-examples) set several cookies on a response with an array (`response.setHeader('Set-Cookie', [...])`), but SharedID Edge hasn't seen it live. `verify-deployment` checks it.
 - **A byte stream body** keeps the GIF intact. The documentation says the stream "should consist of bytes of data".
+- **`{{builtin.AK_CLIENT_REAL_IP}}` in a *Set Variable* behavior.** Akamai's built-in variables reference notes processing stages for some uses of it; if it comes out empty, the EdgeWorker falls back to `request.clientIp` with the header guard.
+- **Whether `request.clientIp` follows `X-Forwarded-For` or `Akamai-Client-IP`.** Undocumented, so it isn't used when either is present.
 - **Which web APIs the runtime has.** None are relied on; see [The EdgeWorkers runtime](#the-edgeworkers-runtime). Whether `setTimeout` and `Intl` exist decides whether the module time limit and `utcoffset` work.
 - **EdgeScape's `timezone` format.** The documentation's only example is `GMT`; names the runtime doesn't know give no `utcoffset`.
 - **`OPTIONS` requests** reaching `responseProvider` with *Allow OPTIONS* on, for CORS preflights.
@@ -330,7 +346,9 @@ Please report what you find in an issue.
 | Settings don't take effect | The variable's name must be `PMUSER_` plus the setting, upper case; the property version with it must be active on that network. |
 | `/_sid/v1` has no `ortb2.device.ip` with `SID_MODULES=ip` | Consent rules it out (`ext.modules.ip.status` is `empty`; see `X-SharedID-Status`). |
 | EU visitors get cookies without consent, or the reverse | No country from EdgeScape (GDPR is then unknown), or the page sends `gdpr=`. See `X-SharedID-Status`. |
-| Responses served from cache, or one visitor's cookie on another's response | The rule's caching isn't *No store*. |
+| Responses served from cache, or one visitor's cookie on another's response | The rule's *Caching* behavior isn't *No store*, or a later rule overrides it; `responseProvider` doesn't run for a cached response. Check that `X-Cache` is a `TCP_MISS` with `curl -sI -H 'Pragma: akamai-x-cache-on' 'https://www.example.com/_sid/v1'`, and run `verify-deployment`. Purge `/_sid/*` after fixing it. |
+| No `geo` data and GDPR undecided for some visitors | Their requests carry `X-Forwarded-For` (from a proxy, or sent by the visitor), so the EdgeWorker ignores EdgeScape's location ([why](#location-and-x-forwarded-for)). Expected. |
+| No `ortb2.device.ip` with `SID_MODULES=ip` for requests through a proxy | The rule doesn't set `PMUSER_SID_CLIENT_IP` to `{{builtin.AK_CLIENT_REAL_IP}}`, so the EdgeWorker can't trust `request.clientIp` when `X-Forwarded-For` is present. |
 | `/_sid/sync` cached in browsers for longer than `SID_SYNC_CACHE_SECONDS`, or `/_sid/v1` cached at all | Downstream Cacheability replaces the response's `Cache-Control`. |
 | Cookie set but gone after a week in Safari | `/_sid/*` is not on the site's own property. Run `verify-deployment`. |
 | Two cookies merged into one, or only one set | Something between the EdgeWorker and the browser joins `Set-Cookie` headers. The EdgeWorker sends them as separate entries. |
