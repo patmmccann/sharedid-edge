@@ -308,11 +308,14 @@ describe('v1 payload', () => {
       }
     });
     const h = handler(
-      { SID_MODULES: 'remembers', SID_MODULE_CONFIG: '{"remembers":{"seen":[],"nested":{}}}', SID_MODULE_SECRETS: '{"remembers":{"key":"k"}}' },
-      { modules: [remembers], mintId: () => crypto.randomUUID() }
+      { SID_MODULES: 'remembers,ok', SID_MODULE_CONFIG: '{"remembers":{"seen":[],"nested":{}}}', SID_MODULE_SECRETS: '{"remembers":{"key":"k"}}' },
+      { modules: [remembers, defineModule({ name: 'ok', run: () => ({ ortb2: { fine: true } }) })], mintId: () => crypto.randomUUID() }
     );
     const first = await (await h(get('/_sid/v1', { Cookie: `_pubcid=${UUID}` }), { clientIp: '192.0.2.1' })).json() as PayloadV1;
     expect(first.ext.modules['remembers']?.status).toBe('error');
+    // Like a throw: the module's output is dropped, and the rest of the payload is returned.
+    expect(first.ortb2).toEqual({ fine: true });
+    expect(first.sharedid).toBe(UUID);
     const second = await (await h(get('/_sid/v1'), { clientIp: '198.51.100.2' })).json() as PayloadV1;
     expect(second.ext.modules['remembers']?.status).toBe('error');
     expect(second.sharedid).not.toBe(UUID);
