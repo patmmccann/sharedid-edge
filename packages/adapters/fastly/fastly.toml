@@ -1,0 +1,40 @@
+# The Fastly Compute package manifest (https://www.fastly.com/documentation/reference/compute/fastly-toml/).
+# `fastly compute pack --wasm-binary deploy/main.wasm` packs deploy/main.wasm (npm run bundle, then npm run wasm)
+# with it. service_id is left out: `fastly compute deploy` asks to create a service, or pass --service-id.
+manifest_version = 3
+name = "sharedid-edge"
+description = "SharedID Edge: the Prebid SharedID cookie, set first-party from the edge"
+language = "javascript"
+authors = []
+
+# Stand-ins for a local run in Viceroy, Fastly's local runtime, with no Fastly account:
+#   viceroy -C fastly.toml --addr 127.0.0.1:7676 deploy/main.wasm
+# The deployed service reads the same stores, linked to it under these names (README: Configuration, Secrets).
+[local_server.config_stores.sharedid_config]
+format = "inline-toml"
+
+[local_server.config_stores.sharedid_config.contents]
+# Required. "host-only" because Viceroy answers on 127.0.0.1; on a site, your registrable domain (example.com).
+SID_COOKIE_DOMAIN = "host-only"
+SID_MODULES = "ip,geo"
+
+# Module secrets, such as the ec module's passphrase: SID_MODULE_SECRETS, a JSON object by module.
+[[local_server.secret_stores.sharedid_secrets]]
+key = "SID_MODULE_SECRETS"
+data = '{"ec":{"passphrase":"a-local-passphrase-of-at-least-32-characters"}}'
+
+# Fastly's location of the client address. Viceroy answers every other address with a fixed location in San
+# Francisco. Send a request from 127.0.0.2 (curl --interface 127.0.0.2) to be located in Berlin.
+[local_server.geolocation]
+format = "inline-toml"
+
+[local_server.geolocation.addresses."127.0.0.2"]
+country_code = "DE"
+country_code3 = "DEU"
+region = "BE"
+city = "Berlin"
+postal_code = "10115"
+latitude = 52.52
+longitude = 13.40
+continent = "EU"
+utc_offset = 100

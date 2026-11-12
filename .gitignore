@@ -22,3 +22,5 @@ website/.vitepress/cache/
 packages/adapters/*/dist-snippet/
 packages/adapters/*/deploy-vendor/
 packages/adapters/*/.sharedid-modules/
+packages/adapters/fastly/pkg/
+packages/adapters/fastly/bin/

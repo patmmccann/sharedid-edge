@@ -36,6 +36,7 @@ Deploy on the platform that serves your site. Each guide works on its own, from 
 | [AWS (Lambda and CloudFront)](packages/adapters/aws-lambda/README.md) | A Lambda function behind a `/_sid/*` behaviour of your site's CloudFront distribution. |
 | [Azure (Functions and Front Door)](packages/adapters/azure-functions/README.md) | An Azure Functions app behind a `/_sid/*` route of your site's Front Door profile. |
 | [Cloudflare Workers](packages/adapters/cloudflare/README.md) | A Worker on a route of your proxied Cloudflare zone (`www.example.com/_sid/*`). |
+| [Fastly Compute](packages/adapters/fastly/README.md) | A Fastly Compute (JavaScript) service on your site's `/_sid/*` path. |
 | [Google Cloud (Cloud Run functions and Load Balancing)](packages/adapters/gcp-functions/README.md) | A Cloud Run function behind a `/_sid/*` path rule of your site's external Application Load Balancer. |
 | [Node.js (self-hosted)](packages/adapters/node/README.md) | A Node.js server behind the web server or load balancer that serves your site. |
 | [Vercel](packages/adapters/vercel/README.md) | A Next.js route handler, or Routing Middleware, in your site's Vercel project. |

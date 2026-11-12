@@ -1,0 +1,49 @@
+{
+  "name": "@sharedid-edge/fastly",
+  "version": "0.1.0",
+  "description": "Run SharedID Edge on Fastly Compute (JavaScript SDK), on the domain that serves the site",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": [
+    "./dist/main.js",
+    "./deploy*/main.js"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.tsbuildinfo"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "attw": "attw --pack . --profile esm-only --quiet || attw --pack . --profile esm-only",
+    "bundle": "node scripts/bundle.mjs",
+    "bundle:bowser": "node scripts/bundle.mjs --bowser",
+    "wasm": "node scripts/wasm.mjs"
+  },
+  "dependencies": {
+    "@sharedid-edge/core": "0.1.0",
+    "@sharedid-edge/modules": "0.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patmmccann/sharedid-edge.git",
+    "directory": "packages/adapters/fastly"
+  },
+  "sharedidEdge": {
+    "kind": "adapter",
+    "platform": "Fastly Compute",
+    "summary": "A Fastly Compute (JavaScript) service on your site's `/_sid/*` path."
+  }
+}
