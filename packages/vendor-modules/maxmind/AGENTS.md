@@ -2,7 +2,7 @@
 
 User documentation is in [README.md](README.md) (also the npm package page); keep it in step with behaviour changes. The rules for every module are in [`../../modules/AGENTS.md`](../../modules/AGENTS.md), and those for vendor modules, which this is, in [`../AGENTS.md`](../AGENTS.md).
 
-The `maxmind` module (`@sharedid-edge/module-maxmind`): the visitor's country from MaxMind's GeoLite2 Country database, as `ortb2.device.geo.country` with `ipservice` 3. Maintained by the project. Issue #12.
+The `maxmind` module (`@sharedid-edge/module-maxmind`): the visitor's country from MaxMind's GeoLite2 Country database, as `ortb2.device.geo.country` with `ipservice` 3. Maintained by the project. Issue #12. Its behaviour is specified in [`spec/modules/maxmind.md`](../../../spec/modules/maxmind.md): change it with the code.
 
 - **The build-time credential path.** `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY` are `buildCredentials`: `scripts/build-data.mjs` alone reads them, sends them as Basic authentication to `download.maxmind.com`, and never writes or prints them. Keep it that way:
   - nothing from the environment goes into the data file;

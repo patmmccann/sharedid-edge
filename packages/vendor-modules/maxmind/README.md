@@ -173,7 +173,7 @@ The module's code adds 3.7 KB minified and 1.4 KB gzipped (measured: the Lambda 
 - for the Worker, run `npx wrangler deploy .sharedid-modules/worker.ts --dry-run --outdir dist-dry`.
 
 **Platform limits:**
-- **Cloudflare Workers:** 64 MiB uncompressed, a global scope that must run in 1 second, and 128 MB of memory per isolate ([limits](https://developers.cloudflare.com/workers/platform/limits/)).
+- **Cloudflare Workers:** the [limits page](https://developers.cloudflare.com/workers/platform/limits/) (November 2026) gives "Worker size (uncompressed): 64 MiB" on both Workers Free and Paid, says "There is no compressed size limit. Only the uncompressed bundle size counts.", and allows 1 second to run the global scope and 128 MB of memory per isolate.
 - **AWS Lambda and Vercel Functions:** 250 MB unzipped.
 - **Cloudflare Snippets:** can't hold it.
 
