@@ -132,6 +132,54 @@
       }
     },
     {
+      "name": "ignores the url parameter on a request from another site (Sec-Fetch-Site: cross-site), even naming an allowed host",
+      "request": {
+        "path": "/_sid/v1?url=https%3A%2F%2Fwww.example.com%2F%3Fgclid%3Dplanted",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d",
+          "sec-fetch-site": "cross-site"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "ignores the url parameter when the Referer is on another host, even naming an allowed host",
+      "request": {
+        "path": "/_sid/v1?url=https%3A%2F%2Fwww.example.com%2F%3Fgclid%3Dplanted",
+        "headers": {
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d",
+          "referer": "https://evil.example/"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
       "name": "ignores double-encoded and over-long values rather than fixing them",
       "request": {
         "path": "/_sid/v1?url=https%3A%2F%2Fwww.example.com%2F%3Fgclid%3Dabc%25252Fdef%26fbclid%3Daaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

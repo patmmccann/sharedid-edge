@@ -154,23 +154,33 @@ export function clickIdDenial(storage: StorageDecision, consent: ConsentContext,
   return undefined;
 }
 
-/**
- * The landing page's URL: the `url` query parameter when it's present, else the `Referer` header. Undefined when
- * neither is an http(s) URL on the request's own host or one of `hosts`.
- */
-export function landingUrl(request: Request, url: URL, hosts: readonly string[]): URL | undefined {
-  const param = url.searchParams.get('url');
-  const candidate = param !== null && param !== '' ? param : request.headers.get('Referer');
+/** `candidate` as an http(s) URL on the request's own host or one of `hosts`, else undefined. */
+function allowedUrl(candidate: string | null, url: URL, hosts: readonly string[]): URL | undefined {
   if (candidate === null || candidate === '') return undefined;
-  let landing: URL;
+  let parsed: URL;
   try {
-    landing = new URL(candidate);
+    parsed = new URL(candidate);
   } catch {
     return undefined;
   }
-  if (landing.protocol !== 'https:' && landing.protocol !== 'http:') return undefined;
-  const host = landing.hostname.toLowerCase();
-  return host === url.hostname.toLowerCase() || hosts.includes(host) ? landing : undefined;
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return undefined;
+  const host = parsed.hostname.toLowerCase();
+  return host === url.hostname.toLowerCase() || hosts.includes(host) ? parsed : undefined;
+}
+
+/**
+ * The landing page's URL: the `url` query parameter when it's present, else the `Referer` header. Undefined when
+ * neither is an http(s) URL on the request's own host or one of `hosts`, and when the request comes from another site
+ * (`Sec-Fetch-Site: cross-site`, or a `Referer` that isn't on those hosts): a `url` naming one of them proves nothing
+ * about where the request came from, so a link from another site can't plant a click ID through it.
+ */
+export function landingUrl(request: Request, url: URL, hosts: readonly string[]): URL | undefined {
+  if (request.headers.get('Sec-Fetch-Site') === 'cross-site') return undefined;
+  const referer = request.headers.get('Referer');
+  const fromReferer = allowedUrl(referer, url, hosts);
+  if (referer !== null && referer !== '' && fromReferer === undefined) return undefined;
+  const param = url.searchParams.get('url');
+  return param !== null && param !== '' ? allowedUrl(param, url, hosts) : fromReferer;
 }
 
 /**

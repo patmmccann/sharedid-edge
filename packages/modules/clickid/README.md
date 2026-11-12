@@ -98,7 +98,7 @@ In order:
 1. the `url` query parameter of the request (the snippet above sends `location.href`);
 2. otherwise the `Referer` header. A same-origin request sends the full page URL, query string included, under the browser's default referrer policy (`strict-origin-when-cross-origin`). This is what makes the `/_sid/sync` call from Prebid.js work with no page code.
 
-Either way, the URL's host must be the request's own host or one listed in `hosts`; anything else is ignored, so another site can't plant a click ID through a link to your worker.
+Either way, the URL's host must be the request's own host or one listed in `hosts`; anything else is ignored. And the request itself must come from your site: one the browser marks `Sec-Fetch-Site: cross-site`, or whose `Referer` is on another host, stores nothing, even with a `url` on your host. So another site can't plant a click ID through a link to your worker. A request with neither header (`curl`, or a page with `Referrer-Policy: no-referrer` in a browser that doesn't send `Sec-Fetch-Site`) is judged by its URL alone.
 
 ## Response
 
@@ -169,7 +169,7 @@ All optional, in `SID_MODULE_CONFIG`:
 | `maxAgeDays` | `90` | The cookies' lifetime from the click, 1 to 400 days. |
 | `domain` | `SID_COOKIE_DOMAIN` | `example.com` for `Domain=.example.com`, or `host-only` for no `Domain`. |
 | `httpOnly` | `false` | `true` hides the cookies from page scripts, for server-side consumers only. |
-| `hosts` | none | Other hostnames (lower case, up to 20) whose URLs count as landing pages, for a landing page on one host whose `/_sid/v1` call goes to another. The request's own host always counts. |
+| `hosts` | none | Other hostnames (lower case, up to 20) whose URLs count as landing pages, for a landing page on one host whose `/_sid/v1` call goes to another. The request's own host always counts. Only hosts on the same site (registrable domain) as the worker work from a browser, which marks a call from another site `Sec-Fetch-Site: cross-site`. |
 
 Cookie names can't be `_pubcid`, `_pubcid_sv`, `_pubcid_optout`, `ts-ec`, `euconsent-v2` or `_sid_keep` (the `reflect` module's keeper), nor your configured SharedID cookie names, and two parameters can't share a cookie. Any other mistake (an unknown key, a wrong type, a duplicate) makes the module report `error` on every call and set nothing; the error doesn't say which value is wrong, so check against this table.
 

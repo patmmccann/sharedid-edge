@@ -186,6 +186,22 @@ describe('the landing URL', () => {
     expect(from('javascript:alert(1)')).toBeUndefined();
     expect(from('not a url')).toBeUndefined();
   });
+
+  it('is ignored when the request comes from another site, so a link elsewhere can\'t plant a click ID', () => {
+    const withParam = new URL(`https://www.example.com/_sid/v1?url=${encodeURIComponent('https://www.example.com/?gclid=1')}`);
+    const from = (headers: Record<string, string>, hosts: readonly string[] = []): string | undefined =>
+      landingUrl(new Request(withParam, { headers }), withParam, hosts)?.href;
+    expect(from({})).toBe('https://www.example.com/?gclid=1');
+    expect(from({ 'Sec-Fetch-Site': 'same-origin', Referer: 'https://www.example.com/page' })).toBe('https://www.example.com/?gclid=1');
+    expect(from({ 'Sec-Fetch-Site': 'same-site', Referer: 'https://shop.example.com/' }, ['shop.example.com'])).toBe('https://www.example.com/?gclid=1');
+    expect(from({ 'Sec-Fetch-Site': 'none' })).toBe('https://www.example.com/?gclid=1');
+    expect(from({ 'Sec-Fetch-Site': 'cross-site' })).toBeUndefined();
+    expect(from({ 'Sec-Fetch-Site': 'cross-site', Referer: 'https://www.example.com/' })).toBeUndefined();
+    // Browsers without Sec-Fetch-Site: a Referer on another host gives it away.
+    expect(from({ Referer: 'https://evil.example/' })).toBeUndefined();
+    expect(from({ 'Sec-Fetch-Site': 'same-site', Referer: 'https://shop.example.com/' })).toBeUndefined();
+    expect(from({ Referer: 'not a url' })).toBeUndefined();
+  });
 });
 
 describe('click IDs in the URL', () => {
