@@ -1,7 +1,8 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { EU_COUNTRY_CODES } from '@sharedid-edge/core';
 import type { BuildOption } from './cases.js';
-import { createServer } from 'node:net';
+import { freePort } from './emulator.js';
+import { startFastlyTarget } from './fastly-viceroy.js';
 import { join } from 'node:path';
 
 export interface RunningTarget {
@@ -32,22 +33,9 @@ export interface RunningTarget {
   stop(): Promise<void>;
 }
 
-export type TargetName = 'node' | 'wrangler' | 'lambda' | 'lambda-aws-emulator' | 'vercel' | 'azure' | 'gcp' | 'akamai';
+export type TargetName = 'node' | 'wrangler' | 'lambda' | 'lambda-aws-emulator' | 'vercel' | 'azure' | 'gcp' | 'akamai' | 'fastly';
 
 const ROOT = join(import.meta.dirname, '..', '..');
-
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.unref();
-    server.on('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      const port = typeof address === 'object' && address !== null ? address.port : 0;
-      server.close(() => { resolve(port); });
-    });
-  });
-}
 
 async function waitUntilUp(baseUrl: string, child: ChildProcess, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -127,7 +115,10 @@ const UNAVAILABLE: Readonly<Record<TargetName, readonly string[]>> = {
   // code or time zone (so no utcoffset).
   gcp: ['ortb2.device.geo.metro', 'ortb2.device.geo.zip', 'ortb2.device.geo.utcoffset'],
   // EdgeScape's userLocation has every location field (its zipCode only when it names one postal code).
-  akamai: []
+  akamai: [],
+  // Fastly's geolocation has a UTC offset but no IANA time zone, and the geo module computes utcoffset from the time
+  // zone (with Intl, which Fastly Compute's runtime doesn't have either).
+  fastly: ['ortb2.device.geo.utcoffset']
 };
 
 /** The cases of `file` named in `names`, each with `reason`. */
@@ -237,13 +228,18 @@ const AZURE_LOCATION_HEADERS: Readonly<Record<string, string>> = {
 
 /**
  * Starts a target configured with `config` (SID_* environment variables) and built with `build`. With `bowser`, the
- * Worker runs its Bowser entry point (src/bowser.ts), and the Lambda, Vercel, Azure, Google Cloud and Akamai targets load
- * the bundles `npm run conformance:lambda`, `conformance:vercel`, `conformance:azure`, `conformance:gcp` and
- * `conformance:akamai` build into
- * deploy-bowser/. The Node.js
- * server always has Bowser.
+ * Worker runs its Bowser entry point (src/bowser.ts), and the Lambda, Vercel, Azure, Google Cloud, Akamai and Fastly targets load
+ * the bundles `npm run conformance:lambda`, `conformance:vercel`, `conformance:azure`, `conformance:gcp`,
+ * `conformance:akamai` and `conformance:fastly` build into deploy-bowser/. The Node.js
+ * server always has Bowser. `requests` are the case file's request headers: the Fastly target seeds Viceroy's
+ * geolocation entries from them, so Viceroy needn't restart for each new location.
  */
-export async function startTarget(target: TargetName, caseConfig: Readonly<Record<string, string>>, build: readonly BuildOption[] = []): Promise<RunningTarget> {
+export async function startTarget(
+  target: TargetName,
+  caseConfig: Readonly<Record<string, string>>,
+  build: readonly BuildOption[] = [],
+  requests: readonly Readonly<Record<string, string>>[] = []
+): Promise<RunningTarget> {
   // Every deployment must set SID_COOKIE_DOMAIN. The targets answer on 127.0.0.1, where cookies are host-only, so that's
   // the default here; a case sets a domain to test one, or "" to test the error for a missing one.
   const config: Readonly<Record<string, string>> = { SID_COOKIE_DOMAIN: 'host-only', ...caseConfig };
@@ -257,6 +253,20 @@ export async function startTarget(target: TargetName, caseConfig: Readonly<Recor
   const vendorPackages = vendor ? { SID_MODULE_PACKAGES: moduleList('--print-vendor-modules') } : {};
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${String(port)}`;
+  if (target === 'fastly') {
+    // The real Compute package (deploy*/main.wasm) in Viceroy, Fastly's local runtime, behind a relay that sends each
+    // request from the case's client IP and gives that address the case's location (fastly-viceroy.ts). It runs in
+    // this process. Viceroy keeps the request's Host, so the adapter sees the URL the runner calls: plain http on a
+    // local address, so cookies aren't Secure, as for the other local targets.
+    const stop = await startFastlyTarget({
+      port,
+      config,
+      viceroy: process.env['VICEROY'] ?? 'viceroy',
+      wasm: join(ROOT, 'packages/adapters/fastly', bundle, 'main.wasm'),
+      requests
+    });
+    return { baseUrl, publicOrigin: caseConfig['SID_PUBLIC_ORIGIN'] ?? baseUrl, stop, requestHeaders: headers => ({ ...headers }), unavailable: UNAVAILABLE[target], limitations: LIMITATIONS[target] ?? {} };
+  }
   let child: ChildProcess;
   // A process the target needs besides `child`, stopped with it.
   let upstream: { readonly child: ChildProcess; readonly url: string } | undefined;

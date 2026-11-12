@@ -1,6 +1,6 @@
 name: CI
 
-# Every job runs without secrets or a Cloudflare, AWS, Vercel, Azure or Google Cloud account, so pull requests from forks get the full
+# Every job runs without secrets or a Cloudflare, AWS, Vercel, Azure, Google Cloud, Akamai or Fastly account, so pull requests from forks get the full
 # checks.
 on:
   pull_request:
@@ -84,6 +84,10 @@ jobs:
         run: npm run conformance:azure
       - name: Akamai EdgeWorker bundles (default and with Bowser; no web or Node.js globals), size budget, and conformance suite against them (local EdgeWorkers stand-in)
         run: npm run conformance:akamai
+      # The JavaScript bundle the Fastly Compute package is compiled from; the package itself runs in the
+      # conformance-fastly job.
+      - name: Fastly Compute bundle and size budget
+        run: npm run bundle -w @sharedid-edge/fastly
 
   # The real Lambda bundles deployed to AWS Emulator (AWS's open-source local emulator of the AWS APIs; no AWS account,
   # no credentials) and run through its Lambda function URL: see conformance/src/aws-emulator.ts. Not required while it
@@ -138,6 +142,59 @@ jobs:
       - name: The emulator's log
         if: failure()
         run: tail -c 30000 "$RUNNER_TEMP/aws-emulator.log"
+
+  # The real Fastly Compute package (the bundle compiled to WebAssembly by Fastly's JavaScript SDK, pinned in
+  # packages/adapters/fastly/toolchain/) in Viceroy, Fastly's local runtime: no Fastly account, no credentials. Viceroy
+  # is a pinned release binary, checked against its SHA-256. The client IP comes from the connection, so the cases'
+  # documentation-range addresses are made local first: conformance/src/fastly-viceroy.ts sends each request from them.
+  conformance-fastly:
+    name: Conformance (Fastly Compute package in Viceroy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VICEROY_VERSION: 0.22.0
+      VICEROY_SHA256: 03f66f27275e8adc0c1857c4f571bd6f5ae997e38cc43760b19c6840a92b298d
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            packages/adapters/fastly/toolchain/package-lock.json
+      - name: Cache the Viceroy release
+        uses: actions/cache@v6
+        with:
+          path: ~/viceroy
+          key: viceroy-${{ env.VICEROY_VERSION }}-linux-amd64
+      - name: Install Viceroy (release binary, pinned)
+        run: |
+          tgz="$HOME/viceroy/viceroy_v${VICEROY_VERSION}_linux-amd64.tar.gz"
+          if [ ! -f "$tgz" ]; then
+            mkdir -p "$HOME/viceroy"
+            curl -fsSLo "$tgz" "https://github.com/fastly/Viceroy/releases/download/v${VICEROY_VERSION}/viceroy_v${VICEROY_VERSION}_linux-amd64.tar.gz"
+          fi
+          echo "$VICEROY_SHA256  $tgz" | sha256sum -c
+          mkdir -p "$RUNNER_TEMP/viceroy"
+          tar -xzf "$tgz" -C "$RUNNER_TEMP/viceroy" viceroy
+          echo "VICEROY=$RUNNER_TEMP/viceroy/viceroy" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/viceroy/viceroy" --version
+      # Requests are sent from the cases' client IPs (192.0.2.77, 2001:db8:1::77, …), which must be local addresses:
+      # a local route makes each range deliverable on the loopback interface, and non-local bind lets a socket use
+      # any address in it. The ranges are the documentation ones the cases use, plus 203.0.114.0/24, which the cases
+      # use as an address the IP database modules don't know.
+      - name: Make the cases' client IP ranges local
+        run: |
+          sudo sysctl -q -w net.ipv4.ip_nonlocal_bind=1 net.ipv6.ip_nonlocal_bind=1
+          for range in 192.0.2.0/24 198.51.100.0/24 203.0.113.0/24 203.0.114.0/24; do sudo ip route add local "$range" dev lo; done
+          sudo ip -6 route add local 2001:db8::/32 dev lo
+      - run: npm ci
+      - run: npm run build
+      - name: Fastly Compute packages (default, Bowser and vendor modules), sizes, and the conformance suite in Viceroy
+        run: npm run conformance:fastly
 
   # Vendor modules (packages/vendor-modules/*) are tested in their own job, so one vendor's failing tests don't block
   # changes elsewhere; branch protection can leave this job not required. Their types and lint are still checked in
