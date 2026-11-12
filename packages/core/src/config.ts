@@ -278,12 +278,24 @@ export function resolveConfig(env: Env, options: ResolveConfigOptions = {}): Sha
     syncCacheSeconds: int(env, 'SID_SYNC_CACHE_SECONDS', DEFAULT_CONFIG.syncCacheSeconds, 0, 31_536_000),
     modules: Object.freeze(modules),
     ...(syncModules === undefined ? {} : { syncModules: Object.freeze(syncModules) }),
-    moduleConfig: Object.freeze(moduleConfig),
-    moduleSecrets: Object.freeze(moduleSecrets),
+    // Frozen all the way down: modules get these objects by reference for as long as the handler lives, which can
+    // be many requests (an adapter's cached handler, a reused Fastly sandbox). A module that changed its config
+    // would change it for every later request; frozen, the change throws and that module's run fails instead.
+    moduleConfig: deepFreeze(moduleConfig),
+    moduleSecrets: deepFreeze(moduleSecrets),
     moduleTimeoutMs: int(env, 'SID_MODULE_TIMEOUT_MS', DEFAULT_CONFIG.moduleTimeoutMs, 1, 10_000),
     skipBots,
     skipBotsScore: str(env, 'SID_SKIP_BOTS_SCORE') === undefined ? undefined : int(env, 'SID_SKIP_BOTS_SCORE', 0, 1, 99)
   });
+}
+
+/** Freezes parsed JSON, and every object and array in it. */
+function deepFreeze<T>(value: T): T {
+  if (typeof value === 'object' && value !== null) {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 function trimTrailingSlashes(path: string): string {

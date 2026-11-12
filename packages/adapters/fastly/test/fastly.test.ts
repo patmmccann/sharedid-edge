@@ -181,6 +181,27 @@ describe('settings from the config and secret stores', () => {
     expect(linked.reads.count).toBe(2 * reads);
   });
 
+  it('answers two visitors through one long-lived handler independently, every built-in module on (a reused sandbox)', async () => {
+    // With reusable sandboxes, one handler answers many visitors in turn: nothing of the first may reach the second.
+    const handler = createStoresHandler(stores({
+      ...SETTINGS,
+      SID_MODULES: 'ip,geo,reflect,bot,ua,clickid',
+      SID_MODULE_CONFIG: JSON.stringify({ reflect: { cookies: [{ name: 'uid1', maxAgeDays: 365 }] }, clickid: { hosts: ['www.example.com'] } })
+    }));
+    const first = await handler(request(`/_sid/v1?url=${encodeURIComponent('https://www.example.com/?gclid=FirstClick')}`, {
+      headers: { cookie: `_pubcid=${UUID}; uid1=first-visitor`, 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15' }
+    }), client('192.0.2.1', AUSTIN));
+    const firstText = JSON.stringify([await payload(first), first.headers.getSetCookie()]);
+    for (const marker of [UUID, 'first-visitor', 'FirstClick', '192.0.2.1']) expect(firstText).toContain(marker);
+    const second = await handler(request('/_sid/v1', { headers: { 'user-agent': 'curl/8.0' } }), client('2001:db8::2', SAN_FRANCISCO));
+    const secondPayload = await payload(second);
+    const secondText = JSON.stringify([secondPayload, second.headers.getSetCookie()]);
+    for (const marker of [UUID, 'first-visitor', 'FirstClick', '192.0.2.1', 'Safari', '"TX"']) expect(secondText).not.toContain(marker);
+    expect(secondPayload.sharedid).toMatch(/^[0-9a-f-]{36}$/);
+    expect(secondPayload.ortb2?.device?.ipv6).toBe('2001:db8::2');
+    expect(secondPayload.ortb2?.device?.geo).toMatchObject({ country: 'USA', region: 'CA' });
+  });
+
   it('answers 500 without a config store, logging why', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const handler = createStoresHandler({ config: () => { throw new TypeError("No ConfigStore named 'sharedid_config' exists"); }, secrets: () => undefined });
