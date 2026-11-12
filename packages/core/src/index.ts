@@ -1,6 +1,6 @@
 export { createHandler, ROUTES, type HandlerOptions, type SharedIdEdgeHandler } from './handler.js';
 export { configForHost, hostKey, hostOverrides, resolveHosts, settingsFromEnv, type EnvSettings } from './hosts.js';
-export { booleanFromEnv, handlerOrMisconfigured, headerValue, isHeaderName, logRequestFailure, parseHeaderMap, publicOriginFromEnv, splitHeaders, type SplitHeaders } from './adapter.js';
+export { booleanFromEnv, handlerOrMisconfigured, headerValue, isHeaderName, logRequestFailure, parseHeaderMap, parseViewerAddress, publicOriginFromEnv, splitHeaders, type SplitHeaders } from './adapter.js';
 export {
   ConfigError,
   DEFAULT_CONFIG,
@@ -21,6 +21,7 @@ export {
   type StorageDecision
 } from './consent.js';
 export { EU_COUNTRY_CODES, LOCATION_FIELDS, locationInfo, locationWithEU, type LocationField, type LocationHeaders, type LocationSource, type PlatformLocation } from './location.js';
+export { parseIp, type ParsedIp } from './ip.js';
 export { decodeTcf, type TcfConsents } from './tcf.js';
 export { cookieValues, parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
 export { idFromSyncParam, isValidId, mintId } from './id.js';

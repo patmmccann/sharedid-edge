@@ -20,6 +20,8 @@ export const MAX_REFLECT_AGE_DAYS = 400;
 export const DEFAULT_KEEPER_COOKIE = '_sid_keep';
 /** The keeper cookie's default lifetime in days. */
 export const DEFAULT_KEEPER_AGE_DAYS = 400;
+/** The suffix of a per-cookie backup's name (`keeper.mode: "per-cookie"`): `_ga` is backed up in `_ga_backup`. */
+export const DEFAULT_BACKUP_SUFFIX = '_backup';
 /** Browsers keep a cookie only if its name and value together are at most this many bytes; the keeper stays within it. */
 export const MAX_KEEPER_COOKIE_BYTES = 4096;
 /**
@@ -54,12 +56,30 @@ export type KeeperPreference = 'browser' | 'backup' | 'older';
 /** Value formats that carry a creation time: Google's `_ga`, `_gcl_au` and `_gcl_aw`. */
 export type TimestampFormat = 'ga' | 'gcl_au' | 'gcl_aw';
 
-/** The keeper cookie, from `SID_MODULE_CONFIG.reflect.keeper`, with defaults applied. */
+/**
+ * Where restorable cookies are backed up: `master`, one keeper cookie holding them all (base64url JSON, 4096 bytes
+ * shared), or `per-cookie`, a backup cookie each (`<name><suffix>`, the value as is).
+ */
+export type KeeperMode = 'master' | 'per-cookie';
+
+/** The keeper, from `SID_MODULE_CONFIG.reflect.keeper`, with defaults applied. */
 export interface KeeperSettings {
+  readonly mode: KeeperMode;
+  /** The master keeper cookie's name (`master` mode; read for migration in `per-cookie` mode). */
   readonly cookie: string;
+  /** The per-cookie backups' suffix (`per-cookie` mode; read for migration in `master` mode). */
+  readonly suffix: string;
   readonly maxAgeDays: number;
   /** `keeper.domain`, else the first `restore` cookie's `domain` (either may be `host-only`); undefined means `SID_COOKIE_DOMAIN`. */
   readonly domain: string | undefined;
+  /** `keeper.domain` as set; per-cookie backups use it, else their own cookie's `domain`. */
+  readonly backupDomain: string | undefined;
+  /**
+   * The configured cookies whose per-cookie backup this module may delete: every `restore` cookie, and every other one
+   * whose backup name is a valid cookie name no other cookie uses, so a backup left over after `restore` was turned
+   * off is still cleaned up on denied storage and opt-out.
+   */
+  readonly backedUp: readonly string[];
 }
 
 /** Settings from `SID_MODULE_CONFIG.reflect`. */
@@ -90,7 +110,9 @@ const TIMESTAMP_PATTERNS: Readonly<Record<TimestampFormat, RegExp>> = {
 };
 /** Creation times more than this after the worker's clock (a day, for clock skew) don't parse. */
 const MAX_TIMESTAMP_SKEW_SECONDS = 86_400;
-const KEEPER_KEYS: ReadonlySet<string> = new Set(['cookie', 'maxAgeDays', 'domain']);
+const KEEPER_KEYS: ReadonlySet<string> = new Set(['mode', 'cookie', 'suffix', 'maxAgeDays', 'domain']);
+const KEEPER_MODES: readonly KeeperMode[] = ['master', 'per-cookie'];
+const SUFFIX = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,16}$/;
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -168,12 +190,25 @@ function keeperSettings(value: unknown, cookies: readonly ReflectedCookie[]): Ke
   for (const key of Object.keys(keeper)) {
     if (!KEEPER_KEYS.has(key)) throw new TypeError('reflect: unknown key in "keeper"');
   }
+  const mode = keeper['mode'] === undefined ? 'master' : oneOf(keeper['mode'], KEEPER_MODES, 'keeper.mode');
   const cookie = keeper['cookie'] === undefined ? DEFAULT_KEEPER_COOKIE : cookieName(keeper['cookie'], 'keeper.cookie');
   if (cookies.some(c => c.name === cookie)) throw new TypeError('reflect: "keeper.cookie" is also listed in "cookies"');
+  const suffix = keeper['suffix'] ?? DEFAULT_BACKUP_SUFFIX;
+  if (typeof suffix !== 'string' || !SUFFIX.test(suffix)) throw new TypeError('reflect: "keeper.suffix" must be 1 to 16 cookie-name characters');
+  // Backup names (read in either mode, for migration) mustn't be a cookie this module or the worker sets otherwise.
+  const taken = new Set([...cookies.map(c => c.name), cookie, ...RESERVED_COOKIE_NAMES]);
+  // Error messages name no configured cookie, as for every setting here.
+  for (const restored of cookies.filter(c => c.restore)) {
+    const backup = `${restored.name}${suffix}`;
+    if (!COOKIE_NAME.test(backup)) throw new TypeError('reflect: a backup name (cookie name plus "keeper.suffix") is too long; use a shorter "keeper.suffix"');
+    if (taken.has(backup)) throw new TypeError('reflect: a backup name (cookie name plus "keeper.suffix") is already a cookie; choose another "keeper.suffix"');
+  }
+  const backedUp = cookies.filter(c => c.restore || (COOKIE_NAME.test(`${c.name}${suffix}`) && !taken.has(`${c.name}${suffix}`))).map(c => c.name);
   const maxAgeDays = keeper['maxAgeDays'] === undefined ? DEFAULT_KEEPER_AGE_DAYS : ageDays(keeper['maxAgeDays']);
+  const backupDomain = optionalDomain(keeper['domain']);
   // The keeper covers the same hosts as the cookies it restores unless told otherwise.
-  const domain = optionalDomain(keeper['domain']) ?? cookies.find(c => c.restore)?.domain;
-  return { cookie, maxAgeDays, domain };
+  const domain = backupDomain ?? cookies.find(c => c.restore)?.domain;
+  return { mode, cookie, suffix, maxAgeDays, domain, backupDomain, backedUp };
 }
 
 /** Parses and validates the settings; throws a `TypeError` (an `error` status) on anything unexpected. */
@@ -317,6 +352,35 @@ function keeperCookie(keeper: KeeperSettings, value: string, maxAgeSeconds: numb
   return { name: keeper.cookie, value, maxAgeSeconds, httpOnly: true, ...domainFields(keeper.domain) };
 }
 
+/** A per-cookie backup's name: the cookie's, with the keeper's suffix. */
+export function backupName(cookie: ReflectedCookie, keeper: KeeperSettings): string {
+  return `${cookie.name}${keeper.suffix}`;
+}
+
+/** The `Domain` setting a per-cookie backup is set with: `keeper.domain`, else its own cookie's. */
+function backupDomainSetting(cookie: ReflectedCookie, keeper: KeeperSettings): string | undefined {
+  return keeper.backupDomain ?? cookie.domain;
+}
+
+/** A per-cookie backup: `HttpOnly`, so page scripts can't read or overwrite it, with the keeper's lifetime. */
+function backupCookie(cookie: ReflectedCookie, keeper: KeeperSettings, value: string, maxAgeSeconds: number): ModuleCookie {
+  return { name: backupName(cookie, keeper), value, maxAgeSeconds, httpOnly: true, ...domainFields(backupDomainSetting(cookie, keeper)) };
+}
+
+/**
+ * The saved values in the request, from both forms: the master keeper and the per-cookie backups. The configured form
+ * wins where both have a value, and the other fills the gaps, so switching `keeper.mode` loses nothing.
+ */
+function savedValues(header: string | null, restorable: readonly ReflectedCookie[], keeper: KeeperSettings): Map<string, string> {
+  const fromMaster = decodeKeeper(rawCookieValue(header, keeper.cookie));
+  const fromBackups = new Map<string, string>();
+  for (const cookie of restorable) {
+    const value = rawCookieValue(header, backupName(cookie, keeper));
+    if (isReflectable(value)) fromBackups.set(cookie.name, value);
+  }
+  return keeper.mode === 'per-cookie' ? new Map([...fromMaster, ...fromBackups]) : new Map([...fromBackups, ...fromMaster]);
+}
+
 /**
  * The `Domain` a cookie with this `domain` setting is set with: its own, else `SID_COOKIE_DOMAIN`; undefined when it's
  * host-only.
@@ -346,13 +410,20 @@ function run({ request, storage, config, cookieDomain }: ModuleContext): ModuleR
   const { cookies: configured, keeper } = reflectModuleConfig(config);
   const header = request.headers.get('Cookie');
   const kept = rawCookieValue(header, keeper.cookie);
+  const restorable = configured.filter(c => c.restore);
+  // The backups the browser sent, in the per-cookie form: of restore cookies, and left over from cookies whose restore
+  // was turned off, so they're deleted when no longer wanted.
+  const sentBackups = configured.filter(c => keeper.backedUp.includes(c.name) && rawCookieValue(header, backupName(c, keeper)) !== undefined);
   // Reflecting and restoring extend storage of identifiers, so they follow the SharedID's storage decision. When
-  // storage isn't allowed, the keeper (this worker's own store) is deleted, like the SharedID cookies; the original
-  // cookies are left alone, since they belong to other scripts.
-  if (!storage.allowed) return kept === undefined ? undefined : { cookies: [keeperCookie(keeper, '', 0)] };
+  // storage isn't allowed, the keeper and the backups (this worker's own store) are deleted, like the SharedID cookies;
+  // the original cookies are left alone, since they belong to other scripts.
+  if (!storage.allowed) {
+    const deleted = [...(kept === undefined ? [] : [keeperCookie(keeper, '', 0)]), ...sentBackups.map(c => backupCookie(c, keeper, '', 0))];
+    return deleted.length === 0 ? undefined : { cookies: deleted };
+  }
 
-  const restoring = configured.some(c => c.restore);
-  const saved = restoring ? decodeKeeper(kept) : new Map<string, string>();
+  const restoring = restorable.length > 0;
+  const saved = restoring ? savedValues(header, restorable, keeper) : new Map<string, string>();
   const cookies: ModuleCookie[] = [];
   const save: [string, string][] = [];
   const nowSeconds = Math.floor(Date.now() / 1000);
@@ -373,14 +444,39 @@ function run({ request, storage, config, cookieDomain }: ModuleContext): ModuleR
     }
     // Present but not reflectable: left alone, and its saved value is dropped so an outdated one is never restored.
   }
+  if (keeper.mode === 'per-cookie') {
+    // A backup per cookie, rewritten on every call so its expiry is refreshed with the cookie; one with nothing to keep is
+    // deleted, and so is a master keeper the browser still has (migrated into the backups above).
+    const values = new Map(save);
+    for (const cookie of configured) {
+      const value = cookie.restore ? values.get(cookie.name) : undefined;
+      if (value !== undefined) {
+        cookies.push(backupCookie(cookie, keeper, value, keeper.maxAgeDays * 86_400));
+        cookies.push(...hostOnlyDuplicate(header, backupName(cookie, keeper), true, effectiveDomain(backupDomainSetting(cookie, keeper), cookieDomain), false));
+      } else if (sentBackups.includes(cookie)) {
+        cookies.push(backupCookie(cookie, keeper, '', 0));
+      }
+    }
+    if (kept !== undefined) cookies.push(keeperCookie(keeper, '', 0));
+    return cookies.length === 0 ? undefined : { cookies };
+  }
   // Rewritten on every call, so its expiry is refreshed with the cookies it keeps. With nothing to keep, a keeper the
-  // browser sent is deleted.
+  // browser sent is deleted, and per-cookie backups it still has (migrated into the keeper above) are too.
   const encoded = restoring ? encodeKeeper(save, MAX_KEEPER_COOKIE_BYTES - keeper.cookie.length) : '';
   if (encoded !== '') {
     cookies.push(keeperCookie(keeper, encoded, keeper.maxAgeDays * 86_400));
     cookies.push(...hostOnlyDuplicate(header, keeper.cookie, true, effectiveDomain(keeper.domain, cookieDomain), false));
   }
   else if (kept !== undefined) cookies.push(keeperCookie(keeper, '', 0));
+  // A per-cookie backup goes once its value is in the keeper. One whose value didn't fit (the keeper's 4096 bytes are
+  // shared) is kept, and refreshed, so switching modes loses nothing; one with nothing to keep is deleted.
+  const inKeeper = decodeKeeper(encoded === '' ? undefined : encoded);
+  const values = new Map(save);
+  for (const cookie of sentBackups) {
+    const value = cookie.restore ? values.get(cookie.name) : undefined;
+    if (value !== undefined && !inKeeper.has(cookie.name)) cookies.push(backupCookie(cookie, keeper, value, keeper.maxAgeDays * 86_400));
+    else cookies.push(backupCookie(cookie, keeper, '', 0));
+  }
   return cookies.length === 0 ? undefined : { cookies };
 }
 
@@ -397,6 +493,11 @@ export const reflectModule: EdgeModule = defineModule({
   // keeper is this worker's own, so it's always deleted (core deletes only cookies the browser sent).
   optOutCookies: config => {
     const { cookies, keeper } = reflectModuleConfig(config);
-    return [...cookies.filter(c => c.deleteOnOptOut).map(c => moduleCookie(c, '', 0)), keeperCookie(keeper, '', 0)];
+    // The keeper's store in both forms, whichever is configured: either may be left from before a mode change.
+    return [
+      ...cookies.filter(c => c.deleteOnOptOut).map(c => moduleCookie(c, '', 0)),
+      keeperCookie(keeper, '', 0),
+      ...cookies.filter(c => keeper.backedUp.includes(c.name)).map(c => backupCookie(c, keeper, '', 0))
+    ];
   }
 });

@@ -256,13 +256,15 @@ If you pass consent to the worker (`gdpr`, `gdpr_consent`), add the same query p
 - The keeper follows the worker's storage decision, not Google consent mode or your CMP's analytics and advertising choices. If your consent setup can refuse analytics or ads storage while allowing the SharedID, either leave `restore` off, or keep `reflect` off `/_sid/sync` (set `SID_SYNC_MODULES` without it, or to `none`) and call `/_sid/v1` only when those are allowed too: Prebid.js's pixel call doesn't know about them.
 - If a script deletes one of these cookies on purpose, the keeper restores it on the next call while storage is allowed. Use `restore` only for cookies whose owner doesn't delete them as a signal. Likewise, with `prefer: "older"` a deliberately reset `_ga` (one written with a new client ID) is replaced by the saved one; with `prefer: "backup"`, any new value is.
 
-### Compared with Stape's Cookie Keeper
+### Compared with Stape's Cookie Keeper and Cookie Extender
 
 This is similar to Stape's Cookie Keeper power-up, which stores a first-party master cookie through HTTP headers and restores those cookies when Safari deletes them. The two aren't the same product, and this module doesn't aim for exact parity. Here:
 - it runs on your own edge worker (or Node.js server), on your domain;
 - it runs when Prebid.js calls `/_sid/sync` (at most once per `SID_SYNC_CACHE_SECONDS` in each browser, a day by default) or the page calls `/_sid/v1`, not on every request to your site;
 - it follows the worker's consent rules, and opting out deletes the keeper;
 - you choose the cookies, their lifetimes and domains, up to 10 per worker.
+
+With [`keeper.mode: "per-cookie"`](#one-keeper-or-a-backup-per-cookie-keepermode), the backups work like Stape's open-source [Cookie Extender](https://github.com/stape-io/cookie-extender-tag) tag instead, a backup cookie per cookie, except that these backups are `HttpOnly`.
 
 ## The keeper cookie
 
@@ -274,6 +276,22 @@ This is similar to Stape's Cookie Keeper power-up, which stores a first-party ma
 - **Attributes:** `HttpOnly`, `Path=/`, `SameSite=Lax`, `Secure` over https, `Max-Age` from `keeper.maxAgeDays` (default 400 days), and `Domain` from `keeper.domain`; without it, the **first `restore` cookie's `domain`**, so the keeper reaches the same hosts as the cookies it restores; without that, `SID_COOKIE_DOMAIN`, else host-only.
 - **Refreshed on every call:** the worker sets it on every `/_sid/sync` or `/_sid/v1` call where it has something to keep, so its expiry moves forward with each visit, like the cookies it keeps.
 - With no `restore` cookie configured, no keeper is set, and a left-over one is deleted.
+
+### One keeper or a backup per cookie: `keeper.mode`
+
+By default (`"master"`), one keeper cookie holds every saved value. With `"keeper": { "mode": "per-cookie" }`, each `restore` cookie gets its own `HttpOnly` backup instead: `_ga` is backed up in `_ga_backup`, with its value as is (`keeper.suffix` changes `_backup`).
+
+| | One keeper (`master`, default) | A backup per cookie (`per-cookie`) |
+| --- | --- | --- |
+| Size | All values share 4096 bytes | Each backup has its own 4096 |
+| Request size | One extra cookie | One extra cookie per `restore` cookie |
+| Format | base64url JSON | The value as is, byte for byte |
+| A corrupted backup | Loses every saved value | Loses only that one |
+| In DevTools | Opaque | Readable |
+
+Pick `per-cookie` when you restore cookies whose values together approach 4096 bytes, or want to see the backups plainly; otherwise one keeper keeps requests smaller. The backups follow the same rules as the keeper: `HttpOnly` (unlike Stape's, which page scripts can read), refreshed on every call, `Max-Age` from `keeper.maxAgeDays`, `Domain` from `keeper.domain` (else each cookie's own `domain`), deleted when storage isn't allowed and on `/_sid/optout`.
+
+**Switching is safe.** The worker reads both forms: after a switch, it restores from whichever the browser has, writes the configured form, and deletes the other.
 
 ## Which value wins: `prefer`
 

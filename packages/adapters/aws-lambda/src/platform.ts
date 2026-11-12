@@ -1,8 +1,11 @@
-import { EU_COUNTRY_CODES, locationWithEU, type PlatformInfo } from '@sharedid-edge/core';
+import { EU_COUNTRY_CODES, locationWithEU, parseViewerAddress, type PlatformInfo } from '@sharedid-edge/core';
 import type { LambdaEventV2 } from './event.js';
 
 /** The 27 EU member states, from core: the meaning of Cloudflare's `request.cf.isEUCountry`. */
 export { EU_COUNTRY_CODES };
+
+/** Parses `CloudFront-Viewer-Address` (`ip:port`); from core, where the Node.js server uses it too. */
+export { parseViewerAddress };
 
 /** Whether CloudFront sits in front of the function and sets the `CloudFront-Viewer-*` headers. */
 export interface PlatformOptions {
@@ -14,28 +17,6 @@ export interface PlatformOptions {
    * send them) and the client IP is `requestContext.http.sourceIp`; there is no location.
    */
   readonly behindCloudFront?: boolean;
-}
-
-const ADDRESS = /^[0-9A-Fa-f:.]+$/;
-
-/**
- * The IP address in a `CloudFront-Viewer-Address` value, which is `ip:port`: `192.0.2.1:46532`, and for IPv6
- * either `[2001:db8::1]:46532` or `2001:db8::1:46532` (CloudFront always appends the port, so the last field is
- * dropped). Returns undefined for anything else.
- */
-export function parseViewerAddress(value: string | undefined): string | undefined {
-  const trimmed = value?.trim() ?? '';
-  let address: string;
-  if (trimmed.startsWith('[')) {
-    const end = trimmed.indexOf(']');
-    if (end < 0) return undefined;
-    address = trimmed.slice(1, end);
-  } else {
-    const colon = trimmed.lastIndexOf(':');
-    if (colon <= 0 || !/^\d{1,5}$/.test(trimmed.slice(colon + 1))) return undefined;
-    address = trimmed.slice(0, colon);
-  }
-  return address !== '' && ADDRESS.test(address) ? address : undefined;
 }
 
 function header(event: LambdaEventV2, name: string): string | undefined {
