@@ -10,6 +10,7 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | `docs/` | Topic docs for publishers (Prebid.js, responses, configuration, consent, modules, migrating, troubleshooting, development) | Linked from [README.md](README.md). |
 | `conformance/` | HTTP cases and their runner | The contract; every implementation must pass. |
 | `packages/core/` | Platform-neutral handler, consent, cookies, module interface | Published as `@sharedid-edge/core`. Depends on no module. |
+| `packages/ip-ranges/` | IP range tables, the MMDB reader and the country module that IP database vendor modules share | Published as `@sharedid-edge/ip-ranges`. Not a module; see its [`AGENTS.md`](packages/ip-ranges/AGENTS.md). |
 | `packages/adapters/` | Deployable platform packages, one folder per platform (listed below) | Rules for every adapter in [`packages/adapters/AGENTS.md`](packages/adapters/AGENTS.md). Each is a conformance target. |
 | `packages/modules/` | Modules this project maintains, one folder per module (listed below), and `all/` (`@sharedid-edge/modules`, the built-in list) | Rules and how to write a module in [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). Published as `@sharedid-edge/module-<name>`; built into every adapter. |
 | `packages/vendor-modules/` | Modules contributed and maintained by vendors (listed below) | Extra rules in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md). Opt-in at build time; tested in their own CI job. |
@@ -22,7 +23,7 @@ The packages, generated from their `package.json` by `node scripts/docs.mjs --wr
 <!-- generated:packages:start -->
 - **Adapters** (`packages/adapters/`): [`akamai/`](packages/adapters/akamai/README.md): Akamai EdgeWorkers; [`aws-lambda/`](packages/adapters/aws-lambda/README.md): AWS (Lambda and CloudFront); [`azure-functions/`](packages/adapters/azure-functions/README.md): Azure (Functions and Front Door); [`cloudflare/`](packages/adapters/cloudflare/README.md): Cloudflare Workers; [`gcp-functions/`](packages/adapters/gcp-functions/README.md): Google Cloud (Cloud Run functions and Load Balancing); [`node/`](packages/adapters/node/README.md): Node.js (self-hosted); [`vercel/`](packages/adapters/vercel/README.md): Vercel.
 - **Modules** (`packages/modules/`): [`bot/`](packages/modules/bot/README.md): bot and staff-traffic signals; [`geo/`](packages/modules/geo/README.md): the visitor's location as `device.geo`; [`ip/`](packages/modules/ip/README.md): the real client IP; [`reflect/`](packages/modules/reflect/README.md): keep other first-party cookies durable; [`ua/`](packages/modules/ua/README.md): device data and the bot flag; and [`all/`](packages/modules/all/README.md): the built-in list.
-- **Vendor modules** (`packages/vendor-modules/`): [`ec/`](packages/vendor-modules/ec/README.md): Trusted Server Edge Cookies.
+- **Vendor modules** (`packages/vendor-modules/`): [`dbip/`](packages/vendor-modules/dbip/README.md): DB-IP Lite country; [`ec/`](packages/vendor-modules/ec/README.md): Trusted Server Edge Cookies; [`maxmind/`](packages/vendor-modules/maxmind/README.md): MaxMind GeoLite2 country.
 <!-- generated:packages:end -->
 
 ## TypeScript is strict, everywhere

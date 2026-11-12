@@ -1,0 +1,13 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The dbip vendor module in replace mode (SID_MODULES=geo,dbip, SID_MODULE_CONFIG={\"dbip\":{\"mode\":\"replace\"}}): DB-IP's country always, and, listed after geo, it wins the merge; geo's other fields stay. The fixture table maps 192.0.2.0/25 to FR.",
+  "build": ["vendor-modules"],
+  "config": { "SID_MODULES": "geo,dbip", "SID_MODULE_CONFIG": "{\"dbip\":{\"mode\":\"replace\"},\"geo\":{\"precision\":\"coarse\"}}", "SID_TRUST_PROXY": "true" },
+  "cases": [
+    {
+      "name": "replaces the CDN's country, keeping geo's other fields",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "cf-ipcountry": "DE", "cf-region-code": "BE" } },
+      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "geo": { "type": 2, "country": "FRA", "region": "BE" } } }, "ext": { "modules": { "geo": { "status": "ok" }, "dbip": { "status": "ok" } } } } }
+    }
+  ]
+}
