@@ -6,7 +6,7 @@
 import { copyRequest, isHeaderName, parseHeaderMap, parseViewerAddress } from './adapter.js';
 import { ConfigError, str } from './config.js';
 import { text, type SharedIdEdgeHandler } from './handler.js';
-import { isHostname, UPSTREAM_PREFIX } from './hosts.js';
+import { HOSTNAME } from './hosts.js';
 import { parseIp } from './ip.js';
 import { LOCATION_FIELDS, locationWithEU, type LocationField, type LocationHeaders, type LocationSource } from './location.js';
 import type { PlatformInfo } from './types.js';
@@ -102,6 +102,34 @@ function parseLocationHeaders(value: string | undefined): LocationHeaders {
   return parseHeaderMap(value, 'SID_LOCATION_HEADERS', LOCATION_FIELDS, '{"country":"x-sid-country"}');
 }
 
+/** The prefix of trusted upstream's own settings: `SID_UPSTREAM_SECRETS`, `SID_UPSTREAM_AUTH_HEADER`, `SID_UPSTREAM_HOST_HEADER`. */
+const UPSTREAM_PREFIX = 'SID_UPSTREAM_';
+
+/**
+ * Trusted upstream's settings belong to the deployment: the forwarded host that picks a site in `SID_HOSTS` is read only
+ * once a request is authenticated. Throws a `ConfigError` naming the host and setting when an entry of `SID_HOSTS` has
+ * one (`SID_UPSTREAM_*`, `SID_CLIENT_IP_HEADER`, `SID_LOCATION_HEADERS`). `SID_HOSTS` that isn't a JSON object is left
+ * to `settingsFromEnv` to refuse.
+ */
+function refusePerHost(env: Env): void {
+  let hosts: unknown;
+  try {
+    hosts = JSON.parse(str(env, 'SID_HOSTS') ?? '{}');
+  } catch {
+    return;
+  }
+  if (typeof hosts !== 'object' || hosts === null) return;
+  const entries: [string, unknown][] = Object.entries(hosts);
+  for (const [host, settings] of entries) {
+    if (typeof settings !== 'object' || settings === null) continue;
+    for (const key of Object.keys(settings)) {
+      if (key.startsWith(UPSTREAM_PREFIX) || key === 'SID_CLIENT_IP_HEADER' || key === 'SID_LOCATION_HEADERS') {
+        throw new ConfigError(`SID_HOSTS["${host}"]: ${key} can't be set per host`);
+      }
+    }
+  }
+}
+
 /**
  * For adapters without trusted-upstream mode: throws a `ConfigError` naming the setting when `SID_UPSTREAM_SECRETS`,
  * `SID_UPSTREAM_AUTH_HEADER` or `SID_UPSTREAM_HOST_HEADER` is set, so the platform refuses them rather than ignore
@@ -109,6 +137,7 @@ function parseLocationHeaders(value: string | undefined): LocationHeaders {
  * `settingsFromEnv(refuseTrustedUpstream(env), options)`.
  */
 export function refuseTrustedUpstream<E extends Env>(env: E): E {
+  refusePerHost(env);
   for (const name of Object.keys(env)) {
     if (name.startsWith(UPSTREAM_PREFIX) && str(env, name) !== undefined) {
       throw new ConfigError(`${name}: trusted-upstream mode isn't available on this platform (the Cloudflare Worker, AWS Lambda, Fastly Compute and the Node.js server have it)`);
@@ -135,6 +164,7 @@ export interface TrustedUpstreamOptions {
  * secret (without its value).
  */
 export function trustedUpstreamFromEnv(env: Env, options: TrustedUpstreamOptions = {}): TrustedUpstream | undefined {
+  refusePerHost(env);
   const secretsText = str(env, 'SID_UPSTREAM_SECRETS');
   const authHeader = headerSetting(env, 'SID_UPSTREAM_AUTH_HEADER', DEFAULT_UPSTREAM_AUTH_HEADER);
   const hostHeader = headerSetting(env, 'SID_UPSTREAM_HOST_HEADER', DEFAULT_UPSTREAM_HOST_HEADER);
@@ -213,7 +243,7 @@ export function parseForwardedHost(value: string): string | undefined {
   const match = /^([^:]+)(?::(\d{1,5}))?$/.exec(value.trim());
   const host = match?.[1]?.toLowerCase().replace(/\.$/, '');
   const port = Number(match?.[2] ?? 0);
-  return host !== undefined && isHostname(host) && port <= 65_535 ? host : undefined;
+  return host !== undefined && HOSTNAME.test(host) && port <= 65_535 ? host : undefined;
 }
 
 /**

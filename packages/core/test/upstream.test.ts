@@ -123,7 +123,8 @@ describe('trusted upstream: settings', () => {
     expect(refuseTrustedUpstream(env)).toBe(env);
     for (const name of ['SID_UPSTREAM_SECRETS', 'SID_CLIENT_IP_HEADER', 'SID_LOCATION_HEADERS']) {
       const hosts = JSON.stringify({ 'a.example': { SID_COOKIE_DOMAIN: 'a.example', [name]: 'x' } });
-      expect(() => settingsFromEnv({ SID_HOSTS: hosts })).toThrow(new RegExp(`${name} can't be set per host`));
+      expect(() => trustedUpstreamFromEnv({ SID_HOSTS: hosts })).toThrow(new RegExp(`a.example"]: ${name} can't be set per host`));
+      expect(() => refuseTrustedUpstream({ SID_HOSTS: hosts })).toThrow(new RegExp(`${name} can't be set per host`));
     }
   });
 });
