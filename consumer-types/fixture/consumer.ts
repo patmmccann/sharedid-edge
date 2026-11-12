@@ -2,6 +2,7 @@
 // Type-checked against the packed package by scripts/consumer-types.mjs.
 import {
   booleanFromEnv,
+  cachedByEnv,
   createHandler,
   defineModule,
   EU_COUNTRY_CODES,
@@ -24,11 +25,13 @@ import {
   hostKey,
   hostOverrides,
   resolveHosts,
+  SETTING_NAMES,
   settingsFromEnv,
   type EnvSettings,
   type ResolveConfigOptions,
   skipsBot,
   splitHeaders,
+  withPublicOrigin,
   type BotKind,
   type EdgeModule,
   type LocationSource,
@@ -145,6 +148,19 @@ const parsedIp: ParsedIp | undefined = parseIp('192.0.2.1');
 export const ipVersion: 4 | 6 | undefined = parsedIp?.version;
 
 export const booleanSetting: boolean = booleanFromEnv('true', false);
+
+// A platform that hands the settings over with each request: the handler, rebuilt only when a setting changes, for a
+// request moved onto the public origin.
+export const settingNames: readonly string[] = SETTING_NAMES;
+// @ts-expect-error - the setting names are read-only
+SETTING_NAMES.push('SID_EXTRA');
+const handlerFor: (env: Readonly<Record<string, string | undefined>>) => SharedIdEdgeHandler = cachedByEnv(
+  (env: Readonly<Record<string, string | undefined>>): SharedIdEdgeHandler => createHandler({ config: resolveConfig(env) })
+);
+export async function perRequestSettings(request: Request, env: Readonly<Record<string, string | undefined>>): Promise<Response> {
+  const publicRequest: Request = await withPublicOrigin(request, env['SID_PUBLIC_ORIGIN']);
+  return handlerFor(env)(publicRequest);
+}
 
 // Every value of a duplicated cookie, in header order.
 const duplicates: string[] = cookieValues('_pubcid=a; _pubcid=b', '_pubcid');
