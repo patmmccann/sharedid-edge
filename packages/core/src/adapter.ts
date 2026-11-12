@@ -1,6 +1,7 @@
 // Plumbing every platform adapter needs around the handler, kept here so a fix (to what errors log, say) reaches
 // every adapter at once instead of one copy of it.
 import { ConfigError } from './config.js';
+import { parseIp } from './ip.js';
 
 /** A response's headers for a platform that keeps one value per header name. */
 export interface SplitHeaders {
@@ -92,4 +93,24 @@ export function handlerOrMisconfigured<H>(build: () => H, misconfigured: () => H
     console.error(`sharedid-edge: ${error.message}`);
     return misconfigured();
   }
+}
+
+/**
+ * The IP address in a `CloudFront-Viewer-Address` value, which is `ip:port`: `192.0.2.1:46532`, and for IPv6
+ * either `[2001:db8::1]:46532` or `2001:db8::1:46532` (CloudFront always appends the port, so the part after the last
+ * colon is dropped). Returns undefined for anything else, including an address that isn't a valid IP (`parseIp`).
+ */
+export function parseViewerAddress(value: string | undefined): string | undefined {
+  const trimmed = value?.trim() ?? '';
+  let address: string;
+  if (trimmed.startsWith('[')) {
+    const end = trimmed.indexOf(']');
+    if (end < 0) return undefined;
+    address = trimmed.slice(1, end);
+  } else {
+    const colon = trimmed.lastIndexOf(':');
+    if (colon <= 0 || !/^\d{1,5}$/.test(trimmed.slice(colon + 1))) return undefined;
+    address = trimmed.slice(0, colon);
+  }
+  return parseIp(address) === undefined ? undefined : address;
 }

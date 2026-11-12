@@ -14,6 +14,8 @@ import {
   booleanFromEnv,
   parseCookies,
   parseHeaderMap,
+  parseIp,
+  parseViewerAddress,
   publicOriginFromEnv,
   readConsent,
   resolveConfig,
@@ -421,6 +423,21 @@ describe('more adapter helpers', () => {
     expect(locationWithEU({ country: 'de', city: 'Berlin' })).toEqual({ country: 'DE', city: 'Berlin', isEU: true });
     expect(locationWithEU({ country: 'GB' })).toEqual({ country: 'GB', isEU: false });
     expect(locationWithEU({ country: 'XX', city: 'Nowhere' })).toEqual({ city: 'Nowhere' });
+  });
+});
+
+describe('parseViewerAddress', () => {
+  it("takes the IP from CloudFront's ip:port, the port after the last colon", () => {
+    expect(parseViewerAddress('192.0.2.1:443')).toBe('192.0.2.1');
+    expect(parseViewerAddress('2001:db8::1:46532')).toBe('2001:db8::1');
+    expect(parseViewerAddress('[2001:db8::1]:46532')).toBe('2001:db8::1');
+    expect(parseIp('2001:db8::1')).toEqual({ version: 6, hextets: [0x2001, 0xdb8, 0, 0, 0, 0, 0, 1] });
+  });
+
+  it('gives undefined unless the address is a valid IP', () => {
+    for (const bad of [undefined, '', '192.0.2.1', '999.0.0.1:443', 'abc:443', 'fff:443', '[2001:db8::1', '[x]:1']) {
+      expect(parseViewerAddress(bad)).toBeUndefined();
+    }
   });
 });
 
