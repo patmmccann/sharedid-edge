@@ -256,6 +256,7 @@ Each module's behaviour is specified in its own file under [`modules/`](modules)
 - [The `ec` module](modules/ec.md)
 - [The `geo` module](modules/geo.md)
 - [The `ip` module](modules/ip.md)
+- [The `maxmind` module](modules/maxmind.md)
 - [The `reflect` module](modules/reflect.md)
 - [The `ua` module](modules/ua.md)
 <!-- generated:spec-modules:end -->
