@@ -139,6 +139,9 @@ function limited(file: string, reason: string, names: readonly string[]): [strin
  *   AccessDenied (its guard against web pages driving a local emulator, with no setting to allow an origin), so the CORS
  *   cases and the clickid module's cross-site case never reach the function. Lambda function URLs on AWS pass them to
  *   the function.
+ * - Its function URL doesn't hand the function a single X-Forwarded-Host as the client sent it (a list does arrive), so
+ *   trusted-upstream mode's per-site cases see another host and get a 404. Whether Lambda function URLs on AWS pass it
+ *   unchanged needs the live test; the Lambda README says how to use another header if not.
  */
 const NO_LOCATION = 'no location without CloudFront in front of the function URL';
 const CLIENT_IP = "the client IP is the connection's, which the suite can't set";
@@ -198,6 +201,14 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
     ]),
     ...limited('module-clickid.json', 'AWS Emulator refuses requests with Sec-Fetch-Site: cross-site before they reach the function', [
       'ignores the url parameter on a request from another site (Sec-Fetch-Site: cross-site), even naming an allowed host'
+    ]),
+    ...limited('trusted-upstream.json', "AWS Emulator's function URL doesn't pass on a single X-Forwarded-Host as the client sent it, so the function sees another host (SID_HOSTS then answers 404)", [
+      "the forwarded country decides GDPR, not the CDN edge's (a US visitor through an EU edge gets the ID)",
+      'an EU visitor through a US edge gets no ID cookies without a TC string',
+      "the payload has the forwarded IPv4 address and location, not the edge's",
+      'the payload has a forwarded IPv6 address, with the rotated secret',
+      "no forwarded client IP means none, not the edge's",
+      "the forwarded host picks another publisher's settings and cookie domain"
     ]),
     ...limited('forwarded-headers-untrusted.json', NO_LOCATION, [
       "a forged country doesn't override the platform's EU country",
