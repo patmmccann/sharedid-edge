@@ -1,6 +1,20 @@
 export { createHandler, ROUTES, type HandlerOptions, type SharedIdEdgeHandler } from './handler.js';
-export { configForHost, hostKey, hostOverrides, resolveHosts, settingsFromEnv, type EnvSettings } from './hosts.js';
 export { booleanFromEnv, cachedByEnv, handlerOrMisconfigured, headerValue, isHeaderName, logRequestFailure, parseHeaderMap, parseViewerAddress, publicOriginFromEnv, SETTING_NAMES, splitHeaders, withPublicOrigin, type SplitHeaders } from './adapter.js';
+export { configForHost, hostKey, hostOverrides, resolveHosts, settingsFromEnv, type EnvSettings } from './hosts.js';
+export {
+  clientIpFromHeader,
+  DEFAULT_UPSTREAM_AUTH_HEADER,
+  DEFAULT_UPSTREAM_HOST_HEADER,
+  forwardedPlatformInfo,
+  parseForwardedHost,
+  refuseTrustedUpstream,
+  trustedUpstreamFromEnv,
+  utf8Header,
+  withTrustedUpstream,
+  type ForwardedHeaders,
+  type TrustedUpstream,
+  type TrustedUpstreamOptions
+} from './upstream.js';
 export {
   ConfigError,
   DEFAULT_CONFIG,

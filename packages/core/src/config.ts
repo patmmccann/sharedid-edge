@@ -104,7 +104,12 @@ export const SETTINGS: readonly ConfigSetting[] = [
   { name: 'SID_MODULE_TIMEOUT_MS', default: '`50`', description: 'Time limit for each module, 1 to 10000.' },
   { name: 'SID_SKIP_BOTS', default: 'off', description: '`verified`, `declared` or `likely`: set no SharedID for bots this sure or surer, from the traffic signal. Existing IDs are never deleted.' },
   { name: 'SID_HOSTS', default: 'none (one site)', description: 'Several sites from one deployment: JSON from hostname to that site\x27s `SID_*` settings, which go on top of these, like `{"www.example.com":{"SID_COOKIE_DOMAIN":"example.com"}}`. A host that isn\x27t listed gets a 404 and no cookies. Not `SID_MODULE_SECRETS`. See [Several sites from one deployment](#several-sites-from-one-deployment).' },
-  { name: 'SID_SKIP_BOTS_SCORE', default: 'off', description: '1 to 99: set no SharedID when the traffic score (Cloudflare Bot Management) is at or below it.' }
+  { name: 'SID_SKIP_BOTS_SCORE', default: 'off', description: '1 to 99: set no SharedID when the traffic score (Cloudflare Bot Management) is at or below it.' },
+  { name: 'SID_UPSTREAM_SECRETS', default: 'off', description: 'Trusted-upstream mode, for an endpoint behind a publisher\x27s CDN (a sales house\x27s): a JSON array of the shared secrets the CDN may send in `SID_UPSTREAM_AUTH_HEADER`, each at least 32 characters, like `["<openssl rand -hex 32>"]`. A request without one of them gets a 403 and no cookies; with one, the client IP, location and host come from the CDN\x27s headers. Set it as a platform secret. Cloudflare Worker, AWS Lambda, Fastly Compute and Node.js only. See [Trusted upstream](#trusted-upstream-behind-a-publishers-cdn).' },
+  { name: 'SID_UPSTREAM_AUTH_HEADER', default: '`x-sid-upstream-auth`', description: 'With `SID_UPSTREAM_SECRETS`: the request header the publisher\x27s CDN puts the secret in.' },
+  { name: 'SID_UPSTREAM_HOST_HEADER', default: '`x-forwarded-host`', description: 'With `SID_UPSTREAM_SECRETS`: the request header with the publisher\x27s site hostname, which picks the site in `SID_HOSTS` and decides `Secure`. A missing header keeps the request\x27s own host; one that isn\x27t a single hostname gets a 400.' },
+  { name: 'SID_CLIENT_IP_HEADER', default: 'none', description: 'With `SID_UPSTREAM_SECRETS`: the request header with the visitor\x27s IP address, set by the publisher\x27s CDN (`cloudfront-viewer-address` is read as `ip:port`, `x-forwarded-for` as its first entry). Unset, there\x27s no client IP. Some adapters also read it without trusted upstream (Node.js with `SID_TRUST_PROXY`, Google Cloud): see their READMEs.' },
+  { name: 'SID_LOCATION_HEADERS', default: 'none', description: 'With `SID_UPSTREAM_SECRETS`, **required**: JSON from location field to the request header the publisher\x27s CDN sets it in, with at least `country`, like `{"country":"x-sid-country","regionCode":"x-sid-region"}`. Fields: `country`, `regionCode`, `city`, `postalCode`, `metroCode`, `latitude`, `longitude`, `timezone`, `continent`. Some adapters also read it without trusted upstream (Node.js with `SID_TRUST_PROXY`, Azure, Google Cloud): see their READMEs.' }
 ];
 
 export class ConfigError extends Error {
@@ -118,7 +123,8 @@ const BASE_PATH = /^\/[A-Za-z0-9._~\-/]*$/;
 
 type Env = Readonly<Record<string, unknown>>;
 
-function str(env: Env, key: string): string | undefined {
+/** A setting's value, trimmed; undefined when it's unset or blank. Throws a `ConfigError` when it isn't a string. */
+export function str(env: Env, key: string): string | undefined {
   const value = env[key];
   if (value === undefined || value === null) return undefined;
   if (typeof value !== 'string') throw new ConfigError(`${key} must be a string`);

@@ -25,9 +25,9 @@ export interface RunningTarget {
    */
   readonly unavailable: readonly string[];
   /**
-   * Cases the platform can't pass, by `file#case name`, with the reason. The runner reports them as TODO instead of
-   * failures, and fails if one passes. Only for a documented limitation of the platform itself, never to skip a
-   * failure of the adapter; the adapter's README says what it means for publishers.
+   * Cases the platform can't pass, by `file#case name` (or every case of a file, by its name), with the reason. The
+   * runner reports them as TODO instead of failures, and fails if one passes. Only for a documented limitation of the
+   * platform itself, never to skip a failure of the adapter; the adapter's README says what it means for publishers.
    */
   readonly limitations: Readonly<Record<string, string>>;
   stop(): Promise<void>;
@@ -127,7 +127,7 @@ function limited(file: string, reason: string, names: readonly string[]): [strin
 }
 
 /**
- * Cases a target can't pass, by `file#case name`; see `RunningTarget.limitations`.
+ * Cases a target can't pass, by `file#case name` (or a whole file by its name); see `RunningTarget.limitations`.
  *
  * AWS Emulator, with nothing in front of the function URL (SID_BEHIND_CLOUDFRONT=false):
  * - No location: that's CloudFront's (its CloudFront-Viewer-* headers), so the geo module has nothing, and GDPR can't
@@ -143,6 +143,7 @@ function limited(file: string, reason: string, names: readonly string[]): [strin
 const NO_LOCATION = 'no location without CloudFront in front of the function URL';
 const CLIENT_IP = "the client IP is the connection's, which the suite can't set";
 const NO_LOCATION_OR_CLIENT_IP = `${NO_LOCATION}, and ${CLIENT_IP}`;
+const NO_UPSTREAM = "the adapter doesn't support trusted-upstream mode, and refuses SID_UPSTREAM_SECRETS";
 const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, string>>>>> = {
   'lambda-aws-emulator': Object.fromEntries([
     ...limited('consent-eu-location.json', NO_LOCATION, [
@@ -197,8 +198,18 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
     ]),
     ...limited('module-clickid.json', 'AWS Emulator refuses requests with Sec-Fetch-Site: cross-site before they reach the function', [
       'ignores the url parameter on a request from another site (Sec-Fetch-Site: cross-site), even naming an allowed host'
+    ]),
+    ...limited('forwarded-headers-untrusted.json', NO_LOCATION, [
+      "a forged country doesn't override the platform's EU country",
+      "the payload has the platform's location, not the forged one"
     ])
-  ])
+  ]),
+  // Trusted-upstream mode is refused on these adapters (SID_UPSTREAM_SECRETS is a configuration error, so every request
+  // gets a 500); see their READMEs.
+  vercel: { 'trusted-upstream.json': NO_UPSTREAM },
+  azure: { 'trusted-upstream.json': NO_UPSTREAM },
+  gcp: { 'trusted-upstream.json': NO_UPSTREAM },
+  akamai: { 'trusted-upstream.json': NO_UPSTREAM }
 };
 
 /** The environment without SID_* settings, so only the case file's reach a target that's given the environment. */

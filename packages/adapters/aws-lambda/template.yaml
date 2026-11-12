@@ -116,6 +116,32 @@ Parameters:
     Type: String
     Default: ''
     Description: "SID_HOSTS, several sites from one deployment, as JSON from hostname to settings (empty: one site). The function sees the site's host only when CloudFront passes it in X-Forwarded-Host."
+  SidUpstreamSecrets:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: >-
+      SID_UPSTREAM_SECRETS, trusted-upstream mode for a function behind publishers' CDNs (a sales house's): a JSON array
+      of the shared secrets their CDNs send (empty: off). Not shown by CloudFormation; stored as an environment variable,
+      which Lambda encrypts at rest.
+  SidUpstreamAuthHeader:
+    Type: String
+    Default: ''
+    Description: SID_UPSTREAM_AUTH_HEADER, the header the publisher's CDN sends the secret in (default x-sid-upstream-auth).
+  SidUpstreamHostHeader:
+    Type: String
+    Default: ''
+    Description: SID_UPSTREAM_HOST_HEADER, the header with the publisher's site hostname (default x-forwarded-host).
+  SidClientIpHeader:
+    Type: String
+    Default: ''
+    Description: SID_CLIENT_IP_HEADER, with SID_UPSTREAM_SECRETS, the header with the visitor's IP address, like x-sid-client-ip.
+  SidLocationHeaders:
+    Type: String
+    Default: ''
+    Description: >-
+      SID_LOCATION_HEADERS, with SID_UPSTREAM_SECRETS (then required), JSON from location field to header, like
+      {"country":"x-sid-country"}.
 
 Conditions:
   CreateDistribution: !Equals [!Ref CreateDistribution, 'true']
@@ -162,6 +188,11 @@ Resources:
           SID_SKIP_BOTS: !Ref SidSkipBots
           SID_SKIP_BOTS_SCORE: !Ref SidSkipBotsScore
           SID_HOSTS: !Ref SidHosts
+          SID_UPSTREAM_SECRETS: !Ref SidUpstreamSecrets
+          SID_UPSTREAM_AUTH_HEADER: !Ref SidUpstreamAuthHeader
+          SID_UPSTREAM_HOST_HEADER: !Ref SidUpstreamHostHeader
+          SID_CLIENT_IP_HEADER: !Ref SidClientIpHeader
+          SID_LOCATION_HEADERS: !Ref SidLocationHeaders
 
   SharedIdLogGroup:
     Type: AWS::Logs::LogGroup

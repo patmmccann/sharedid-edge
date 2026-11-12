@@ -1,4 +1,4 @@
-import { ConfigError, booleanFromEnv, handlerOrMisconfigured, publicOriginFromEnv, resolveConfig, settingsFromEnv, type EdgeModule } from '@sharedid-edge/core';
+import { ConfigError, booleanFromEnv, handlerOrMisconfigured, publicOriginFromEnv, refuseTrustedUpstream, resolveConfig, settingsFromEnv, type EdgeModule } from '@sharedid-edge/core';
 import { builtInModules } from '@sharedid-edge/modules';
 import { createVercelHandler, internalError, middleware, type VercelHandler, type VercelMiddleware } from './handler.js';
 
@@ -15,7 +15,8 @@ export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtI
   return handlerOrMisconfigured(
     () => createVercelHandler({
       // The configuration, and with SID_HOSTS one per hostname.
-      ...settingsFromEnv(env, { requireCookieDomain: true }),
+      // Trusted upstream (SID_UPSTREAM_*) isn't available here: refused, not ignored.
+      ...settingsFromEnv(refuseTrustedUpstream(env), { requireCookieDomain: true }),
       modules,
       behindVercel: booleanFromEnv(env['SID_BEHIND_VERCEL'], true),
       ...publicOriginFromEnv(env)

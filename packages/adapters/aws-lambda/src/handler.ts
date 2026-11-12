@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { createHandler, logRequestFailure, splitHeaders, type HandlerOptions } from '@sharedid-edge/core';
+import { createHandler, logRequestFailure, splitHeaders, withTrustedUpstream, type HandlerOptions, type TrustedUpstream } from '@sharedid-edge/core';
 import type { LambdaEventV2, LambdaResultV2 } from './event.js';
 import { platformInfo, type PlatformOptions } from './platform.js';
 
@@ -10,6 +10,12 @@ export interface LambdaHandlerOptions extends HandlerOptions, PlatformOptions {
    * https to the function, and the scheme decides whether cookies are `Secure`.
    */
   readonly publicOrigin?: string;
+  /**
+   * Trusted-upstream mode (`trustedUpstreamFromEnv`), for a function behind a publisher's CDN: requests without the
+   * shared secret get a 403, and the client IP, location and host come from the CDN's headers, not
+   * `CloudFront-Viewer-*`, which then describe the CDN. Undefined: off.
+   */
+  readonly upstream?: TrustedUpstream | undefined;
 }
 
 /** A Lambda handler for function URL and HTTP API (payload format 2.0) events. */
@@ -17,7 +23,7 @@ export type LambdaHandler = (event: LambdaEventV2) => Promise<LambdaResultV2>;
 
 /** Builds a Lambda handler around the core SharedID Edge handler. */
 export function createLambdaHandler(options: LambdaHandlerOptions = {}): LambdaHandler {
-  const handler = createHandler(options);
+  const handler = withTrustedUpstream(createHandler(options), options.upstream);
   return async event => {
     try {
       const request = toRequest(event, options.publicOrigin);

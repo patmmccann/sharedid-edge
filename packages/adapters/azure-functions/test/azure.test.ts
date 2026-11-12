@@ -343,6 +343,8 @@ describe('infrastructure', () => {
     const coreDir = dirname(createRequire(import.meta.url).resolve('@sharedid-edge/core/package.json'));
     const core = readFileSync(join(coreDir, 'dist/config.js'), 'utf8');
     const settings = new Set(Array.from(core.matchAll(/'(SID_[A-Z_]+)'/g), m => m[1]));
+    // Trusted upstream (SID_UPSTREAM_*, with SID_CLIENT_IP_HEADER): refused here, so not in the templates.
+    for (const name of [...settings]) if (name === undefined || name.startsWith('SID_UPSTREAM_') || name === 'SID_CLIENT_IP_HEADER') settings.delete(name);
     for (const own of ['SID_FRONT_DOOR_ID', 'SID_LOCATION_HEADERS']) settings.add(own);
     const passed = new Set(Array.from(bicep.matchAll(/name: '(SID_[A-Z_]+)'/g), m => m[1]));
     expect(settings.size).toBeGreaterThan(10);
@@ -353,6 +355,8 @@ describe('infrastructure', () => {
     const coreDir = dirname(createRequire(import.meta.url).resolve('@sharedid-edge/core/package.json'));
     const core = readFileSync(join(coreDir, 'dist/config.js'), 'utf8');
     const settings = new Set(Array.from(core.matchAll(/'(SID_[A-Z_]+)'/g), m => m[1]));
+    // Trusted upstream (SID_UPSTREAM_*, with SID_CLIENT_IP_HEADER): refused here, so not in the templates.
+    for (const name of [...settings]) if (name === undefined || name.startsWith('SID_UPSTREAM_') || name === 'SID_CLIENT_IP_HEADER') settings.delete(name);
     for (const own of ['SID_FRONT_DOOR_ID', 'SID_LOCATION_HEADERS', 'SID_PUBLIC_ORIGIN', 'SID_BEHIND_FRONT_DOOR']) settings.add(own);
     const example = JSON.parse(readFileSync(join(root, 'local.settings.example.json'), 'utf8')) as { Values: Record<string, string> };
     expect(Object.keys(example.Values).filter(name => name.startsWith('SID_')).sort()).toEqual([...settings].sort());

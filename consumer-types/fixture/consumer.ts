@@ -3,6 +3,18 @@
 import {
   booleanFromEnv,
   cachedByEnv,
+  clientIpFromHeader,
+  DEFAULT_UPSTREAM_AUTH_HEADER,
+  DEFAULT_UPSTREAM_HOST_HEADER,
+  forwardedPlatformInfo,
+  parseForwardedHost,
+  refuseTrustedUpstream,
+  trustedUpstreamFromEnv,
+  utf8Header,
+  withTrustedUpstream,
+  type ForwardedHeaders,
+  type TrustedUpstream,
+  type TrustedUpstreamOptions,
   createHandler,
   defineModule,
   EU_COUNTRY_CODES,
@@ -165,3 +177,17 @@ export async function perRequestSettings(request: Request, env: Readonly<Record<
 // Every value of a duplicated cookie, in header order.
 const duplicates: string[] = cookieValues('_pubcid=a; _pubcid=b', '_pubcid');
 void duplicates;
+
+// Trusted-upstream mode: an adapter that supports it opts in, and wraps its handler.
+const unsupported: Readonly<Record<string, string | undefined>> = refuseTrustedUpstream({ SID_COOKIE_DOMAIN: 'host-only' });
+const proxyTrust: TrustedUpstreamOptions = { trustProxy: false };
+const upstream: TrustedUpstream | undefined = trustedUpstreamFromEnv({ SID_UPSTREAM_SECRETS: '["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]', SID_LOCATION_HEADERS: '{"country":"x-sid-country"}' }, proxyTrust);
+export const upstreamHandler: SharedIdEdgeHandler = withTrustedUpstream(createHandler(settingsFromEnv(unsupported, { requireCookieDomain: true })), upstream);
+const forwarded: ForwardedHeaders = { clientIp: 'x-sid-client-ip', location: { country: 'x-sid-country' } };
+export const forwardedInfo: PlatformInfo = forwardedPlatformInfo(new Headers({ 'x-sid-client-ip': '192.0.2.1' }), forwarded);
+export const upstreamDefaults: readonly string[] = [DEFAULT_UPSTREAM_AUTH_HEADER, DEFAULT_UPSTREAM_HOST_HEADER];
+export const forwardedIp: string | undefined = clientIpFromHeader('x-forwarded-for', '192.0.2.1, 192.0.2.2');
+export const forwardedHost: string | undefined = parseForwardedHost('www.example.com:443');
+export const city: string = utf8Header('MÃ¼nchen');
+// @ts-expect-error - the secrets are read-only
+upstream?.secrets.push('x');

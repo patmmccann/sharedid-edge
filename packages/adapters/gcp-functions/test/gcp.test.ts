@@ -270,6 +270,8 @@ describe('terraform', () => {
     const coreDir = dirname(createRequire(import.meta.url).resolve('@sharedid-edge/core/package.json'));
     const core = readFileSync(join(coreDir, 'dist/config.js'), 'utf8');
     const settings = new Set(Array.from(core.matchAll(/'(SID_[A-Z_]+)'/g), m => m[1]));
+    // Trusted upstream (SID_UPSTREAM_*, with SID_CLIENT_IP_HEADER): refused here, so not in the templates.
+    for (const name of [...settings]) if (name === undefined || name.startsWith('SID_UPSTREAM_') || name === 'SID_CLIENT_IP_HEADER') settings.delete(name);
     for (const own of ['SID_TRUSTED_HOPS', 'SID_LOCATION_HEADERS']) settings.add(own);
     const plain = Array.from(tf.matchAll(/^ {6}(SID_[A-Z_]+) +=/gm), m => m[1]);
     const secret = Array.from(tf.matchAll(/^ +key += *"(SID_[A-Z_]+)"/gm), m => m[1]);
@@ -282,6 +284,8 @@ describe('terraform', () => {
     const coreDir = dirname(createRequire(import.meta.url).resolve('@sharedid-edge/core/package.json'));
     const core = readFileSync(join(coreDir, 'dist/config.js'), 'utf8');
     const settings = new Set(Array.from(core.matchAll(/'(SID_[A-Z_]+)'/g), m => m[1]));
+    // Trusted upstream (SID_UPSTREAM_*, with SID_CLIENT_IP_HEADER): refused here, so not in the templates.
+    for (const name of [...settings]) if (name === undefined || name.startsWith('SID_UPSTREAM_') || name === 'SID_CLIENT_IP_HEADER') settings.delete(name);
     settings.delete('SID_MODULE_SECRETS');
     for (const own of ['SID_TRUSTED_HOPS', 'SID_LOCATION_HEADERS']) settings.add(own);
     const yaml = readFileSync(join(root, 'env.example.yaml'), 'utf8');

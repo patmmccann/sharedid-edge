@@ -1,4 +1,4 @@
-import { ConfigError, booleanFromEnv, handlerOrMisconfigured, isHeaderName, parseHeaderMap, publicOriginFromEnv, settingsFromEnv, type EdgeModule } from '@sharedid-edge/core';
+import { ConfigError, booleanFromEnv, handlerOrMisconfigured, isHeaderName, parseHeaderMap, publicOriginFromEnv, refuseTrustedUpstream, settingsFromEnv, type EdgeModule } from '@sharedid-edge/core';
 import { builtInModules } from '@sharedid-edge/modules';
 import { createGcpHandler, sendInternalError, type GcpHandler } from './handler.js';
 import { LOCATION_FIELDS, type LocationHeaders } from './platform.js';
@@ -39,7 +39,8 @@ export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtI
   return handlerOrMisconfigured<GcpHandler>(
     () => createGcpHandler({
       // The configuration, and with SID_HOSTS one per hostname.
-      ...settingsFromEnv(env, { requireCookieDomain: true }),
+      // Trusted upstream (SID_UPSTREAM_*) isn't available here: refused, not ignored.
+      ...settingsFromEnv(refuseTrustedUpstream(env), { requireCookieDomain: true }),
       modules,
       behindLoadBalancer: booleanFromEnv(env['SID_BEHIND_LOAD_BALANCER'], true),
       trustedHops: parseTrustedHops(env['SID_TRUSTED_HOPS']),

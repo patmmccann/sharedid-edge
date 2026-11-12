@@ -1,0 +1,91 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "Trusted-upstream mode (SID_UPSTREAM_SECRETS): an endpoint behind a publisher's CDN, such as a sales house's serving several publishers. A request without one of the secrets in x-sid-upstream-auth gets a 403 and no cookies. With one, the client IP, location and site come from the CDN's headers (x-sid-client-ip, x-sid-country and the rest, X-Forwarded-Host), and the platform's own (sent here as the cf-* headers, X-Forwarded-For and CF-Connecting-IP, which each target turns into its platform's) describe the CDN's edge and are ignored. The forwarded host picks the site in SID_HOSTS, its cookie domain, and Secure (a public hostname). Targets that don't support the mode refuse the setting (every request gets a 500) and list this file as a limitation.",
+  "config": {
+    "SID_UPSTREAM_SECRETS": "[\"conformance-upstream-0123456789abcdef0123456789abcdef\",\"conformance-rotated-0123456789abcdef0123456789abcdef\"]",
+    "SID_CLIENT_IP_HEADER": "x-sid-client-ip",
+    "SID_LOCATION_HEADERS": "{\"country\":\"x-sid-country\",\"regionCode\":\"x-sid-region\",\"city\":\"x-sid-city\"}",
+    "SID_MODULES": "ip,geo",
+    "SID_TRUST_PROXY": "true",
+    "SID_HOSTS": "{\"www.example.com\":{\"SID_COOKIE_DOMAIN\":\"example.com\"},\"www.example.org\":{\"SID_COOKIE_DOMAIN\":\"example.org\",\"SID_COOKIE_NAME\":\"sid\",\"SID_RECOVERY_COOKIE\":\"sid_sv\"}}"
+  },
+  "cases": [
+    {
+      "name": "a request without the secret gets a 403 and no cookies",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "x-forwarded-host": "www.example.com", "x-sid-country": "US", "x-sid-client-ip": "203.0.113.5", "cf-ipcountry": "US", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
+      "expect": { "status": 403, "headers": { "cache-control": "no-store" }, "noCookies": true }
+    },
+    {
+      "name": "a wrong secret gets a 403 and no cookies",
+      "request": { "path": "/_sid/v1", "headers": { "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdeX", "x-forwarded-host": "www.example.com", "x-sid-country": "US", "cf-ipcountry": "US", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
+      "expect": { "status": 403, "noCookies": true }
+    },
+    {
+      "name": "a forged country without the secret sets nothing, even an opt-out",
+      "request": { "path": "/_sid/optout", "headers": { "x-sid-country": "US", "x-forwarded-host": "www.example.com", "cf-ipcountry": "DE", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
+      "expect": { "status": 403, "noCookies": true }
+    },
+    {
+      "name": "the forwarded country decides GDPR, not the CDN edge's (a US visitor through an EU edge gets the ID)",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef", "x-forwarded-host": "www.example.com", "x-sid-country": "US", "cf-ipcountry": "DE", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d", "domain": "example.com" },
+          { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d", "domain": "example.com", "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "an EU visitor through a US edge gets no ID cookies without a TC string",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef", "x-forwarded-host": "www.example.com", "x-sid-country": "DE", "cf-ipcountry": "US", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
+      "expect": { "status": 200, "noCookies": true }
+    },
+    {
+      "name": "the payload has the forwarded IPv4 address and location, not the edge's",
+      "request": { "path": "/_sid/v1", "headers": { "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef", "x-forwarded-host": "www.example.com", "x-sid-client-ip": "203.0.113.5", "x-sid-country": "US", "x-sid-region": "AZ", "x-sid-city": "Phoenix", "cf-ipcountry": "JP", "cf-region-code": "13", "cf-ipcity": "Tokyo", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "ortb2": { "device": { "ip": "203.0.113.5", "geo": { "country": "USA", "region": "AZ", "city": "Phoenix" } } }, "ext": { "modules": { "ip": { "status": "ok" }, "geo": { "status": "ok" } } } }
+      }
+    },
+    {
+      "name": "the payload has a forwarded IPv6 address, with the rotated secret",
+      "request": { "path": "/_sid/v1", "headers": { "x-sid-upstream-auth": "conformance-rotated-0123456789abcdef0123456789abcdef", "x-forwarded-host": "www.example.com", "x-sid-client-ip": "2001:db8::5", "x-sid-country": "US", "cf-ipcountry": "JP", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
+      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "ipv6": "2001:db8::5" } } }, "jsonAbsent": ["ortb2.device.ip"] }
+    },
+    {
+      "name": "no forwarded client IP means none, not the edge's",
+      "request": { "path": "/_sid/v1", "headers": { "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef", "x-forwarded-host": "www.example.com", "x-sid-country": "US", "cf-ipcountry": "US", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
+      "expect": { "status": 200, "jsonIncludes": { "ext": { "modules": { "ip": { "status": "empty" } } } }, "jsonAbsent": ["ortb2.device.ip", "ortb2.device.ipv6"] }
+    },
+    {
+      "name": "the forwarded host picks another publisher's settings and cookie domain",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef", "x-forwarded-host": "WWW.Example.ORG", "x-sid-country": "US", "cf-ipcountry": "US", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          { "name": "sid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d", "domain": "example.org" },
+          { "name": "sid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d", "domain": "example.org", "httpOnly": true }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "a forwarded host SID_HOSTS doesn't list gets a 404",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef", "x-forwarded-host": "www.example.net", "x-sid-country": "US", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
+      "expect": { "status": 404, "noCookies": true }
+    },
+    {
+      "name": "without a forwarded host, the endpoint's own host isn't listed: a 404",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef", "x-sid-country": "US", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
+      "expect": { "status": 404, "noCookies": true }
+    },
+    {
+      "name": "a forwarded host that isn't one hostname gets a 400",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef", "x-forwarded-host": "www.example.com, www.example.org", "x-sid-country": "US", "x-forwarded-for": "198.51.100.1", "cf-connecting-ip": "198.51.100.1" } },
+      "expect": { "status": 400, "noCookies": true }
+    }
+  ]
+}

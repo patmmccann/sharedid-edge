@@ -1,4 +1,4 @@
-import { createHandler, logRequestFailure, withPublicOrigin, type HandlerOptions } from '@sharedid-edge/core';
+import { createHandler, logRequestFailure, withPublicOrigin, withTrustedUpstream, type HandlerOptions, type TrustedUpstream } from '@sharedid-edge/core';
 import type { FastlyClientInfo } from './fastly.js';
 import { platformInfo } from './platform.js';
 
@@ -9,6 +9,12 @@ export interface FastlyHandlerOptions extends HandlerOptions {
    * cookies are `Secure`, and the host picks the site's settings with `SID_HOSTS`.
    */
   readonly publicOrigin?: string;
+  /**
+   * Trusted-upstream mode (`trustedUpstreamFromEnv`), for a service behind another CDN or Fastly service (service
+   * chaining): requests without the shared secret get a 403, and the client IP, location and host come from the front
+   * service's headers, not `event.client`, which then describes it. Undefined: off.
+   */
+  readonly upstream?: TrustedUpstream | undefined;
 }
 
 /** Answers a Compute request (`event.request`) for the client that sent it (`event.client`). */
@@ -20,7 +26,7 @@ export type FastlyHandler = (request: Request, client: FastlyClientInfo) => Prom
  * under the base path, or deploy the package's entry point (`deploy/main.wasm`), which answers every request it gets.
  */
 export function createFastlyHandler(options: FastlyHandlerOptions = {}): FastlyHandler {
-  const handler = createHandler(options);
+  const handler = withTrustedUpstream(createHandler(options), options.upstream);
   return async (request, client) => {
     try {
       return await handler(await withPublicOrigin(request, options.publicOrigin), platformInfo(client));

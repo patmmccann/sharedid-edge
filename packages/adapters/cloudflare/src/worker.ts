@@ -1,4 +1,4 @@
-import { ConfigError, configForHost, createHandler, handlerOrMisconfigured, hostOverrides, settingsFromEnv, type EdgeModule, type SharedIdEdgeConfig, type SharedIdEdgeHandler } from '@sharedid-edge/core';
+import { ConfigError, configForHost, createHandler, handlerOrMisconfigured, hostOverrides, settingsFromEnv, trustedUpstreamFromEnv, withTrustedUpstream, type EdgeModule, type SharedIdEdgeConfig, type SharedIdEdgeHandler } from '@sharedid-edge/core';
 import { platformInfo } from './platform.js';
 
 const misconfigured: SharedIdEdgeHandler = () =>
@@ -38,6 +38,10 @@ function metadataConfig(env: Readonly<Record<string, unknown>>, request: Request
  *
  * Several sites can share it: `SID_HOSTS` lists settings per hostname, and on a Cloudflare for SaaS zone a custom
  * hostname's metadata can carry them (`{"sharedid": {"SID_COOKIE_DOMAIN": "example.com"}}`).
+ *
+ * Behind a publisher's CDN (a sales house's endpoint), `SID_UPSTREAM_SECRETS` (a Worker secret) turns on core's
+ * trusted-upstream mode: requests without the secret get a 403, and the client IP, location and host of those with it
+ * come from the CDN's headers, not `CF-Connecting-IP` and `request.cf`, which then describe the CDN.
  */
 export function createWorker(modules: readonly EdgeModule[]): ExportedHandler<Env> {
   // One handler per environment object: Cloudflare reuses `env` across requests to the same isolate.
@@ -48,11 +52,11 @@ export function createWorker(modules: readonly EdgeModule[]): ExportedHandler<En
     if (handler === undefined) {
       const settings: Readonly<Record<string, unknown>> = { ...env };
       const cache = new Map<string, SharedIdEdgeConfig>();
-      handler = createHandler({
+      handler = withTrustedUpstream(createHandler({
         ...settingsFromEnv(settings, { requireCookieDomain: true }),
         hostConfig: request => metadataConfig(settings, request, cache),
         modules
-      });
+      }), trustedUpstreamFromEnv(settings));
       handlers.set(env, handler);
     }
     return handler;

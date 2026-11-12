@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
-import { ConfigError, createHandler, isHeaderName, LOCATION_FIELDS, locationWithEU, logRequestFailure, parseIp, parseViewerAddress, splitHeaders, type HandlerOptions, type LocationField, type LocationHeaders, type LocationSource, type PlatformInfo, type SharedIdEdgeHandler } from '@sharedid-edge/core';
+import { clientIpFromHeader as coreClientIpFromHeader, ConfigError, createHandler, forwardedPlatformInfo, isHeaderName, logRequestFailure, splitHeaders, utf8Header, withTrustedUpstream, type HandlerOptions, type LocationHeaders, type PlatformInfo, type SharedIdEdgeHandler, type TrustedUpstream } from '@sharedid-edge/core';
 
 /** Cloudflare's visitor location headers ("Add visitor location headers"): the default. */
 export const CLOUDFLARE_LOCATION_HEADERS: LocationHeaders = {
@@ -40,11 +40,17 @@ export interface NodeServerOptions extends HandlerOptions {
   readonly locationHeaders?: LocationHeaders;
   /** Origin used to build request URLs, e.g. `https://www.example.com`. Defaults to `http://<Host header>`. */
   readonly publicOrigin?: string;
+  /**
+   * Trusted-upstream mode (core's `trustedUpstreamFromEnv`, `SID_UPSTREAM_SECRETS`), for a server that its proxy isn't
+   * the only way to reach, such as a sales house's behind each publisher's CDN: requests without the shared secret get
+   * a 403, and the client IP, location and host of those with it come from the upstream's headers. Undefined: off.
+   */
+  readonly upstream?: TrustedUpstream | undefined;
 }
 
 /** An HTTP server that answers every request with the SharedID Edge handler. */
 export function createNodeServer(options: NodeServerOptions = {}): Server {
-  const handler = createHandler(options);
+  const handler = withTrustedUpstream(createHandler(options), options.upstream);
   const trust = trustedHeaders(options);
   return createServer((req, res) => {
     handle(handler, options.publicOrigin, trust, req, res).catch((error: unknown) => {
@@ -79,7 +85,7 @@ function trustedHeaders(options: NodeServerOptions): TrustedHeaders | undefined 
 
 async function handle(handler: SharedIdEdgeHandler, publicOrigin: string | undefined, trust: TrustedHeaders | undefined, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const request = toWebRequest(req, publicOrigin ?? `http://${req.headers.host ?? 'localhost'}`);
-  await sendWebResponse(res, await handler(request, platformInfo(req, trust)), req.method ?? 'GET');
+  await sendWebResponse(res, await handler(request, platformInfo(req, request.headers, trust)), req.method ?? 'GET');
 }
 
 /**
@@ -114,70 +120,32 @@ export function toWebRequest(req: IncomingMessage, origin: string): Request {
     ...(hasBody ? { body: Readable.toWeb(req) as ReadableStream<Uint8Array>, duplex: 'half' } : {})
   });
 }
-
 /** `trust` is the trusted proxy's headers, or undefined when the proxy isn't trusted. */
-function platformInfo(req: IncomingMessage, trust: TrustedHeaders | undefined): PlatformInfo {
-  const clientIp = trust === undefined ? req.socket.remoteAddress : trustedClientIp(req, trust.clientIp);
-  return {
-    ...(clientIp === undefined ? {} : { clientIp }),
-    // Location headers, like X-Forwarded-For, can be trusted only behind a proxy that sets them. locationWithEU also
-    // sets isEU from the country, which decides whether GDPR applies when the request has no gdpr signal.
-    ...(trust === undefined ? {} : locationWithEU(locationFrom(req, trust.location)))
-  };
+function platformInfo(req: IncomingMessage, headers: Headers, trust: TrustedHeaders | undefined): PlatformInfo {
+  if (trust === undefined) return req.socket.remoteAddress === undefined ? {} : { clientIp: req.socket.remoteAddress };
+  // Core reads the client IP and location from the proxy's headers; locationWithEU also sets isEU from the country,
+  // which decides whether GDPR applies when the request has no gdpr signal. Without a client-IP header, the first
+  // X-Forwarded-For entry (the proxy must overwrite it), or the socket's address when there's none: falling back from a
+  // configured header would trust what the visitor sent.
+  const forwarded = forwardedPlatformInfo(headers, { clientIp: trust.clientIp ?? 'x-forwarded-for', location: trust.location });
+  const fallback = trust.clientIp === undefined && forwarded.clientIp === undefined ? req.socket.remoteAddress : undefined;
+  return fallback === undefined ? forwarded : { ...forwarded, clientIp: fallback };
 }
 
 /**
- * The client IP behind a trusted proxy: from its client-IP header when one is configured (nothing when that's missing
- * or not an IP address: falling back would trust what the visitor sent), otherwise the first `X-Forwarded-For` entry,
- * which the proxy must overwrite rather than append to.
- */
-function trustedClientIp(req: IncomingMessage, name: string | undefined): string | undefined {
-  if (name === undefined) {
-    const first = header(req, 'x-forwarded-for')?.split(',')[0]?.trim();
-    return first !== undefined && first !== '' ? first : req.socket.remoteAddress;
-  }
-  return clientIpFromHeader(name, header(req, name));
-}
-
-/**
- * The client IP in a proxy's client-IP header `name`: CloudFront's `cloudfront-viewer-address` is `ip:port` (IPv6
- * too, with the port after the last colon); any other header holds just the address. Undefined unless it's a valid IP.
+ * The client IP in a proxy's client-IP header `name` (core's `clientIpFromHeader`): CloudFront's
+ * `cloudfront-viewer-address` is `ip:port` (IPv6 too, with the port after the last colon), `x-forwarded-for` its first
+ * entry, and any other header holds just the address. Undefined unless it's a valid IP.
  */
 export function clientIpFromHeader(name: string, value: string | undefined): string | undefined {
-  if (name.toLowerCase() === 'cloudfront-viewer-address') return parseViewerAddress(value);
-  const address = value?.trim() ?? '';
-  return parseIp(address) === undefined ? undefined : address;
-}
-
-/**
- * The location from the configured headers. Node.js decodes header values as Latin-1; proxies send city names as
- * UTF-8 (Cloudflare's `cf-ipcity` does), so the city is decoded again.
- */
-function locationFrom(req: IncomingMessage, headers: LocationHeaders): LocationSource {
-  const source: Partial<Record<LocationField, string>> = {};
-  for (const field of LOCATION_FIELDS) {
-    const name = headers[field];
-    const value = name === undefined ? undefined : header(req, name);
-    if (value !== undefined) source[field] = field === 'city' ? utf8(value) : value;
-  }
-  return source;
-}
-
-function header(req: IncomingMessage, name: string): string | undefined {
-  const value = req.headers[name];
-  return Array.isArray(value) ? value[0] : value;
+  return coreClientIpFromHeader(name, value);
 }
 
 /**
  * Re-decodes a header value Node.js decoded as Latin-1 as UTF-8 (proxies send city names as UTF-8 bytes), keeping it
- * as is when it isn't valid UTF-8.
+ * as is when it isn't valid UTF-8 (core's `utf8Header`).
  */
 export function utf8(latin1: string): string {
-  const bytes = Buffer.from(latin1, 'latin1');
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  } catch {
-    return latin1;
-  }
+  return utf8Header(latin1);
 }
 export { loadModulePackages } from './module-packages.js';

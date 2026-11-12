@@ -6,6 +6,7 @@ export {
   envFromStores,
   handlerFromEnv,
   SECRET_SETTING,
+  SECRET_SETTINGS,
   SECRET_STORE,
   type ConfigStoreLike,
   type SecretStoreLike,
