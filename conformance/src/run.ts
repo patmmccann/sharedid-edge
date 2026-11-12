@@ -4,8 +4,8 @@ import { runCase, type HeaderAdapter } from './check.js';
 import { startTarget, type TargetName } from './targets.js';
 
 const USAGE = `Usage:
-  conformance --target node|wrangler|lambda|vercel|azure|gcp|akamai  start each configuration locally and run every case
-  conformance --base-url https://...                           run the default-configuration cases against a deployment`;
+  conformance --target node|wrangler|lambda|lambda-aws-emulator|vercel|azure|gcp|akamai  start each configuration locally and run every case
+  conformance --base-url https://...                                                      run the default-configuration cases against a deployment`;
 
 interface FileResult {
   readonly failed: number;
@@ -69,7 +69,7 @@ async function main(): Promise<number> {
       total += file.cases.length;
       failed += (await runFile(values['base-url'], file)).failed;
     }
-  } else if (values.target === 'node' || values.target === 'wrangler' || values.target === 'lambda' || values.target === 'vercel' || values.target === 'azure' || values.target === 'gcp' || values.target === 'akamai') {
+  } else if (values.target === 'node' || values.target === 'wrangler' || values.target === 'lambda' || values.target === 'lambda-aws-emulator' || values.target === 'vercel' || values.target === 'azure' || values.target === 'gcp' || values.target === 'akamai') {
     const target: TargetName = values.target;
     for (const file of files) {
       const running = await startTarget(target, file.config, file.build);

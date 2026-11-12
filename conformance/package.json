@@ -9,6 +9,7 @@
     "conformance": "node dist/run.js --target node",
     "conformance:wrangler": "node dist/run.js --target wrangler",
     "conformance:lambda": "node dist/run.js --target lambda",
+    "conformance:lambda-aws-emulator": "node dist/run.js --target lambda-aws-emulator",
     "conformance:vercel": "node dist/run.js --target vercel",
     "conformance:azure": "node dist/run.js --target azure",
     "conformance:gcp": "node dist/run.js --target gcp",
@@ -16,6 +17,7 @@
   },
   "devDependencies": {
     "@azure/functions": "^4.17.1",
-    "@google-cloud/functions-framework": "^5.0.5"
+    "@google-cloud/functions-framework": "^5.0.5",
+    "esbuild": "^0.28.2"
   }
 }

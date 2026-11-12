@@ -85,6 +85,60 @@ jobs:
       - name: Akamai EdgeWorker bundles (default and with Bowser; no web or Node.js globals), size budget, and conformance suite against them (local EdgeWorkers stand-in)
         run: npm run conformance:akamai
 
+  # The real Lambda bundles deployed to AWS Emulator (AWS's open-source local emulator of the AWS APIs; no AWS account,
+  # no credentials) and run through its Lambda function URL: see conformance/src/aws-emulator.ts. Not required while it
+  # proves stable: the emulator is young and changes often, so its version is pinned (with the package's SHA-256), and
+  # moving to a newer one is a deliberate change here.
+  lambda-aws-emulator:
+    name: Lambda on AWS Emulator (conformance through its function URL; not required yet)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    env:
+      AWS_EMULATOR_VERSION: 1.0.322
+      AWS_EMULATOR_SHA256: ef3c75e5d4196bf2c0170b55b75b01e340e0ef497e636b700a1efe68d68a60d7
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Cache the AWS Emulator package
+        uses: actions/cache@v6
+        with:
+          path: ~/aws-emulator
+          key: aws-emulator-${{ env.AWS_EMULATOR_VERSION }}-amd64
+      - name: Install AWS Emulator (Debian package, pinned)
+        run: |
+          deb="$HOME/aws-emulator/aws-emulator_${AWS_EMULATOR_VERSION}-1_amd64.deb"
+          if [ ! -f "$deb" ]; then
+            mkdir -p "$HOME/aws-emulator"
+            curl -fsSLo "$deb" "https://downloads.aws.com/aws-emulator/packages/aws-emulator/LTS/aws-emulator_${AWS_EMULATOR_VERSION}-1_amd64.deb"
+          fi
+          echo "$AWS_EMULATOR_SHA256  $deb" | sha256sum -c
+          sudo apt-get install -y "$deb" > /dev/null
+          aws-emulator -v
+      # In the background for the rest of the job, on its default port (127.0.0.1:9297), without telemetry. It writes
+      # its endpoint, credentials and certificate to ~/.aws/emulator/9297/, which the target reads.
+      - name: Start AWS Emulator
+        run: |
+          EMULATOR_TELEMETRY=off nohup aws-emulator --idle-timeout 1200 > "$RUNNER_TEMP/aws-emulator.log" 2>&1 &
+          for _ in $(seq 60); do
+            curl -sf --cacert "$HOME/.aws/emulator/9297/ca.pem" https://127.0.0.1:9297/__admin/health > /dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/aws-emulator.log"
+          exit 1
+      - run: npm ci
+      - run: npm run build
+      - name: Lambda bundles (default, Bowser and vendor modules), deployed to AWS Emulator, and the conformance suite through the function URL
+        run: npm run conformance:lambda-aws-emulator
+      - name: The emulator's log
+        if: failure()
+        run: tail -c 30000 "$RUNNER_TEMP/aws-emulator.log"
+
   # Vendor modules (packages/vendor-modules/*) are tested in their own job, so one vendor's failing tests don't block
   # changes elsewhere; branch protection can leave this job not required. Their types and lint are still checked in
   # the checks job, with everything else. Succeeds when there are no vendor modules.

@@ -32,7 +32,7 @@ export interface RunningTarget {
   stop(): Promise<void>;
 }
 
-export type TargetName = 'node' | 'wrangler' | 'lambda' | 'vercel' | 'azure' | 'gcp' | 'akamai';
+export type TargetName = 'node' | 'wrangler' | 'lambda' | 'lambda-aws-emulator' | 'vercel' | 'azure' | 'gcp' | 'akamai';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -116,6 +116,8 @@ const UNAVAILABLE: Readonly<Record<TargetName, readonly string[]>> = {
   node: [],
   wrangler: [],
   lambda: [],
+  // No location at all, so the cases that need one are limitations instead (see LIMITATIONS).
+  'lambda-aws-emulator': [],
   // Vercel's geolocation headers have no metro (DMA) code.
   vercel: ['ortb2.device.geo.metro'],
   // The stand-in's rule set passes every location field, so nothing is missing here; the real Front Door template
@@ -127,6 +129,87 @@ const UNAVAILABLE: Readonly<Record<TargetName, readonly string[]>> = {
   // EdgeScape's userLocation has every location field (its zipCode only when it names one postal code).
   akamai: []
 };
+
+/** The cases of `file` named in `names`, each with `reason`. */
+function limited(file: string, reason: string, names: readonly string[]): [string, string][] {
+  return names.map(name => [`${file}#${name}`, reason]);
+}
+
+/**
+ * Cases a target can't pass, by `file#case name`; see `RunningTarget.limitations`.
+ *
+ * AWS Emulator, with nothing in front of the function URL (SID_BEHIND_CLOUDFRONT=false):
+ * - No location: that's CloudFront's (its CloudFront-Viewer-* headers), so the geo module has nothing, and GDPR can't
+ *   follow from the visitor's country.
+ * - The client IP is the connection's (`requestContext.http.sourceIp`), which the suite can't choose: it's always the
+ *   loopback address, so the cases that set one (through X-Forwarded-For) for the ip, ec, dbip and maxmind modules can't
+ *   pass.
+ * - AWS Emulator answers every request that carries an Origin header with its own 403 AccessDenied (its guard against web
+ *   pages driving a local emulator, with no setting to allow an origin), so the CORS cases never reach the function.
+ *   Lambda function URLs on AWS pass them to the function.
+ */
+const NO_LOCATION = 'no location without CloudFront in front of the function URL';
+const CLIENT_IP = "the client IP is the connection's, which the suite can't set";
+const NO_LOCATION_OR_CLIENT_IP = `${NO_LOCATION}, and ${CLIENT_IP}`;
+const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, string>>>>> = {
+  'lambda-aws-emulator': Object.fromEntries([
+    ...limited('consent-eu-location.json', NO_LOCATION, [
+      'an EU visitor without a TC string gets no ID cookies',
+      "an EU visitor's existing ID cookies are deleted without a TC string"
+    ]),
+    ...limited('module-geo.json', NO_LOCATION, [
+      'returns the location as device.geo, precise fields included',
+      'strips the country prefix from the region and leaves out unknown fields',
+      'ignores invalid coordinates and an unknown time zone',
+      'sends only coarse fields with Global Privacy Control',
+      'sends only coarse fields for a COPPA request',
+      'sends only coarse fields with a US privacy opt-out of sale',
+      'sends only coarse fields when GDPR applies and there is no TC string',
+      'sends only coarse fields without opt-in to precise geolocation',
+      'sends only coarse fields with an invalid TC string',
+      'sends the precise fields with opt-in to precise geolocation'
+    ]),
+    ...limited('module-geo-coarse.json', NO_LOCATION, [
+      'sends only the coarse fields',
+      'sends only the coarse fields even with opt-in to precise geolocation'
+    ]),
+    ...limited('module-ip.json', CLIENT_IP, [
+      'adds an IPv4 client address as device.ip',
+      'adds an IPv6 client address as device.ipv6, in RFC 5952 form',
+      'sends the full address with opt-in to precise geolocation'
+    ]),
+    ...limited('module-ec.json', CLIENT_IP, [
+      'mints ts-ec from an IPv4 address',
+      "mints ts-ec from an IPv6 address's /64",
+      "mints ts-ec on /sync (Prebid.js's pixelUrl call), with the pixel response otherwise unchanged"
+    ]),
+    ...limited('module-dbip.json', CLIENT_IP, [
+      'fills in the country for an IPv4 address when the CDN has none',
+      'fills in the country for an IPv6 address',
+      'sends the country with Global Privacy Control and for a COPPA request'
+    ]),
+    ...limited('module-dbip.json', NO_LOCATION, ["leaves the CDN's country alone"]),
+    ...limited('module-dbip.json', NO_LOCATION_OR_CLIENT_IP, ["fills in the country when the CDN's has no alpha-3 code (Tor, T1)"]),
+    ...limited('module-dbip-replace.json', NO_LOCATION_OR_CLIENT_IP, ["replaces the CDN's country, keeping geo's other fields"]),
+    ...limited('module-maxmind.json', CLIENT_IP, [
+      'fills in the country, with ipservice 3, when the CDN has none',
+      'fills in the country for an IPv6 address',
+      'sends the country with Global Privacy Control and for a COPPA request'
+    ]),
+    ...limited('module-maxmind.json', NO_LOCATION, ["leaves the CDN's country alone, with no ipservice"]),
+    ...limited('module-maxmind-replace.json', NO_LOCATION_OR_CLIENT_IP, ["replaces the CDN's country, keeping geo's other fields"]),
+    ...limited('routes.json', 'AWS Emulator refuses requests with an Origin header before they reach the function', [
+      'v1 allows credentialed CORS from a configured origin',
+      'v1 sends no CORS headers for other origins',
+      'v1 answers a CORS preflight from a configured origin'
+    ])
+  ])
+};
+
+/** The environment without SID_* settings, so only the case file's reach a target that's given the environment. */
+function withoutSettings(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([name]) => !name.startsWith('SID_')));
+}
 
 /** The custom request headers the Google Cloud stand-in's load balancer adds, by location field. */
 const GCP_LOCATION_HEADERS: Readonly<Record<string, string>> = {
@@ -187,6 +270,15 @@ export async function startTarget(target: TargetName, caseConfig: Readonly<Recor
     // public origin is the emulator's own http URL, so cookies aren't Secure, as for the other local targets.
     child = spawn(process.execPath, [join(ROOT, 'conformance/dist/lambda-emulator.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_LAMBDA_BUNDLE: bundle, ...config },
+      stdio: ['ignore', 'ignore', 'inherit']
+    });
+  } else if (target === 'lambda-aws-emulator') {
+    // The bundled Lambda handler deployed to AWS Emulator, which must already be running, behind its function URL
+    // (aws-emulator.ts deploys it and relays plain http to the function URL). The public origin is the relay's http URL,
+    // so cookies aren't Secure, as for the other local targets. The environment passes on what the AWS CLI needs (its
+    // HOME and PATH); aws-emulator.ts replaces anything AWS_* with the emulator's own files.
+    child = spawn(process.execPath, [join(ROOT, 'conformance/dist/aws-emulator.js')], {
+      env: { ...withoutSettings(process.env), PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_LAMBDA_BUNDLE: bundle, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else if (target === 'vercel') {
@@ -259,7 +351,8 @@ export async function startTarget(target: TargetName, caseConfig: Readonly<Recor
   };
   try {
     if (upstream !== undefined) await waitUntilUp(upstream.url, upstream.child, 15_000);
-    await waitUntilUp(baseUrl, child, target === 'wrangler' ? 60_000 : 15_000);
+    // wrangler dev starts slowly, and the AWS Emulator target deploys a function first.
+    await waitUntilUp(baseUrl, child, target === 'wrangler' || target === 'lambda-aws-emulator' ? 60_000 : 15_000);
   } catch (error) {
     await stop();
     throw error;
@@ -270,6 +363,6 @@ export async function startTarget(target: TargetName, caseConfig: Readonly<Recor
     stop,
     requestHeaders: target === 'wrangler' ? asRequestCf : headers => ({ ...headers }),
     unavailable: UNAVAILABLE[target],
-    limitations: {}
+    limitations: LIMITATIONS[target] ?? {}
   };
 }

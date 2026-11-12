@@ -278,10 +278,32 @@ Nothing here needs an account:
 
 - `npm test -w @sharedid-edge/aws-lambda`: unit tests with recorded-style function URL events (`test/events.ts`).
 - `npm run conformance:lambda`: bundles the function, then runs the whole conformance suite against `deploy/lambda.mjs` behind a local stand-in for CloudFront and the function URL (`conformance/src/lambda-emulator.ts`). It turns each HTTP request into a payload 2.0 event, moves cookies into `cookies[]`, drops any `CloudFront-Viewer-*` headers the client sent, and adds `CloudFront-Viewer-Address` from the connection (or, as the conformance cases need, from `X-Forwarded-For` when the case sets `SID_TRUST_PROXY`), then writes the result back.
+- `npm run conformance:lambda-aws-emulator`: deploys the same bundles to [AWS Emulator](https://github.com/aws/aws-emulator), AWS's open-source local emulator of the AWS APIs, and runs the suite through its Lambda function URL (`conformance/src/aws-emulator.ts`). See [On AWS Emulator](#on-aws-emulator).
 - CI also runs `cfn-lint` on `template.yaml`.
 - Against a real deployment: `node conformance/dist/run.js --base-url https://www.example.com` runs the default-configuration cases.
 
 What these don't cover, and a first deployment should check: origin access control signing, the function URL's resource policy, and CloudFront's actual header values.
+
+### On AWS Emulator
+
+AWS Emulator runs offline, with no account, so CI runs this too (a job that isn't required yet). It's a check of the real bundle against an AWS-built Lambda runtime and function URL, where `conformance:lambda` uses this project's own stand-in. For each case file the target creates a `nodejs24.x` function from the unchanged `lambda.mjs` with the file's settings as environment variables, gives it a public function URL (`AuthType` `NONE`), runs the cases through it, and deletes it.
+
+To run it, start the emulator first, on its default port (127.0.0.1:9297), and have the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) installed. On Linux, install the emulator's Debian or RPM package and run `aws-emulator` ([Getting started on Linux](https://docs.aws.amazon.com/emulator/latest/userguide/getting-started-linux.html)); on Windows and macOS, run it in Docker ([Getting started with Docker](https://docs.aws.amazon.com/emulator/latest/userguide/getting-started-docker.html)). CI pins the version in `.github/workflows/ci.yml`. Then:
+
+```sh
+npm run build
+npm run conformance:lambda-aws-emulator
+```
+
+The target points the AWS CLI at the emulator itself, with the credentials and certificate the emulator writes to `~/.aws/emulator/9297/`, and removes any AWS credentials from its environment, so it can't reach AWS. Set `CONFORMANCE_AWS_EMULATOR_PORT` for another port.
+
+Nothing is in front of the function URL, so the functions run with `SID_BEHIND_CLOUDFRONT=false`, and some cases can't pass. They're listed as limitations in `conformance/src/targets.ts`:
+
+- **No location:** that's CloudFront's, so there's no `geo` data and no GDPR from the visitor's country.
+- **The client IP is the connection's,** always the loopback address in a test, so the cases that set one, for the `ip`, `ec`, `dbip` and `maxmind` modules, can't pass.
+- **No CORS:** AWS Emulator refuses every request with an `Origin` header (its guard against web pages driving a local emulator), so the CORS cases never reach the function. Function URLs on AWS pass them on.
+
+Two gaps of the emulator's runtime are filled in, without changing the bundle: it runs Node.js code in an embedded JavaScript engine that has neither the Fetch API (`Headers`, `Request`, `Response`) nor WebCrypto's HMAC (`crypto.subtle.importKey` and `sign`), both in Node.js 24. `conformance/src/aws-emulator-runtime.ts` adds them, preloaded through `NODE_OPTIONS`, and adds nothing a runtime already has. AWS Emulator can't yet run the stack in `template.yaml` (its Serverless transform doesn't create the function URL), or pass CloudFront's response headers, `Set-Cookie` included, back from a function URL origin, so the CloudFront path still needs a real deployment.
 
 ## Troubleshooting
 
