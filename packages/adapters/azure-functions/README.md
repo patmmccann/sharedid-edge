@@ -241,7 +241,7 @@ Core's `locationInfo` validates every value the same way as on the other platfor
 
 **The trust model.** Front Door sets `X-Azure-ClientIP` and `X-Azure-FDID` itself. The template's rule *overwrites* `x-sid-country` on every request, so a copy the visitor sends is replaced. These headers are only trustworthy because the function app accepts traffic from your Front Door profile alone ([Origin lock](#origin-lock-only-your-front-door)). If you name your own location headers in `SID_LOCATION_HEADERS`, the rule that sets them must overwrite them on every request, with no conditions, or visitors could send their own. With `SID_BEHIND_FRONT_DOOR=false`, nothing is trusted.
 
-**GDPR.** Front Door adds no location headers by default. Without the country rule (`addCountryHeader=false`, or your own Front Door setup without it), `isEU` is always unknown, and GDPR applies only when the page sends `gdpr=1`, as on the other platforms when the location is unknown. With it, EU visitors get GDPR from their country. Either way, EEA countries outside the EU (Iceland, Liechtenstein, Norway) and the UK aren't in the list: pages there should send `gdpr=1` (the [consent rules](../../../docs/consent.md)).
+**GDPR.** Front Door adds no location headers by default. Without the country rule (`addCountryHeader=false`, or your own Front Door setup without it), the country and `isEU` are always unknown, and GDPR applies only when the page sends `gdpr=1`, as on the other platforms when the location is unknown. With it, visitors get GDPR from their country: GDPR also applies by country to the EEA countries outside the EU (Iceland, Liechtenstein, Norway), the UK and Turkey, which `isEU` doesn't cover (the [consent rules](../../../docs/consent.md)).
 
 ## Cookie values
 

@@ -1,6 +1,6 @@
 {
   "$schema": "../case-file.schema.json",
-  "description": "GDPR from the visitor's location: with no gdpr parameter, GDPR applies when the platform places the request in one of the 27 EU member states, so without a TC string nothing is stored; outside the EU, or with an explicit gdpr=0, the ID is set. Requests describe the location with Cloudflare's visitor location headers (cf-ipcountry): the Node.js target reads them because it runs with SID_TRUST_PROXY, the runner gives the Workers runtime the same values as request.cf (with isEUCountry, as Cloudflare sets it), and each stand-in passes them as its platform's own location headers.",
+  "description": "GDPR from the visitor's location: with no gdpr parameter, GDPR applies when the platform places the request in one of the 27 EU member states, the rest of the EEA (IS, LI, NO), the United Kingdom (GB) or Turkey (TR), so without a TC string nothing is stored and existing ID cookies are deleted; elsewhere (Switzerland and the US here), or with an explicit gdpr=0, the ID is set. The Workers runtime's isEUCountry is 0 for GB, NO and TR, so there GDPR follows from the country code. Requests describe the location with Cloudflare's visitor location headers (cf-ipcountry): the Node.js target reads them because it runs with SID_TRUST_PROXY, the runner gives the Workers runtime the same values as request.cf (with isEUCountry, as Cloudflare sets it), and each stand-in passes them as its platform's own location headers.",
   "config": { "SID_TRUST_PROXY": "true" },
   "cases": [
     {
@@ -26,6 +26,13 @@
       "name": "an explicit gdpr=0 wins over an EU location",
       "request": { "path": "/_sid/sync?gdpr=0&id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "cf-ipcountry": "DE" } },
       "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }, { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
-    }
+    },
+    { "name": "a UK visitor without a TC string gets no ID cookies", "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "cf-ipcountry": "GB" } }, "expect": { "status": 200, "noCookies": true } },
+    { "name": "a Norwegian visitor without a TC string gets no ID cookies", "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "cf-ipcountry": "NO" } }, "expect": { "status": 200, "noCookies": true } },
+    { "name": "a visitor in Turkey without a TC string gets no ID cookies", "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "cf-ipcountry": "TR" } }, "expect": { "status": 200, "noCookies": true } },
+    { "name": "a UK visitor's existing ID cookies are deleted without a TC string", "request": { "path": "/_sid/sync", "headers": { "cf-ipcountry": "GB", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } }, "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "", "maxAge": 0 },{ "name": "_pubcid_sv", "value": "", "maxAge": 0 }], "onlyListedCookies": true } },
+    { "name": "a visitor in Turkey's existing ID cookies are deleted without a TC string", "request": { "path": "/_sid/sync", "headers": { "cf-ipcountry": "TR", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } }, "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "", "maxAge": 0 },{ "name": "_pubcid_sv", "value": "", "maxAge": 0 }], "onlyListedCookies": true } },
+    { "name": "an explicit gdpr=0 wins over a UK location", "request": { "path": "/_sid/sync?gdpr=0&id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "cf-ipcountry": "GB" } }, "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" },{ "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] } },
+    { "name": "a visitor in Switzerland gets the ID", "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "cf-ipcountry": "CH" } }, "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" },{ "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] } }
   ]
 }

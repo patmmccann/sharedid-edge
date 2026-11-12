@@ -5,6 +5,8 @@ import {
   decodeTcf,
   deepMerge,
   EU_COUNTRY_CODES,
+  GDPR_COUNTRY_CODES,
+  gdprFromLocation,
   handlerOrMisconfigured,
   headerValue,
   isHeaderName,
@@ -276,12 +278,12 @@ describe('decodeTcf', () => {
 });
 
 describe('storageDecision', () => {
-  const consent = (query: string, opts: { cookie?: string; gpc?: boolean; isEU?: boolean } = {}): ReturnType<typeof readConsent> =>
+  const consent = (query: string, opts: { cookie?: string; gpc?: boolean; isEU?: boolean; country?: string } = {}): ReturnType<typeof readConsent> =>
     readConsent(
       new URL(`https://example.com/_sid/sync?${query}`),
       new Headers(opts.gpc === true ? { 'Sec-GPC': '1' } : {}),
       parseCookies(opts.cookie ?? null),
-      opts.isEU === undefined ? {} : { isEU: opts.isEU }
+      { ...(opts.isEU === undefined ? {} : { isEU: opts.isEU }), ...(opts.country === undefined ? {} : { country: opts.country }) }
     );
   const denied = (reason: string): StorageDecision => ({ allowed: false, reason });
   const publisherMode = { vendorId: undefined };
@@ -333,6 +335,15 @@ describe('storageDecision', () => {
     expect(storageDecision(publisherMode, consent('gdpr=1'))).toEqual(denied('tcf: GDPR applies and there is no TC string'));
     expect(storageDecision(publisherMode, consent('', { isEU: true }))).toEqual(denied('tcf: GDPR applies and there is no TC string'));
   });
+  it('applies GDPR to the EEA, the UK and Turkey by country, though they are not in the EU, unless gdpr=0', () => {
+    for (const country of ['GB', 'NO', 'IS', 'LI', 'TR']) {
+      expect(consent('', { country, isEU: false }).gdprApplies).toBe(true);
+      expect(storageDecision(publisherMode, consent('', { country, isEU: false }))).toEqual(denied('tcf: GDPR applies and there is no TC string'));
+      expect(storageDecision(publisherMode, consent('gdpr=0', { country, isEU: false }))).toEqual({ allowed: true });
+    }
+    for (const country of ['CH', 'US']) expect(storageDecision(publisherMode, consent('', { country, isEU: false }))).toEqual({ allowed: true });
+    expect(consent('gdpr=1', { country: 'US', isEU: false }).gdprApplies).toBe(true);
+  });
   it('in vendor mode, requires consent for the vendor, and vendor consent for purpose 1 and one of purposes 2-10', () => {
     const tc = (vendors: readonly number[], purposes: readonly number[]): string => tcString(purposes, { vendors, publisher: [1, 2] });
     expect(storageDecision(vendorMode, consent(`gdpr=1&gdpr_consent=${tc([755], [1, 2])}`))).toEqual({ allowed: true });
@@ -368,6 +379,23 @@ describe('EU_COUNTRY_CODES', () => {
     expect(EU_COUNTRY_CODES.size).toBe(27);
     for (const code of ['DE', 'FR', 'IE', 'HR', 'CY']) expect(EU_COUNTRY_CODES.has(code)).toBe(true);
     for (const code of ['GB', 'NO', 'IS', 'LI', 'CH', 'US']) expect(EU_COUNTRY_CODES.has(code)).toBe(false);
+  });
+});
+
+describe('GDPR_COUNTRY_CODES', () => {
+  it('lists the EU, the rest of the EEA, the UK and Turkey, but not Switzerland', () => {
+    expect(GDPR_COUNTRY_CODES.size).toBe(32);
+    for (const code of EU_COUNTRY_CODES) expect(GDPR_COUNTRY_CODES.has(code)).toBe(true);
+    for (const code of ['GB', 'NO', 'IS', 'LI', 'TR']) expect(GDPR_COUNTRY_CODES.has(code)).toBe(true);
+    for (const code of ['CH', 'US', 'JP']) expect(GDPR_COUNTRY_CODES.has(code)).toBe(false);
+  });
+  it('decides GDPR from a listed country or the EU flag', () => {
+    for (const country of ['DE', 'GB', 'NO', 'IS', 'LI', 'TR']) expect(gdprFromLocation({ country, isEU: false })).toBe(true);
+    expect(gdprFromLocation({ country: 'GB' })).toBe(true);
+    expect(gdprFromLocation({ country: 'CH', isEU: false })).toBe(false);
+    expect(gdprFromLocation({ country: 'US' })).toBeUndefined();
+    expect(gdprFromLocation({ isEU: true })).toBe(true);
+    expect(gdprFromLocation({})).toBeUndefined();
   });
 });
 

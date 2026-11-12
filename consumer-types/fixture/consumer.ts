@@ -6,6 +6,8 @@ import {
   createHandler,
   defineModule,
   EU_COUNTRY_CODES,
+  GDPR_COUNTRY_CODES,
+  gdprFromLocation,
   handlerOrMisconfigured,
   headerValue,
   isHeaderName,
@@ -74,6 +76,9 @@ export const located: PlatformInfo = {
   ...location,
   ...(location.country === undefined ? {} : { isEU: EU_COUNTRY_CODES.has(location.country) })
 };
+// GDPR applies by country (EU, EEA, UK, Turkey) or the EU flag; EU membership alone is isEU.
+export const gdprByCountry: boolean = GDPR_COUNTRY_CODES.has('GB');
+export const gdprHere: boolean | undefined = gdprFromLocation(located);
 
 // A module that only maintains a cookie, so it also runs on Prebid.js's pixelUrl calls (/sync).
 const routes: readonly ModuleRoute[] = ['v1', 'sync'];

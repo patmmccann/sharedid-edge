@@ -255,7 +255,7 @@ A sales house (an ad network representing many publishers, without hosting their
 - **The visitor's country decides consent, not just the `geo` module.** Without a `gdpr` signal, GDPR applies when the request comes from the EU, and if the country is unknown, storage is allowed ([Consent](../../../docs/consent.md)). Behind a CDN that isn't Cloudflare, nothing knows the visitor's country unless the publisher's CDN passes it on. So an EU visitor without a TC string would get cookies they shouldn't.
   - **This Worker** isn't suited to this setup. Behind another CDN, `CF-Connecting-IP` and `request.cf` describe the CDN's edge server, not the visitor. Its country is usually close to the visitor's, but not reliably enough for consent.
   - **The [Node.js server](../node/README.md)** is the endpoint to run. With `SID_TRUST_PROXY=true`, it takes the client IP from the CDN's own client-IP header (`SID_CLIENT_IP_HEADER`, since CloudFront and others append to `X-Forwarded-For`, whose first entry the visitor controls) and the location from the CDN's own country headers (`SID_LOCATION_HEADERS`). Its [Per CDN](../node/README.md#per-cdn) table has the settings for CloudFront, Fastly, Akamai and nginx, and what the publisher's CDN must send. Trust those headers only from the publisher's CDN, and make sure the endpoint can't be reached any other way.
-  - **Check it** before going live: call `/_sid/v1` through the publisher's site from an EU location without a TC string. It should set no cookie.
+  - **Check it** before going live: call `/_sid/v1` through the publisher's site from an EU, EEA, UK or Turkish location without a TC string. It should set no cookie.
 - **Settings per publisher:** `SID_COOKIE_DOMAIN` differs for each, and a deployment has one configuration, so run one endpoint per publisher. For example, one Node.js process each, which the publisher's proxy reaches by its own hostname or path.
 
 Either way, nothing changes on the page: Prebid.js's SharedID `pixelUrl` stays `/_sid/sync` on the publisher's own site ([Configure Prebid.js](../../../docs/prebid.md)). The proxied setup is tested end to end against a local stand-in for such a CDN (the Node.js server's `test/proxy.test.ts`), not against the CDNs themselves, so check each publisher's deployment as above.
@@ -279,7 +279,7 @@ Either way, nothing changes on the page: Prebid.js's SharedID `pixelUrl` stays `
 | `PlatformInfo` | From | Used by |
 | --- | --- | --- |
 | `clientIp` | `CF-Connecting-IP` header | `ip`, and `ec` when added |
-| `isEU` | `request.cf.isEUCountry` (`"1"` in an EU member state) | GDPR scope when there's no `gdpr` parameter |
+| `isEU` | `request.cf.isEUCountry` (`"1"` in an EU member state) | GDPR scope when there's no `gdpr` parameter, with the country: GDPR also applies in Iceland, Liechtenstein, Norway, the UK and Turkey, where `isEUCountry` isn't set |
 | `country` | `request.cf.country` (ISO 3166-1 alpha-2; `XX` and Tor's `T1` are dropped) | `geo` |
 | `region` | `request.cf.regionCode` | `geo` |
 | `city`, `postalCode`, `metroCode` | `request.cf.city`, `.postalCode`, `.metroCode` | `geo` |

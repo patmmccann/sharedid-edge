@@ -1,10 +1,14 @@
 import type { SharedIdEdgeConfig } from './config.js';
+import { gdprFromLocation } from './location.js';
 import { decodeTcf, type TcfConsents } from './tcf.js';
 import type { PlatformInfo } from './types.js';
 
 /** The consent signals on a request. */
 export interface ConsentContext {
-  /** Whether GDPR applies: from the `gdpr` query parameter, else the platform's location, else unknown. */
+  /**
+   * Whether GDPR applies: from the `gdpr` query parameter, else the platform's location (a country in
+   * `GDPR_COUNTRY_CODES`, or the EU flag), else unknown.
+   */
   readonly gdprApplies: boolean | undefined;
   /** The TC string, from the `gdpr_consent` query parameter or the CMP's `euconsent-v2` cookie. */
   readonly tcString: string | undefined;
@@ -25,7 +29,7 @@ export const TCF_COOKIE = 'euconsent-v2';
 
 export function readConsent(url: URL, headers: Headers, cookies: ReadonlyMap<string, string>, platform: PlatformInfo): ConsentContext {
   const gdprParam = url.searchParams.get('gdpr');
-  const gdprApplies = gdprParam === '1' ? true : gdprParam === '0' ? false : platform.isEU;
+  const gdprApplies = gdprParam === '1' ? true : gdprParam === '0' ? false : gdprFromLocation(platform);
   const tcString = nonEmpty(url.searchParams.get('gdpr_consent')) ?? nonEmpty(cookies.get(TCF_COOKIE));
   const gppSid = nonEmpty(url.searchParams.get('gpp_sid'))
     ?.split(',')

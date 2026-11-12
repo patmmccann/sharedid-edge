@@ -125,7 +125,7 @@ TCF treats precise geolocation (within about 500 metres) as a special feature th
 - the visitor sends Global Privacy Control (`Sec-GPC: 1`), or the request has `coppa=1`;
 - a `us_privacy` string opts out of sale (third character `Y`);
 - a TCF TC string is invalid, or doesn't opt in to **Special Feature 1** (use precise geolocation data);
-- GDPR applies (`gdpr=1`, or an EU location on Cloudflare) and there's no TC string.
+- GDPR applies (`gdpr=1`, or a visitor in the EU, the rest of the EEA, the UK or Turkey) and there's no TC string.
 
 `city` counts as precise. A city is usually coarser than 500 metres, but a small town can place a user as narrowly as a postal code, and bidders get the region and metro anyway.
 

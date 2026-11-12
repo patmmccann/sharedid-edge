@@ -403,7 +403,7 @@ Reflecting or restoring a cookie extends how long an identifier is stored on the
 - Global Privacy Control (`Sec-GPC: 1`);
 - `coppa=1`;
 - a TC string that doesn't give the SharedID's consent (publisher mode: the publisher TC segment needs Purpose 1, and one of Purposes 2 to 10; vendor mode: see [Consent and opt-out](../../../docs/consent.md));
-- GDPR applying (`gdpr=1`, or an EU location on Cloudflare) without a TC string.
+- GDPR applying (`gdpr=1`, or a visitor in the EU, the rest of the EEA, the UK or Turkey) without a TC string.
 
 The response's `X-SharedID-Status: denied: <reason>` header shows which.
 
