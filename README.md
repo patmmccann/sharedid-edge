@@ -32,6 +32,7 @@ Deploy on the platform that serves your site. Each guide works on its own, from 
 <!-- generated:platforms:start -->
 | Platform | How it runs |
 | --- | --- |
+| [Akamai EdgeWorkers](packages/adapters/akamai/README.md) | An EdgeWorker (`responseProvider`) on a `/_sid/*` rule of your site's Akamai property. |
 | [AWS (Lambda and CloudFront)](packages/adapters/aws-lambda/README.md) | A Lambda function behind a `/_sid/*` behaviour of your site's CloudFront distribution. |
 | [Azure (Functions and Front Door)](packages/adapters/azure-functions/README.md) | An Azure Functions app behind a `/_sid/*` route of your site's Front Door profile. |
 | [Cloudflare Workers](packages/adapters/cloudflare/README.md) | A Worker on a route of your proxied Cloudflare zone (`www.example.com/_sid/*`). |

@@ -11,7 +11,8 @@
     "conformance:lambda": "node dist/run.js --target lambda",
     "conformance:vercel": "node dist/run.js --target vercel",
     "conformance:azure": "node dist/run.js --target azure",
-    "conformance:gcp": "node dist/run.js --target gcp"
+    "conformance:gcp": "node dist/run.js --target gcp",
+    "conformance:akamai": "node dist/run.js --target akamai && node dist/akamai-checks.js"
   },
   "devDependencies": {
     "@azure/functions": "^4.17.1",
