@@ -144,9 +144,10 @@ function limited(file: string, reason: string, names: readonly string[]): [strin
  * - The client IP is the connection's (`requestContext.http.sourceIp`), which the suite can't choose: it's always the
  *   loopback address, so the cases that set one (through X-Forwarded-For) for the ip, ec, dbip and maxmind modules can't
  *   pass.
- * - AWS Emulator answers every request that carries an Origin header with its own 403 AccessDenied (its guard against web
- *   pages driving a local emulator, with no setting to allow an origin), so the CORS cases never reach the function.
- *   Lambda function URLs on AWS pass them to the function.
+ * - AWS Emulator answers every request that carries an Origin header, or `Sec-Fetch-Site: cross-site`, with its own 403
+ *   AccessDenied (its guard against web pages driving a local emulator, with no setting to allow an origin), so the CORS
+ *   cases and the clickid module's cross-site case never reach the function. Lambda function URLs on AWS pass them to
+ *   the function.
  */
 const NO_LOCATION = 'no location without CloudFront in front of the function URL';
 const CLIENT_IP = "the client IP is the connection's, which the suite can't set";
@@ -202,6 +203,9 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
       'v1 allows credentialed CORS from a configured origin',
       'v1 sends no CORS headers for other origins',
       'v1 answers a CORS preflight from a configured origin'
+    ]),
+    ...limited('module-clickid.json', 'AWS Emulator refuses requests with Sec-Fetch-Site: cross-site before they reach the function', [
+      'ignores the url parameter on a request from another site (Sec-Fetch-Site: cross-site), even naming an allowed host'
     ])
   ])
 };
