@@ -24,3 +24,4 @@ packages/adapters/*/deploy-vendor/
 packages/adapters/*/.sharedid-modules/
 packages/adapters/fastly/pkg/
 packages/adapters/fastly/bin/
+packages/adapters/aws-lambda/live/.out/
