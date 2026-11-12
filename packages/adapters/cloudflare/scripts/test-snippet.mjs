@@ -39,7 +39,11 @@ const MODULES = {
 const NOT_SNIPPET = /^SID_(MODULE_SECRETS|UPSTREAM_|CLIENT_IP_HEADER$|LOCATION_HEADERS$)/;
 
 const reflect = (cookies, keeper) => ({ reflect: { cookies, ...(keeper === undefined ? {} : { keeper }) } });
-/** Configurations beyond the conformance cases': every reflect feature, clickid and bot settings, and SID_HOSTS with modules. */
+/**
+ * Configurations beyond the conformance cases': every reflect feature, clickid and bot settings, and SID_HOSTS with
+ * modules. Between them, each feature the Snippet build can leave out (build-snippet.mjs's `unused`) is both used and
+ * unused.
+ */
 const CONFIGS = {
   'example (reflect, a restore cookie in the keeper)': { SID_COOKIE_DOMAIN: 'host-only', SID_MODULES: 'reflect', SID_MODULE_CONFIG: reflect([{ name: 'uid1', maxAgeDays: 365, restore: true }]) },
   'reflect: per-cookie backups, prefer backup and older, opt-out': {
@@ -53,6 +57,11 @@ const CONFIGS = {
       ], { mode: 'per-cookie', suffix: '_bk', maxAgeDays: 200 }),
       clickid: { params: [{ name: 'gclid', enabled: false }, { name: 'li_fat_id' }], maxAgeDays: 30, httpOnly: true }
     }
+  },
+  'reflect: prefer backup only, master keeper on a domain': {
+    SID_COOKIE_DOMAIN: 'host-only',
+    SID_MODULES: 'reflect',
+    SID_MODULE_CONFIG: reflect([{ name: 'uid1', maxAgeDays: 365, restore: true, prefer: 'backup' }, { name: '_ga', maxAgeDays: 400, restore: true }], { domain: 'example.com', maxAgeDays: 30 })
   },
   'ip, geo (coarse) and bot, with SID_SKIP_BOTS': {
     SID_COOKIE_DOMAIN: 'host-only',
@@ -116,14 +125,33 @@ function request({ path, method = 'GET', headers = {} }, host = '127.0.0.1') {
   return r;
 }
 
-/** A response as comparable text: status, headers (Set-Cookie in order, without Expires) and body (without timings and minted IDs). */
+/** A response as comparable text: status, headers (Set-Cookie in order) and body (without module timings and minted IDs). */
 async function comparable(response, known) {
   const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
   const minted = text => text.replace(uuid, id => (known.includes(id) ? id : '<minted>'));
   const headers = [...response.headers].filter(([name]) => name !== 'set-cookie').map(([name, value]) => `${name}: ${minted(value)}`).sort();
-  const cookies = response.headers.getSetCookie().map(c => minted(c.replace(/; Expires=[^;]*/i, '')));
+  const cookies = response.headers.getSetCookie().map(minted);
   const body = minted((await response.text()).replace(/"ms":\d+/g, '"ms":0'));
   return JSON.stringify({ status: response.status, headers, cookies, body }, null, 1);
+}
+
+const RealDate = Date;
+/** Runs `answer` with the clock (`Date.now()` and `new Date()`) stopped at `ms`. */
+async function atInstant(ms, answer) {
+  globalThis.Date = class extends RealDate {
+    constructor(...args) {
+      super(...(args.length === 0 ? [ms] : args));
+    }
+
+    static now() {
+      return ms;
+    }
+  };
+  try {
+    return await answer();
+  } finally {
+    globalThis.Date = RealDate;
+  }
 }
 
 /** The module list a configuration bundles: SID_MODULES across the deployment and its hosts, as build-snippet.mjs works it out. */
@@ -176,8 +204,10 @@ async function compare(label, config, requests, hosts = ['127.0.0.1']) {
   for (const host of hosts) {
     for (const r of requests) {
       const known = [ID, OTHER_ID, ...JSON.stringify(r).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) ?? []];
-      const fromSnippet = await comparable(await snippet.fetch(request(r, host)), known);
-      const fromWorker = await comparable(await worker.fetch(request(r, host), env), known);
+      // Both answer at the same instant: the clock goes into Expires, click IDs' stored times and reflect's timestamp checks.
+      const now = RealDate.now();
+      const fromSnippet = await comparable(await atInstant(now, () => snippet.fetch(request(r, host))), known);
+      const fromWorker = await comparable(await atInstant(now, () => worker.fetch(request(r, host), env)), known);
       check(fromSnippet === fromWorker, `${label}: ${r.method ?? 'GET'} ${host}${r.path} differs\n  Snippet: ${fromSnippet}\n  Worker:  ${fromWorker}`);
     }
   }

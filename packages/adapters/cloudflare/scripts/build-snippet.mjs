@@ -112,10 +112,12 @@ const parserLine = !moduleNames.includes('ua') ? 'none (no ua module)'
 // module as an error on every request. Settings a site doesn't run the module with (only its opt-out reads them, as
 // the Worker's does for every installed module) are kept as {}, which the module rejects on use as the Worker's
 // parser would, so the opt-out leaves that module's cookies out in both.
-const parsers = Object.fromEntries(await Promise.all(moduleNames.filter(name => MODULES[name][2] !== undefined).map(async name => {
-  const [pkg, , parser] = MODULES[name];
-  return [name, (await import(pkg))[parser]];
-})));
+// Loading the modules here also checks their definitions (core's defineModule), which the Snippet then leaves out.
+const parsers = Object.fromEntries(await Promise.all(moduleNames.map(async name => {
+  const loaded = await import(moduleSource(name)[0]);
+  if (loaded[moduleSource(name)[1]] === undefined) fail(`${moduleSource(name)[0]} has no ${moduleSource(name)[1]}.`);
+  return [name, MODULES[name][2] === undefined ? undefined : loaded[MODULES[name][2]]];
+})).then(entries => entries.filter(([, parse]) => parse !== undefined)));
 function parsedSettings(siteConfig, where) {
   const moduleConfig = { ...siteConfig.moduleConfig };
   for (const [name, parse] of Object.entries(parsers)) {
@@ -133,6 +135,20 @@ function parsedSettings(siteConfig, where) {
 const prevalidated = settings.hosts === undefined
   ? { config: parsedSettings(settings.config, '') }
   : { config: parsedSettings(settings.config, undefined), hosts: new Map(sites.map(([host, siteConfig]) => [host, parsedSettings(siteConfig, `SID_HOSTS["${host}"]: `)])) };
+
+// Features no bundled setting uses: the Snippet defines these true (with PREVALIDATED), so their code compiles away.
+// Only code these settings can't reach is gated: each flag is derived from every configuration the Snippet serves.
+const served = prevalidated.hosts === undefined ? [prevalidated.config] : [...prevalidated.hosts.values()];
+const reflectCookies = served.flatMap(c => c.moduleConfig['reflect']?.cookies ?? []);
+const unused = {
+  // One configuration, for every host: no SID_HOSTS (a Snippet has no other source of per-host settings).
+  HOSTS: prevalidated.hosts === undefined,
+  REFLECT_PREFER: reflectCookies.every(c => c.prefer === 'browser'),
+  REFLECT_OLDER: reflectCookies.every(c => c.prefer !== 'older'),
+  // Sites that don't run reflect get {} (no keeper), and it throws before reaching per-cookie code.
+  REFLECT_PER_COOKIE: served.every(c => c.moduleConfig['reflect']?.keeper?.mode !== 'per-cookie')
+};
+const define = { [PREVALIDATED]: 'true', ...Object.fromEntries(Object.entries(unused).map(([name, value]) => [`globalThis.__SID_UNUSED_${name}__`, String(value)])) };
 
 /** `value` as a JavaScript expression: JSON, with `undefined` and Maps, which the settings have. */
 function literal(value) {
@@ -171,7 +187,7 @@ const result = await build({
   platform: 'neutral',
   mainFields: ['module', 'main'],
   minify: true,
-  define: { [PREVALIDATED]: 'true' },
+  define,
   legalComments: 'none',
   metafile: true,
   logLevel: 'warning'

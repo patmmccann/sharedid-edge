@@ -51,17 +51,18 @@ The size limit is checked on the minified file, before gzip (the bytes you deplo
 | `SID_MODULES` | Minified | Fits? |
 | --- | --- | --- |
 | none (SharedID only) | about 19 KB | Yes |
-| `clickid` | about 22 KB | Yes |
+| `clickid` | about 21 KB | Yes |
 | `ip,clickid` | about 23 KB | Yes |
-| `ip,geo,bot` | about 26 KB | Yes |
-| `reflect` | about 24 KB | Yes |
-| `ua` (the default parser: isbot, the bot flag only) | about 27 KB | Yes |
-| `ip,reflect` | about 25 KB | Yes |
-| `reflect,clickid` | about 26 KB | Yes |
+| `ip,geo,bot` | about 25 KB | Yes |
+| `reflect` | about 23 KB | Yes |
+| `ua` (the default parser: isbot, the bot flag only) | about 26 KB | Yes |
+| `ip,reflect` | about 24 KB | Yes |
+| `reflect,clickid` | about 25 KB |
+| `ip,geo,reflect,bot,clickid` | about 31 KB | Yes, with little room to spare | Yes |
 | `ua` with Bowser (`"parser": "bowser"`) | about 61 KB | No: Bowser alone is about 33 KB. Use the default parser, or the Worker |
-| `ip,geo,reflect,bot,ua,clickid` | about 40 KB | No: drop `ua` and one more module, or use the Worker |
+| `ip,geo,reflect,bot,ua,clickid` | about 39 KB | No: drop `ua`, or use the Worker |
 
-The Snippet ships its settings already validated. The build checks them as the Worker checks its variables (core's settings and each module's `SID_MODULE_CONFIG` entry, with the same error messages), and bundles the result rather than the code that checks it, so the Snippet doesn't carry the validators, their patterns or their error messages. An invalid setting therefore fails the build, never a live request: the build is the only place a Snippet's settings are checked. `npm run test:snippet` (in CI) builds Snippets for the conformance cases' configurations and others, checks each answers exactly as the Worker with the same settings, and checks that invalid settings fail the build with the Worker's message.
+The Snippet ships its settings already validated. The build checks them as the Worker checks its variables (core's settings and each module's `SID_MODULE_CONFIG` entry, with the same error messages), and bundles the result rather than the code that checks it, so the Snippet doesn't carry the validators, their patterns or their error messages. It also leaves out code your settings can't reach: the per-site handling without `SID_HOSTS`, and `reflect`'s per-cookie backups and `prefer` comparisons when no cookie uses them. So the sizes above depend a little on the settings, and the build prints yours. An invalid setting therefore fails the build, never a live request: the build is the only place a Snippet's settings are checked. `npm run test:snippet` (in CI) builds Snippets for the conformance cases' configurations and others, checks each answers exactly as the Worker with the same settings, and checks that invalid settings fail the build with the Worker's message.
 
 The User-Agent parser is part of the size: the `ua` module bundles only `isbot` by default, and Bowser (the Worker's [Bowser build](#build)) only when `SID_MODULE_CONFIG` sets `{"ua":{"parser":"bowser"}}`. The build prints which one it bundled. You don't need to work this out: the build prints the size of each part, and when the result is over 32 KB it writes nothing, lists the modules by size, and names a set that fits.
 

@@ -41,6 +41,12 @@ export interface HandlerOptions {
   readonly mintId?: () => string;
 }
 
+/** The Cloudflare Snippet build's flags (see createHandler); unset everywhere else. */
+interface SnippetFlags {
+  readonly __SID_PREVALIDATED__?: boolean;
+  readonly __SID_UNUSED_HOSTS__?: boolean;
+}
+
 export type SharedIdEdgeHandler = (request: Request, platform?: PlatformInfo) => Promise<Response>;
 
 /** The source of the ID in a response, for the `X-SharedID-Source` debug header. */
@@ -71,7 +77,12 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
   const registry = new ModuleRegistry(options.modules ?? []);
   const { hosts, hostConfig } = options;
   const base = options.config ?? DEFAULT_CONFIG;
-  if (hosts === undefined && hostConfig === undefined) return configuredHandler(options, base, registry);
+  // The Cloudflare Snippet's build sets these flags with esbuild's `define` when its settings have no SID_HOSTS (and it
+  // passes no hostConfig), so the per-host handling below compiles away there.
+  // (Read from globalThis in place: `define` replaces only the expression `globalThis.__SID_…`.)
+  if (((globalThis as SnippetFlags).__SID_PREVALIDATED__ === true && (globalThis as SnippetFlags).__SID_UNUSED_HOSTS__ === true) || (hosts === undefined && hostConfig === undefined)) {
+    return configuredHandler(options, base, registry);
+  }
 
   // One handler per configuration, built on first use: SID_HOSTS's are fixed, and a platform's are usually the same
   // object for a host (the Worker caches them).

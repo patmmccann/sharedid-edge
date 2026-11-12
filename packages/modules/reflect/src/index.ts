@@ -88,6 +88,21 @@ export interface ReflectModuleConfig {
   readonly keeper: KeeperSettings;
 }
 
+/**
+ * Flags the Cloudflare Snippet's build sets with esbuild's `define` (`scripts/build-snippet.mjs`): with
+ * `__SID_PREVALIDATED__`, an `__SID_UNUSED_*` flag is `true` when none of the settings it bundles uses that feature,
+ * so the feature's code compiles away. Unset everywhere else, where every feature stays.
+ */
+interface SnippetFlags {
+  readonly __SID_PREVALIDATED__?: boolean;
+  /** No cookie has `prefer` other than `browser`. */
+  readonly __SID_UNUSED_REFLECT_PREFER__?: boolean;
+  /** No cookie has `prefer: 'older'`. */
+  readonly __SID_UNUSED_REFLECT_OLDER__?: boolean;
+  /** No `keeper.mode` is `per-cookie`. */
+  readonly __SID_UNUSED_REFLECT_PER_COOKIE__?: boolean;
+}
+
 const COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,64}$/;
 /** RFC 6265 cookie-octets: no control characters, whitespace, `"`, `,`, `;` or `\`. */
 const COOKIE_VALUE = /^[\x21\x23-\x2B\x2D-\x3A\x3C-\x5B\x5D-\x7E]+$/;
@@ -284,13 +299,14 @@ export function cookieTimestamp(format: TimestampFormat, value: string, nowSecon
 
 /** Whether the keeper's saved value wins over the value the browser sent, under the cookie's `prefer`. */
 function backupWins(cookie: ReflectedCookie, value: string, stored: string, nowSeconds: number): boolean {
+  if ((globalThis as SnippetFlags).__SID_PREVALIDATED__ === true && (globalThis as SnippetFlags).__SID_UNUSED_REFLECT_PREFER__ === true) return false;
   switch (cookie.prefer) {
     case 'browser':
       return false;
     case 'backup':
       return true;
     case 'older': {
-      if (cookie.format === undefined) return false;
+      if (((globalThis as SnippetFlags).__SID_PREVALIDATED__ === true && (globalThis as SnippetFlags).__SID_UNUSED_REFLECT_OLDER__ === true) || cookie.format === undefined) return false;
       const current = cookieTimestamp(cookie.format, value, nowSeconds);
       const kept = cookieTimestamp(cookie.format, stored, nowSeconds);
       // On a tie, or when either doesn't parse, the browser's value wins, as with `browser`.
@@ -447,7 +463,7 @@ function run({ request, storage, config, cookieDomain }: ModuleContext): ModuleR
     }
     // Present but not reflectable: left alone, and its saved value is dropped so an outdated one is never restored.
   }
-  if (keeper.mode === 'per-cookie') {
+  if (!((globalThis as SnippetFlags).__SID_PREVALIDATED__ === true && (globalThis as SnippetFlags).__SID_UNUSED_REFLECT_PER_COOKIE__ === true) && keeper.mode === 'per-cookie') {
     // A backup per cookie, rewritten on every call so its expiry is refreshed with the cookie; one with nothing to keep is
     // deleted, and so is a master keeper the browser still has (migrated into the backups above).
     const values = new Map(save);
