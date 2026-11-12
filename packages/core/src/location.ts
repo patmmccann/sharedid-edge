@@ -103,8 +103,8 @@ export const GDPR_COUNTRY_CODES: ReadonlySet<string> = new Set([...EU_COUNTRY_CO
  * An explicit `gdpr` parameter takes precedence; `readConsent` applies it.
  */
 export function gdprFromLocation(platform: Pick<PlatformInfo, 'country' | 'isEU'>): boolean | undefined {
-  if (platform.country !== undefined && GDPR_COUNTRY_CODES.has(platform.country)) return true;
-  return platform.isEU;
+  // One expression: the Cloudflare Snippet build is within bytes of its 32 KB limit.
+  return GDPR_COUNTRY_CODES.has(platform.country ?? '') || platform.isEU;
 }
 
 /**
