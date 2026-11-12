@@ -424,9 +424,10 @@ location /_sid/ {
 
 ```text
 backend sharedid
+    # rules run in order: copy the publisher's Host before rewriting it
+    http-request set-header X-Forwarded-Host %[req.hdr(host)]
     http-request set-header Host sid.saleshouse.example
     http-request set-header X-SID-Upstream-Auth "<this publisher's secret>"
-    http-request set-header X-Forwarded-Host %[req.hdr(host)]
     http-request set-header X-SID-Client-IP %[src]
     http-request set-header X-SID-Country %[src,map_ip(/etc/haproxy/country.map,)]
     http-request del-header X-SID-Region
@@ -437,7 +438,7 @@ with a `use_backend sharedid if { path_beg /_sid/ }` in the frontend. `set-heade
 
 ### Azure Front Door
 
-A route for `/_sid/*` to an origin group with your endpoint (origin host header `sid.saleshouse.example`, caching off), and a rule set on it with *Modify request header* actions (*Overwrite*): `X-SID-Upstream-Auth` to the secret, `X-SID-Client-IP` to `{socket_ip}` (the connection's address; not `{client_ip}`, which comes from `X-Forwarded-For` when the visitor sends one), `X-SID-Country` to `{geo_country}`, `X-Forwarded-Host` to `{host}`, and *Delete* `X-SID-Region`.
+A route for `/_sid/*` to an origin group with your endpoint (origin host header `sid.saleshouse.example`, caching off), and a rule set on it with *Modify request header* actions (*Overwrite*): `X-SID-Upstream-Auth` to the secret, `X-SID-Client-IP` to `{socket_ip}` (the connection's address; not `{client_ip}`, which comes from `X-Forwarded-For` when the visitor sends one), `X-SID-Country` to `{geo_country}`, `X-Forwarded-Host` to `{hostname}` (the host name the browser asked for), and *Delete* `X-SID-Region`.
 
 ### Any other CDN or proxy
 
