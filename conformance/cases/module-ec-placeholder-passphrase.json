@@ -1,0 +1,38 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The ec module with a placeholder passphrase (Trusted Server's trusted-server-placeholder-secret, 33 bytes, in upper case to show the comparison ignores case): it reports an error and sets nothing, as with a short one, but withdrawal still deletes an existing ts-ec. Requests carry the client IP as X-Forwarded-For (Node.js and Lambda, SID_TRUST_PROXY) and CF-Connecting-IP (Workers).",
+  "build": ["vendor-modules"],
+  "config": {
+    "SID_MODULES": "ec",
+    "SID_MODULE_CONFIG": "{\"ec\":{\"domain\":\"example.com\"}}",
+    "SID_TRUST_PROXY": "true",
+    "SID_MODULE_SECRETS": "{\"ec\":{\"passphrase\":\"TRUSTED-SERVER-PLACEHOLDER-SECRET\"}}"
+  },
+  "cases": [
+    {
+      "name": "reports an error and sets no ts-ec",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }],
+        "onlyListedCookies": true,
+        "jsonIncludes": { "ext": { "modules": { "ec": { "status": "error" } } } }
+      }
+    },
+    {
+      "name": "reports an error on /sync and sets no ts-ec",
+      "request": { "path": "/_sid/sync", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-modules": "ec=error" },
+        "cookies": [{ "name": "_pubcid" }, { "name": "_pubcid_sv" }],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "still deletes ts-ec with Global Privacy Control",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "sec-gpc": "1", "cookie": "ts-ec=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.Ab12z9" } },
+      "expect": { "status": 200, "cookies": [{ "name": "ts-ec", "value": "", "maxAge": 0, "domain": ".example.com", "httpOnly": true }], "onlyListedCookies": true }
+    }
+  ]
+}

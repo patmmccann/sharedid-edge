@@ -1,14 +1,17 @@
 import { createHandler, resolveConfig, type ConsentContext, type PayloadV1, type PlatformInfo, type SharedIdEdgeHandler, type TcfConsents } from '@sharedid-edge/core';
 import { parseIp } from '@sharedid-edge/module-ip';
 import { describe, expect, it } from 'vitest';
-import { EC_COOKIE, EC_EID_SOURCE, EC_GDPR_COUNTRIES, ecDecision, ecEidAllowed, ecGdprApplies, ecModule, ecModuleConfig, ecPassphrase, ecPrefix, isValidEcId, normalizeIp, randomSuffix } from '../src/index.js';
+import { EC_COOKIE, EC_EID_SOURCE, EC_GDPR_COUNTRIES, EC_PASSPHRASE_PLACEHOLDERS, ecDecision, ecEidAllowed, ecGdprApplies, ecModule, ecModuleConfig, ecPassphrase, ecPrefix, isPlaceholderPassphrase, isValidEcId, normalizeIp, randomSuffix } from '../src/index.js';
 
 const PASSPHRASE = 'conformance-passphrase-0123456789abcdef';
 // Computed independently with Node.js: createHmac('sha256', PASSPHRASE).update(message).digest('hex')
 const VECTORS: readonly (readonly [string, string, string])[] = [
   ['192.0.2.77', '192.0.2.77', '7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc'],
   ['2001:db8:85a3:0:8a2e:370:7334:1234', '20010db885a30000', '53535a5d73a52082fa6be4418fff1ca1f0b3986ac180be1ffbfce280a0db284b'],
-  ['192.168.1.100', '192.168.1.100', '6d72d453c324416ca19c36e0738596d62d00f531dd0d72961de438fbb5f6030a']
+  ['192.168.1.100', '192.168.1.100', '6d72d453c324416ca19c36e0738596d62d00f531dd0d72961de438fbb5f6030a'],
+  ['2001:db8:abcd:1:1111:2222:3333:4444', '20010db8abcd0001', '884a602db18c75475e9908442a13fa49f8176700b4e3243c5a00bd462c1df852'],
+  ['2001:db8:abcd:1:aaaa:bbbb:cccc:dddd', '20010db8abcd0001', '884a602db18c75475e9908442a13fa49f8176700b4e3243c5a00bd462c1df852'],
+  ['::ffff:192.0.2.77', '192.0.2.77', '7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc']
 ];
 /** TC strings with only a core segment: consent for Purposes 1 and 4, and for Purpose 1 only. */
 const TC_PURPOSES_1_4 = 'CAAAAAAAAAAAAAAAAAAAAAAAAJAAAAAAAAAAAAAAAAAA';
@@ -23,6 +26,19 @@ describe('EC IDs', () => {
     expect(normalizeIp(parsed('2001:db8:85a3:0:8a2e:370:7334:1234'))).toBe('20010db885a30000');
     expect(normalizeIp(parsed('2001:db8:abcd:1::5'))).toBe('20010db8abcd0001');
     expect(normalizeIp(parsed('::ffff:192.0.2.1'))).toBe('192.0.2.1');
+  });
+  it('normalizes two interface IDs in one /64 to the same message, as Trusted Server\'s tests do', () => {
+    // Trusted Server's normalize_ipv6_different_suffix_same_prefix (ec/generation.rs): privacy extensions rotating the
+    // interface ID keep the prefix.
+    const a = normalizeIp(parsed('2001:db8:abcd:1:1111:2222:3333:4444'));
+    expect(a).toBe('20010db8abcd0001');
+    expect(normalizeIp(parsed('2001:db8:abcd:1:aaaa:bbbb:cccc:dddd'))).toBe(a);
+    expect(normalizeIp(parsed('2001:db8:abcd:2:1111:2222:3333:4444'))).not.toBe(a);
+  });
+  it('hashes an IPv4-mapped IPv6 address as its IPv4 address, not as the ::ffff:0:0/64 every mapped address shares', () => {
+    expect(normalizeIp(parsed('::ffff:192.0.2.77'))).toBe(normalizeIp(parsed('192.0.2.77')));
+    expect(normalizeIp(parsed('::ffff:192.0.2.77'))).not.toBe(normalizeIp(parsed('::ffff:198.51.100.1')));
+    expect(normalizeIp(parsed('::ffff:192.0.2.77'))).not.toBe('0000000000000000');
   });
   it.each(VECTORS)('derives the prefix for %s from HMAC-SHA256 of %s', async (ip, message, hex) => {
     expect(normalizeIp(parsed(ip))).toBe(message);
@@ -111,6 +127,29 @@ describe('settings', () => {
     expect(ecPassphrase({ passphrase: PASSPHRASE })).toBe(PASSPHRASE);
     expect(() => ecPassphrase({ passphrase: 'short' })).toThrow(TypeError);
     expect(() => ecPassphrase({})).toThrow(TypeError);
+  });
+  it.each(EC_PASSPHRASE_PLACEHOLDERS)('refuses the placeholder %s, in any ASCII case, without echoing it', placeholder => {
+    for (const value of [placeholder, placeholder.toUpperCase(), placeholder.charAt(0).toUpperCase() + placeholder.slice(1)]) {
+      expect(isPlaceholderPassphrase(value)).toBe(true);
+      expect(() => ecPassphrase({ passphrase: value })).toThrow(TypeError);
+      try {
+        ecPassphrase({ passphrase: value });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        expect(message).toContain('SID_MODULE_SECRETS.ec.passphrase');
+        expect(message.toLowerCase()).not.toContain(placeholder);
+      }
+    }
+  });
+  it('lists Trusted Server\'s placeholders and the repo\'s examples, and only refuses exact matches', () => {
+    expect(EC_PASSPHRASE_PLACEHOLDERS).toEqual(expect.arrayContaining([
+      'secret-key', 'secret_key', 'trusted-server', 'trusted-server-placeholder-secret', 'replace-with-random-ec-passphrase',
+      'a-local-passphrase-of-at-least-32-characters'
+    ]));
+    expect(isPlaceholderPassphrase(' trusted-server-placeholder-secret')).toBe(false);
+    expect(isPlaceholderPassphrase('trusted-server-placeholder-secret-2')).toBe(false);
+    expect(ecPassphrase({ passphrase: 'replace-with-random-ec-passphrase-0d9f8e7a' })).toBe('replace-with-random-ec-passphrase-0d9f8e7a');
+    expect(isPlaceholderPassphrase(PASSPHRASE)).toBe(false);
   });
 });
 
@@ -202,6 +241,20 @@ describe('the ec module in the handler', () => {
     expect(kept.ec).toBeUndefined();
     expect(kept.body.ortb2).toBeUndefined();
     expect(kept.body.eids.some(eid => eid.source === EC_EID_SOURCE)).toBe(false);
+  });
+  it('reports an error, without details, for a placeholder passphrase, and still deletes ts-ec on withdrawal', async () => {
+    const placeholder = { SID_MODULE_SECRETS: '{"ec":{"passphrase":"A-Local-Passphrase-Of-At-Least-32-Characters"}}' };
+    const { body, ec } = await call('/_sid/v1', { clientIp: '192.0.2.77' }, {}, placeholder);
+    expect(body.ext.modules['ec']).toEqual({ ms: expect.any(Number) as number, status: 'error' });
+    expect(ec).toBeUndefined();
+    expect(JSON.stringify(body).toLowerCase()).not.toContain('a-local-passphrase');
+    expect((await call('/_sid/v1', { clientIp: '192.0.2.77' }, { 'Sec-GPC': '1', Cookie: `ts-ec=${'a'.repeat(64)}.Ab12z9` }, placeholder)).ec).toMatch(/^ts-ec=; Max-Age=0;/);
+  });
+  it('gives two interface IDs in one IPv6 /64 the same prefix', async () => {
+    const a = ecId((await call('/_sid/v1', { clientIp: '2001:db8:abcd:1:1111:2222:3333:4444' })).body);
+    const b = ecId((await call('/_sid/v1', { clientIp: '2001:db8:abcd:1:aaaa:bbbb:cccc:dddd' })).body);
+    expect(a.slice(0, 64)).toBe('884a602db18c75475e9908442a13fa49f8176700b4e3243c5a00bd462c1df852');
+    expect(b.slice(0, 64)).toBe(a.slice(0, 64));
   });
   it('reports an error, without details, when the passphrase is missing or short', async () => {
     const { body, ec } = await call('/_sid/v1', { clientIp: '192.0.2.77' }, {}, { SID_MODULE_SECRETS: '{"ec":{"passphrase":"short"}}' });
