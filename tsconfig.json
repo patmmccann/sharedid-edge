@@ -26,6 +26,8 @@
     { "path": "packages/modules/geo/test" },
     { "path": "packages/modules/ip" },
     { "path": "packages/modules/ip/test" },
+    { "path": "packages/modules/clickid" },
+    { "path": "packages/modules/clickid/test" },
     { "path": "packages/modules/reflect" },
     { "path": "packages/modules/reflect/test" },
     { "path": "packages/modules/ua" },

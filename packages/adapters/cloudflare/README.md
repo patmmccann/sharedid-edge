@@ -49,13 +49,16 @@ The size limit is checked on the minified file, before gzip (the bytes you deplo
 
 | `SID_MODULES` | Minified | Fits? |
 | --- | --- | --- |
-| none (SharedID only) | about 22 KB | Yes |
-| `reflect` | about 28 KB | Yes |
-| `ip,geo,bot` | about 29 KB | Yes |
-| `ip,reflect` | about 29 KB | Yes |
-| `ua` (the default parser: isbot, the bot flag only) | about 30 KB | Yes |
-| `ua` with Bowser (`"parser": "bowser"`) | about 64 KB | No: Bowser alone is about 33 KB. Use the default parser, or the Worker |
-| `ip,geo,reflect,bot,ua` | about 42 KB | No: drop `ua` and `reflect`, or use the Worker |
+| none (SharedID only) | about 24 KB | Yes |
+| `clickid` | about 28 KB | Yes |
+| `ip,clickid` | about 30 KB | Yes |
+| `ip,geo,bot` | about 31 KB | Yes |
+| `reflect` | about 32 KB | Yes, with little room to spare |
+| `ua` (the default parser: isbot, the bot flag only) | about 32 KB | Yes, with little room to spare |
+| `ip,reflect` | about 34 KB | No: `reflect` fits only on its own. Use the Worker |
+| `reflect,clickid` | about 36 KB | No: use the Worker |
+| `ua` with Bowser (`"parser": "bowser"`) | about 66 KB | No: Bowser alone is about 33 KB. Use the default parser, or the Worker |
+| `ip,geo,reflect,bot,ua,clickid` | about 51 KB | No: use the Worker |
 
 The User-Agent parser is part of the size: the `ua` module bundles only `isbot` by default, and Bowser (the Worker's [Bowser build](#build)) only when `SID_MODULE_CONFIG` sets `{"ua":{"parser":"bowser"}}`. The build prints which one it bundled. You don't need to work this out: the build prints the size of each part, and when the result is over 32 KB it writes nothing, lists the modules by size, and names a set that fits.
 
@@ -94,7 +97,7 @@ Wrangler bundles `src/index.ts` with the workspace packages at deploy time. It's
 
 | Bundle | Default (no Bowser) | With Bowser |
 | --- | --- | --- |
-| Worker (`dist/index.js`, `dist-bowser/bowser.js`) | 18.0 KB | 25.8 KB |
+| Worker (`dist/index.js`, `dist-bowser/bowser.js`) | 20.7 KB | 28.5 KB |
 
 ## Deploy
 

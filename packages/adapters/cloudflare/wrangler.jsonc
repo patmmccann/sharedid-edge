@@ -62,7 +62,7 @@
       }
     },
     // The Prebid.js browser tests (e2e/), next to the test page the e2e/site Worker serves on the same hostname,
-    // configured as e2e/server.ts configures core locally: no pixel caching, and reflect with uid1 and _ga.
+    // configured as e2e/server.ts configures core locally: no pixel caching, reflect with uid1 and _ga, and clickid.
     "e2e": {
       "name": "sharedid-edge-e2e",
       "workers_dev": false,
@@ -78,7 +78,7 @@
         "SID_VENDOR_ID": "",
         "SID_ALLOWED_ORIGINS": "",
         "SID_SYNC_CACHE_SECONDS": "0",
-        "SID_MODULES": "reflect",
+        "SID_MODULES": "reflect,clickid",
         "SID_SYNC_MODULES": "",
         "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,\"domain\":\"sharedid.dev\",\"httpOnly\":false,\"restore\":true},{\"name\":\"_ga\",\"maxAgeDays\":400,\"restore\":true}]}}",
         "SID_MODULE_TIMEOUT_MS": "50",

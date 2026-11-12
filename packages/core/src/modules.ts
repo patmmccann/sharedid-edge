@@ -74,6 +74,13 @@ export interface ModuleResult {
    * shouldn't write `ortb2.device.ext.traffic` directly; if it does, that's read as its report, never merged as is.
    */
   readonly traffic?: TrafficReport;
+  /**
+   * `true`: the browser mustn't cache this response. Honoured on `/sync` only (every other response is already
+   * `no-store`), for a module that needs to see every sync, such as `clickid`, which reads the landing page's URL from
+   * the request's `Referer`: a browser reuses a cached sync for any page. It doesn't change the status, body or other
+   * headers.
+   */
+  readonly noStore?: boolean;
 }
 
 /**
@@ -195,6 +202,8 @@ export interface ModuleRunOutput {
   /** Each module's traffic report, checked, in module order, for core to merge with the platform's. */
   readonly traffic: TrafficEntry[];
   readonly reports: Record<string, ModuleReport>;
+  /** Whether a module that succeeded asked for the response not to be cached (`ModuleResult.noStore`). */
+  readonly noStore: boolean;
 }
 
 /**
@@ -214,6 +223,7 @@ export async function runModules(
   let ortb2: Record<string, unknown> | undefined;
   const traffic: TrafficEntry[] = [];
   const reports: Record<string, ModuleReport> = {};
+  let noStore = false;
 
   for (const name of moduleNamesFor(registry, config, route)) {
     const module = registry.get(name);
@@ -241,7 +251,11 @@ export async function runModules(
         reports[name] = { ms, status: 'timeout' };
         continue;
       }
+      // A module written in JavaScript can return anything here; it counts only once the whole result has passed.
+      const flag: unknown = result === undefined ? undefined : result.noStore;
+      if (flag !== undefined && typeof flag !== 'boolean') throw new TypeError('invalid noStore');
       if (result === undefined || (result.eids === undefined && result.ortb2 === undefined && result.cookies === undefined && result.traffic === undefined)) {
+        if (flag === true) noStore = true;
         reports[name] = { ms, status: 'empty' };
         continue;
       }
@@ -253,6 +267,7 @@ export async function runModules(
       if (result.eids !== undefined) eids.push(...result.eids);
       if (split.rest !== undefined) ortb2 = deepMerge(ortb2 ?? {}, split.rest);
       traffic.push(...reported);
+      if (flag === true) noStore = true;
       const added = result.eids !== undefined || split.rest !== undefined || reported.some(entry => Object.keys(entry.report).length > 0);
       reports[name] = { ms, status: added ? 'ok' : 'empty' };
     } catch {
@@ -260,7 +275,7 @@ export async function runModules(
       reports[name] = { ms: Math.round(now() - start), status: 'error' };
     }
   }
-  return { eids, cookies, ortb2, traffic, reports };
+  return { eids, cookies, ortb2, traffic, reports, noStore };
 }
 
 /**

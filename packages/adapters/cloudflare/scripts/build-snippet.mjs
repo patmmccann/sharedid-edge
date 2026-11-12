@@ -25,7 +25,8 @@ const MODULES = {
   geo: ['@sharedid-edge/module-geo', 'geoModule'],
   reflect: ['@sharedid-edge/module-reflect', 'reflectModule'],
   bot: ['@sharedid-edge/module-bot', 'botModule'],
-  ua: ['@sharedid-edge/module-ua', 'uaModule']
+  ua: ['@sharedid-edge/module-ua', 'uaModule'],
+  clickid: ['@sharedid-edge/module-clickid', 'clickIdModule']
 };
 /** The ua module with Bowser, bundled instead when SID_MODULE_CONFIG sets {"ua":{"parser":"bowser"}}, as the Worker's Bowser build. */
 const UA_WITH_BOWSER = ['@sharedid-edge/module-ua/bowser', 'uaModuleWithBowser'];

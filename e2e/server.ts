@@ -1,29 +1,31 @@
 // Test site: serves a page that loads unmodified Prebid.js (a bundle of the npm package's chunks, bundle-prebid.ts), and answers
-// /_sid/* with SharedID Edge (the built core package and the reflect module), on one origin, as a publisher's CDN would.
+// /_sid/* with SharedID Edge (the built core package and the reflect and clickid modules), on one origin, as a publisher's CDN would.
 import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { connect } from 'node:net';
 import { join, normalize, sep } from 'node:path';
 import { createHandler, resolveConfig } from '../packages/core/dist/index.js';
+import { clickIdModule } from '../packages/modules/clickid/dist/index.js';
 import { reflectModule } from '../packages/modules/reflect/dist/index.js';
 
 // The Prebid.js bundle bundle-prebid.ts builds (Playwright's webServer command runs it first).
 const prebidDist = join(import.meta.dirname, 'site', 'public', 'prebid');
 const port = Number(process.env['PORT'] ?? 4310);
 // No pixel caching, so every visit reaches the endpoint and the tests can observe it. The reflect module runs on
-// /sync, so Prebid.js's pixel call refreshes uid1 and keeps _ga (host-only cookies: the site is 127.0.0.1).
+// /sync, so Prebid.js's pixel call refreshes uid1 and keeps _ga; so does clickid, which keeps ad click IDs from the
+// landing page's URL (the pixel call's Referer).
 const handler = createHandler({
   config: resolveConfig({
     // The tests browse http://e2e.sharedid.test through this server as their proxy (playwright.config.ts), and Prebid.js
     // writes _pubcid on sharedid.test, so the endpoint does too, as on the live site with sharedid.dev.
     SID_COOKIE_DOMAIN: 'sharedid.test',
     SID_SYNC_CACHE_SECONDS: '0',
-    SID_MODULES: 'reflect',
+    SID_MODULES: 'reflect,clickid',
     // uid1 as the reflect README's walkthrough configures it: on the domain the vendor tag writes it on, readable by
     // script, and restored from the keeper.
     SID_MODULE_CONFIG: JSON.stringify({ reflect: { cookies: [{ name: 'uid1', maxAgeDays: 365, domain: 'sharedid.test', httpOnly: false, restore: true }, { name: '_ga', maxAgeDays: 400, restore: true }] } })
   }),
-  modules: [reflectModule]
+  modules: [reflectModule, clickIdModule]
 });
 // The same page the live test site (site/) serves.
 const PAGE = readFileSync(join(import.meta.dirname, 'site', 'public', 'index.html'), 'utf8');

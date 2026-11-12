@@ -96,7 +96,7 @@ export const SETTINGS: readonly ConfigSetting[] = [
   { name: 'SID_OPTOUT_COOKIE', default: '`_pubcid_optout`', description: 'The opt-out cookie; Prebid.js reads `_pubcid_optout`.' },
   { name: 'SID_VENDOR_ID', default: '(empty: publisher mode)', description: 'Your TCF vendor ID (1 to 65535), for vendor mode.' },
   { name: 'SID_ALLOWED_ORIGINS', default: 'none', description: 'Comma-separated origins (like `https://www.example.com`) allowed to read `/_sid/v1` from script on another origin.' },
-  { name: 'SID_SYNC_CACHE_SECONDS', default: '`86400`', description: 'How long a browser may reuse a sync response (privately). `0` re-syncs on every call. Also limits how often modules run on `/_sid/sync`.' },
+  { name: 'SID_SYNC_CACHE_SECONDS', default: '`86400`', description: 'How long a browser may reuse a sync response (privately). `0` re-syncs on every call. Also limits how often modules run on `/_sid/sync`, except a sync the `clickid` module runs on, which is never cached.' },
   { name: 'SID_MODULES', default: 'none', description: 'Comma-separated modules to run, in order.' },
   { name: 'SID_SYNC_MODULES', default: 'the modules in `SID_MODULES` that run on `/_sid/sync`', description: 'Comma-separated modules to run on `/_sid/sync`, each also in `SID_MODULES`, or `none`.' },
   { name: 'SID_MODULE_CONFIG', default: '`{}`', description: 'JSON settings per module, keyed by module name.' },

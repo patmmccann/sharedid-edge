@@ -295,6 +295,26 @@ test('when the vendor tag runs before Prebid.js\'s pixel call, it re-mints a del
   expect(now[0]).not.toBe(original);
 });
 
+// The clickid module: a landing page's click ID, from Prebid.js's pixel call's Referer, kept in a server-set cookie.
+test('a landing page\'s gclid is kept in a server-set _sid_gclid for 90 days, readable by page script', async ({ page, context, sid }) => {
+  const gclid = `e2e-${String(Date.now())}_Test.x`;
+  await visit(page, `/?utm_source=e2e&gclid=${gclid}`);
+  const log = await sid.requests();
+  // No page code calls /_sid/v1: the click ID reached the worker through the pixel call alone.
+  expect(log.map(r => new URL(r.path, 'http://x').pathname)).toEqual(['/_sid/sync']);
+  const kept = await cookie(context, '_sid_gclid');
+  expect(kept?.value).toMatch(new RegExp(`^[0-9]{10}\\.${gclid.replace('.', '\\.')}$`));
+  expect(kept?.httpOnly).toBe(false);
+  // Server-set: a script-written cookie would be capped at 7 days (or a day) in Safari.
+  expect((kept?.expires ?? 0) - Date.now() / 1000).toBeGreaterThan(89 * DAY);
+  const fromScript = await page.evaluate(() => document.cookie.split('; ').find(c => c.startsWith('_sid_gclid=')));
+  expect(fromScript).toBe(`_sid_gclid=${String(kept?.value)}`);
+
+  // A later page view without a click ID leaves it alone.
+  await visit(page, '/');
+  expect((await cookie(context, '_sid_gclid'))?.value).toBe(kept?.value);
+});
+
 test('an opted-out user gets no id cookies from the endpoint', async ({ page, context }) => {
   const optout = await page.request.get('/_sid/optout');
   expect(optout.status()).toBe(204);
