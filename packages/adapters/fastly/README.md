@@ -18,6 +18,7 @@ This is the full guide. The other platforms are listed under [Pick your platform
 - [Verify](#verify)
 - [Platform information](#platform-information)
 - [The Compute runtime](#the-compute-runtime)
+- [Reusable sandboxes (experimental)](#reusable-sandboxes-experimental)
 - [Using it in code](#using-it-in-code)
 - [Testing without a Fastly account](#testing-without-a-fastly-account)
 - [What isn't confirmed](#what-isnt-confirmed)
@@ -65,7 +66,7 @@ npm run wasm -w @sharedid-edge/fastly      # compiles it to packages/adapters/fa
 
 | Build | Bundle (`main.js`, gzipped) | Package (`main.wasm`) |
 | --- | --- | --- |
-| Default | 21.6 KB | 16.2 MB (5.1 MB gzipped) |
+| Default | 21.7 KB | 16.2 MB (5.1 MB gzipped) |
 | With Bowser | 30.1 KB | 19.1 MB (5.7 MB gzipped) |
 | With `ec`, `dbip` and `maxmind` (the fixtures) | 24.0 KB | 16.6 MB (5.2 MB gzipped) |
 
@@ -79,6 +80,8 @@ npm run wasm -w @sharedid-edge/fastly
 ```
 
 Then list it in `SID_MODULES`, with its settings and secrets (the [`ec` README](../../vendor-modules/ec/README.md#turning-it-on), and [Secrets](#secrets) below). Without `--module`, `SID_MODULES=ec` reports `ec` as `skipped` (`not installed`). The bundle's size is reported but the 32 KB budget isn't enforced with opt-in modules.
+
+**Reusable sandboxes (opt-in, experimental).** `npm run bundle:reusable -w @sharedid-edge/fastly` in place of `bundle` builds the service so one sandbox answers several requests; see [Reusable sandboxes](#reusable-sandboxes-experimental).
 
 **Bowser (opt-in).** The `ua` module's [full `User-Agent` parsing](../../modules/ua/README.md#full-parsing-with-bowser) fills `device` for Safari, Firefox, TVs and other browsers that send no Client Hints. `npm run bundle:bowser -w @sharedid-edge/fastly` (in place of `bundle`; same `deploy/` folder, then `npm run wasm`) builds it in, and the `SID_MODULE_CONFIG` key `{"ua":{"parser":"bowser"}}` turns it on. `--bowser` and `--module` can be combined.
 
@@ -160,7 +163,7 @@ Each setting is a key in the config store linked as `sharedid_config`, named as 
 fastly config-store-entry update --store-id <config-store-id> --key SID_MODULES --value ip,geo,ua
 ```
 
-- **Read with every request,** so a change takes effect as soon as Fastly has propagated it, without deploying. The handler is built from the settings, and rebuilt only when they change, while an instance lives; by default Fastly starts a fresh instance per request.
+- **Read with every request,** so a change takes effect as soon as Fastly has propagated it, without deploying. The handler is built from the settings, and rebuilt only when they change, while an instance lives; by default Fastly starts a fresh instance per request, and with [reusable sandboxes](#reusable-sandboxes-experimental) one instance answers several.
 - **Invalid settings answer 500.** A missing `SID_COOKIE_DOMAIN`, an invalid value, or no config store linked as `sharedid_config` give `500` `SharedID Edge is misconfigured` on every request, and the log says which setting is wrong, rather than set wrong cookies.
 - **Limits** ([Compute resource limits](https://docs.fastly.com/products/compute-resource-limits)): values up to 8,000 characters (so `SID_HOSTS` and `SID_MODULE_CONFIG` must fit), 500 entries per store, 5 stores per account (1 store of 100 entries on trial accounts); characters over 3 bytes in UTF-8 are truncated ([config stores](https://www.fastly.com/documentation/guides/compute/edge-data-storage/working-with-config-stores/)). The service reads 19 keys per request.
 - **Not `SID_MODULE_SECRETS`:** a config store isn't for secrets, so the service answers 500 if it finds that key there. It goes in the secret store.
@@ -225,7 +228,50 @@ The SDK runs the bundle in SpiderMonkey, compiled to WebAssembly, not in V8. Cor
 
 **CPU time.** Fastly allows 50 ms of CPU per request. Measured in Viceroy with `vCpuTime()` (`fastly:compute`), on the Bowser build with every built-in module on (`ip`, `geo`, `reflect`, `bot`, `ua` with Bowser, `clickid`) and a Safari `User-Agent`: 7 to 9 ms for `/_sid/v1` and 2 to 3 ms for `/_sid/sync`, plus 2 to 4 ms before the handler runs; that includes reading the stores and building the handler, which a fresh instance does on every request. These are a laptop's numbers in the local runtime, not Fastly's, but far from the limit.
 
-**One instance per request.** Fastly starts a fresh sandbox for each request by default ([Compute](https://www.fastly.com/products/edge-compute) claims microsecond start-up, since the code was initialized at build time). So the handler cache only helps if you opt into sandbox reuse; the measurements above include building it.
+**One instance per request.** Fastly starts a fresh sandbox for each request by default ([Compute](https://www.fastly.com/products/edge-compute) claims microsecond start-up, since the code was initialized at build time). So the handler cache only helps if you opt into sandbox reuse ([Reusable sandboxes](#reusable-sandboxes-experimental)); the measurements above include building it.
+
+## Reusable sandboxes (experimental)
+
+**Off by default.** A build option turns on Fastly's reusable sandboxes, so one sandbox answers several requests in turn rather than one. The settings are still read from the stores with every request, but the handler built from them ([read with every request](#configuration), rebuilt only when they change) is kept for the sandbox's life, and the JavaScript engine has already run the code once.
+
+```sh
+npm run bundle:reusable -w @sharedid-edge/fastly   # in place of `bundle`: the same as `bundle -- --reusable-sandbox`
+npm run wasm -w @sharedid-edge/fastly
+```
+
+It combines with `--bowser` and `--module` (`npm run bundle:reusable -w @sharedid-edge/fastly -- --bowser`). The bundle's entry point is then `src/reusable.ts`, which runs the service as `src/main.ts` does and calls [`setReusableSandboxOptions`](https://js-compute-reference-docs.edgecompute.app/docs/fastly:experimental/setReusableSandboxOptions) from `fastly:experimental` during build-time initialization, the only time the SDK allows it. The default build doesn't import `fastly:experimental` at all, and the bundle script fails if it does. Same 32 KB budget: 21.8 KB gzipped, or 30.3 KB with Bowser.
+
+**The defaults** (`src/sandbox.ts`) bound reuse, since Fastly's own defaults, once `maxRequests` is raised, let a sandbox live as long as the platform keeps it:
+
+| Option | Default | Means |
+| --- | --- | --- |
+| `maxRequests` | 50 | Requests a sandbox answers before it's recycled (Fastly's default, 1, is no reuse; 0 is no limit). The handler is built once per sandbox, so 50 makes that cost about 2% of what it is without reuse; more would save little and keep a sandbox longer. |
+| `betweenRequestTimeoutMs` | 2000 | How long a sandbox waits for its next request before it's recycled. |
+| `sandboxTimeoutMs` | 60000 | How long a sandbox may live: after a minute, it's recycled once its current request is answered. |
+| `maxMemoryMiB` | 64 | Recycled before the next request above this. Half Fastly's per-sandbox heap; the service uses about 10 MiB in Viceroy. |
+
+Override any of them at build time, as whole numbers: `npm run bundle:reusable -w @sharedid-edge/fastly -- --reusable-sandbox-option maxRequests=20 --reusable-sandbox-option betweenRequestTimeoutMs=1000`. A sandbox is also recycled when a request fails; the SDK [bails out of the reused sandbox](https://github.com/fastly/js-compute-runtime/blob/main/CHANGELOG.md) then.
+
+**What it saves.** Measured in Viceroy 0.22.0 (Fastly's local runtime) on a laptop, with the Bowser build, every built-in module on (`ip`, `geo`, `reflect`, `bot`, `ua` with Bowser, `clickid`) and a Safari `User-Agent`; 36 requests to each route per build, medians. Handler time is from the `fetch` listener to the response, including reading the stores and, when needed, building the handler; vCPU is `vCpuTime()` (whole milliseconds), for the handler and for everything else the sandbox spends on the request. These are local-runtime numbers, not Fastly's:
+
+| Route | Build | Handler time | Handler vCPU | vCPU outside the handler | Mean vCPU per request |
+| --- | --- | --- | --- | --- | --- |
+| `/_sid/v1` | default (a sandbox per request) | 7.3 ms | 7 ms | 2 ms | 8.7 ms |
+| `/_sid/v1` | reusable, a sandbox's first request | 8.3 ms | 8 ms | 2 ms | |
+| `/_sid/v1` | reusable, later requests | 4.3 ms | 4 ms | 2 ms | 6.7 ms (all requests) |
+| `/_sid/sync` | default | 2.9 ms | 3 ms | 2 ms | 4.8 ms |
+| `/_sid/sync` | reusable, a sandbox's first request | 2.9 ms | 2.5 ms | 2 ms | |
+| `/_sid/sync` | reusable, later requests | 2.0 ms | 2 ms | 2 ms | 3.7 ms (all requests) |
+
+So a reused sandbox answers `/v1` in about 40% less time, and `/sync` in about 30% less. The saving is smaller than in [Trusted Server](https://github.com/IABTechLab/trusted-server), whose build is heavier: this handler is cheap to build, and most of `/v1` is the modules' own work (Bowser, chiefly), which reuse doesn't change. Viceroy recycles a sandbox after 6 requests whatever `maxRequests` says, as Trusted Server also found, so these are 1 build per 6 requests; on Fastly it would be 1 per up to 50. Viceroy logs `WebAssembly exited with error … exit status 1` when a reused sandbox ends because no next request came (its 6-request limit, or `betweenRequestTimeoutMs`): that's the SDK's exit when the wait for the next request fails, after every response has gone out, and a minimal service with only `setReusableSandboxOptions` logs it too.
+
+**Risks.**
+
+- **Experimental API.** `setReusableSandboxOptions` is in `fastly:experimental` (since SDK 3.40.0; this package pins 4.2.0). Fastly may change or remove it; the SDK is pinned, so an upgrade is deliberate, and `npm run conformance:fastly:reusable` checks the build.
+- **State between visitors.** With reuse, anything a module keeps outside a request lives on into the next visitor's request. The project audited core, the built-in modules, the vendor modules and this adapter before adding the option: nothing keeps request data (IP, cookies, consent, IDs, headers, location) between requests, and no module-level regular expression carries `lastIndex`. What does live on: the handler `cachedByEnv` keeps, keyed by the settings (with `SID_MODULE_SECRETS` in that key); each module's parsed configuration and secrets, now frozen all the way down, so a module can't change them for later requests; lookup tables built from constants (the IP range tables of `dbip` and `maxmind`, the `geo` country table); and the `geo` module's cache of time-zone formatters, keyed by time-zone name, which Fastly never fills since it gives no time zone. The rule for contributors is in `AGENTS.md`. A module that takes longer than `SID_MODULE_TIMEOUT_MS` may still be running when the sandbox takes the next request; no module shares state, so it can't affect it.
+- **Not run on a live Fastly service.** How often Fastly gives a reused sandbox the next request, and how its limits interact with these defaults, are under [What isn't confirmed](#what-isnt-confirmed).
+
+**How it's tested.** `npm run conformance:fastly:reusable` builds the three packages with reusable sandboxes and runs the whole suite against them in Viceroy, as `conformance:fastly` does for the default ones; CI runs both. `conformance/src/fastly-checks.ts` sends two visitors in turn, three times (different cookies, click IDs, addresses and locations), checks that the second gets nothing of the first's, and reads Viceroy's log to check that one sandbox answered both in the reusable build, and that each request had its own in the default one. Unit tests do the same through one handler, in core and here.
 
 ## Using it in code
 
@@ -266,7 +312,7 @@ Nothing here needs an account:
   ```
 
   `fastly compute serve` runs the same Viceroy. Every address without an entry is located in San Francisco.
-- `npm run conformance:fastly` (needs Viceroy: `viceroy` on the `PATH` or `VICEROY=/path/to/viceroy`): builds the three packages (default, Bowser, and with the vendor modules), then runs the whole conformance suite against them in Viceroy through `conformance/src/fastly-viceroy.ts`. Viceroy takes the client address from the connection and the location from its own table, as Fastly does, so the relay sends each case's request from the case's client IP and writes the case's location into Viceroy's `fastly.toml` for that address; the case's settings become the config and secret stores. The cases use documentation-range addresses (`192.0.2.77`, `2001:db8:1::77`, …), which must be local: CI does this on Linux with `sudo sysctl -w net.ipv4.ip_nonlocal_bind=1 net.ipv6.ip_nonlocal_bind=1` and `sudo ip route add local 192.0.2.0/24 dev lo` per range (see `.github/workflows/ci.yml`). Elsewhere, the case files that use them (the `ip`, `ec`, `dbip` and `maxmind` modules) fail with a message saying so; the rest pass on any OS. Then `conformance/src/fastly-checks.ts` checks what the shared cases can't: that `X-Forwarded-For` and `Fastly-Client-IP` from the visitor change neither the client IP nor the location (IPv4 and `::1`), that every `Set-Cookie` arrives as its own header, that every response carries `Cache-Control: no-store` or `private`, and that a service without its config store answers 500. One field is reported missing rather than compared: `utcoffset` ([Platform information](#platform-information)). It isn't part of `npm run check`, which builds and size-checks the bundle only, since it needs the Viceroy binary and the SDK; it runs in its own CI job.
+- `npm run conformance:fastly` (needs Viceroy: `viceroy` on the `PATH` or `VICEROY=/path/to/viceroy`): builds the three packages (default, Bowser, and with the vendor modules), then runs the whole conformance suite against them in Viceroy through `conformance/src/fastly-viceroy.ts`. Viceroy takes the client address from the connection and the location from its own table, as Fastly does, so the relay sends each case's request from the case's client IP and writes the case's location into Viceroy's `fastly.toml` for that address; the case's settings become the config and secret stores. The cases use documentation-range addresses (`192.0.2.77`, `2001:db8:1::77`, …), which must be local: CI does this on Linux with `sudo sysctl -w net.ipv4.ip_nonlocal_bind=1 net.ipv6.ip_nonlocal_bind=1` and `sudo ip route add local 192.0.2.0/24 dev lo` per range (see `.github/workflows/ci.yml`). Elsewhere, the case files that use them (the `ip`, `ec`, `dbip` and `maxmind` modules) fail with a message saying so; the rest pass on any OS. Then `conformance/src/fastly-checks.ts` checks what the shared cases can't: that `X-Forwarded-For` and `Fastly-Client-IP` from the visitor change neither the client IP nor the location (IPv4 and `::1`), that every `Set-Cookie` arrives as its own header, that every response carries `Cache-Control: no-store` or `private`, that a service without its config store answers 500, and that one visitor's request leaves nothing for the next (reading Viceroy's log for whether a sandbox answered both). `npm run conformance:fastly:reusable` does the same with the [reusable-sandbox](#reusable-sandboxes-experimental) packages. One field is reported missing rather than compared: `utcoffset` ([Platform information](#platform-information)). It isn't part of `npm run check`, which builds and size-checks the bundle only, since it needs the Viceroy binary and the SDK; it runs in its own CI job.
 - Against a real deployment: `node conformance/dist/run.js --base-url https://www.example.com` runs the default-configuration cases.
 
 ## What isn't confirmed
@@ -279,6 +325,7 @@ Built from Fastly's documentation and the SDK's types, and run in Viceroy; not y
 - **Request cookies over HTTP/2**, where a browser may send several `cookie` fields: Fastly doesn't document how it merges them for `event.request.headers.get('cookie')`.
 - **Config store reads:** whether the limit of 32 dictionary lookups per request applies to config stores (the service reads 19 keys), and how long an entry change takes to propagate.
 - **CPU time** on Fastly's own hosts (measured only in Viceroy) and the start-up cost of the 16 MB package.
+- **Reusable sandboxes** on a live service: how often Fastly hands a waiting sandbox the next request, so how much of the [measured saving](#reusable-sandboxes-experimental) is real; whether its own limits recycle sandboxes before the defaults do; and whether a sandbox that ends waiting for a request (the SDK exits with status 1 then, as in Viceroy) shows up as an error in the service's stats or logs.
 - **The deployment commands** (`fastly service create`, `config-store`, `resource-link`, `compute pack`, `compute deploy`) follow the CLI reference; they haven't been run against an account here.
 
 ## Troubleshooting

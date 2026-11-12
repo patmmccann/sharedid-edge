@@ -6,6 +6,7 @@ The modules this project maintains, listed in the [module index](../../docs/modu
 - **A package per module,** depending only on `@sharedid-edge/core`'s public API (and, where it saves duplicating code, another project module's exports, as the `ec` vendor module uses `ip`'s parser). Core never depends on a module.
 - **Platform-neutral**, like core: `lib: ["ES2023", "WebWorker"]`, no Node or DOM types, no runtime dependencies besides core (the exception is `ua`, which bundles `isbot`, and `bowser` in opt-in builds; see its `AGENTS.md`). Platform data comes through `PlatformInfo`, never `request.cf` or headers read directly; add new fields to `PlatformInfo` in core and to the adapters.
 - **No network calls,** and no data updates during requests.
+- **Nothing from a request outlives it.** A module object, and anything at a module's top level, can serve many visitors in turn: adapters keep a handler for as long as the settings don't change, and the Fastly adapter's reusable-sandbox build keeps the whole JavaScript instance from one request to the next. So keep no request data (IP, cookies, consent, IDs, headers, location, User-Agent) in module-level variables, closures made at setup, or caches; derive everything from the context on each run. Caches of constants or of configuration are fine. Don't write to `config` or `secrets` (they're frozen: the write throws and the module reports `error`), and don't use a module-level regular expression with the `g` or `y` flag, whose `lastIndex` carries over between calls.
 
 ## Writing a module
 

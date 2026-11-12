@@ -10,6 +10,7 @@ import {
   SECRET_SETTING,
   SECRET_STORE
 } from '../src/index.js';
+import { REUSABLE_SANDBOX_DEFAULTS, reusableSandboxOptions } from '../src/sandbox.js';
 import { AUSTIN, BERLIN, client, request, SAN_FRANCISCO, stores } from './clients.js';
 
 const UUID = 'c29cb2ae-769d-42f6-891a-f53cadee823d';
@@ -256,5 +257,13 @@ describe('settings from the config and secret stores', () => {
       await misconfigured(request(), client('203.0.113.9'))
     ];
     for (const response of responses) expect(response.headers.get('cache-control')).toMatch(/\b(no-store|private)\b/);
+  });
+});
+
+describe('reusable sandboxes (the --reusable-sandbox build)', () => {
+  it('has bounded defaults, which the build can override one at a time', () => {
+    expect(reusableSandboxOptions()).toEqual({ maxRequests: 50, betweenRequestTimeoutMs: 2000, maxMemoryMiB: 64, sandboxTimeoutMs: 60_000 });
+    expect(reusableSandboxOptions({ maxRequests: 10 })).toEqual({ ...REUSABLE_SANDBOX_DEFAULTS, maxRequests: 10 });
+    expect(Object.isFrozen(REUSABLE_SANDBOX_DEFAULTS)).toBe(true);
   });
 });
