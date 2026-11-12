@@ -12,6 +12,7 @@ Click IDs are **never** put in the `/_sid/v1` payload: no `eids`, no `ortb2`, no
 - [The cookies](#the-cookies)
 - [Reading a click ID](#reading-a-click-id)
 - [Who uses the click IDs](#who-uses-the-click-ids)
+  - [Why it pays, and for whom](#why-it-pays-and-for-whom)
 - [Where the URL comes from](#where-the-url-comes-from)
 - [Response](#response)
 - [Consent and opt-out](#consent-and-opt-out)
@@ -104,11 +105,21 @@ Vendor tags don't read `_sid_*` cookies: they keep writing their own. Send the s
 | `msclkid` | `_uetmsclkid` | Conversions API `userData.msclkid`; Microsoft suggests keeping the latest one for 90 days, as this module does ([Microsoft](https://learn.microsoft.com/en-us/advertising/guides/uet-conversion-api-integration)) |
 | `ttclid` | `ttclid` ([TikTok](https://ads.tiktok.com/help/article/using-cookies-with-tiktok-pixel?lang=en)) | Events API `ttclid`, on every web event |
 
-**Why it pays, and for whom.** It helps a site that **buys** ads and lands the clicks on its own pages: a store, or a publisher running subscription, app or affiliate campaigns. Safari caps cookies written by `document.cookie` at 7 days ([WebKit](https://webkit.org/blog/8613/intelligent-tracking-prevention-2-1/)), and at 24 hours on a page reached from a known tracker through a URL with a query string ([WebKit](https://webkit.org/blog/8828/intelligent-tracking-prevention-2-2/)). A conversion after that, but inside the platform's window, has no click to be attributed to. Under-reported conversions feed automated bidding, which targets conversions or conversion value ([Google](https://support.google.com/google-ads/answer/7065882?hl=en)), and they make a campaign's return look lower than it is. Uploading the stored click ID with the conversion reports it. It doesn't change what you earn from selling ad space: click IDs never go to bidders.
-
 **IDs the browser strips can't be kept:** see [Troubleshooting](#troubleshooting). Firefox's Strict mode also strips `fbclid` ([Mozilla](https://firefox-source-docs.mozilla.org/toolkit/components/antitracking/anti-tracking/query-stripping/index.html)), and Brave strips `fbclid`, `gclid` and `msclkid` ([Brave](https://brave.com/privacy-updates-5/)).
 
 **Other platforms** can be added with [`params`](#settings): LinkedIn `li_fat_id`, X `twclid`, Pinterest `epik`, Snapchat `ScCid` and Reddit `rdt_cid`.
+
+### Why it pays, and for whom
+
+**The mechanism.** Safari caps cookies written by `document.cookie` at 7 days ([WebKit](https://webkit.org/blog/8613/intelligent-tracking-prevention-2-1/)), and at 24 hours on a page reached from a known tracker through a URL with a query string ([WebKit](https://webkit.org/blog/8828/intelligent-tracking-prevention-2-2/)), which is how most ad clicks arrive. A conversion after that, but still inside the platform's attribution window, has no click to be credited to. The platform then under-reports the campaign's conversions, and its automated bidding, which targets conversions or conversion value ([Google](https://support.google.com/google-ads/answer/7065882?hl=en)), learns that the campaign returns less than it does: it bids lower, wins fewer of the auctions that actually convert, and the campaign looks less profitable to whoever sets its budget. Uploading the stored click ID with the conversion gives the platform back the click.
+
+**A click ID lands where the ad's click goes.** The platform adds it to the advertiser's landing URL, so it reaches the site the visitor clicks *to*, not the site the ad was shown *on*. What this module keeps is the attribution of ads **the site runs itself** that bring visitors to its own pages. So it helps, directly, a site that buys traffic:
+
+- **A store or any advertiser** sending paid clicks to its own pages: more of its Safari conversions are credited, so its smart bidding and reported return on ad spend reflect what the campaigns actually earn.
+- **A publisher that advertises itself:** subscriptions, newsletters, app installs or events promoted on Google, Meta, Microsoft or TikTok, landing on its own site.
+- **A publisher that buys traffic to monetize it** (traffic arbitrage): it pays the platforms for clicks and earns from the ads its pages show. It is the advertiser for that traffic. Platforms optimize its campaigns on the conversion events it reports back, such as engaged sessions or revenue per visit, so events that happen after Safari's caps, on a return visit or a later page, get credited to the campaign that bought the visitor, and its bidding buys more of the visitors who earn.
+
+**It doesn't, by itself, make a site's ad space worth more.** Ads shown on your pages send their clicks, and their click IDs, to the advertisers' sites, so running this module on your site doesn't change how those advertisers measure your inventory. Click IDs never go to bidders either. There is an indirect effect when **advertisers** keep their click IDs: Google's display network and Meta's and Microsoft's audience networks tag clicks from publisher placements too, so an advertiser that keeps click IDs past Safari's caps credits more late conversions to the placements that drove them, and automated bidding pays more for placements that convert. That raises demand for inventory that drives Safari conversions, but it comes from advertisers adopting this kind of storage on their own sites, not from the publisher running it.
 
 ## Where the URL comes from
 
