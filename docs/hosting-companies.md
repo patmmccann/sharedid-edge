@@ -152,7 +152,7 @@ It checks, from outside, that `/_sid/*` answers from the same IP addresses as th
 
 - **The right site's settings:** `curl -sI 'https://www.pub-a.example/_sid/sync?id=pubcid:test-id'` shows `Domain=pub-a.example` on the cookies.
 - **An unlisted hostname gets nothing:** `/_sid/v1` on a hosted site you haven't onboarded returns 404.
-- **The visitor's location reaches it** (it decides GDPR): with the `geo` module on, `/_sid/v1` shows your own country in `ortb2.device.geo`; from an EU location (or a VPN) without a TC string, `/_sid/sync` sets no cookie and `X-SharedID-Status` says why.
+- **The visitor's location reaches it** (it decides GDPR): with the `geo` module on, `/_sid/v1` shows your own country in `ortb2.device.geo`; from a location where GDPR applies (the EU, the rest of the EEA, the UK or Turkey; a VPN will do) without a TC string, `/_sid/sync` sets no cookie and `X-SharedID-Status` says why.
 
 Run `verify-deployment` for every site after onboarding, and for a sample after each update.
 

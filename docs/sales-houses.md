@@ -290,7 +290,7 @@ curl -s -H 'X-SID-Client-IP: 192.0.2.1' -H 'X-SID-Country: US' -H 'X-Forwarded-H
   https://www.pub-a.example/_sid/v1 | jq '.ortb2.device'
 ```
 
-The second must show your own IP address and country: if it shows `192.0.2.1` or `USA`, the publisher's CDN appends to or passes the visitor's headers instead of setting its own. From an EU location (a VPN will do) without a TC string, `/_sid/sync` must set no cookie, with `X-SharedID-Status` saying why.
+The second must show your own IP address and country: if it shows `192.0.2.1` or `USA`, the publisher's CDN appends to or passes the visitor's headers instead of setting its own. From a location where GDPR applies (the EU, the rest of the EEA, the UK or Turkey; a VPN will do) without a TC string, `/_sid/sync` must set no cookie, with `X-SharedID-Status` saying why.
 
 ### 4. Prebid.js on the publisher's pages
 
@@ -476,7 +476,7 @@ While a CDN sends a secret the endpoint doesn't accept, `/_sid/*` answers `403` 
 3. **Issue a secret:** `openssl rand -hex 32`, add it to `SID_UPSTREAM_SECRETS`, record which publisher has it, and deploy.
 4. **Send the publisher** their secret, the [recipe](#publisher-cdn-recipes) for their CDN with your endpoint's hostname filled in, and the five requirements in [Each publisher's CDN](#2-each-publishers-cdn).
 5. **They deploy the CDN rule,** on a staging hostname first if they have one (add it to `SID_HOSTS` too).
-6. **Verify** from their host: `npm run verify-deployment -- --site https://www.pub-a.example`, the forged-header check and the EU check ([Verify](#3-verify)).
+6. **Verify** from their host: `npm run verify-deployment -- --site https://www.pub-a.example`, the forged-header check and the GDPR-country check ([Verify](#3-verify)).
 7. **Turn on Prebid.js** on their pages: `pixelUrl: '/_sid/sync'` ([Prebid.js](#4-prebidjs-on-the-publishers-pages)).
 8. **Give them** the opt-out URL for their privacy page (`https://www.pub-a.example/_sid/optout`) and the debugging headers ([Troubleshooting](troubleshooting.md)).
 
@@ -488,12 +488,12 @@ The endpoint decides consent on every request, the same way for every publisher 
 
 1. **Opt-out** (`_pubcid_optout`), **Global Privacy Control** (`Sec-GPC: 1`) and **COPPA** (`coppa=1`): no ID, and existing ID cookies deleted.
 2. **A TC string** (the `euconsent-v2` cookie, or `gdpr_consent`): by default, the **publisher's** consent, from the TC string's publisher segment: Purpose 1, and consent or legitimate interest for one of Purposes 2 to 10.
-3. **No TC string:** if GDPR applies (the page says `gdpr=1`, or the visitor's country, from `X-SID-Country`, is in the EU), no ID; otherwise an ID.
+3. **No TC string:** if GDPR applies (the page says `gdpr=1`, or the visitor's country, from `X-SID-Country`, is one where GDPR applies: the EU, Iceland, Liechtenstein, Norway, the UK or Turkey, see [Consent](consent.md)), no ID; otherwise an ID.
 
 | Who | Responsible for |
 | --- | --- |
 | **The publisher** | Their CMP: asking for **publisher** consent for Purpose 1 and at least one of Purposes 2 to 10, and storing the TC string in the `euconsent-v2` cookie, the only place the sync route sees it. Their privacy policy and the opt-out link (`/_sid/optout` on their host). Their CDN rule, kept as your recipe says. |
-| **You, the sales house** | The endpoint: its settings per publisher, its secrets, and keeping it current. That the recipes you give send the visitor's real country: a missing country means GDPR's scope is unknown, and an EU visitor without a TC string would get an ID. Not logging request data on your platform beyond what you've disclosed. |
+| **You, the sales house** | The endpoint: its settings per publisher, its secrets, and keeping it current. That the recipes you give send the visitor's real country: a missing country means GDPR's scope is unknown, and a visitor from a GDPR country without a TC string would get an ID. Not logging request data on your platform beyond what you've disclosed. |
 | **Both** | Agreeing, in your contract, who controls the SharedID (it's the publisher's first-party ID) and how it's used in bid requests. |
 
 **Per-publisher consent settings** in `SID_HOSTS`:
@@ -557,8 +557,8 @@ A Worker or Fastly Compute service needs nothing more: it runs everywhere. A Lam
 | Visitors share an ID, or get each other's cookies | The publisher's CDN caches `/_sid/*` | Caching off for `/_sid/*` (the responses are `private` or `no-store`, but some CDNs cache regardless) |
 | `ortb2.device.ip` is a CDN address, or `geo` shows a CDN location | The CDN puts its own upstream's or a proxy's address in `X-SID-Client-IP`: shielding (Fastly's later hop), or the publisher's CDN sits behind another CDN | Take the address on the first edge hop, from the outermost CDN ([Security model](#security-model)) |
 | The forged-header check shows the forged address or country | The CDN passes or appends the visitor's headers, or reads `X-Forwarded-For` | Use the CDN's connection address, and set (overwrite) the headers |
-| EU visitors without a TC string get cookies | No `X-SID-Country` (unknown country means storage is allowed), or the CMP doesn't write `euconsent-v2` | Send the country; check the CMP ([Consent](consent.md)) |
-| EU visitors with consent get no cookie | The CMP doesn't ask for **publisher** consent (no publisher segment), in publisher mode | Configure the CMP, or decide on vendor mode (`SID_VENDOR_ID`) |
+| Visitors from GDPR countries without a TC string get cookies | No `X-SID-Country` (unknown country means storage is allowed), or the CMP doesn't write `euconsent-v2` | Send the country; check the CMP ([Consent](consent.md)) |
+| Visitors from GDPR countries with consent get no cookie | The CMP doesn't ask for **publisher** consent (no publisher segment), in publisher mode | Configure the CMP, or decide on vendor mode (`SID_VENDOR_ID`) |
 | Cookies without `Secure` | The site isn't served over HTTPS, or `X-Forwarded-Host` is a local name | Serve the site over HTTPS ([Secure cookies](configuration.md#secure-cookies)) |
 | `/_sid/v1` from another of the publisher's origins fails CORS | That origin isn't in the site's `SID_ALLOWED_ORIGINS` | Add it in `SID_HOSTS` |
 
@@ -581,7 +581,7 @@ Trusted-upstream mode trusts a request's forwarded IP address, country and site 
 | A publisher's CDN caches one visitor's response for others | Caching off in every recipe; the endpoint's responses are `private` or `no-store` |
 | Request data in logs | SharedID Edge logs nothing about requests; the secrets never appear in errors or logs |
 
-**Authenticated but wrong.** The endpoint trusts whatever an authenticated CDN says. When the publisher's CDN is itself behind another CDN or proxy (a reader on one CDN, a site's own front proxy, then the CDN that forwards to you, say), the forwarding CDN's "client" is the proxy in front of it: it passes on, with a valid secret, that proxy's address and country. IAB Tech Lab's [Trusted Server](https://github.com/IABTechLab/trusted-server), which takes the client IP from a trusted header the same way, warns about the same topology. The fix is on the publisher's side: take the address and country from the **outermost** CDN, the one the browser connects to, and pass them through each hop as trusted headers (each hop checking the previous one, as with nginx's `realip` limited to that CDN's addresses). The forged-header and EU checks in [Verify](#3-verify) catch it: they show the inner CDN's location rather than yours.
+**Authenticated but wrong.** The endpoint trusts whatever an authenticated CDN says. When the publisher's CDN is itself behind another CDN or proxy (a reader on one CDN, a site's own front proxy, then the CDN that forwards to you, say), the forwarding CDN's "client" is the proxy in front of it: it passes on, with a valid secret, that proxy's address and country. IAB Tech Lab's [Trusted Server](https://github.com/IABTechLab/trusted-server), which takes the client IP from a trusted header the same way, warns about the same topology. The fix is on the publisher's side: take the address and country from the **outermost** CDN, the one the browser connects to, and pass them through each hop as trusted headers (each hop checking the previous one, as with nginx's `realip` limited to that CDN's addresses). The forged-header and GDPR-country checks in [Verify](#3-verify) catch it: they show the inner CDN's location rather than yours.
 
 ## What's been verified live
 
@@ -603,7 +603,7 @@ Verify each publisher before going live ([Verify](#3-verify)), and tell us what 
 
 **Why one secret per publisher, rather than one per host?** The array is the endpoint's, not the site's: secrets can't live in `SID_HOSTS`, a plain setting. One per publisher gives you revocation per publisher; binding them to hosts would add a second map for little gain ([Security model](#security-model)).
 
-**Why does the endpoint need the country at all?** Without a TC string, GDPR applies when the visitor is in the EU, and only the publisher's CDN knows where the visitor is. Your endpoint's platform sees the CDN's edge.
+**Why does the endpoint need the country at all?** Without a TC string, GDPR applies when the visitor is in the EU, the rest of the EEA, the UK or Turkey, and only the publisher's CDN knows where the visitor is. Your endpoint's platform sees the CDN's edge.
 
 **Can the IP address be left out?** Yes: leave `SID_CLIENT_IP_HEADER` unset, and the endpoint has no client IP (the `ip` module and IP-based vendor modules return nothing). Consent doesn't need it; it needs the country.
 
