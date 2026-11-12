@@ -23,6 +23,7 @@ curl -s https://www.example.com/_sid/v1 | jq .ext.modules
 
 - **Unknown names** are reported as `skipped` with reason `not installed`: check the spelling, or that your build includes the module.
 - **Failures are contained:** a module that errors or exceeds `SID_MODULE_TIMEOUT_MS` is reported and left out, and the rest of the response is unaffected.
+- **Settings are read-only to modules:** a module gets its `SID_MODULE_CONFIG` and `SID_MODULE_SECRETS` entries frozen, all the way down, since they serve every later request too. A module that tries to change them reports `error` (with no other effect); if a third-party module does, that's a bug for its maintainer.
 - **Removing a module** from `SID_MODULES` turns it off.
 
 ## Modules on `/_sid/sync`

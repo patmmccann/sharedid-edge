@@ -4,14 +4,41 @@
 // then compiles it to deploy/main.wasm, the Compute package's WebAssembly.
 //
 // Options: --bowser (Bowser in the ua module), --outdir <deploy* dir>, --module and --vendor-modules; see
-// scripts/bundle-adapter.mjs.
+// scripts/bundle-adapter.mjs. And this adapter's own:
+//   --reusable-sandbox  bundle src/reusable.ts instead: the same service with Fastly's reusable sandboxes on
+//                   (experimental), so one sandbox answers several requests in turn. Off by default; the default bundle
+//                   must not import fastly:experimental, and this checks it doesn't.
+//   --reusable-sandbox-option <name>=<integer>  override a default of src/sandbox.ts (repeatable): maxRequests,
+//                   betweenRequestTimeoutMs, maxMemoryMiB or sandboxTimeoutMs. Needs --reusable-sandbox.
 import { readdirSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { bundleAdapter, checkImports } from '../../../../scripts/bundle-adapter.mjs';
 
 const root = dirname(import.meta.dirname);
 
-const { outdir, outfile } = await bundleAdapter({
+/** The options of `setReusableSandboxOptions` (src/sandbox.ts). */
+const SANDBOX_OPTIONS = ['maxRequests', 'betweenRequestTimeoutMs', 'maxMemoryMiB', 'sandboxTimeoutMs'];
+
+/**
+ * The --reusable-sandbox-option values as an object, checked: known names, whole numbers of 0 or more.
+ *
+ * @param {string[]} values
+ * @returns {Record<string, number>}
+ */
+function sandboxOverrides(values) {
+  /** @type {Record<string, number>} */
+  const overrides = {};
+  for (const value of values) {
+    const [name = '', number = ''] = value.split('=');
+    if (!SANDBOX_OPTIONS.includes(name) || !/^\d+$/.test(number)) {
+      throw new Error(`--reusable-sandbox-option takes <name>=<whole number>, name one of ${SANDBOX_OPTIONS.join(', ')}; not ${value}`);
+    }
+    overrides[name] = Number(number);
+  }
+  return overrides;
+}
+
+const { outdir, outfile, args } = await bundleAdapter({
   root,
   entry: 'src/main.ts',
   file: 'main.js',
@@ -23,11 +50,29 @@ const { outdir, outfile } = await bundleAdapter({
     target: 'es2022',
     external: ['fastly:*'],
     banner: { js: '// SharedID Edge for Fastly Compute (@sharedid-edge/fastly), bundled with its built-in modules. https://github.com/patmmccann/sharedid-edge' }
+  },
+  args: {
+    'reusable-sandbox': { type: 'boolean', default: false },
+    'reusable-sandbox-option': { type: 'string', multiple: true, default: [] }
+  },
+  variant: values => {
+    const overrides = /** @type {string[]} */ (values['reusable-sandbox-option']);
+    if (values['reusable-sandbox'] !== true) {
+      if (overrides.length > 0) throw new Error('--reusable-sandbox-option needs --reusable-sandbox');
+      return {};
+    }
+    return {
+      entry: 'src/reusable.ts',
+      label: 'with reusable sandboxes',
+      options: { define: { SHAREDID_REUSABLE_SANDBOX_OPTIONS: JSON.stringify(sandboxOverrides(overrides)) } }
+    };
   }
 });
 
-// The bundle may import nothing but Fastly's modules: anything else wouldn't resolve when it's compiled.
-checkImports(outfile, name => name.startsWith('fastly:'), 'Fastly Compute');
+// The bundle may import nothing but Fastly's modules: anything else wouldn't resolve when it's compiled. Only the
+// reusable-sandbox build may import the experimental one.
+const reusable = args['reusable-sandbox'] === true;
+checkImports(outfile, name => name.startsWith('fastly:') && (reusable || name !== 'fastly:experimental'), 'Fastly Compute (fastly:experimental only with --reusable-sandbox)');
 
 const files = readdirSync(outdir).sort();
 if (files.join(',') !== 'main.js') {
