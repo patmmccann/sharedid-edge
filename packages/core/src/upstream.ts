@@ -171,20 +171,15 @@ export function trustedUpstreamFromEnv(env: Env, options: TrustedUpstreamOptions
   const clientIp = headerSetting(env, 'SID_CLIENT_IP_HEADER');
   const locationText = str(env, 'SID_LOCATION_HEADERS');
   if (secretsText === undefined) {
-    // Without the secret, nothing reads these: say so rather than run as if they weren't there.
-    for (const name of ['SID_UPSTREAM_AUTH_HEADER', 'SID_UPSTREAM_HOST_HEADER']) {
-      if (str(env, name) !== undefined) throw new ConfigError(`${name} needs SID_UPSTREAM_SECRETS`);
-    }
-    if (options.trustProxy !== true) {
-      for (const name of ['SID_CLIENT_IP_HEADER', 'SID_LOCATION_HEADERS']) {
-        if (str(env, name) !== undefined) throw new ConfigError(`${name} is read only from an authenticated upstream: it needs SID_UPSTREAM_SECRETS`);
-      }
-    }
+    // Without the secret, nothing reads these: say so rather than run as if they weren't there. A trusted proxy reads
+    // the last two.
+    const orphans = ['SID_UPSTREAM_AUTH_HEADER', 'SID_UPSTREAM_HOST_HEADER', ...(options.trustProxy === true ? [] : ['SID_CLIENT_IP_HEADER', 'SID_LOCATION_HEADERS'])];
+    for (const name of orphans) if (str(env, name) !== undefined) throw new ConfigError(`${name} needs SID_UPSTREAM_SECRETS`);
     return undefined;
   }
   const location = parseLocationHeaders(locationText);
   if (location.country === undefined) {
-    throw new ConfigError('SID_LOCATION_HEADERS must name the country header with SID_UPSTREAM_SECRETS, like {"country":"x-sid-country"}: the country decides whether GDPR applies');
+    throw new ConfigError('SID_LOCATION_HEADERS must name the country header (it decides GDPR)');
   }
   const headers: [setting: string, name: string | undefined][] = [
     ['SID_UPSTREAM_AUTH_HEADER', authHeader],
@@ -198,9 +193,9 @@ export function trustedUpstreamFromEnv(env: Env, options: TrustedUpstreamOptions
     // A header the endpoint's own platform sets (CF-Connecting-IP, CloudFront-Viewer-*, True-Client-IP) would describe
     // the publisher's CDN, not the visitor; X-Forwarded-For is a list proxies append to.
     if (!name.startsWith('x-') || name === 'x-forwarded-for') {
-      throw new ConfigError(`${setting}: with SID_UPSTREAM_SECRETS, name a header starting with x- that the publisher's CDN sets, not "${name}"`);
+      throw new ConfigError(`${setting}: "${name}" must start with x- (not x-forwarded-for)`);
     }
-    if (seen.has(name)) throw new ConfigError(`${setting}: "${name}" is used twice; the upstream's headers must all differ`);
+    if (seen.has(name)) throw new ConfigError(`${setting}: "${name}" is used twice`);
     seen.add(name);
   }
   // Frozen like the module secrets: the handler keeps it for every request.
@@ -215,12 +210,12 @@ function parseSecrets(value: string): readonly string[] {
   } catch {
     parsed = undefined;
   }
-  if (!Array.isArray(parsed) || parsed.length === 0) throw new ConfigError('SID_UPSTREAM_SECRETS must be a JSON array of secrets, like ["<openssl rand -hex 32>"]');
+  if (!Array.isArray(parsed) || parsed.length === 0) throw new ConfigError('SID_UPSTREAM_SECRETS must be a JSON array of secrets');
   const list: readonly unknown[] = parsed;
   const secrets: string[] = [];
   for (const [index, secret] of list.entries()) {
     if (typeof secret !== 'string' || !SECRET.test(secret)) {
-      throw new ConfigError(`SID_UPSTREAM_SECRETS: secret ${String(index + 1)} must be 32 to 256 letters, digits or -._~+/= (openssl rand -hex 32 makes one)`);
+      throw new ConfigError(`SID_UPSTREAM_SECRETS: secret ${String(index + 1)} must be 32 to 256 of A-Za-z0-9-._~+/=`);
     }
     secrets.push(secret);
   }
