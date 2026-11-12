@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    // Platform-neutral, like core: the lookup runs on every edge runtime, and the build-time reader uses web APIs only.
+    "lib": ["ES2023", "WebWorker"]
+  },
+  "include": ["src"],
+  "references": [{ "path": "../core" }, { "path": "../modules/geo" }, { "path": "../modules/ip" }]
+}

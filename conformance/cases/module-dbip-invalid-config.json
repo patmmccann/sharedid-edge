@@ -1,0 +1,13 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The dbip vendor module with an invalid mode (SID_MODULE_CONFIG={\"dbip\":{\"mode\":\"merge\"}}): reported as an error, adding nothing.",
+  "build": ["vendor-modules"],
+  "config": { "SID_MODULES": "dbip", "SID_MODULE_CONFIG": "{\"dbip\":{\"mode\":\"merge\"}}", "SID_TRUST_PROXY": "true" },
+  "cases": [
+    {
+      "name": "reports an invalid mode as an error",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77" } },
+      "expect": { "status": 200, "jsonIncludes": { "ext": { "modules": { "dbip": { "status": "error" } } } }, "jsonAbsent": ["ortb2"] }
+    }
+  ]
+}

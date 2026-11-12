@@ -252,6 +252,7 @@ Each module's behaviour is specified in its own file under [`modules/`](modules)
 
 <!-- generated:spec-modules:start -->
 - [The `bot` module](modules/bot.md)
+- [The `dbip` module](modules/dbip.md)
 - [The `ec` module](modules/ec.md)
 - [The `geo` module](modules/geo.md)
 - [The `ip` module](modules/ip.md)

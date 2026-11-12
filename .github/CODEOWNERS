@@ -8,3 +8,7 @@
 
 # ec: IAB Tech Lab's Trusted Server Edge Cookies, ported; maintained by the project.
 /packages/vendor-modules/ec/  @patmmccann
+
+# dbip: DB-IP's free IP to Country Lite data, and the IP range tables IP database modules share; maintained by the project.
+/packages/vendor-modules/dbip/  @patmmccann
+/packages/ip-ranges/  @patmmccann
