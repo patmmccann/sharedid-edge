@@ -1,6 +1,6 @@
 # @sharedid-edge/azure-functions
 
-[SharedID Edge](../../../README.md) on Azure: an Azure Functions app (Node.js v4 programming model) behind a `/_sid/*` route of **the Azure Front Door profile that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server, the Lambda function and the Vercel adapter, with built-in modules `ip`, `geo`, `reflect`, `bot` and `ua` (`ec` and vendor modules are added at build time). It passes the same conformance suite, except for one documented limitation of Azure Functions: [cookie values](#cookie-values).
+[SharedID Edge](../../../README.md) on Azure: an Azure Functions app (Node.js v4 programming model) behind a `/_sid/*` route of **the Azure Front Door profile that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server, the Lambda function and the Vercel adapter, with built-in modules `ip`, `geo`, `reflect`, `bot`, `ua` and `clickid` (`ec` and vendor modules are added at build time). It passes the same conformance suite, except for one documented limitation of Azure Functions: [cookie values](#cookie-values).
 
 This is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform).
 
@@ -83,7 +83,7 @@ npm install --omit=dev                              # @azure/functions, the v4 p
 
 Rebuild and bundle after updating the code.
 
-**`ec` and vendor modules (opt-in).** The bundle has the built-in modules (`ip`, `geo`, `reflect`, `bot`, `ua`). [`ec`](../../vendor-modules/ec/README.md) (Trusted Server Edge Cookies, whose ID is derived from the IP address) and [vendor modules](../../vendor-modules/README.md) aren't in it: add each with `--module <package>#<export>`, in place of `npm run bundle -w @sharedid-edge/azure-functions`:
+**`ec` and vendor modules (opt-in).** The bundle has the built-in modules (`ip`, `geo`, `reflect`, `bot`, `ua`, `clickid`). [`ec`](../../vendor-modules/ec/README.md) (Trusted Server Edge Cookies, whose ID is derived from the IP address) and [vendor modules](../../vendor-modules/README.md) aren't in it: add each with `--module <package>#<export>`, in place of `npm run bundle -w @sharedid-edge/azure-functions`:
 
 ```sh
 npm run bundle -w @sharedid-edge/azure-functions -- --module @sharedid-edge/module-ec#ecModule

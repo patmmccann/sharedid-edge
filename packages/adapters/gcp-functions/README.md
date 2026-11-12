@@ -1,6 +1,6 @@
 # @sharedid-edge/gcp-functions
 
-[SharedID Edge](../../../README.md) on Google Cloud: a Cloud Run function (2nd gen, Node.js 24, the Functions Framework) behind a `/_sid/*` path rule of **the external Application Load Balancer that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server and the Lambda function, with built-in modules `ip`, `geo`, `reflect`, `bot` and `ua` (`ec` and vendor modules are added at build time). It passes the same conformance suite, and it uses `@sharedid-edge/node`'s request and response conversion.
+[SharedID Edge](../../../README.md) on Google Cloud: a Cloud Run function (2nd gen, Node.js 24, the Functions Framework) behind a `/_sid/*` path rule of **the external Application Load Balancer that serves your site**. It's the same platform-neutral handler as the Cloudflare Worker, the Node.js server and the Lambda function, with built-in modules `ip`, `geo`, `reflect`, `bot`, `ua` and `clickid` (`ec` and vendor modules are added at build time). It passes the same conformance suite, and it uses `@sharedid-edge/node`'s request and response conversion.
 
 This is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform).
 
@@ -90,7 +90,7 @@ npm run bundle -w @sharedid-edge/gcp-functions    # packages/adapters/gcp-functi
 | `sharedid-edge.mjs` | The function: `src/function.ts` with core, `@sharedid-edge/node`'s conversion and the built-in modules, in one minified ESM file (about 16 KB gzipped; the bundle step fails it over 32 KB). It registers the HTTP function `sharedidEdge`. |
 | `package.json` | `main` is the bundle; its one dependency is `@google-cloud/functions-framework`, which Cloud Build installs and which runs the function. |
 
-**`ec` and vendor modules (opt-in).** The bundle has the built-in modules (`ip`, `geo`, `reflect`, `bot`, `ua`). [`ec`](../../vendor-modules/ec/README.md) (Trusted Server Edge Cookies, whose ID is derived from the IP address) and [vendor modules](../../vendor-modules/README.md) aren't in it: add each with `--module <package>#<export>`, in place of `npm run bundle -w @sharedid-edge/gcp-functions`:
+**`ec` and vendor modules (opt-in).** The bundle has the built-in modules (`ip`, `geo`, `reflect`, `bot`, `ua`, `clickid`). [`ec`](../../vendor-modules/ec/README.md) (Trusted Server Edge Cookies, whose ID is derived from the IP address) and [vendor modules](../../vendor-modules/README.md) aren't in it: add each with `--module <package>#<export>`, in place of `npm run bundle -w @sharedid-edge/gcp-functions`:
 
 ```sh
 npm run bundle -w @sharedid-edge/gcp-functions -- --module @sharedid-edge/module-ec#ecModule
