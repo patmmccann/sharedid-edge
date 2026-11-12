@@ -81,13 +81,31 @@ function coordinate(value: unknown, limit: number): number | undefined {
 /**
  * The 27 EU member states (ISO 3166-1 alpha-2), for adapters whose platform reports a country but no EU flag. The
  * same set Cloudflare's `request.cf.isEUCountry` covers, so every adapter agrees: EU membership, not the wider EEA
- * (Iceland, Liechtenstein, Norway) or the UK. Pages there should send `gdpr=1` explicitly. Update it if EU
- * membership changes.
+ * (Iceland, Liechtenstein, Norway), the UK or Turkey. Whether GDPR applies uses `GDPR_COUNTRY_CODES`, which adds
+ * those. Update it if EU membership changes.
  */
 export const EU_COUNTRY_CODES: ReadonlySet<string> = new Set([
   'AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'HU',
   'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK'
 ]);
+
+/**
+ * The countries where GDPR (or a law SharedID Edge treats as GDPR) applies, by ISO 3166-1 alpha-2 code: the 27 EU
+ * member states (`EU_COUNTRY_CODES`), the rest of the EEA (Iceland, Liechtenstein, Norway), the United Kingdom (UK
+ * GDPR) and Turkey (KVKK, treated as GDPR). Not Switzerland. Wider than EU membership, which `isEU` keeps meaning:
+ * core decides whether GDPR applies from a country in this list, or the platform's EU flag (`gdprFromLocation`).
+ */
+export const GDPR_COUNTRY_CODES: ReadonlySet<string> = new Set([...EU_COUNTRY_CODES, 'GB', 'IS', 'LI', 'NO', 'TR']);
+
+/**
+ * Whether GDPR applies from the visitor's location alone: true for a country in `GDPR_COUNTRY_CODES` or when the
+ * platform says the request is from the EU; otherwise the platform's EU flag (false, or undefined when unknown).
+ * An explicit `gdpr` parameter takes precedence; `readConsent` applies it.
+ */
+export function gdprFromLocation(platform: Pick<PlatformInfo, 'country' | 'isEU'>): boolean | undefined {
+  if (platform.country !== undefined && GDPR_COUNTRY_CODES.has(platform.country)) return true;
+  return platform.isEU;
+}
 
 /**
  * `locationInfo`, plus `isEU` from the country with `EU_COUNTRY_CODES`, for adapters whose platform reports a country

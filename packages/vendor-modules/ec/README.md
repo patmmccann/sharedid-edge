@@ -177,14 +177,15 @@ Trusted Server's rules, applied to the signals SharedID Edge has.
 
 **Allowed** otherwise: with a TC string that consents to Purposes 1 and 4, the cookie is set and the EID returned. Outside GDPR with no TC string, both are, as before.
 
-**Where GDPR applies.** For this module, GDPR applies when the request has `gdpr=1`, or, with no `gdpr` parameter, when the visitor is in one of these countries, Trusted Server's list (`GDPR_COUNTRIES`):
+**Where GDPR applies.** The module uses SharedID Edge's own rule ([consent rules](../../../docs/consent.md)): GDPR applies when the request has `gdpr=1`, or, with no `gdpr` parameter, when the visitor is in one of these countries (core's `GDPR_COUNTRY_CODES`), or the platform reports an EU location:
 - the 27 EU member states;
 - the rest of the EEA: Iceland (`IS`), Liechtenstein (`LI`) and Norway (`NO`);
-- the United Kingdom (`GB`), under UK GDPR.
+- the United Kingdom (`GB`), under UK GDPR;
+- Turkey (`TR`), whose KVKK SharedID Edge treats as GDPR.
 
-`gdpr=0` means it doesn't apply, wherever the visitor is. The country comes from the platform (on Cloudflare, `request.cf.country`; the other adapters' location headers). This is wider than SharedID Edge's own rule for the SharedID, which is EU membership only (Cloudflare's `isEUCountry`): a UK or Norwegian visitor with no TC string still gets `_pubcid`, but no EC.
+`gdpr=0` means it doesn't apply, wherever the visitor is. The country comes from the platform (on Cloudflare, `request.cf.country`; the other adapters' location headers). The SharedID follows the same rule, so a visitor there with no TC string gets neither `_pubcid` nor an EC.
 
-**Turkey and Switzerland aren't in the list,** as in Trusted Server. Turkey's KVKK and Switzerland's FADP are data protection laws of their own, not GDPR, and TCF consent banners are uncommon there, so treating them as GDPR (with no TC string, fail closed) would block nearly every EC. Visitors there are handled as outside GDPR: GPC, `us_privacy`, `coppa`, opt-out and any TC string the page does send still apply. If your site does run a TCF CMP for them, pass `gdpr=1` from the page.
+**Turkey is stricter than Trusted Server,** whose list leaves it out: without a TC string, a visitor in Turkey gets no EC here. If your site has no TCF CMP for Turkish visitors and you've decided their consent is handled otherwise, send `gdpr=0` from the page. **Switzerland isn't in the list,** as in Trusted Server: the Swiss FADP isn't GDPR, so visitors there are handled as outside GDPR. GPC, `us_privacy`, `coppa`, opt-out and any TC string the page does send still apply, and if your site runs a TCF CMP for them, pass `gdpr=1` from the page.
 
 ## Settings
 
@@ -206,7 +207,7 @@ This module implements the cookie and its ID. It doesn't implement the rest of T
 - **No `x-ts-ec` header,** inbound or outbound. Trusted Server's current code doesn't set one either, though its draft spec describes it.
 
 **What matches Trusted Server** (compared with its code at commit [`06e51be`](https://github.com/IABTechLab/trusted-server/tree/06e51be17074475e2dcc5e34b5a249253eff3f57), the baseline for checking drift):
-- **GDPR countries:** the EU, the rest of the EEA and the UK, with Turkey and Switzerland left out ([`geo.rs`](https://github.com/IABTechLab/trusted-server/blob/06e51be17074475e2dcc5e34b5a249253eff3f57/crates/trusted-server-core/src/geo.rs), `GDPR_COUNTRIES`).
+- **GDPR countries:** the EU, the rest of the EEA and the UK, with Switzerland left out ([`geo.rs`](https://github.com/IABTechLab/trusted-server/blob/06e51be17074475e2dcc5e34b5a249253eff3f57/crates/trusted-server-core/src/geo.rs), `GDPR_COUNTRIES`). SharedID Edge also treats Turkey as a GDPR country, which upstream doesn't: stricter, so a Turkish visitor without a TC string gets no EC here.
 - **The EID needs TCF Purposes 1 and 4;** the cookie, Purpose 1 ([`consent/mod.rs`](https://github.com/IABTechLab/trusted-server/blob/06e51be17074475e2dcc5e34b5a249253eff3f57/crates/trusted-server-core/src/consent/mod.rs), `gate_eids_by_consent` and `allows_ec_creation`).
 - Refusing placeholder passphrases (`PASSPHRASE_PLACEHOLDERS` and `reject_placeholder_secrets` in [`settings.rs`](https://github.com/IABTechLab/trusted-server/blob/06e51be17074475e2dcc5e34b5a249253eff3f57/crates/trusted-server-core/src/settings.rs)); this module adds its own examples to the list.
 - The ID format, IPv6 /64 normalization (with Trusted Server's test vectors), the cookie attributes, no refresh, and format-only validation.
@@ -233,7 +234,6 @@ Other exports:
 - `EC_COOKIE`, `EC_MAX_AGE_SECONDS`, `MIN_PASSPHRASE_BYTES`, `EC_PASSPHRASE_PLACEHOLDERS`
 - `randomSuffix()`
 - `ecDecision(consent, optedOut)` and `ecEidAllowed(consent)` (the consent rules for the cookie and the EID)
-- `ecGdprApplies(url, platform)` and `EC_GDPR_COUNTRIES` (where GDPR applies for this module)
 - `ecModuleConfig()`, `ecPassphrase()` and `isPlaceholderPassphrase()` (settings parsing)
 
 ## Troubleshooting
@@ -243,7 +243,7 @@ Other exports:
 | `ext.modules.ec` is missing | `ec` isn't in `SID_MODULES`. |
 | `ext.modules.ec.status` is `error` | `SID_MODULE_SECRETS` has no `ec.passphrase`, or it's under 32 bytes or a placeholder from documentation (see [Settings](#settings)), or `ec.domain` has a leading dot or isn't a domain. |
 | `status` is `empty` and no cookie is set | Consent rules it out (see above). Check the request's `gdpr`, `gdpr_consent`, `Sec-GPC`, `us_privacy` and `coppa`. Or the platform gave no client IP. |
-| No EC for UK, Norwegian, Icelandic or Liechtenstein visitors, though they get `_pubcid` | GDPR applies to them for this module, and there's no TC string. Pass the CMP's TC string (`gdpr_consent`, or the `euconsent-v2` cookie). |
+| No EC (and no `_pubcid`) for visitors in the EU, the rest of the EEA, the UK or Turkey | GDPR applies to them, and there's no TC string. Pass the CMP's TC string (`gdpr_consent`, or the `euconsent-v2` cookie). |
 | `ts-ec` is set, but the EC isn't in the payload | The TC string consents to Purpose 1 but not Purpose 4. |
 | The cookie isn't sent back on later requests | `Domain` doesn't match the page's host. Check `ec.domain`, and that `/_sid/*` is served on your own domain. |
 | Two visitors in one office share a prefix | Expected: they share an IP address. The suffix tells them apart. |

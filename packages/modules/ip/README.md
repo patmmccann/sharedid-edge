@@ -83,7 +83,7 @@ The module never sends a truncated address. A truncated address looks real but p
 - `coppa=1`;
 - a `us_privacy` string that opts out of sale (third character `Y`);
 - a TCF TC string that's invalid or doesn't opt in to **Special Feature 1** (use precise geolocation data);
-- GDPR applies (`gdpr=1`, or an EU location on Cloudflare) and there's no TC string.
+- GDPR applies (`gdpr=1`, or a visitor in the EU, the rest of the EEA, the UK or Turkey) and there's no TC string.
 
 Otherwise it sends the full address.
 
