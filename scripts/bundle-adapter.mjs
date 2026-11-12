@@ -106,6 +106,25 @@ export function checkBudget(file, label, from = process.cwd(), { enforce = true 
   checkBuildSecrets(file, { from });
 }
 
+/**
+ * Sets a failing exit code when the bundle `file` imports any module `allowed` doesn't accept: on a platform whose
+ * runtime provides only its own modules (EdgeWorkers' built-in modules, Fastly's `fastly:*`), anything else wouldn't
+ * resolve. `platform` names the runtime in the message.
+ *
+ * @param {string} file
+ * @param {(name: string) => boolean} allowed
+ * @param {string} platform
+ */
+export function checkImports(file, allowed, platform) {
+  const code = readFileSync(file, 'utf8');
+  const imports = [...code.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)["']([^"']+)["']/g)].map(match => match[1]);
+  const unknown = imports.filter(name => !allowed(name));
+  if (unknown.length > 0) {
+    console.error(`${basename(dirname(file))}/${basename(file)} imports modules ${platform} doesn't have: ${unknown.join(', ')}`);
+    process.exitCode = 1;
+  }
+}
+
 // `node scripts/bundle-adapter.mjs <file> <label> [<file> <label> …]` checks bundles built elsewhere (the Worker's
 // dry runs).
 if (process.argv[1] !== undefined && import.meta.filename === process.argv[1]) {

@@ -114,3 +114,46 @@ export function parseViewerAddress(value: string | undefined): string | undefine
   }
   return parseIp(address) === undefined ? undefined : address;
 }
+
+/**
+ * Every setting an adapter reads from per-request storage (Akamai's Property Manager variables, Fastly's config store):
+ * core's `SID_*` settings (the names in `SETTINGS`) and `SID_PUBLIC_ORIGIN`. Listed here rather than taken from
+ * `SETTINGS`, whose descriptions would add about 1 KB to a bundle; a unit test keeps the two in step.
+ */
+export const SETTING_NAMES: readonly string[] = [
+  'SID_BASE_PATH', 'SID_COOKIE_NAME', 'SID_COOKIE_DOMAIN', 'SID_MAX_AGE_DAYS', 'SID_CREATE', 'SID_RECOVERY_COOKIE',
+  'SID_OPTOUT_COOKIE', 'SID_VENDOR_ID', 'SID_ALLOWED_ORIGINS', 'SID_SYNC_CACHE_SECONDS', 'SID_MODULES', 'SID_SYNC_MODULES',
+  'SID_MODULE_CONFIG', 'SID_MODULE_SECRETS', 'SID_MODULE_TIMEOUT_MS', 'SID_SKIP_BOTS', 'SID_HOSTS', 'SID_SKIP_BOTS_SCORE',
+  'SID_PUBLIC_ORIGIN'
+];
+
+/**
+ * For platforms that hand the settings over with each request rather than at start-up (Akamai's Property Manager
+ * variables, Fastly's config store): returns a function that gives the handler for the settings `env`, built with
+ * `build`. The last one is kept, keyed by the values of `SETTING_NAMES`, and rebuilt only when they change, so a
+ * request costs a handler build only after the settings change.
+ */
+export function cachedByEnv<H>(build: (env: Readonly<Record<string, string | undefined>>) => H): (env: Readonly<Record<string, string | undefined>>) => H {
+  let cached: { readonly key: string; readonly handler: H } | undefined;
+  return env => {
+    const key = JSON.stringify(SETTING_NAMES.map(name => env[name] ?? null));
+    if (cached?.key !== key) cached = { key, handler: build(env) };
+    return cached.handler;
+  };
+}
+
+/**
+ * `request` with its URL on `publicOrigin` (`SID_PUBLIC_ORIGIN`): the same path and query, method, headers and body.
+ * Returns `request` itself when `publicOrigin` is undefined. Only the origin changes, which decides `Secure` and picks
+ * the site's settings with `SID_HOSTS`.
+ */
+export async function withPublicOrigin(request: Request, publicOrigin: string | undefined): Promise<Request> {
+  if (publicOrigin === undefined) return request;
+  const url = new URL(request.url);
+  const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
+  return new Request(new URL(`${url.pathname}${url.search}`, publicOrigin), {
+    method: request.method,
+    headers: request.headers,
+    ...(hasBody ? { body: await request.arrayBuffer() } : {})
+  });
+}

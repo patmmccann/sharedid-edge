@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  cachedByEnv,
   ConfigError,
   decodeTcf,
   deepMerge,
@@ -21,7 +22,9 @@ import {
   resolveConfig,
   serializeCookie,
   SETTINGS,
+  SETTING_NAMES,
   splitHeaders,
+  withPublicOrigin,
   storageDecision,
   type SharedIdEdgeConfig,
   type StorageDecision, settingsFromEnv } from '../src/index.js';
@@ -423,6 +426,34 @@ describe('more adapter helpers', () => {
     expect(locationWithEU({ country: 'de', city: 'Berlin' })).toEqual({ country: 'DE', city: 'Berlin', isEU: true });
     expect(locationWithEU({ country: 'GB' })).toEqual({ country: 'GB', isEU: false });
     expect(locationWithEU({ country: 'XX', city: 'Nowhere' })).toEqual({ city: 'Nowhere' });
+  });
+});
+
+describe('settings read per request', () => {
+  it('SETTING_NAMES is every setting in SETTINGS, and SID_PUBLIC_ORIGIN', () => {
+    expect(SETTING_NAMES).toEqual([...SETTINGS.map(setting => setting.name), 'SID_PUBLIC_ORIGIN']);
+  });
+
+  it('cachedByEnv rebuilds only when a setting changes, ignoring anything else', () => {
+    const build = vi.fn((env: Readonly<Record<string, string | undefined>>) => ({ domain: env['SID_COOKIE_DOMAIN'] }));
+    const handlerFor = cachedByEnv(build);
+    const first = handlerFor({ SID_COOKIE_DOMAIN: 'example.com' });
+    expect(handlerFor({ SID_COOKIE_DOMAIN: 'example.com', OTHER: 'x' })).toBe(first);
+    expect(build).toHaveBeenCalledOnce();
+    expect(handlerFor({ SID_COOKIE_DOMAIN: 'example.org' })).toEqual({ domain: 'example.org' });
+    expect(handlerFor({ SID_COOKIE_DOMAIN: 'example.org', SID_BASE_PATH: '/' })).not.toBe(first);
+    expect(build).toHaveBeenCalledTimes(3);
+  });
+
+  it('withPublicOrigin moves the request to the public origin, keeping the path, query, method and headers', async () => {
+    const request = new Request('http://10.0.0.5:8080/_sid/v1?gdpr=1', { headers: { cookie: 'a=1' } });
+    expect(await withPublicOrigin(request, undefined)).toBe(request);
+    const moved = await withPublicOrigin(request, 'https://www.example.com');
+    expect(moved.url).toBe('https://www.example.com/_sid/v1?gdpr=1');
+    expect(moved.headers.get('cookie')).toBe('a=1');
+    const posted = await withPublicOrigin(new Request('http://10.0.0.5/_sid/v1', { method: 'POST', body: 'x' }), 'https://www.example.com');
+    expect(posted.method).toBe('POST');
+    expect(await posted.text()).toBe('x');
   });
 });
 
