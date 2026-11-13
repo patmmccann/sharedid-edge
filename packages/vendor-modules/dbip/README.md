@@ -125,7 +125,7 @@ The download page lists each file's SHA-1 and MD5 for the uncompressed `.mmdb`: 
 
 ## Keeping the data up to date
 
-For updates without rebuilding the request worker, use the opt-in [scheduled snapshot deployment](../../../docs/data-updates.md). `dbipSource` downloads and validates the database on the scheduler; `countrySnapshotModule` reads the in-memory snapshot with the same country, mode and consent rules. It reports `stale` on missing or old data and can expire an unusably old copy. No download happens in a module's `run`.
+For updates without rebuilding the request worker, use the opt-in [scheduled snapshot deployment](../../../docs/data-updates.md). `dbipSource` downloads and validates the database on the scheduler; `countrySnapshotModule` reads the in-memory snapshot with the same country, mode and consent rules. It reports `stale` on missing or old data and can expire an unusably old copy. No download happens in a module's `run`. The updater deletes each superseded snapshot body once the new one is published, so your storage holds only the current release; CC BY 4.0 sets no deletion deadline.
 
 DB-IP publishes a new release at the start of each month. Rebuild and redeploy monthly: a scheduled CI job that runs `npm run build`, `npm run data -w @sharedid-edge/module-dbip` and your deploy step is enough. Downloads happen at build time only, never while the worker answers requests. `DBIP_DATA_INFO` says which release is built in ([Using it in code](#using-it-in-code)).
 

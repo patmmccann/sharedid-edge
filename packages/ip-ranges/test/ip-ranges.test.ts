@@ -1,6 +1,6 @@
 import { createHandler, resolveConfig, type PayloadV1, type PlatformInfo } from '@sharedid-edge/core';
 import { parseIp, type ParsedIp } from '@sharedid-edge/module-ip';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildCountryData,
   buildRangeTable,
@@ -16,7 +16,7 @@ import {
   type MmdbFixtureNetwork,
   type RangeTable
 } from '../src/build.js';
-import { countryFor, geoMode, ipDatabaseModule } from '../src/index.js';
+import { countryFor, geoMode, ipDatabaseModule, ipDatabaseSettings } from '../src/index.js';
 
 function ip(text: string): ParsedIp {
   const parsed = parseIp(text);
@@ -288,6 +288,30 @@ describe('ipDatabaseModule', () => {
           expect(body.ortb2 === undefined).toBe(clientIp === '203.0.114.1');
         } else expect(report?.status).toBe('error');
       }
+    }
+  });
+
+  it('parses the publication date once, at creation, not per request', async () => {
+    const info = { database: 'test', built: '2026-11-01', families: 'ipv4,ipv6' as const, fixture: true, attribution: 'Test' };
+    const parse = vi.spyOn(Date, 'parse');
+    try {
+      const module = ipDatabaseModule({ name: 'test-db', data: decodeRangeTable(data), info, now: () => Date.UTC(2026, 10, 13) });
+      expect(parse).toHaveBeenCalledOnce();
+      const handler = createHandler({ modules: [module], config: resolveConfig({ SID_MODULES: 'test-db', SID_MODULE_CONFIG: '{"test-db":{"maxAgeDays":1}}' }) });
+      for (let request = 0; request < 3; request++) {
+        const body = await (await handler(new Request('https://example.com/_sid/v1'), { clientIp: '192.0.2.7' })).json() as PayloadV1;
+        expect(body.ext.modules['test-db']).toMatchObject({ status: 'ok', stale: true });
+      }
+      expect(parse).toHaveBeenCalledOnce();
+    } finally { parse.mockRestore(); }
+  });
+
+  it('validates every IP database setting in geoMode and ipDatabaseSettings', () => {
+    expect(ipDatabaseSettings('db', { mode: 'replace', maxAgeDays: 30 })).toEqual({ mode: 'replace', maxAgeDays: 30 });
+    expect(ipDatabaseSettings('db', {})).toEqual({ mode: 'fill' });
+    expect(geoMode('db', { maxAgeDays: 30 })).toBe('fill');
+    for (const config of [{ maxAgeDays: 0 }, { maxAgeDays: '30' }, { maxAgeDays: Infinity }, { other: 1 }, { mode: 'merge' }]) {
+      expect(() => geoMode('db', config)).toThrow(TypeError);
     }
   });
 

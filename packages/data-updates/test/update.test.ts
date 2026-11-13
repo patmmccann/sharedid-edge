@@ -127,7 +127,7 @@ describe('private snapshot loading', () => {
 
   it('rejects unsupported manifest/data versions, wrong hashes and future dates', async () => {
     const store = new MemoryStore();
-    await refreshData(listSource(), { store, now: () => 2000 });
+    await refreshData(listSource(), { store, now: () => 1000 + 10 * 60_000 }); // Beyond the clock-skew tolerance.
     const cache = new SnapshotCache(store, 'list', numbers, 0, () => 1000);
     expect(await cache.reload()).toBe(false);
     expect(cache.current).toBeUndefined();

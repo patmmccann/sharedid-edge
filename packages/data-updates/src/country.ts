@@ -1,5 +1,6 @@
 import { buildCountryData } from '@sharedid-edge/ip-ranges/build';
 import { validateCountrySnapshot, type CountrySnapshot } from './country-data.js';
+import { hexDigest } from './snapshot.js';
 import type { Download, DownloadContext, UpdateSource } from './update.js';
 
 export interface CountrySourceOptions {
@@ -52,8 +53,15 @@ async function get(url: string, context: DownloadContext, authorization?: string
   throw new TypeError('Too many database redirects');
 }
 
+/** Release the connection before failing on an error status, as the redirect and 404 paths do. */
+async function requireOk(response: Response, message: string): Promise<void> {
+  if (response.ok) return;
+  await response.body?.cancel();
+  throw new Error(message);
+}
+
 async function downloaded(response: Response, url: string): Promise<Download> {
-  if (!response.ok) throw new Error('Database download failed');
+  await requireOk(response, 'Database download failed');
   const etag = response.headers.get('ETag');
   return { bytes: await bytes(response), url, ...(etag === null ? {} : { etag }) };
 }
@@ -99,10 +107,9 @@ export function maxmindSource(options: CountrySourceOptions): UpdateSource<Count
       if (response.status === 304) { checkNotModified(url, context); return undefined; }
       const download = await downloaded(response, url);
       const checksum = await get(`${url}.sha256`, context, authorization);
-      if (!checksum.ok) throw new Error('Checksum download failed');
+      await requireOk(checksum, 'Checksum download failed');
       const expected = new TextDecoder().decode(await bytes(checksum, 4096)).trim().split(/\s+/)[0];
-      const actual = [...new Uint8Array(await crypto.subtle.digest('SHA-256', download.bytes))].map(byte => byte.toString(16).padStart(2, '0')).join('');
-      if (expected !== actual) throw new TypeError('Invalid database checksum');
+      if (expected !== await hexDigest(download.bytes)) throw new TypeError('Invalid database checksum');
       return download;
     },
     async decode(file) {

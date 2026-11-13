@@ -111,4 +111,19 @@ describe('country database sources', () => {
     expect(await refreshData(source, { store, fetch })).toMatchObject({ status: 'failed' });
     expect(store.values.get('maxmind/current.json')).toBe(previous);
   });
+
+  it('cancels the body of a failed database or checksum response before failing', async () => {
+    const failing = (cancel: () => void): Response => new Response(new ReadableStream({ cancel }), { status: 500 });
+    const bytes = database('GeoLite2-Country');
+    const secrets = { maxmind: { accountId: 'account', licenseKey: 'key' } };
+    for (const stage of ['database', 'checksum'] as const) {
+      const cancel = vi.fn();
+      const fetch = (url: string): Promise<Response> => Promise.resolve(url.endsWith('.sha256') === (stage === 'checksum') ? failing(cancel) : new Response(bytes));
+      expect(await refreshData(maxmindSource({ attribution: 'test' }), { store: new MemoryStore(), secrets, fetch })).toMatchObject({ status: 'failed' });
+      expect(cancel).toHaveBeenCalledOnce();
+    }
+    const cancel = vi.fn();
+    expect(await refreshData(dbipSource({ attribution: 'test' }), { store: new MemoryStore(), fetch: () => Promise.resolve(failing(cancel)) })).toMatchObject({ status: 'failed' });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
 });

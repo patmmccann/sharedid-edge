@@ -5,6 +5,7 @@ export class MemoryStore implements SnapshotStore {
   readonly values = new Map<string, string>();
   readonly get = vi.fn((key: string): Promise<string | undefined> => Promise.resolve(this.values.get(key)));
   readonly put = vi.fn((key: string, value: string): Promise<void> => { this.values.set(key, value); return Promise.resolve(); });
+  readonly delete = vi.fn((key: string): Promise<void> => { this.values.delete(key); return Promise.resolve(); });
 }
 
 export function numbers(value: unknown): readonly number[] {

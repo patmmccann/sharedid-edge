@@ -9,7 +9,8 @@ it('validates and hashes snapshots inside workerd, with Workers-compatible stora
   const values = new Map<string, string>();
   const store = kvStore({
     get: key => Promise.resolve(values.get(key) ?? null),
-    put: (key, value) => { values.set(key, value); return Promise.resolve(); }
+    put: (key, value) => { values.set(key, value); return Promise.resolve(); },
+    delete: key => { values.delete(key); return Promise.resolve(); }
   });
   expect(r2).toBe(r2Store);
   expect(kv).toBe(kvStore);

@@ -5,19 +5,21 @@ import type { SnapshotStore } from './snapshot.js';
 export interface KVBinding {
   get(key: string): Promise<string | null>;
   put(key: string, value: string): Promise<void>;
+  delete(key: string): Promise<void>;
 }
 
 export interface R2Binding {
   get(key: string): Promise<{ text(): Promise<string> } | null>;
   put(key: string, value: string): Promise<unknown>;
+  delete(key: string): Promise<void>;
 }
 
 export function kvStore(binding: KVBinding): SnapshotStore {
-  return { async get(key) { return await binding.get(key) ?? undefined; }, async put(key, value) { await binding.put(key, value); } };
+  return { async get(key) { return await binding.get(key) ?? undefined; }, async put(key, value) { await binding.put(key, value); }, async delete(key) { await binding.delete(key); } };
 }
 
 export function r2Store(binding: R2Binding): SnapshotStore {
-  return { async get(key) { return (await binding.get(key))?.text(); }, async put(key, value) { await binding.put(key, value); } };
+  return { async get(key) { return (await binding.get(key))?.text(); }, async put(key, value) { await binding.put(key, value); }, async delete(key) { await binding.delete(key); } };
 }
 
 /** Return this promise from scheduled, or pass it to ctx.waitUntil: failures must reach the platform's job monitor. */

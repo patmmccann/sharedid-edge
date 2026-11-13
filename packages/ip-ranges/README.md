@@ -1,6 +1,6 @@
 # @sharedid-edge/ip-ranges
 
-For opt-in runtime snapshots, [@sharedid-edge/data-updates](../data-updates/README.md) reuses this package's MMDB conversion and lookup code. `buildCountryData` returns the encoded `data` as well as its generated module source. `ipDatabaseModule` accepts `info` and an optional `now` clock; modules can configure positive `maxAgeDays` to add a `stale: true` report flag based on the database's publication date, while retaining last-good output. No downloader is added to this package's request entry point.
+For opt-in runtime snapshots, [@sharedid-edge/data-updates](../data-updates/README.md) reuses this package's MMDB conversion and lookup code. `buildCountryData` returns the encoded `data` as well as its generated module source. `ipDatabaseModule` accepts the table as base64 or already decoded (so a runtime snapshot is decoded once, outside request handling), plus `info` and an optional `now` clock; its publication date is parsed once, at creation. Modules can configure positive `maxAgeDays` to add a `stale: true` report flag based on the database's publication date, while retaining last-good output. No downloader is added to this package's request entry point.
 
 Compact IP range tables for [SharedID Edge](../../README.md)'s IP database modules, such as [`dbip`](../vendor-modules/dbip/README.md). A module's build script turns a vendor's database (an [MMDB](https://maxmind.github.io/MaxMind-DB/) file, as DB-IP and MaxMind publish) into a small table of what the module returns, the country of each address range; the module bundles it and looks addresses up in memory, with no network access.
 
@@ -10,7 +10,7 @@ You don't use this package directly to deploy: it's a dependency of the modules.
 
 | Import | Runs | What |
 | --- | --- | --- |
-| `@sharedid-edge/ip-ranges` | In the worker | `decodeRangeTable`, `lookupRange`; `ipDatabaseModule`, a module that returns the country as `ortb2.device.geo` with a `mode` (`fill` or `replace`) setting; `geoMode`; `countryFor` |
+| `@sharedid-edge/ip-ranges` | In the worker | `decodeRangeTable`, `lookupRange`; `ipDatabaseModule`, a module that returns the country as `ortb2.device.geo` with a `mode` (`fill` or `replace`) setting; `ipDatabaseSettings` (`mode` and optional `maxAgeDays`) and `geoMode` (its `mode`); `countryFor` |
 | `@sharedid-edge/ip-ranges/build` | At build time | `MmdbReader`, a dependency-free MMDB reader; `buildRangeTable` and `encodeRangeTable`; `buildCountryData`, which turns a downloaded file (`.mmdb`, `.mmdb.gz` or MaxMind's `.tar.gz`) into a module's data file; `writeMmdb`, for test fixtures; `FIXTURE_TABLE` |
 
 Both use web-standard APIs only, like core.

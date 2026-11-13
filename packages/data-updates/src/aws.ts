@@ -1,8 +1,8 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { SnapshotStore } from './snapshot.js';
 
 /**
- * Use a private bucket with Get/PutObject scoped to its snapshot prefix. The updater also needs ListBucket on the
+ * Use a private bucket with Get/Put/DeleteObject scoped to its snapshot prefix. The updater also needs ListBucket on the
  * bucket ARN so missing objects return NoSuchKey rather than AccessDenied. No static AWS credentials are required.
  */
 export function s3Store(bucket: string, prefix = 'sharedid-data/', client: S3Client = new S3Client({})): SnapshotStore {
@@ -19,6 +19,9 @@ export function s3Store(bucket: string, prefix = 'sharedid-data/', client: S3Cli
     },
     async put(key, value) {
       await client.send(new PutObjectCommand({ Bucket: bucket, Key: prefix + key, Body: value, ContentType: 'application/json', CacheControl: 'no-store' }));
+    },
+    async delete(key) {
+      await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: prefix + key }));
     }
   };
 }

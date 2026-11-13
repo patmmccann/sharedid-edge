@@ -140,7 +140,7 @@ DataUpdateFunction:
             Action: s3:ListBucket
             Resource: !GetAtt ReferenceDataBucket.Arn
           - Effect: Allow
-            Action: [s3:GetObject, s3:PutObject]
+            Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
             Resource: !Sub '${ReferenceDataBucket.Arn}/sharedid-data/*'
     Events:
       Refresh:
@@ -152,7 +152,7 @@ DataUpdateFunction:
 
 `ReferenceDataBucket` is your private bucket; `UpdateModuleSecrets` is a `NoEcho` parameter or a Secrets Manager dynamic reference. Enable S3 Block Public Access and encryption. Only the updater's execution role needs write access and the vendor secret; the request function needs only `s3:GetObject` for `sharedid-data/*`. There is no function URL for the updater. Monitor failed scheduled invocations and configure retries/dead-letter handling for your deployment. Invoke it once and verify the manifest before enabling the request module.
 
-The updater also needs bucket-level `s3:ListBucket` on this dedicated bucket. [S3 returns `NoSuchKey` for a missing object only when the caller has that permission](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html); otherwise it returns `AccessDenied`. On an empty bucket the manifest is missing, so omitting this permission prevents the first publication. Object reads and writes remain restricted to `sharedid-data/*`, and genuine permission errors still fail the update. The read-only request function can retain its object-only permission: a missing or unreadable snapshot keeps its previous cached copy, if any.
+The updater also needs bucket-level `s3:ListBucket` on this dedicated bucket. [S3 returns `NoSuchKey` for a missing object only when the caller has that permission](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html); otherwise it returns `AccessDenied`. On an empty bucket the manifest is missing, so omitting this permission prevents the first publication. Object reads, writes and deletions (of superseded snapshot bodies) remain restricted to `sharedid-data/*`, and genuine permission errors still fail the update. The read-only request function can retain its object-only permission: a missing or unreadable snapshot keeps its previous cached copy, if any.
 
 In the request function, create a `SnapshotCache(s3Store(bucket), 'dbip', validateCountrySnapshot)` and `countrySnapshotModule` as above. Add it to `createLambdaHandler({ ...settingsFromEnv(process.env), modules: [...builtInModules, module] })`. The exported Lambda handler calls `await cache.reload()` before invoking that handler. The cache checks private S3 at most once a minute, loads the body only for a changed hash, and retains the last good copy on an error. The first load and later manifest polls may add storage latency; they never download from the vendor or transform a database. Keep this cache outside the exported function so warm invocations see updates.
 
@@ -232,8 +232,10 @@ Set `SID_COOKIE_DOMAIN` and `SID_MODULES=geo,dbip`. Keep the usual proxy/origin 
 {"ortb2":{"device":{"geo":{"type":2,"country":"FRA"}}},"ext":{"modules":{"dbip":{"ms":0,"status":"ok","stale":true}}}}
 ```
 
-At `expireAfterMs`, the module drops its contribution and still reports `stale`. Set this when a licence or accuracy requirement limits how long failed refreshes may use old data. MaxMind's GeoLite terms and the module's [licence section](../packages/vendor-modules/maxmind/README.md) still apply. Keep snapshots private, restrict access by prefix, and remove superseded hash objects within your licence's retention terms. Do not delete a body the current manifest references.
+At `expireAfterMs`, the module drops its contribution and still reports `stale`. Set this when a licence or accuracy requirement limits how long failed refreshes may use old data. MaxMind's GeoLite terms and the module's [licence section](../packages/vendor-modules/maxmind/README.md) still apply. Keep snapshots private and restrict access by prefix. After each successful publication the updater deletes the replaced `<source>/<hash>.json` body (once the new manifest reads back), retrying a failed deletion on the next run, so storage holds only the current data. That meets MaxMind's requirement to destroy old releases within 30 days of a new one while the job runs at least that often. Remove by hand anything left from a manifest that was unreadable when it was replaced; never delete the body `current.json` references.
+
+A manifest up to 5 minutes ahead of a request host's clock is treated as fresh (normal clock skew between the updater and request hosts); further ahead, readers reject it and keep their copy. If a new snapshot can't be compiled into a lookup, the module keeps answering from its previous one with `stale: true`, or `error` when it has none.
 
 For modules that keep bundled data, `SID_MODULE_CONFIG={"dbip":{"maxAgeDays":45}}` (also `maxmind`) reports `stale` based on the database's publication date, while retaining the last good country. The default leaves this check off. This is separate from the scheduled cache's last-check age and never starts a download.
 
-Check scheduler failures first, then secret names and licence status, then storage permissions. A failed job keeps the current manifest; a failed reader keeps its in-memory copy. Fix the job and run it again, then verify the manifest's `checkedAt` and that the module returns `ok` on a matching address. None of these checks requires sending a real visitor's address to the vendor.
+Check scheduler failures first, then secret names and licence status, then storage permissions (including delete). The updater writes fixed messages to stderr when it republishes over an unreadable manifest or can't delete a superseded body. A failed job keeps the current manifest; a failed reader keeps its in-memory copy. Fix the job and run it again, then verify the manifest's `checkedAt` and that the module returns `ok` on a matching address. None of these checks requires sending a real visitor's address to the vendor.

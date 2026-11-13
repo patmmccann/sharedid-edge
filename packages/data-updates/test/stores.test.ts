@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
-import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { kvStore, r2Store, scheduledUpdate } from '../src/cloudflare.js';
 import { s3Store } from '../src/aws.js';
 import { fileStore } from '../src/node.js';
@@ -28,7 +28,11 @@ describe('platform storage', () => {
           }
           return { Body: { transformToString: () => Promise.resolve(value) } };
         }
-        if (!(command instanceof PutObjectCommand) || command.input.Key === undefined || typeof command.input.Body !== 'string') {
+        if (command instanceof DeleteObjectCommand) {
+        if (command.input.Key !== undefined) values.delete(command.input.Key);
+        return {};
+      }
+      if (!(command instanceof PutObjectCommand) || command.input.Key === undefined || typeof command.input.Body !== 'string') {
           throw new TypeError('Unexpected S3 test command');
         }
         values.set(command.input.Key, command.input.Body);
@@ -49,15 +53,22 @@ describe('platform storage', () => {
     const kv = new Map<string, string>();
     const get = vi.fn((key: string) => Promise.resolve(kv.get(key) ?? null));
     const put = vi.fn((key: string, value: string) => { kv.set(key, value); return Promise.resolve(); });
-    const store = kvStore({ get, put });
+    const remove = vi.fn((key: string) => { kv.delete(key); return Promise.resolve(); });
+    const store = kvStore({ get, put, delete: remove });
     expect(await store.get('missing')).toBeUndefined();
     await store.put('key', 'value');
     expect(await store.get('key')).toBe('value');
-    const r2 = r2Store({ get: key => Promise.resolve(kv.has(key) ? { text: () => Promise.resolve(kv.get(key) ?? '') } : null), put });
+    const r2 = r2Store({ get: key => Promise.resolve(kv.has(key) ? { text: () => Promise.resolve(kv.get(key) ?? '') } : null), put, delete: remove });
     expect(await r2.get('missing')).toBeUndefined();
     expect(await r2.get('key')).toBe('value');
     await r2.put('key', 'changed');
     expect(await store.get('key')).toBe('changed');
+    await r2.delete('key');
+    expect(await store.get('key')).toBeUndefined();
+    await store.put('key', 'again');
+    await store.delete('key');
+    expect(remove.mock.calls).toEqual([['key'], ['key']]);
+    expect(await r2.get('key')).toBeUndefined();
     await expect(scheduledUpdate([listSource()], { store: new MemoryStore() })).resolves.toBeUndefined();
     await expect(scheduledUpdate([{ ...listSource(), download: () => Promise.reject(new Error('secret')) }], { store: new MemoryStore() })).rejects.toThrow('Scheduled reference-data update failed');
   });
@@ -75,6 +86,10 @@ describe('platform storage', () => {
       await store.put('key', 'next');
       expect(send.mock.calls[1]?.[0]).toBeInstanceOf(PutObjectCommand);
       expect(send.mock.calls[1]?.[0].input).toMatchObject({ Body: 'next', CacheControl: 'no-store' });
+      send.mockImplementationOnce(() => ({}));
+      await store.delete('old');
+      expect(send.mock.calls[2]?.[0]).toBeInstanceOf(DeleteObjectCommand);
+      expect(send.mock.calls[2]?.[0].input).toMatchObject({ Bucket: 'private-bucket', Key: 'data/old' });
       send.mockRejectedValueOnce(Object.assign(new Error('missing'), { name: 'NoSuchKey' }));
       expect(await store.get('missing')).toBeUndefined();
       send.mockRejectedValueOnce(new Error('AccessDenied'));
@@ -90,8 +105,14 @@ describe('platform storage', () => {
       await store.put('dbip/current.json', 'first');
       await store.put('dbip/current.json', 'second');
       expect(await store.get('dbip/current.json')).toBe('second');
-      expect((await stat(join(directory, 'dbip/current.json'))).mode & 0o777).toBe(0o600);
       await expect(store.put('../../escape', 'bad')).rejects.toThrow('Invalid snapshot key');
+      await expect(store.delete('../../escape')).rejects.toThrow('Invalid snapshot key');
+      const body = `dbip/${'a'.repeat(64)}.json`;
+      await store.put(body, 'old');
+      await store.delete(body);
+      expect(await store.get(body)).toBeUndefined();
+      await expect(store.delete(body)).resolves.toBeUndefined(); // Deleting a missing body succeeds.
+      expect((await stat(join(directory, 'dbip/current.json'))).mode & 0o777).toBe(0o600);
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
 
