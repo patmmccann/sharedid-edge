@@ -81,6 +81,18 @@ It reaches the Worker within about 30 seconds. An entry in `SID_HOSTS` takes pre
 
 **If a publisher's own zone is on Cloudflare too** (their proxied hostname is a CNAME to yours, "orange-to-orange"), their zone handles the request first: a `/_sid/*` route of theirs answers instead of yours. Agree with them who runs it.
 
+#### Orange-to-orange with a Worker on one side and a Snippet on the other
+
+A tempting split is the publisher keeping their own Worker for their site while your zone answers `/_sid/*` with a Snippet, which costs nothing extra on a paid plan. Treat it with scepticism:
+
+- **Only one side can answer `/_sid/*`.** SharedID Edge answers its routes itself and never forwards them, so if the publisher's Worker covers `/_sid/*` (a `*/*` route, say), your zone never sees those requests. The split only works if the publisher's routes leave `/_sid/*` alone.
+- **Whether a Snippet runs for custom-hostname traffic at all is untested.** Cloudflare's Snippets documentation doesn't cover Cloudflare for SaaS custom hostnames, let alone traffic that has already passed through the publisher's zone. Until it's been checked on a live zone ([#105](https://github.com/patmmccann/sharedid-edge/issues/105)), don't plan on it.
+- **A Snippet can't read custom hostname metadata,** so every site has to be in `SID_HOSTS` in the Snippet's 32 KB. That caps it at a few hundred sites before any code, so a large host is back to a Worker anyway ([How many sites fit](#how-many-sites-fit)).
+- **Two accounts' rules, caching and firewall settings apply** to the same request, which is harder to reason about and to debug, and a Snippet has no logs or versions to help.
+- **The visitor's location:** in orange-to-orange your zone should see the visitor, not the publisher's zone, in `request.cf`. That's what GDPR by country needs, but it hasn't been verified live either ([#135](https://github.com/patmmccann/sharedid-edge/issues/135)).
+
+If the publisher wants to keep their own Worker, the simplest arrangement is a Worker on your side too, or SharedID Edge running in the publisher's zone ([Model A in the sales-house guide](sales-houses.md#model-a-it-runs-on-the-publishers-own-cdn)). Orange-to-orange is best avoided where the publisher's DNS can simply point at you without being proxied.
+
 ### Amazon CloudFront and Lambda
 
 Behind CloudFront, the function is called on its function URL's hostname, signed with origin access control, so it can't see the visitor's `Host`. It takes the site from `X-Forwarded-Host`, which CloudFront doesn't add itself, and which the `AllViewerExceptHostHeader` policy passes on as the visitor sent it. So with `SID_HOSTS`, associate a CloudFront Function with the `/_sid/*` behaviour, on viewer request, that **sets** it from the `Host` the visitor connected to:

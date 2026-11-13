@@ -53,6 +53,8 @@ SharedID Edge is deployed on the publisher's CDN, in the publisher's account, th
 - **On CloudFront:** the [Lambda function](../packages/adapters/aws-lambda/README.md) and a `/_sid/*` behaviour on their distribution, through a role they let you assume.
 - **On Fastly, Akamai, Vercel, Azure or Google Cloud:** that adapter, in their service, property, project, subscription or project.
 
+If the publisher's site is on Cloudflare and so is your endpoint (orange-to-orange through Cloudflare for SaaS), see [Orange-to-orange with a Worker on one side and a Snippet on the other](hosting-companies.md#orange-to-orange-with-a-worker-on-one-side-and-a-snippet-on-the-other) before planning a Snippet on your side: it's untested and has limits a Worker doesn't.
+
 Each deployment uses that platform's own client IP and location, so there are no headers to forward and no secrets to share. But it's one deployment per publisher to roll out, update and watch, in accounts you don't own, and only on platforms SharedID Edge has an adapter for.
 
 ### Model B: the publisher's CDN forwards to your endpoint
