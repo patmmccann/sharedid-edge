@@ -72,6 +72,8 @@ Modules are built in, and none runs until you list it in `SID_MODULES`. See [Mod
 
 Also on the web at [sharedid.dev](https://sharedid.dev).
 
+- [Architecture diagram](https://gitdiagram.com/patmmccann/sharedid-edge): an interactive map of the repository and how the pieces fit together.
+
 - [Configure Prebid.js](docs/prebid.md)
 - [Responses](docs/responses.md): every route's response, with real output
 - [Configuration reference](docs/configuration.md): every `SID_*` setting
