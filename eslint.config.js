@@ -36,7 +36,7 @@ export default tseslint.config(
   },
   {
     // The CLIs and runners print to stdout by design.
-    files: ['packages/adapters/node/src/cli.ts', 'conformance/src/**', 'scripts/**', 'packages/*/*/scripts/**'],
+    files: ['packages/adapters/node/src/cli.ts', 'packages/data-updates/src/cli.ts', 'conformance/src/**', 'scripts/**', 'packages/*/*/scripts/**'],
     rules: { 'no-console': 'off' }
   },
   {

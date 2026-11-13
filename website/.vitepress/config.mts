@@ -47,6 +47,7 @@ pages['spec/SPEC.md'] = 'spec/index.md';
 for (const file of readdirSync(join(ROOT, 'spec', 'modules')).filter(f => f.endsWith('.md'))) pages[`spec/modules/${file}`] = `spec/modules/${file}`;
 pages['packages/core/README.md'] = 'core.md';
 pages['packages/ip-ranges/README.md'] = 'ip-ranges.md';
+pages['packages/data-updates/README.md'] = 'data-updates.md';
 const adapters = subfolders('packages/adapters');
 for (const name of adapters) pages[`packages/adapters/${name}/README.md`] = `adapters/${name}.md`;
 const modules = subfolders('packages/modules');
@@ -198,7 +199,7 @@ export default defineConfig({
       { text: 'Core modules', collapsed: true, items: moduleItems },
       { text: 'Vendor modules', collapsed: true, items: [{ text: 'Using and contributing vendor modules', link: '/vendor-modules' }, ...vendorModuleItems] },
       { text: 'Specification', collapsed: true, items: specItems },
-      { text: 'Packages', collapsed: true, items: [{ text: '@sharedid-edge/core', link: '/core' }, { text: '@sharedid-edge/ip-ranges', link: '/ip-ranges' }] }
+      { text: 'Packages', collapsed: true, items: [{ text: '@sharedid-edge/core', link: '/core' }, { text: '@sharedid-edge/ip-ranges', link: '/ip-ranges' }, { text: '@sharedid-edge/data-updates', link: '/data-updates' }] }
     ],
     socialLinks: [{ icon: 'github', link: REPO }],
     search: { provider: 'local' },

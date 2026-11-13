@@ -18,7 +18,7 @@ export type GeoMode = 'fill' | 'replace';
  */
 export function geoMode(name: string, config: Readonly<Record<string, unknown>>): GeoMode {
   for (const key of Object.keys(config)) {
-    if (key !== 'mode') throw new TypeError(`${name}: unknown setting "${key}"`);
+    if (key !== 'mode' && key !== 'maxAgeDays') throw new TypeError(`${name}: unknown setting "${key}"`);
   }
   const mode = config['mode'];
   if (mode === undefined || mode === 'fill') return 'fill';
@@ -58,6 +58,9 @@ export interface IpDatabaseModuleOptions {
   readonly name: string;
   /** The bundled range table (base64), whose values are ISO 3166-1 alpha-2 country codes. */
   readonly data: string;
+  /** Bundled data's publication date, needed only when maxAgeDays is configured. */
+  readonly info?: DataInfo;
+  readonly now?: () => number;
   /** AdCOM's IP location service code for the vendor, if it has one. */
   readonly ipservice?: number;
 }
@@ -80,11 +83,19 @@ export function ipDatabaseModule(options: IpDatabaseModuleOptions): EdgeModule {
   const { name, ipservice } = options;
   function run({ platform, config }: ModuleContext): ModuleResult | undefined {
     const mode = geoMode(name, config);
-    if (mode === 'fill' && platform.country !== undefined && alpha3(platform.country) !== undefined) return undefined;
+    const maxAgeDays = config['maxAgeDays'];
+    if (maxAgeDays !== undefined && (typeof maxAgeDays !== 'number' || !Number.isFinite(maxAgeDays) || maxAgeDays <= 0)) {
+      throw new TypeError(`${name}: maxAgeDays must be a positive number`);
+    }
+    const built = options.info === undefined ? NaN : Date.parse(options.info.built);
+    if (maxAgeDays !== undefined && !Number.isFinite(built)) throw new TypeError(`${name}: no data publication date`);
+    const stale = maxAgeDays !== undefined && (options.now ?? Date.now)() - built > maxAgeDays * 86_400_000;
+    const empty: ModuleResult | undefined = stale ? { stale: true } : undefined;
+    if (mode === 'fill' && platform.country !== undefined && alpha3(platform.country) !== undefined) return empty;
     const country = countryFor(table, platform.clientIp);
-    if (country === undefined) return undefined;
+    if (country === undefined) return empty;
     const geo: IpDatabaseGeo = { type: 2, country, ...(ipservice === undefined ? {} : { ipservice }) };
-    return { ortb2: { device: { geo } } };
+    return { ortb2: { device: { geo } }, ...(stale ? { stale: true } : {}) };
   }
   return defineModule({ name, run });
 }

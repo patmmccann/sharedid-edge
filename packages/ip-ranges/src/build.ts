@@ -192,7 +192,7 @@ export interface CountryDataOptions {
  * contents of a module's `dist/data.js`: a range table of ISO 3166-1 alpha-2 country codes. The table is decoded
  * again before it's returned, so a broken one fails the build rather than the worker.
  */
-export async function buildCountryData(file: Uint8Array, options: CountryDataOptions): Promise<{ readonly source: string; readonly info: DataInfo; readonly stats: RangeTableStats; readonly encodedLength: number }> {
+export async function buildCountryData(file: Uint8Array, options: CountryDataOptions): Promise<{ readonly source: string; readonly data: string; readonly info: DataInfo; readonly stats: RangeTableStats; readonly encodedLength: number }> {
   let bytes = isGzip(file) ? await gunzip(file) : file;
   // A tar archive has "ustar" at offset 257 of its first header.
   if (new TextDecoder().decode(bytes.subarray(257, 262)) === 'ustar') {
@@ -214,7 +214,7 @@ export async function buildCountryData(file: Uint8Array, options: CountryDataOpt
     fixture: false,
     attribution: options.attribution
   };
-  return { source: dataModuleSource(encoded, info), info, stats, encodedLength: encoded.length };
+  return { source: dataModuleSource(encoded, info), data: encoded, info, stats, encodedLength: encoded.length };
 }
 
 export { FIXTURE_TABLE } from './fixture.js';

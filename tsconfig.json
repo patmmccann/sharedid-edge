@@ -10,6 +10,8 @@
     { "path": "packages/core/test" },
     { "path": "packages/ip-ranges" },
     { "path": "packages/ip-ranges/test" },
+    { "path": "packages/data-updates" },
+    { "path": "packages/data-updates/test" },
     { "path": "packages/adapters/akamai" },
     { "path": "packages/adapters/akamai/test" },
     { "path": "packages/adapters/aws-lambda" },

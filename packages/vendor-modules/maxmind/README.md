@@ -130,8 +130,9 @@ It declares no `gvlid` and no TCF purposes: it acts for the publisher, with data
 | Setting | Values | Default |
 | --- | --- | --- |
 | `mode` | `fill` or `replace` | `fill` |
+| `maxAgeDays` | Positive number: report `stale` when the bundled database's publication date is older than this many days; keep its last good country | off |
 
-An unknown setting or another `mode` makes the module report `error`.
+An unknown setting, another `mode`, or an invalid `maxAgeDays` makes the module report `error`.
 
 | Build environment | What |
 | --- | --- |
@@ -151,6 +152,8 @@ GeoLite2 Country is free with a MaxMind account, under the [GeoLite End User Lic
 The build checks the download against MaxMind's SHA-256, and that the file is GeoLite2 Country (`GeoLite2-Country` in its metadata). It fails on anything else.
 
 ## Keeping the data up to date
+
+For updates without rebuilding the request worker, use the opt-in [scheduled snapshot deployment](../../../docs/data-updates.md). `maxmindSource` uses the updater's `SID_MODULE_SECRETS.maxmind.accountId` and `licenseKey`, validates the checksum and database, and publishes a private snapshot. The request worker needs no vendor key. `countrySnapshotModule` with `name: 'maxmind'` and `ipservice: 3` preserves this module's lookup and consent rules, reports `stale` on missing or old data, and supports a hard expiry. Remove superseded snapshot objects and set that expiry in line with MaxMind's terms.
 
 MaxMind updates GeoLite databases regularly and asks you not to rely on a schedule. The EULA requires old releases to be gone within 30 days of a new one. Run a scheduled CI job, weekly for example: `npm run build`, `npm run data -w @sharedid-edge/module-maxmind` with the two credentials from your CI's secrets, then your deploy step. Downloads happen at build time only, never while the worker answers requests.
 

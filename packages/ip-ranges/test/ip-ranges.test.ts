@@ -274,6 +274,23 @@ describe('ipDatabaseModule', () => {
     expect(await payload({ clientIp: '192.0.2.1' }, { ipservice: 3 })).toMatchObject({ ortb2: { device: { geo: { type: 2, country: 'FRA', ipservice: 3 } } } });
   });
 
+  it('reports publication-age staleness with last-good output, on misses, and rejects invalid ages', async () => {
+    const info = { database: 'test', built: '2026-11-01', families: 'ipv4,ipv6' as const, fixture: true, attribution: 'Test' };
+    const module = ipDatabaseModule({ name: 'test-db', data, info, now: () => Date.parse('2026-11-13') });
+    for (const maxAgeDays of [1, 20, 0, -1, 'old']) {
+      const handler = createHandler({ modules: [module], config: resolveConfig({ SID_MODULES: 'test-db', SID_MODULE_CONFIG: JSON.stringify({ 'test-db': { maxAgeDays } }) }) });
+      for (const clientIp of ['192.0.2.7', '203.0.114.1']) {
+        const body = await (await handler(new Request('https://example.com/_sid/v1'), { clientIp })).json() as PayloadV1;
+        const report = body.ext.modules['test-db'];
+        if (maxAgeDays === 1) expect(report?.stale).toBe(true);
+        else expect(report?.stale).toBeUndefined();
+        if (maxAgeDays === 1 || maxAgeDays === 20) {
+          expect(body.ortb2 === undefined).toBe(clientIp === '203.0.114.1');
+        } else expect(report?.status).toBe('error');
+      }
+    }
+  });
+
   it('sends nothing for a miss, a code without alpha-3, a missing or invalid address', async () => {
     for (const platform of [{ clientIp: '8.8.8.8' }, { clientIp: '192.0.2.200' }, {}, { clientIp: 'not an ip' }]) {
       const body = await payload(platform);

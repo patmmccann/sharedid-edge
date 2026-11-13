@@ -48,7 +48,7 @@
       "MAXMIND_ACCOUNT_ID",
       "MAXMIND_LICENSE_KEY"
     ],
-    "settings": "`mode`: `fill` (default) or `replace`; build-time `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY`",
+    "settings": "`mode`: `fill` (default) or `replace`; optional `maxAgeDays`; build-time `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY`",
     "routes": [
       "v1"
     ]

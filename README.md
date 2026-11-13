@@ -77,6 +77,7 @@ Also on the web at [sharedid.dev](https://sharedid.dev).
 - [Configuration reference](docs/configuration.md): every `SID_*` setting
 - [Consent and opt-out](docs/consent.md): opt-out, GPC, COPPA and TCF
 - [Modules](docs/modules.md): choosing modules, `/_sid/sync`, the traffic signal, and the module index
+- [Scheduled data updates](docs/data-updates.md): refresh private reference data on Cloudflare, AWS or Node.js, outside visitor requests
 - [Migrate from the WordPress or Drupal plugin](docs/migrating.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [For hosting companies](docs/hosting-companies.md): SharedID Edge for every site you serve, from one deployment

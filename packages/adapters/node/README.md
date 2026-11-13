@@ -1,5 +1,7 @@
 # @sharedid-edge/node
 
+For opt-in reference-data refreshes, see [Scheduled data updates: Node.js](../../../docs/data-updates.md#nodejs-cron-or-a-systemd-timer): cron/systemd runs `sharedid-edge-update`, and a custom server entry point reloads private JSON snapshots in the background. The standard HTTP server CLI is unchanged.
+
 SharedID Edge as a **Node.js HTTP server**, for self-hosting behind the web server or load balancer that already serves your site. It's also used for local development and as a conformance target. This page is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform).
 
 ## Contents

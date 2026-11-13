@@ -20,4 +20,4 @@ export const DBIP_DATA_INFO: DataInfo = DATA_INFO;
  * module; `{"mode":"replace"}` always sends DB-IP's. DB-IP isn't on AdCOM's IP location service list, so there's no
  * `ipservice`.
  */
-export const dbipModule: EdgeModule = ipDatabaseModule({ name: 'dbip', data: DATA });
+export const dbipModule: EdgeModule = ipDatabaseModule({ name: 'dbip', data: DATA, info: DATA_INFO });

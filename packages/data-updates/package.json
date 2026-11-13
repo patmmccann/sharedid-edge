@@ -1,0 +1,29 @@
+{
+  "name": "@sharedid-edge/data-updates",
+  "version": "0.1.0",
+  "description": "Validated scheduled reference-data updates and private snapshots for SharedID Edge",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./country": { "types": "./dist/country.d.ts", "default": "./dist/country.js" },
+    "./ip-module": { "types": "./dist/ip-module.d.ts", "default": "./dist/ip-module.js" },
+    "./cloudflare": { "types": "./dist/cloudflare.d.ts", "default": "./dist/cloudflare.js" },
+    "./aws": { "types": "./dist/aws.d.ts", "default": "./dist/aws.js" },
+    "./node": { "types": "./dist/node.d.ts", "default": "./dist/node.js" }
+  },
+  "bin": { "sharedid-edge-update": "./dist/cli.js" },
+  "files": ["dist", "!dist/**/*.tsbuildinfo"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "vitest run",
+    "attw": "attw --pack . --profile esm-only --quiet || attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "@sharedid-edge/core": "0.1.0",
+    "@sharedid-edge/ip-ranges": "0.1.0",
+    "@aws-sdk/client-s3": "^3.1168.0"
+  },
+  "repository": { "type": "git", "url": "git+https://github.com/patmmccann/sharedid-edge.git", "directory": "packages/data-updates" }
+}

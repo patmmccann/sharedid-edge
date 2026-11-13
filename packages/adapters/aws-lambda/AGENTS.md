@@ -7,6 +7,7 @@ The AWS Lambda adapter (`@sharedid-edge/aws-lambda`), for a function URL behind 
 - `src/platform.ts`: `PlatformInfo` from the `CloudFront-Viewer-*` headers; `isEU` from core's `EU_COUNTRY_CODES` (re-exported here).
 - `src/env.ts`, `src/lambda.ts`: the deployed entry point; configuration from `process.env` once per cold start, a `ConfigError` gives a 500 handler.
 - `scripts/bundle.mjs`: esbuild bundle to `deploy/lambda.mjs`, alone in `deploy/` (the template uploads that directory; `dist/` also has the unbundled `lambda.js`, which Lambda would load first), with its size budget. `template.yaml`: the SAM template.
+- Scheduled reference data is opt-in: a separate update function, EventBridge schedule and private S3 prefix ([recipe](../../../docs/data-updates.md#aws-eventbridge-and-a-separate-update-function)). Only the updater gets write access and vendor credentials; a custom request entry point polls S3 read-only outside module execution and keeps warm snapshot caches. Default template/bundles stay unchanged.
 
 Rules:
 

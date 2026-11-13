@@ -1,5 +1,7 @@
 # @sharedid-edge/aws-lambda
 
+For opt-in reference-data refreshes, see [Scheduled data updates: AWS](../../../docs/data-updates.md#aws-eventbridge-and-a-separate-update-function): a separate EventBridge-triggered updater writes private S3 snapshots; a custom request entry point polls them read-only. The default template and request bundle are unchanged.
+
 [SharedID Edge](../../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `geo`, `reflect`, `bot`, `ua` and `clickid` (`ec` and vendor modules are added at build time), and it passes the same conformance suite.
 
 This is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform).
