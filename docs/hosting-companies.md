@@ -179,6 +179,24 @@ SharedID Edge logs nothing about requests. What you have:
 - **The debugging headers** on every response: `X-SharedID-Source` (where the ID came from) and `X-SharedID-Status` (why no cookie was set), for support requests ([Troubleshooting](troubleshooting.md)).
 - **`verify-deployment` on a schedule** against a few sites, as the project's own live tests do.
 
+### Request volume
+
+SharedID Edge runs only on its own routes (`/_sid/*`), never on the site's pages, images or scripts, so a host isn't adding a Worker (or Lambda, or Fastly service) to every request. How many `/_sid/*` requests reach it per page view depends on the routes the pages call and on what can be cached:
+
+| Request | How often it reaches the endpoint |
+| --- | --- |
+| `/_sid/sync` (Prebid.js's `pixelUrl`), visitor with storage allowed | The first visit, then at most about **once a day** per browser: a successful sync that set an ID is cached privately for `SID_SYNC_CACHE_SECONDS` (86400 by default), and a response served from the browser's cache never reaches the endpoint. Without `extend: true`, Prebid.js only calls it when it mints an ID. |
+| `/_sid/sync`, visitor whose storage is denied (opt-out, GPC, COPPA, or GDPR with no consent) | **Every page view** that calls it: those responses aren't cached (`no-store`), since the next one must still delete cookies or honour new consent. Where many visitors are in GDPR countries without a CMP that stores the TC string in `euconsent-v2` ([Consent](consent.md)), expect this to dominate. |
+| `/_sid/sync` with the `clickid` module running on it | **Every page view**: `clickid` must see each landing page, so it makes the sync `no-store`. Leave `clickid` out of `SID_SYNC_MODULES` (or `SID_MODULES`) where volume matters more than click IDs. |
+| `/_sid/sync` with `SID_SYNC_CACHE_SECONDS=0` | **Every page view**. |
+| `/_sid/v1` | Once per page view that fetches it, only if the pages use modules' output (`ip`, `geo`, `ua`, …). The SharedID itself doesn't need it. |
+| `/_sid/optout`, `/_sid/optin` | Only when a visitor uses them. |
+| Bots and crawlers | Whatever they request. Most don't run Prebid.js, so they rarely reach `/_sid/*`; ones that do follow the rows above (`SID_SKIP_BOTS` stops minting for them, not the request). |
+
+So for a site where pages don't fetch `/_sid/v1` and `clickid` is off, the endpoint sees roughly one request per consenting visitor per day plus one per page view of visitors whose storage is denied: far below the site's page views. With `/_sid/v1` on every page, add one request per page view.
+
+To size a deployment, count, per site and per day: daily visitors (syncs), page views of visitors without storage consent, and page views that fetch `/_sid/v1`. The platform's own analytics give the real numbers once it's running: Workers analytics or Logpush on Cloudflare, CloudWatch for Lambda, Fastly's real-time stats.
+
 ### Cost and abuse
 
 Each `/_sid/*` request is one invocation. With Prebid.js, a browser calls `/_sid/sync` at most about once a day (the response is cached privately for `SID_SYNC_CACHE_SECONDS`), plus `/_sid/v1` on each page view if your pages fetch the modules' output. So requests are at most about page views plus daily visitors. The platforms' pricing pages give the cost per million requests ([Cloudflare Workers](https://developers.cloudflare.com/workers/platform/pricing/), [AWS Lambda](https://aws.amazon.com/lambda/pricing/), [Fastly](https://www.fastly.com/pricing), [Vercel](https://vercel.com/pricing)); the [sales-house guide](sales-houses.md#cost) has a worked estimate.

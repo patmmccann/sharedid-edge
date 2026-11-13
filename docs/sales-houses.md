@@ -539,7 +539,7 @@ Requests are at most about page views plus daily visitors: Prebid.js calls `/_si
 | Fastly Compute | By contract | [Fastly pricing](https://www.fastly.com/pricing) |
 | Node.js server | Your servers: a few small instances per region behind a load balancer; measure with your traffic | |
 
-These are estimates, not quotes: check the pricing pages, and your own CPU times. The publishers' CDNs also bill their `/_sid/*` requests (and a CloudFront Function, if used) on their accounts.
+What isn't cached (visitors whose storage is denied, the `clickid` module, `/_sid/v1` on every page) can multiply that count; the breakdown is in the hosting-company guide's [Request volume](hosting-companies.md#request-volume). These are estimates, not quotes: check the pricing pages, and your own CPU times. The publishers' CDNs also bill their `/_sid/*` requests (and a CloudFront Function, if used) on their accounts.
 
 ### Regions
 
