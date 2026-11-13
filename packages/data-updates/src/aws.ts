@@ -1,7 +1,10 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { SnapshotStore } from './snapshot.js';
 
-/** Use a private bucket and scope the role to its snapshot prefix. No static AWS credentials are required. */
+/**
+ * Use a private bucket with Get/PutObject scoped to its snapshot prefix. The updater also needs ListBucket on the
+ * bucket ARN so missing objects return NoSuchKey rather than AccessDenied. No static AWS credentials are required.
+ */
 export function s3Store(bucket: string, prefix = 'sharedid-data/', client: S3Client = new S3Client({})): SnapshotStore {
   if (bucket === '' || !prefix.endsWith('/')) throw new TypeError('Invalid snapshot bucket or prefix');
   return {

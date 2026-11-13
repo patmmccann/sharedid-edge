@@ -9,8 +9,42 @@ import { kvStore, r2Store, scheduledUpdate } from '../src/cloudflare.js';
 import { s3Store } from '../src/aws.js';
 import { fileStore } from '../src/node.js';
 import { listSource, MemoryStore } from './helpers.js';
+import { refreshData } from '../src/index.js';
 
 describe('platform storage', () => {
+  it('publishes the first S3 snapshot after NoSuchKey but does not download or write after AccessDenied', async () => {
+    const values = new Map<string, string>();
+    let canDistinguishMissing = false;
+    const send = vi.spyOn(S3Client.prototype, 'send');
+    const client = new S3Client({ region: 'us-east-1' });
+    const source = listSource();
+    try {
+      send.mockImplementation(command => {
+        if (command instanceof GetObjectCommand) {
+          const key = command.input.Key;
+          const value = key === undefined ? undefined : values.get(key);
+          if (value === undefined) {
+            throw Object.assign(new Error('Missing object'), { name: canDistinguishMissing ? 'NoSuchKey' : 'AccessDenied' });
+          }
+          return { Body: { transformToString: () => Promise.resolve(value) } };
+        }
+        if (!(command instanceof PutObjectCommand) || command.input.Key === undefined || typeof command.input.Body !== 'string') {
+          throw new TypeError('Unexpected S3 test command');
+        }
+        values.set(command.input.Key, command.input.Body);
+        return {};
+      });
+      const store = s3Store('private-bucket', 'data/', client);
+      expect(await refreshData(source, { store })).toEqual({ name: 'list', status: 'failed' });
+      expect(source.download).not.toHaveBeenCalled();
+      expect(values.size).toBe(0);
+      canDistinguishMissing = true;
+      expect(await refreshData(source, { store })).toEqual({ name: 'list', status: 'updated' });
+      expect(source.download).toHaveBeenCalledOnce();
+      expect(values.size).toBe(2);
+      expect(JSON.parse(values.get('data/list/current.json') ?? '{}')).toMatchObject({ source: 'list', version: 1 });
+    } finally { send.mockRestore(); client.destroy(); }
+  });
   it('reads/writes private KV and R2 bindings and fails the scheduled invocation when any source fails', async () => {
     const kv = new Map<string, string>();
     const get = vi.fn((key: string) => Promise.resolve(kv.get(key) ?? null));

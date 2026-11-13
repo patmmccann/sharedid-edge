@@ -27,6 +27,8 @@ Run only one updater per source and prefix. The storage contract requires atomic
 
 The executable is `sharedid-edge-update <sources.mjs> --dir <directory>`. The trusted local module exports an array of `UpdateSource` definitions. Install this package before using its executable with `npx`; it is not a separate package named `sharedid-edge-update`.
 
+For S3, the updater's role needs `s3:ListBucket` on the dedicated bucket as well as `s3:GetObject`/`s3:PutObject` for the snapshot prefix. S3 otherwise returns `AccessDenied` for the initially missing manifest, preventing first publication. `s3Store` treats only `NoSuchKey` as missing; permission failures remain errors. See the [AWS policy recipe](../../docs/data-updates.md#aws-eventbridge-and-a-separate-update-function).
+
 ## Settings and secrets
 
 `runUpdates(sources, { store, secrets, timeoutMs, fetch, now })` runs the explicitly supplied sources sequentially so two large databases aren't downloaded into the same isolate at once. The default download timeout is 30 seconds (configurable up to 300 seconds); injected `fetch` and `now` support tests. Sources must respect the signal while reading or transforming large downloads. The included sources bound compressed downloads to 64 MiB and checksum responses to 4 KiB.

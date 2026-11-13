@@ -137,6 +137,9 @@ DataUpdateFunction:
     Policies:
       - Statement:
           - Effect: Allow
+            Action: s3:ListBucket
+            Resource: !GetAtt ReferenceDataBucket.Arn
+          - Effect: Allow
             Action: [s3:GetObject, s3:PutObject]
             Resource: !Sub '${ReferenceDataBucket.Arn}/sharedid-data/*'
     Events:
@@ -148,6 +151,8 @@ DataUpdateFunction:
 ```
 
 `ReferenceDataBucket` is your private bucket; `UpdateModuleSecrets` is a `NoEcho` parameter or a Secrets Manager dynamic reference. Enable S3 Block Public Access and encryption. Only the updater's execution role needs write access and the vendor secret; the request function needs only `s3:GetObject` for `sharedid-data/*`. There is no function URL for the updater. Monitor failed scheduled invocations and configure retries/dead-letter handling for your deployment. Invoke it once and verify the manifest before enabling the request module.
+
+The updater also needs bucket-level `s3:ListBucket` on this dedicated bucket. [S3 returns `NoSuchKey` for a missing object only when the caller has that permission](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html); otherwise it returns `AccessDenied`. On an empty bucket the manifest is missing, so omitting this permission prevents the first publication. Object reads and writes remain restricted to `sharedid-data/*`, and genuine permission errors still fail the update. The read-only request function can retain its object-only permission: a missing or unreadable snapshot keeps its previous cached copy, if any.
 
 In the request function, create a `SnapshotCache(s3Store(bucket), 'dbip', validateCountrySnapshot)` and `countrySnapshotModule` as above. Add it to `createLambdaHandler({ ...settingsFromEnv(process.env), modules: [...builtInModules, module] })`. The exported Lambda handler calls `await cache.reload()` before invoking that handler. The cache checks private S3 at most once a minute, loads the body only for a changed hash, and retains the last good copy on an error. The first load and later manifest polls may add storage latency; they never download from the vendor or transform a database. Keep this cache outside the exported function so warm invocations see updates.
 
