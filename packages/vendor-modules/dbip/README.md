@@ -109,8 +109,9 @@ The address is looked up in memory and the country echoed back to the same brows
 | Setting | Values | Default |
 | --- | --- | --- |
 | `mode` | `fill` or `replace` ([above](#with-the-geo-module-fill-or-replace)) | `fill` |
+| `maxAgeDays` | Positive number: report `stale` when the bundled database's publication date is older than this many days; keep its last good country | off |
 
-An unknown setting or another `mode` makes the module report `error` and add nothing. It has no secrets, and its build needs no key.
+An unknown setting, another `mode`, or an invalid `maxAgeDays` makes the module report `error` and add nothing. It has no secrets, and its build needs no key.
 
 ## Data and licence
 
@@ -123,6 +124,8 @@ DB-IP publishes [IP to Country Lite](https://db-ip.com/db/download/ip-to-country
 The download page lists each file's SHA-1 and MD5 for the uncompressed `.mmdb`: to check a file before building it in, download it yourself, compare `sha1sum`, and pass it with `--file`. The build checks the file is DB-IP's country database (`DBIP-Country-Lite` in its metadata) and fails on anything else.
 
 ## Keeping the data up to date
+
+For updates without rebuilding the request worker, use the opt-in [scheduled snapshot deployment](../../../docs/data-updates.md). `dbipSource` downloads and validates the database on the scheduler; `countrySnapshotModule` reads the in-memory snapshot with the same country, mode and consent rules. It reports `stale` on missing or old data and can expire an unusably old copy. No download happens in a module's `run`. The updater deletes each superseded snapshot body once the new one is published, so your storage holds only the current release; CC BY 4.0 sets no deletion deadline.
 
 DB-IP publishes a new release at the start of each month. Rebuild and redeploy monthly: a scheduled CI job that runs `npm run build`, `npm run data -w @sharedid-edge/module-dbip` and your deploy step is enough. Downloads happen at build time only, never while the worker answers requests. `DBIP_DATA_INFO` says which release is built in ([Using it in code](#using-it-in-code)).
 
@@ -166,7 +169,8 @@ The lookup and the table format are in [`@sharedid-edge/ip-ranges`](../../ip-ran
 | `dbip` is `skipped`, `not installed` | It isn't in your build: step 2 of [Turning it on](#turning-it-on). |
 | `dbip` is `empty` for every visitor | The fixture is built in, not DB-IP's data: `DBIP_DATA_INFO.fixture` is `true`. Run `npm run data -w @sharedid-edge/module-dbip` after `npm run build`, then bundle again. Or `fill` mode with a CDN that locates every request, or no `geo`: see [fill or replace](#with-the-geo-module-fill-or-replace). |
 | `dbip` is `empty` for some visitors | Their address isn't in DB-IP's data, has a code without an ISO alpha-3 code, or is IPv6 in an `--ipv4-only` build. Or the worker doesn't see the client IP: check `ip` or `X-Forwarded-For` handling for your adapter. |
-| `dbip` is `error` | An invalid setting: `mode` must be `fill` or `replace`, and there are no other settings. |
+| `dbip` is `error` | An invalid setting: `mode` must be `fill` or `replace`; optional `maxAgeDays` must be positive. |
+| `dbip` reports `stale: true` | The configured publication-age limit was exceeded, or the scheduled snapshot is missing or past its last-check age. Check the updater and storage; the last good country may still contribute. |
 | `npm run data` fails with `No DB-IP release found` | db-ip.com didn't answer, or has no release for the month: try `--month` with last month, or download the file yourself and use `--file`. |
 | `npm run data` fails with `Unexpected database type` | The file isn't IP to Country Lite (an ASN or City file, say). |
 | The country disagrees with `geo`'s region or city | `replace` mode with `geo` on: [fill or replace](#with-the-geo-module-fill-or-replace). |

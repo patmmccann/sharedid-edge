@@ -149,7 +149,7 @@ A response where storage was denied SHOULD carry `X-SharedID-Status: denied: <re
 - `sharedid` and its `pubcid.org` eid are present only when storage is allowed and an ID was chosen.
 - `eids` follows OpenRTB `user.ext.eids`. Module eids follow the SharedID's, in module order.
 - `ortb2` is the deep merge of the modules' OpenRTB fragments, in module order, plus the [traffic signal](#traffic-signal) as `ortb2.device.ext.traffic`; absent when there's neither.
-- `ext.modules` reports each configured module: `status` is `ok`, `empty`, `skipped` (with a `reason`), `error` or `timeout`. Error details MUST NOT be returned, since they may contain request data.
+- `ext.modules` reports each configured module: `status` is `ok`, `empty`, `skipped` (with a `reason`), `error` or `timeout`. An optional `stale: true` flag marks missing or old reference data; usable previous data MAY still contribute. Error details MUST NOT be returned, since they may contain request data.
 
 ### Traffic signal
 
@@ -205,7 +205,7 @@ A module has:
 - a `name` (`^[a-z][a-z0-9-]{0,63}$`), used in `SID_MODULES` and `SID_MODULE_CONFIG`;
 - optionally `purposes` (TCF purposes it needs publisher consent for when GDPR applies) and `gvlid` (its IAB vendor ID);
 - optionally `routes`, the routes it runs on: a non-empty list of `v1` and `sync` without repeats, defaulting to `v1` only (see [Modules on `/sync`](#modules-on-sync));
-- a `run(context)` function returning `{ eids?, ortb2?, cookies?, traffic?, noStore? }` or nothing (`traffic`: see [Traffic signal](#traffic-signal); `noStore`: see [Modules on `/sync`](#modules-on-sync)).
+- a `run(context)` function returning `{ eids?, ortb2?, cookies?, traffic?, noStore?, stale? }` or nothing (`traffic`: see [Traffic signal](#traffic-signal); `noStore`: see [Modules on `/sync`](#modules-on-sync); `stale`: see [Scheduled data updates](#scheduled-data-updates)).
 
 The context has the request, its URL and cookies, the platform information (see [Platform information](#platform-information)), the SharedID (when storage is allowed), whether the browser opted out, the consent signals, and the module's configuration and secrets.
 
@@ -283,6 +283,16 @@ Each module's behaviour is specified in its own file under [`modules/`](modules)
   - [The `ec` module](modules/ec.md)
   - [The `maxmind` module](modules/maxmind.md)
 <!-- generated:spec-modules:end -->
+
+## Scheduled data updates
+
+Data downloads and transformations MUST run outside visitor request handling, on the platform's scheduler or an administrative command. Only explicitly configured sources run, using the deployer's credentials from `SID_MODULE_SECRETS`. No request, IP address, cookie, identifier or other visitor data is sent to an update source or kept in its storage.
+
+An updater MUST validate a download before publishing it. A failed download, validation or publication MUST leave the previous published snapshot usable. Content is addressed by SHA-256; unchanged data MUST NOT be written again. A small manifest MAY record a successful revalidation (including HTTP 304) without rewriting the data. Both data and manifests are versioned. Storage is private to the deployment; it is not an HTTP route of the worker.
+
+Adapters MAY load snapshots from deployment storage (R2, KV, S3 or local files), separately from module execution. These reads never download from the vendor. A module uses only the validated in-memory snapshot and MUST NOT refresh it or make a network call from `run`. Failed storage reads or invalid snapshots keep the last validated in-memory copy. Caches may hold this shared reference data, never visitor data.
+
+A module using scheduled data returns `stale: true` when no snapshot is available or its last successful source check is older than its configured maximum age. Core adds `stale: true` to the module report, preserving its `ok` or `empty` status even when there is no output, and otherwise applies the module's output and consent rules normally. Invalid `stale` values make the module an `error`; a failure or timeout still takes precedence. Deployers MAY configure a later expiry at which old data contributes nothing while remaining `stale` (for example to meet a data licence).
 
 ## Versioning
 

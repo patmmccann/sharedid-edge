@@ -12,18 +12,35 @@ import { decodeRangeTable, lookupRange, type RangeTable } from './table.js';
  */
 export type GeoMode = 'fill' | 'replace';
 
+/** An IP database module's settings. */
+export interface IpDatabaseSettings {
+  readonly mode: GeoMode;
+  /** Report `stale` once the data's publication date (`DataInfo.built`) is older than this many days. */
+  readonly maxAgeDays?: number;
+}
+
 /**
- * Reads an IP database module's `SID_MODULE_CONFIG` entry. Throws on an unknown key or a `mode` other than `fill` or
- * `replace`, so a typo is reported as an `error` rather than silently ignored.
+ * Reads an IP database module's `SID_MODULE_CONFIG` entry. Throws on an unknown key, a `mode` other than `fill` or
+ * `replace`, or a `maxAgeDays` that isn't a positive finite number, so a typo is reported as an `error` rather than
+ * silently ignored.
  */
-export function geoMode(name: string, config: Readonly<Record<string, unknown>>): GeoMode {
+export function ipDatabaseSettings(name: string, config: Readonly<Record<string, unknown>>): IpDatabaseSettings {
   for (const key of Object.keys(config)) {
-    if (key !== 'mode') throw new TypeError(`${name}: unknown setting "${key}"`);
+    if (key !== 'mode' && key !== 'maxAgeDays') throw new TypeError(`${name}: unknown setting "${key}"`);
   }
-  const mode = config['mode'];
-  if (mode === undefined || mode === 'fill') return 'fill';
-  if (mode === 'replace') return 'replace';
+  const { mode, maxAgeDays } = config;
+  if (maxAgeDays !== undefined && (typeof maxAgeDays !== 'number' || !Number.isFinite(maxAgeDays) || maxAgeDays <= 0)) {
+    throw new TypeError(`${name}: maxAgeDays must be a positive number`);
+  }
+  const age = maxAgeDays === undefined ? {} : { maxAgeDays };
+  if (mode === undefined || mode === 'fill') return { mode: 'fill', ...age };
+  if (mode === 'replace') return { mode: 'replace', ...age };
   throw new TypeError(`${name}: "mode" must be "fill" or "replace"`);
+}
+
+/** The `mode` of an IP database module's settings, after checking all of them as {@link ipDatabaseSettings} does. */
+export function geoMode(name: string, config: Readonly<Record<string, unknown>>): GeoMode {
+  return ipDatabaseSettings(name, config).mode;
 }
 
 /** What a module's bundled data says about itself (the build script writes it next to the table). */
@@ -56,8 +73,15 @@ export interface IpDatabaseGeo {
 export interface IpDatabaseModuleOptions {
   /** The module name (`SID_MODULES`, `SID_MODULE_CONFIG`). */
   readonly name: string;
-  /** The bundled range table (base64), whose values are ISO 3166-1 alpha-2 country codes. */
-  readonly data: string;
+  /**
+   * The range table, whose values are ISO 3166-1 alpha-2 country codes: base64 as bundled, or a table already decoded
+   * with `decodeRangeTable` (so a runtime snapshot is decoded once, outside request handling).
+   */
+  readonly data: string | RangeTable;
+  /** The data's publication date, needed only when `maxAgeDays` is configured. */
+  readonly info?: DataInfo;
+  /** Clock for `maxAgeDays`, in epoch milliseconds; `Date.now` by default. */
+  readonly now?: () => number;
   /** AdCOM's IP location service code for the vendor, if it has one. */
   readonly ipservice?: number;
 }
@@ -76,15 +100,21 @@ export function countryFor(table: RangeTable, clientIp: string | undefined): str
  * so it's sent whatever the consent signals, as `geo` sends the CDN's.
  */
 export function ipDatabaseModule(options: IpDatabaseModuleOptions): EdgeModule {
-  const table = decodeRangeTable(options.data);
+  const table = typeof options.data === 'string' ? decodeRangeTable(options.data) : options.data;
   const { name, ipservice } = options;
+  // Fixed for the module's lifetime: parsed once here, not per request.
+  const built = options.info === undefined ? NaN : Date.parse(options.info.built);
+  const now = options.now ?? Date.now;
   function run({ platform, config }: ModuleContext): ModuleResult | undefined {
-    const mode = geoMode(name, config);
-    if (mode === 'fill' && platform.country !== undefined && alpha3(platform.country) !== undefined) return undefined;
+    const { mode, maxAgeDays } = ipDatabaseSettings(name, config);
+    if (maxAgeDays !== undefined && !Number.isFinite(built)) throw new TypeError(`${name}: no data publication date`);
+    const stale = maxAgeDays !== undefined && now() - built > maxAgeDays * 86_400_000;
+    const empty: ModuleResult | undefined = stale ? { stale: true } : undefined;
+    if (mode === 'fill' && platform.country !== undefined && alpha3(platform.country) !== undefined) return empty;
     const country = countryFor(table, platform.clientIp);
-    if (country === undefined) return undefined;
+    if (country === undefined) return empty;
     const geo: IpDatabaseGeo = { type: 2, country, ...(ipservice === undefined ? {} : { ipservice }) };
-    return { ortb2: { device: { geo } } };
+    return { ortb2: { device: { geo } }, ...(stale ? { stale: true } : {}) };
   }
   return defineModule({ name, run });
 }

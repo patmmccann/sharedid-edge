@@ -63,6 +63,8 @@ export interface ModuleCookie {
 
 /** What a module adds to the payload. Every field is optional. */
 export interface ModuleResult {
+  /** Scheduled reference data is missing or past its maximum age; usable previous data may still contribute. */
+  readonly stale?: boolean;
   readonly eids?: readonly Eid[];
   /** An OpenRTB 2.x fragment, deep-merged into the payload's `ortb2`. */
   readonly ortb2?: Readonly<Record<string, unknown>>;
@@ -254,11 +256,14 @@ export async function runModules(
         continue;
       }
       // A module written in JavaScript can return anything here; it counts only once the whole result has passed.
-      const flag: unknown = result === undefined ? undefined : result.noStore;
-      if (flag !== undefined && typeof flag !== 'boolean') throw new TypeError('invalid noStore');
+      const flag: unknown = result?.noStore;
+      const stale: unknown = result?.stale;
+      for (const value of [flag, stale]) {
+        if (value !== undefined && typeof value !== 'boolean') throw new TypeError();
+      }
       if (result === undefined || (result.eids === undefined && result.ortb2 === undefined && result.cookies === undefined && result.traffic === undefined)) {
         if (flag === true) noStore = true;
-        reports[name] = { ms, status: 'empty' };
+        reports[name] = { ms, status: 'empty', ...(stale === true ? { stale: true } : {}) };
         continue;
       }
       // Checked before anything from this module is used, so a bad cookie leaves the whole result out.
@@ -271,7 +276,7 @@ export async function runModules(
       traffic.push(...reported);
       if (flag === true) noStore = true;
       const added = result.eids !== undefined || split.rest !== undefined || reported.some(entry => Object.keys(entry.report).length > 0);
-      reports[name] = { ms, status: added ? 'ok' : 'empty' };
+      reports[name] = { ms, status: added ? 'ok' : 'empty', ...(stale === true ? { stale: true } : {}) };
     } catch {
       // The error isn't reported to the page: it may contain request data.
       reports[name] = { ms: Math.round(now() - start), status: 'error' };

@@ -22,4 +22,4 @@ export const MAXMIND_DATA_INFO: DataInfo = DATA_INFO;
  * memory, with no network access, and nothing about the request is stored or logged. `{"mode":"fill"}` (the default)
  * only fills a country the CDN doesn't give the `geo` module; `{"mode":"replace"}` always sends MaxMind's.
  */
-export const maxmindModule: EdgeModule = ipDatabaseModule({ name: 'maxmind', data: DATA, ipservice: MAXMIND_IPSERVICE });
+export const maxmindModule: EdgeModule = ipDatabaseModule({ name: 'maxmind', data: DATA, info: DATA_INFO, ipservice: MAXMIND_IPSERVICE });

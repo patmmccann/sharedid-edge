@@ -24,6 +24,7 @@
     "@sharedid-edge/modules": "0.1.0"
   },
   "devDependencies": {
+    "@sharedid-edge/data-updates": "0.1.0",
     "@sharedid-edge/module-geo": "0.1.0",
     "wrangler": "^4.160.0",
     "@cloudflare/vitest-plugin": "^1.7.0"

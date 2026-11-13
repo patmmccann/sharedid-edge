@@ -51,6 +51,7 @@ import {
   type LocationSource,
   type ModuleContext,
   type ModuleResult,
+  type ModuleReport,
   type ModuleRoute,
   type PayloadV1,
   type PlatformInfo,
@@ -63,6 +64,9 @@ import {
   type TrafficReport,
   type TrafficSignal
 } from '@sharedid-edge/core';
+
+export const staleResult: ModuleResult = { stale: true };
+export const staleReport: ModuleReport = { ms: 0, status: 'empty', stale: true };
 
 const geo: EdgeModule = defineModule({
   name: 'geo',

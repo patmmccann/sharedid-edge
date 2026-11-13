@@ -58,6 +58,8 @@ export interface PayloadV1 {
 export interface ModuleReport {
   readonly ms: number;
   readonly status: 'ok' | 'empty' | 'skipped' | 'error' | 'timeout';
+  /** Scheduled reference data is missing or old; usable last-good output may still contribute. */
+  readonly stale?: true;
   /** Why the module was skipped, for example missing consent. */
   readonly reason?: string;
 }

@@ -44,7 +44,7 @@
     "summary": "`ortb2.device.geo.country` from DB-IP's free IP to Country Lite database, built in at build time (CC BY 4.0)",
     "export": "dbipModule",
     "network": "none",
-    "settings": "`mode`: `fill` (default) or `replace`",
+    "settings": "`mode`: `fill` (default) or `replace`; optional `maxAgeDays`",
     "routes": [
       "v1"
     ]

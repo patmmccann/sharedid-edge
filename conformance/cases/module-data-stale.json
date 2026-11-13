@@ -1,0 +1,119 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "Scheduled reference-data status: bundled country modules can opt into maxAgeDays too. The test databases were built on 2026-11-01, before this case was added; maxAgeDays=1 makes them stale. Last-good data still contributes, and staleness is reported even on a lookup miss. No download or platform account is needed.",
+  "build": [
+    "vendor-modules"
+  ],
+  "config": {
+    "SID_MODULES": "dbip,maxmind",
+    "SID_MODULE_CONFIG": "{\"dbip\":{\"maxAgeDays\":1},\"maxmind\":{\"maxAgeDays\":1}}",
+    "SID_TRUST_PROXY": "true"
+  },
+  "cases": [
+    {
+      "name": "keeps the last valid country and reports stale data for IPv4",
+      "request": {
+        "path": "/_sid/v1",
+        "headers": {
+          "x-forwarded-for": "192.0.2.7",
+          "cf-connecting-ip": "192.0.2.7"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "geo": {
+                "country": "FRA",
+                "type": 2,
+                "ipservice": 3
+              }
+            }
+          },
+          "ext": {
+            "modules": {
+              "dbip": {
+                "status": "ok",
+                "stale": true
+              },
+              "maxmind": {
+                "status": "ok",
+                "stale": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "keeps the last valid country and reports stale data for IPv6 with denied storage",
+      "request": {
+        "path": "/_sid/v1?coppa=1",
+        "headers": {
+          "x-forwarded-for": "2001:db8:1::7",
+          "cf-connecting-ip": "2001:db8:1::7",
+          "sec-gpc": "1"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "geo": {
+                "country": "JPN"
+              }
+            }
+          },
+          "ext": {
+            "modules": {
+              "dbip": {
+                "status": "ok",
+                "stale": true
+              },
+              "maxmind": {
+                "status": "ok",
+                "stale": true
+              }
+            }
+          },
+          "eids": []
+        },
+        "jsonAbsent": [
+          "sharedid"
+        ]
+      }
+    },
+    {
+      "name": "reports staleness even when there is no country for an address",
+      "request": {
+        "path": "/_sid/v1",
+        "headers": {
+          "x-forwarded-for": "203.0.114.1",
+          "cf-connecting-ip": "203.0.114.1"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ext": {
+            "modules": {
+              "dbip": {
+                "status": "empty",
+                "stale": true
+              },
+              "maxmind": {
+                "status": "empty",
+                "stale": true
+              }
+            }
+          }
+        },
+        "jsonAbsent": [
+          "ortb2"
+        ]
+      }
+    }
+  ]
+}

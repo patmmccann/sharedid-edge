@@ -11,6 +11,7 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | `conformance/` | HTTP cases and their runner | The contract; every implementation must pass. |
 | `packages/core/` | Platform-neutral handler, consent, cookies, module interface | Published as `@sharedid-edge/core`. Depends on no module. |
 | `packages/ip-ranges/` | IP range tables, the MMDB reader and the country module that IP database vendor modules share | Published as `@sharedid-edge/ip-ranges`. Not a module; see its [`AGENTS.md`](packages/ip-ranges/AGENTS.md). |
+| `packages/data-updates/` | Opt-in scheduled reference-data updates, private snapshots, storage adapters and the Node command | Published as `@sharedid-edge/data-updates`. See its [`AGENTS.md`](packages/data-updates/AGENTS.md). |
 | `packages/adapters/` | Deployable platform packages, one folder per platform (listed below) | Rules for every adapter in [`packages/adapters/AGENTS.md`](packages/adapters/AGENTS.md). Each is a conformance target. |
 | `packages/modules/` | Modules this project maintains, one folder per module (listed below), and `all/` (`@sharedid-edge/modules`, the built-in list) | Rules and how to write a module in [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). Published as `@sharedid-edge/module-<name>`; built into every adapter. |
 | `packages/vendor-modules/` | Modules contributed and maintained by vendors (listed below) | Extra rules in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md). Opt-in at build time; tested in their own CI job. |
@@ -110,6 +111,7 @@ Behaviour that must not regress, each covered by tests:
 - ESM only, Node.js 24 or later. Platform-neutral code uses only web-standard APIs (`Request`, `Response`, `URL`, `crypto.randomUUID`).
 - Keep the worker small: no runtime dependencies in `@sharedid-edge/core`. Check `npm run build -w @sharedid-edge/cloudflare` (a dry-run bundle) for size when adding code.
 - Errors returned to clients never include request data.
+- **Reference-data downloads run only on schedulers or administrative commands**, through the opt-in `@sharedid-edge/data-updates` package. Adapters may reload private deployment storage outside module execution; modules use only validated in-memory snapshots and report `stale` when needed. Never pass visitor data to the updater. See [Scheduled data updates](docs/data-updates.md).
 - **Don't copy code between packages;** factor it into core, a shared package or a conformance helper. If a copy is deliberate, mark it with a jscpd ignore comment and say why. See [Duplication](#duplication).
 - Commit messages: an imperative summary line, then why. Pull requests describe the motivation and the checks run.
 - This is a public repository: don't reference private repositories, internal tools or non-public deployments in code, comments, commits or PRs.

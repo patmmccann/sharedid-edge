@@ -1,5 +1,7 @@
 # @sharedid-edge/cloudflare
 
+For opt-in reference-data refreshes, see [Scheduled data updates: Cloudflare](../../../docs/data-updates.md#cloudflare-cron-triggers-and-r2): a separate Cron Worker writes private R2/KV snapshots, and custom request workers load them into memory. The default Worker and Snippet are unchanged.
+
 SharedID Edge as a **Cloudflare Worker**: the `/_sid/*` routes on your own site, answered at Cloudflare's edge, never reaching your origin. This page is the adapter's full guide: the deployment walkthrough and the reference.
 
 ## Contents

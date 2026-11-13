@@ -199,6 +199,10 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
     ...limited('module-dbip.json', NO_LOCATION, ["leaves the CDN's country alone"]),
     ...limited('module-dbip.json', NO_LOCATION_OR_CLIENT_IP, ["fills in the country when the CDN's has no alpha-3 code (Tor, T1)"]),
     ...limited('module-dbip-replace.json', NO_LOCATION_OR_CLIENT_IP, ["replaces the CDN's country, keeping geo's other fields"]),
+    ...limited('module-data-stale.json', CLIENT_IP, [
+      'keeps the last valid country and reports stale data for IPv4',
+      'keeps the last valid country and reports stale data for IPv6 with denied storage'
+    ]),
     ...limited('module-maxmind.json', CLIENT_IP, [
       'fills in the country, with ipservice 3, when the CDN has none',
       'fills in the country for an IPv6 address',
