@@ -7,8 +7,8 @@ name: sGTM tests
 #
 # It needs the SGTM_CONTAINER_CONFIG repository secret: the config string of a Tag Manager server container with
 # e2e/sgtm/gtm/container.json imported and published. Until it's set, it skips with a notice. It never runs on pull
-# requests (they could come from forks): only from main, after a merge that changes the tests or the template, and on
-# demand. CI (ci.yml) stays account-free; it checks the container export and the compose file.
+# requests (they could come from forks): only from main, after a merge that changes the tests or the template, nightly
+# (Google updates the image and the Tag Manager runtime on its own schedule), and on demand. CI (ci.yml) stays account-free; it checks the container export and the compose file.
 on:
   push:
     branches: [main]
@@ -17,6 +17,8 @@ on:
       - e2e/playwright.sgtm.config.ts
       - templates/sgtm/**
       - .github/workflows/e2e-sgtm.yml
+  schedule:
+    - cron: '47 5 * * *'
   workflow_dispatch:
 
 permissions:
@@ -119,7 +121,7 @@ jobs:
           CONTAINER_CONFIG: unused
         run: docker compose down -v
 
-  # On main: a failing run after a merge opens an issue, or comments on the open one; a passing run closes it
+  # On main: a failing run after a merge or nightly opens an issue, or comments on the open one; a passing run closes it
   # (.github/actions/live-issue). Until the secret is set, sgtm is skipped: nothing was tested, so no issue.
   report:
     name: Report the run

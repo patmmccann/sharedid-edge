@@ -88,7 +88,7 @@ The page loads gtag.js from `www.googletagmanager.com` with a placeholder measur
 
 ## In CI
 
-[`e2e-sgtm.yml`](../../.github/workflows/e2e-sgtm.yml) runs the tests on an Ubuntu runner after a merge to `main` that changes this folder, `templates/sgtm/` or the workflow, and on demand. Without the `SGTM_CONTAINER_CONFIG` secret it ends with a notice and tests nothing. A failure after a merge opens an issue, "sGTM tests are failing", as the live tests do ([`live-issue`](../../.github/actions/live-issue/action.yml)); a later green run closes it. Pull requests never get the secret; their CI checks only that `gtm/container.json` matches the templates (`npm run sgtm-container -- --check`) and that `docker compose config` accepts the compose file. See [How SharedID Edge is verified](../../docs/verification.md#the-sgtm-tests).
+[`e2e-sgtm.yml`](../../.github/workflows/e2e-sgtm.yml) runs the tests on an Ubuntu runner after a merge to `main` that changes this folder, `templates/sgtm/` or the workflow, nightly, and on demand. Without the `SGTM_CONTAINER_CONFIG` secret it ends with a notice and tests nothing. A failure after a merge or nightly opens an issue, "sGTM tests are failing", as the live tests do ([`live-issue`](../../.github/actions/live-issue/action.yml)); a later green run closes it. Pull requests never get the secret; their CI checks only that `gtm/container.json` matches the templates (`npm run sgtm-container -- --check`) and that `docker compose config` accepts the compose file. See [How SharedID Edge is verified](../../docs/verification.md#the-sgtm-tests).
 
 ## The container export
 
