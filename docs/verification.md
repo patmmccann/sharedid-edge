@@ -125,7 +125,7 @@ SharedID Edge next to a server-side Google Tag Manager container on the same hos
 | [Cloudflare](sgtm.md#on-cloudflare): the SharedID Edge Worker on `/_sid/*`, a forwarding Worker on the sGTM path | **5. Documented only** | Google's custom domain guide and Cloudflare's documentation. The forwarding Worker has the shape of the live-tested upstream-operator [`forward.js`](../packages/adapters/cloudflare/live/forward.js), not its tests. | All of it: the tagging server behind the forwarding Worker, the visitor's address reaching sGTM, the domain of sGTM's cookies. |
 | [docker-compose](sgtm.md#both-in-containers-with-docker-compose): Google's tagging server image and the Node.js server behind nginx | **5. Documented only** | Google's manual setup guide. The Node.js server alone is simulated (above). | All of it; the image hasn't been run by this project. |
 
-The [SharedID variable template](../templates/sgtm/README.md) isn't a deployment: its nine test scenarios ran in Node.js against its code, with stand-ins for sGTM's sandboxed APIs, not in Google's Template Editor or a server container.
+The [SharedID variable template](../templates/sgtm/README.md) isn't a deployment: its ten test scenarios ran in Node.js against its code, with stand-ins for sGTM's sandboxed APIs, not in Google's Template Editor or a server container.
 
 ### Opt-in and vendor modules
 

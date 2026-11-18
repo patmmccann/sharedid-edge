@@ -96,9 +96,11 @@ function named(value) {
 
 // Browsers send cookies of the same name oldest first, and SharedID Edge
 // uses the first one; a first value that isn't a valid ID doesn't count.
+// Values are read as sent (noDecode), as SharedID Edge reads them: a
+// percent-encoded value isn't a valid ID there, so it mustn't be one here.
 function firstValid(name) {
   if (!named(name) || validId === null) return undefined;
-  const value = getCookieValues(name)[0];
+  const value = getCookieValues(name, true)[0];
   if (getType(value) !== 'string' || !testRegex(validId, value)) return undefined;
   return value;
 }
@@ -237,6 +239,13 @@ scenarios:
 - name: Skips an invalid recovery copy
   code: |-
     mockCookies({_pubcid: ['c29cb2ae-769d-42f6-891a-f53cadee823d'], _pubcid_sv: ['not valid!']});
+    assertThat(runCode(defaults)).isEqualTo('c29cb2ae-769d-42f6-891a-f53cadee823d');
+- name: Reads values undecoded, so a percent-encoded recovery copy isn't valid
+  code: |-
+    mock('getCookieValues', (name, noDecode) => {
+      if (name === '_pubcid_sv') return [noDecode ? '%41' : 'A'];
+      return name === '_pubcid' ? ['c29cb2ae-769d-42f6-891a-f53cadee823d'] : [];
+    });
     assertThat(runCode(defaults)).isEqualTo('c29cb2ae-769d-42f6-891a-f53cadee823d');
 - name: Returns undefined without a cookie
   code: |-

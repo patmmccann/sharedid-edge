@@ -44,7 +44,7 @@ The SharedID as a string, such as `c29cb2ae-769d-42f6-891a-f53cadee823d`, chosen
 1. the `HttpOnly` recovery copy, `_pubcid_sv`, if it's a valid ID. Page scripts can't read it, but sGTM, a server, can. When it differs from `_pubcid`, the page re-minted the ID after Safari capped the cookie, and SharedID Edge puts this value back on its next call, so this is the ID the visitor keeps;
 2. otherwise `_pubcid`, if it's a valid ID.
 
-A valid ID matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. When the browser sends two cookies of the same name, the first is used, as SharedID Edge does ([Duplicates](../../spec/SPEC.md#cookies)).
+A valid ID matches `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`. Values are read as the browser sent them, without percent-decoding, as SharedID Edge reads them: an encoded value such as `%41` isn't a valid ID. When the browser sends two cookies of the same name, the first is used, as SharedID Edge does ([Duplicates](../../spec/SPEC.md#cookies)).
 
 It returns `undefined`:
 
@@ -88,7 +88,7 @@ Whether a platform accepts the SharedID, and under which consent, is up to that 
 
 ## Tests
 
-The file has nine test scenarios in its `___TESTS___` section (the recovery copy wins, duplicates, invalid values, opt-out, GPC on and off). Run them in the Template Editor's **Tests** tab with **Run Tests** ([Tests](https://developers.google.com/tag-platform/tag-manager/templates/tests)). They ran in Node.js against the template's code with stand-ins for the sandbox's APIs; they haven't been run in Google's Template Editor by this project yet, which needs a Tag Manager account.
+The file has ten test scenarios in its `___TESTS___` section (the recovery copy wins, duplicates, invalid and percent-encoded values, opt-out, GPC on and off). Run them in the Template Editor's **Tests** tab with **Run Tests** ([Tests](https://developers.google.com/tag-platform/tag-manager/templates/tests)). They ran in Node.js against the template's code with stand-ins for the sandbox's APIs; they haven't been run in Google's Template Editor by this project yet, which needs a Tag Manager account.
 
 ## Troubleshooting
 
