@@ -88,7 +88,7 @@ Whether a platform accepts the SharedID, and under which consent, is up to that 
 
 ## Tests
 
-The file has ten test scenarios in its `___TESTS___` section (the recovery copy wins, duplicates, invalid and percent-encoded values, opt-out, GPC on and off). Run them in the Template Editor's **Tests** tab with **Run Tests** ([Tests](https://developers.google.com/tag-platform/tag-manager/templates/tests)). They ran in Node.js against the template's code with stand-ins for the sandbox's APIs; they haven't been run in Google's Template Editor by this project yet, which needs a Tag Manager account.
+The file has ten test scenarios in its `___TESTS___` section (the recovery copy wins, duplicates, invalid and percent-encoded values, opt-out, GPC on and off). Run them in the Template Editor's **Tests** tab with **Run Tests** ([Tests](https://developers.google.com/tag-platform/tag-manager/templates/tests)). They ran in Node.js against the template's code with stand-ins for the sandbox's APIs; they haven't been run in Google's Template Editor by this project yet, which needs a Tag Manager account. The [sGTM tests](../../e2e/sgtm/README.md) run the template itself in a published server container on Google's tagging server image, through an echo client; they haven't run yet either (they need the container's config as a repository secret).
 
 ## Troubleshooting
 

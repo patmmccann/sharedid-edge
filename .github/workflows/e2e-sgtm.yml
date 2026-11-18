@@ -1,0 +1,147 @@
+name: sGTM tests
+
+# SharedID Edge beside server-side Google Tag Manager, on Google's real tagging server image: the docker compose stack
+# in e2e/sgtm (the tagging and preview servers, SharedID Edge's Node.js server built from this commit, nginx), and the
+# Playwright tests in e2e/sgtm/sgtm.spec.ts, which check the SharedID variable template and what docs/sgtm.md says
+# about Google's cookies and consent. See e2e/sgtm/README.md.
+#
+# It needs the SGTM_CONTAINER_CONFIG repository secret: the config string of a Tag Manager server container with
+# e2e/sgtm/gtm/container.json imported and published. Until it's set, it skips with a notice. It never runs on pull
+# requests (they could come from forks): only from main, after a merge that changes the tests or the template, and on
+# demand. CI (ci.yml) stays account-free; it checks the container export and the compose file.
+on:
+  push:
+    branches: [main]
+    paths:
+      - e2e/sgtm/**
+      - e2e/playwright.sgtm.config.ts
+      - templates/sgtm/**
+      - .github/workflows/e2e-sgtm.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-sgtm
+  cancel-in-progress: false
+
+jobs:
+  config:
+    name: Is the sGTM container set up
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      configured: ${{ steps.config.outputs.configured }}
+    steps:
+      - id: config
+        env:
+          HAS_CONTAINER_CONFIG: ${{ secrets.SGTM_CONTAINER_CONFIG != '' }}
+        run: |
+          if [ "$HAS_CONTAINER_CONFIG" = true ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipped. Set the SGTM_CONTAINER_CONFIG repository secret to run the sGTM tests (e2e/sgtm/README.md#one-time-setup)."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  sgtm:
+    name: SharedID Edge and sGTM, on Google's tagging server image (chromium)
+    needs: config
+    if: needs.config.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Install e2e dependencies, and build the test page's Prebid.js bundle
+        working-directory: e2e
+        run: |
+          npm ci
+          npm run bundle-prebid
+      - name: Cache the Playwright browser
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-${{ hashFiles('e2e/package-lock.json') }}
+      - name: Install the browser and its system dependencies
+        working-directory: e2e
+        run: ./install-browser.sh chromium
+      # Only the compose commands get the container config.
+      - name: Start the stack
+        working-directory: e2e/sgtm
+        env:
+          CONTAINER_CONFIG: ${{ secrets.SGTM_CONTAINER_CONFIG }}
+        run: docker compose up -d --build
+      - name: Wait for the tagging server to load the published container
+        working-directory: e2e/sgtm
+        env:
+          CONTAINER_CONFIG: ${{ secrets.SGTM_CONTAINER_CONFIG }}
+        run: sh wait.sh 300
+      - name: The SharedID variable template, and SharedID Edge beside the GA4 client (e2e/sgtm/sgtm.spec.ts)
+        working-directory: e2e
+        run: |
+          set -o pipefail
+          npx playwright test -c playwright.sgtm.config.ts 2>&1 | tee "$RUNNER_TEMP/sgtm.log"
+      # What Google's documentation doesn't say, as the tests saw it (docs/sgtm.md, "Not confirmed").
+      - name: Observations
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo '### What the tests observed'
+            echo
+            grep -h '^observed: ' "$RUNNER_TEMP/sgtm.log" | sed 's/^observed: /- /' || echo '- nothing recorded'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: The stack's logs
+        if: failure()
+        working-directory: e2e/sgtm
+        env:
+          CONTAINER_CONFIG: unused
+        run: docker compose logs --no-color --tail 300
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-sgtm
+          path: e2e/test-results
+          retention-days: 7
+      - name: Stop the stack
+        if: always()
+        working-directory: e2e/sgtm
+        env:
+          CONTAINER_CONFIG: unused
+        run: docker compose down -v
+
+  # On main: a failing run after a merge opens an issue, or comments on the open one; a passing run closes it
+  # (.github/actions/live-issue). Until the secret is set, sgtm is skipped: nothing was tested, so no issue.
+  report:
+    name: Report the run
+    needs: [config, sgtm]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions
+            scripts/live-issue.mjs
+            .nvmrc
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/live-issue
+        with:
+          needs: ${{ toJSON(needs) }}
+          required: config sgtm
+          title: sGTM tests are failing
+          summary: The sGTM tests failed

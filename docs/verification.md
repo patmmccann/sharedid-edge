@@ -22,6 +22,7 @@ This page is the overall picture. The guides' "What's been verified live" sectio
   - [Live tests (AWS)](#live-tests-aws)
   - [Live tests (upstream operator)](#live-tests-upstream-operator)
   - [Live tests (Vercel)](#live-tests-vercel)
+  - [The sGTM tests](#the-sgtm-tests)
   - [The upstream-operator and Cloudflare for SaaS live setups](#the-upstream-operator-and-cloudflare-for-saas-live-setups)
   - [The website workflow](#the-website-workflow)
 - [What the checks assert](#what-the-checks-assert)
@@ -123,9 +124,10 @@ SharedID Edge next to a server-side Google Tag Manager container on the same hos
 | Recipe | Level | Evidence | Not proven |
 | --- | --- | --- | --- |
 | [Cloudflare](sgtm.md#on-cloudflare): the SharedID Edge Worker on `/_sid/*`, a forwarding Worker on the sGTM path | **5. Documented only** | Google's custom domain guide and Cloudflare's documentation. The forwarding Worker has the shape of the live-tested upstream-operator [`forward.js`](../packages/adapters/cloudflare/live/forward.js), not its tests. | All of it: the tagging server behind the forwarding Worker, the visitor's address reaching sGTM, the domain of sGTM's cookies. |
-| [docker-compose](sgtm.md#both-in-containers-with-docker-compose): Google's tagging server image and the Node.js server behind nginx | **5. Documented only** | Google's manual setup guide. The Node.js server alone is simulated (above). | All of it; the image hasn't been run by this project. |
+| [docker-compose](sgtm.md#both-in-containers-with-docker-compose): Google's tagging server image and the Node.js server behind nginx | **5. Documented only** | Google's manual setup guide. The Node.js server alone is simulated (above). The [sGTM tests](#the-sgtm-tests) run the same layout, with TLS at nginx, but haven't run yet. | All of it; the image hasn't been run by this project. |
+| [The integration](sgtm.md#the-sharedid-in-sgtm), as the [sGTM tests](#the-sgtm-tests) check it: the [variable template](../templates/sgtm/README.md) in a published server container, and SharedID Edge's cookies and consent beside the GA4 client's server-managed `FPID` and the Conversion Linker's `FPGCLAW` | **5. Documented only** until the workflow's first green run, then **3. Emulated**: Google's real tagging server image and a real published container, on a runner, with no CDN | The tests and the container export are in [`e2e/sgtm/`](../e2e/sgtm/README.md); CI checks the export matches the templates and the compose file is valid. They need the `SGTM_CONTAINER_CONFIG` secret, which isn't set yet, so nothing has run against Google's image, and the export hasn't been imported into Tag Manager. | Until it runs, all of it. After: a real CDN in front (the Cloudflare recipe), Safari, the visitor's address reaching sGTM, a GA4 tag sending to Google Analytics, and anything Google changes between runs (it runs on merges that touch it and on demand, not nightly). |
 
-The [SharedID variable template](../templates/sgtm/README.md) isn't a deployment: its ten test scenarios ran in Node.js against its code, with stand-ins for sGTM's sandboxed APIs, not in Google's Template Editor or a server container.
+The [SharedID variable template](../templates/sgtm/README.md)'s ten test scenarios ran in Node.js against its code, with stand-ins for sGTM's sandboxed APIs, not in Google's Template Editor. In a server container, it's checked by the sGTM tests (the row above), once they run.
 
 ### Opt-in and vendor modules
 
@@ -150,9 +152,9 @@ Counting each row of the first five tables once (not the unsupported endpoints, 
 | 2. Live, manual | 0: every deployment run live by hand is now in a live workflow |
 | 3. Emulated | 2: Fastly Compute, and Fastly Compute as an upstream-operator endpoint |
 | 4. Simulated | 15: the Snippet; Lambda@Edge on origin-request and on viewer-request; Akamai, Azure, Google Cloud and Node.js; Node.js and Lambda as upstream-operator endpoints; custom hostname metadata; Akamai, Vercel, Google Cloud, Azure and Node.js for many sites |
-| 5. Documented only | 13: six publisher CDN recipes; Workers for Platforms, Snippets on SaaS zones, orange-to-orange, CloudFront with many domains, and Fastly Request Routing; the two server-side GTM recipes. No platform adapter is documented only |
+| 5. Documented only | 14: six publisher CDN recipes; Workers for Platforms, Snippets on SaaS zones, orange-to-orange, CloudFront with many domains, and Fastly Request Routing; the two server-side GTM recipes, and the server-side GTM integration until its tests first run. No platform adapter is documented only |
 
-That's 38 rows. The 13 documented-only rows are the first place to look when a deployment behaves unexpectedly.
+That's 39 rows. The 14 documented-only rows are the first place to look when a deployment behaves unexpectedly.
 
 ## The behaviour that must not regress
 
@@ -181,6 +183,7 @@ The project's rules ([AGENTS.md](../AGENTS.md#changing-behaviour)) and Safari's 
 | `lambda-aws-emulator` | The full suite through a Lambda function URL on AWS Emulator, a pinned version. Not required yet (`continue-on-error`) | Emulated |
 | `vendor-modules` | Each vendor module's own tests | Unit tests |
 | `e2e-chromium`, `e2e` (Firefox, WebKit) | The [browser tests](#the-browser-tests) against `e2e/server.ts`: the core handler and the `reflect` and `clickid` modules, not an adapter, serving the page and `/_sid/*` from one origin | Simulated: they prove the Prebid.js contract, not a platform |
+| `e2e-chromium`, also | The [sGTM tests](#the-sgtm-tests)' static checks: the container export matches the templates (`npm run sgtm-container -- --check`), and `docker compose config` | Static checks |
 | `e2e-safari` | The four core browser tests in real Safari on a macOS runner, through `safaridriver`, against the same local server | Simulated, in the real browser |
 | `aws-template`, `azure-template`, `gcp-terraform` | `cfn-lint`, `az bicep build`, `terraform validate` | Static checks |
 | `website` | Builds sharedid.dev; dead links and anchors fail | Docs only |
@@ -232,6 +235,15 @@ The project's rules ([AGENTS.md](../AGENTS.md#changing-behaviour)) and Safari's 
 - **What it doesn't:** the example deployed as its README says (the repository imported with the Root Directory set, built by Vercel from a clone with the committed configuration), since the tests build on the runner with the staged one; Routing Middleware (the tests use the route handler), the Edge runtime, a custom domain (a DNS-only `vercel.sharedid.dev` CNAME would be closer to a publisher's site), and the limits of level 1.
 - **First green run:** 17 November 2026 ([run](https://github.com/patmmccann/sharedid-edge/actions/runs/44026525421)), which moved the Vercel row in the matrix to level 1.
 - **Inspect it:** [Actions → Live tests (Vercel)](https://github.com/patmmccann/sharedid-edge/actions/workflows/e2e-vercel.yml). A failure opens "Live Vercel tests are failing" and uploads `playwright-report-vercel-<browser>`; a later green run that deployed closes the issue.
+
+### The sGTM tests
+
+[`e2e-sgtm.yml`](../.github/workflows/e2e-sgtm.yml). Details, and the one-time setup, in [`e2e/sgtm/README.md`](../e2e/sgtm/README.md).
+
+- **Trigger:** a push to `main` that changes `e2e/sgtm/`, `templates/sgtm/` or the workflow, and on demand. Never on pull requests. It needs the `SGTM_CONTAINER_CONFIG` repository secret, the config string of a Tag Manager server container with [`e2e/sgtm/gtm/container.json`](../e2e/sgtm/gtm/container.json) imported and published; without it, its only job prints a notice and the run succeeds, so a green run is a test only if the "SharedID Edge and sGTM" job ran. **The secret isn't set yet: it hasn't run.**
+- **Infrastructure:** none of the project's own: a docker compose stack on the runner (Google's `gtm-cloud-image` as the tagging server and the preview server, SharedID Edge's Node.js server built from the commit, nginx with a self-signed certificate on `www.sharedid.test`), and the server container in Tag Manager that the tagging server loads.
+- **Steps:** start the stack; wait until `/metrics/healthy`, `/_sid/v1` and the echo client's `/metrics/sid-echo` answer; run the eight tests in [`e2e/sgtm/sgtm.spec.ts`](../e2e/sgtm/sgtm.spec.ts) in Chromium, with the e2e page's Prebid.js bundle and the Google tag on the page: the variable template returns the ID SharedID Edge set, prefers the `HttpOnly` recovery copy, returns no invalid value and nothing with GPC or after opt-out; with `reflect` keeping only `uid1`, as [docs/sgtm.md](sgtm.md#googles-cookies-the-keeper-or-sgtm-not-both) recommends, neither side sets or overwrites the other's cookies (`FPID`, `FPGCLAW` against `_pubcid`, `uid1`, `_sid_gclid`); denied consent (TCF and Consent Mode) stops SharedID Edge, the variable and the Conversion Linker; GPC stops SharedID Edge and the variable. What Google's documentation doesn't say (`FPID`'s attributes and domain, whether sGTM sets `_ga`, what the GA4 client does with denied consent or GPC) is recorded in the run's summary, not asserted.
+- **Inspect it:** [Actions → sGTM tests](https://github.com/patmmccann/sharedid-edge/actions/workflows/e2e-sgtm.yml). A failure after a merge opens "sGTM tests are failing" and uploads `playwright-report-sgtm`; a later green run closes it.
 
 ### The upstream-operator and Cloudflare for SaaS live setups
 
@@ -299,7 +311,7 @@ What would raise a level, and where it's tracked:
 - **Lambda and Fastly as upstream-operator endpoints,** custom hostname metadata, Workers for Platforms and orange-to-orange. [#150](https://github.com/patmmccann/sharedid-edge/issues/150).
 - **The Lambda@Edge live jobs running green,** once the role has the Lambda@Edge statements and `AWS_LAMBDA_EDGE_ENABLED` is set ([#177](https://github.com/patmmccann/sharedid-edge/issues/177)); then both Lambda@Edge rows move to level 1.
 - **Fastly, Akamai, Azure and Google Cloud** on live accounts, and the Fastly, Akamai, nginx, HAProxy and Azure Front Door publisher recipes. Each adapter's README lists what a first deployment should check.
-- **SharedID Edge beside server-side GTM,** on Cloudflare or in containers, and the variable template in a real server container. [#20](https://github.com/patmmccann/sharedid-edge/issues/20).
+- **SharedID Edge beside server-side GTM,** on Cloudflare or in containers, and the variable template in a real server container. [#20](https://github.com/patmmccann/sharedid-edge/issues/20). The [sGTM tests](#the-sgtm-tests) cover the container part once the `SGTM_CONTAINER_CONFIG` secret is set ([#26](https://github.com/patmmccann/sharedid-edge/issues/26)).
 - **Real Safari against a live deployment:** it can run against one by hand (`E2E_BASE_URL=… npm run test:safari` on a Mac), but no run is recorded.
 
 If you run SharedID Edge on one of these, [an issue](https://github.com/patmmccann/sharedid-edge/issues) with what you checked and saw moves it up this page.

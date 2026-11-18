@@ -358,6 +358,13 @@ jobs:
       - name: The page's TC string consents to the bundle's modules (e2e/AGENTS.md)
         working-directory: e2e
         run: npm run tc-string -- --check
+      # The sGTM tests run from main only (e2e-sgtm.yml), with a Tag Manager container; these two need neither.
+      - name: The sGTM tests' container export is up to date with the templates (e2e/sgtm/README.md)
+        working-directory: e2e
+        run: npm run sgtm-container -- --check
+      - name: The sGTM tests' compose file is valid
+        working-directory: e2e/sgtm
+        run: CONTAINER_CONFIG=unused docker compose config --quiet
       - name: Unmodified Prebid.js sharedIdSystem against SharedID Edge (chromium)
         working-directory: e2e
         run: npx playwright test --project=chromium

@@ -1,0 +1,35 @@
+<!doctype html>
+<html><head><title>SharedID Edge and sGTM</title>
+<!-- The sGTM tests' page (e2e/sgtm/README.md): the e2e page's Prebid.js setup, plus the Google tag sending to the
+     tagging server on this site's /metrics path. One choice drives both, as docs/sgtm.md recommends: ?consent=denied
+     gives Prebid.js and SharedID Edge the e2e page's denied TC string (tcf.js) and denies Consent Mode. -->
+<script src="/tcf.js"></script>
+<script src="/vendor-uid1.js"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag() { dataLayer.push(arguments); }
+  var granted = new URLSearchParams(location.search).get('consent') === 'denied' ? 'denied' : 'granted';
+  gtag('consent', 'default', { ad_storage: granted, analytics_storage: granted, ad_user_data: granted, ad_personalization: granted });
+  gtag('js', new Date());
+  // A placeholder measurement ID: the server container has no GA4 tag, so nothing reaches Google Analytics.
+  gtag('config', 'G-SIDEDGE000', { server_container_url: location.origin + '/metrics' });
+</script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-SIDEDGE000"></script>
+<script>window.pbjs = window.pbjs || { que: [] };</script>
+<script src="/prebid/prebid.js"></script>
+<script>
+  pbjs.que.push(function () {
+    pbjs.setConfig({
+      consentManagement: { gdpr: { cmpApi: 'static', consentData: { getTCData: window.SID_E2E_TCF } } },
+      userSync: {
+        syncDelay: 0,
+        userIds: [{
+          name: 'sharedId',
+          params: { pixelUrl: '/_sid/sync', extend: true },
+          storage: { type: 'cookie', name: '_pubcid', expires: 365 }
+        }]
+      }
+    });
+  });
+</script>
+</head><body>SharedID Edge and sGTM</body></html>

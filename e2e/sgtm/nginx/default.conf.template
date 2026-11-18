@@ -1,0 +1,58 @@
+# The sGTM tests' front end (docker-compose.yml). nginx's image fills in ${SITE_HOST} and ${PREVIEW_HOST} from the
+# environment; its own $variables are left as they are. Both services are reached only through here.
+
+server {
+    listen 443 ssl;
+    server_name ${SITE_HOST};
+    ssl_certificate /etc/nginx/certs/site.crt;
+    ssl_certificate_key /etc/nginx/certs/site.key;
+
+    # SharedID Edge, as in docs/sgtm.md's docker-compose example.
+    location /_sid/ {
+        proxy_pass http://sharedid:8787;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;   # overwrite, don't append
+        proxy_cache off;
+    }
+
+    # The tagging server, on a path of the site, keeping the /metrics prefix (Google's same-origin setup).
+    location /metrics/ {
+        proxy_pass http://sgtm:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_cache off;
+    }
+
+    # The e2e page's scripts and Prebid.js bundle.
+    location = /tcf.js { root /srv/e2e; }
+    location = /vendor-uid1.js { root /srv/e2e; }
+    location /prebid/ { root /srv/e2e; }
+
+    # The test page.
+    location / {
+        root /srv/site;
+        try_files $uri /index.html;
+        add_header Cache-Control no-store;
+    }
+}
+
+server {
+    listen 443 ssl;
+    server_name ${PREVIEW_HOST};
+    ssl_certificate /etc/nginx/certs/site.crt;
+    ssl_certificate_key /etc/nginx/certs/site.key;
+
+    location / {
+        proxy_pass http://sgtm-preview:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+}
+
+# For the container's health check only (not published).
+server {
+    listen 8080;
+    location = /nginx-health { return 200 'ok'; }
+}

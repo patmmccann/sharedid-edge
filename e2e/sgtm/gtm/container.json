@@ -1,0 +1,275 @@
+{
+    "exportFormatVersion": 2,
+    "exportTime": "2026-11-18 00:00:00",
+    "containerVersion": {
+        "path": "accounts/1234567890/containers/111111111/versions/0",
+        "accountId": "1234567890",
+        "containerId": "111111111",
+        "containerVersionId": "0",
+        "container": {
+            "path": "accounts/1234567890/containers/111111111",
+            "accountId": "1234567890",
+            "containerId": "111111111",
+            "name": "SharedID Edge sGTM tests",
+            "publicId": "GTM-XXXXXXX",
+            "usageContext": [
+                "SERVER"
+            ],
+            "fingerprint": "1763424000000",
+            "tagManagerUrl": "https://tagmanager.google.com/#/container/accounts/1234567890/containers/111111111/workspaces?apiLink=container",
+            "features": {
+                "supportUserPermissions": true,
+                "supportEnvironments": true,
+                "supportWorkspaces": true,
+                "supportGtagConfigs": false,
+                "supportBuiltInVariables": true,
+                "supportClients": true,
+                "supportFolders": true,
+                "supportTags": true,
+                "supportTemplates": true,
+                "supportTriggers": true,
+                "supportVariables": true,
+                "supportVersions": true,
+                "supportZones": true,
+                "supportTransformations": true
+            },
+            "tagIds": [
+                "GTM-XXXXXXX"
+            ]
+        },
+        "tag": [
+            {
+                "accountId": "1234567890",
+                "containerId": "111111111",
+                "tagId": "8",
+                "name": "SharedID echo response",
+                "type": "cvt_111111111_3",
+                "parameter": [
+                    {
+                        "type": "TEMPLATE",
+                        "key": "sharedid",
+                        "value": "{{SharedID}}"
+                    }
+                ],
+                "fingerprint": "1763424000000",
+                "firingTriggerId": [
+                    "7"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            },
+            {
+                "accountId": "1234567890",
+                "containerId": "111111111",
+                "tagId": "9",
+                "name": "Conversion Linker",
+                "type": "sgtmadscl",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "enableCookieOverrides",
+                        "value": "false"
+                    }
+                ],
+                "fingerprint": "1763424000000",
+                "firingTriggerId": [
+                    "2147479574"
+                ],
+                "tagFiringOption": "ONCE_PER_EVENT",
+                "monitoringMetadata": {
+                    "type": "MAP"
+                },
+                "consentSettings": {
+                    "consentStatus": "NOT_SET"
+                }
+            }
+        ],
+        "trigger": [
+            {
+                "accountId": "1234567890",
+                "containerId": "111111111",
+                "triggerId": "7",
+                "name": "SharedID echo",
+                "type": "CUSTOM_EVENT",
+                "customEventFilter": [
+                    {
+                        "type": "EQUALS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{_event}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "sid_echo"
+                            }
+                        ]
+                    }
+                ],
+                "filter": [
+                    {
+                        "type": "EQUALS",
+                        "parameter": [
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg0",
+                                "value": "{{Client Name}}"
+                            },
+                            {
+                                "type": "TEMPLATE",
+                                "key": "arg1",
+                                "value": "SharedID echo"
+                            }
+                        ]
+                    }
+                ],
+                "fingerprint": "1763424000000"
+            }
+        ],
+        "variable": [
+            {
+                "accountId": "1234567890",
+                "containerId": "111111111",
+                "variableId": "4",
+                "name": "SharedID",
+                "type": "cvt_111111111_1",
+                "parameter": [
+                    {
+                        "type": "TEMPLATE",
+                        "key": "cookieName",
+                        "value": "_pubcid"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "recoveryCookieName",
+                        "value": "_pubcid_sv"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "optOutCookieName",
+                        "value": "_pubcid_optout"
+                    },
+                    {
+                        "type": "BOOLEAN",
+                        "key": "honorGpc",
+                        "value": "true"
+                    }
+                ],
+                "fingerprint": "1763424000000",
+                "formatValue": {}
+            }
+        ],
+        "builtInVariable": [
+            {
+                "accountId": "1234567890",
+                "containerId": "111111111",
+                "type": "EVENT_NAME",
+                "name": "Event Name"
+            },
+            {
+                "accountId": "1234567890",
+                "containerId": "111111111",
+                "type": "CLIENT_NAME",
+                "name": "Client Name"
+            },
+            {
+                "accountId": "1234567890",
+                "containerId": "111111111",
+                "type": "REQUEST_PATH",
+                "name": "Request Path"
+            }
+        ],
+        "fingerprint": "1763424000000",
+        "tagManagerUrl": "https://tagmanager.google.com/#/versions/accounts/1234567890/containers/111111111/versions/0?apiLink=version",
+        "client": [
+            {
+                "accountId": "1234567890",
+                "containerId": "111111111",
+                "clientId": "5",
+                "name": "SharedID echo",
+                "type": "cvt_111111111_2",
+                "parameter": [
+                    {
+                        "type": "TEMPLATE",
+                        "key": "path",
+                        "value": "/metrics/sid-echo"
+                    }
+                ],
+                "fingerprint": "1763424000000"
+            },
+            {
+                "accountId": "1234567890",
+                "containerId": "111111111",
+                "clientId": "6",
+                "name": "GA4",
+                "type": "gaaw_client",
+                "parameter": [
+                    {
+                        "type": "BOOLEAN",
+                        "key": "activateDefaultPaths",
+                        "value": "true"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "cookieManagement",
+                        "value": "server"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "cookieName",
+                        "value": "FPID"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "cookieDomain",
+                        "value": "auto"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "cookiePath",
+                        "value": "/"
+                    },
+                    {
+                        "type": "TEMPLATE",
+                        "key": "cookieMaxAgeInSec",
+                        "value": "63072000"
+                    }
+                ],
+                "fingerprint": "1763424000000"
+            }
+        ],
+        "customTemplate": [
+            {
+                "accountId": "1234567890",
+                "containerId": "111111111",
+                "templateId": "1",
+                "name": "SharedID (SharedID Edge)",
+                "fingerprint": "1763424000000",
+                "templateData": "___TERMS_OF_SERVICE___\n\nBy creating or modifying this file you agree to Google Tag Manager's Community\nTemplate Gallery Developer Terms of Service available at\nhttps://developers.google.com/tag-manager/gallery-tos (or such other URL as\nGoogle may provide), as modified from time to time.\n\n\n___INFO___\n\n{\n  \"type\": \"MACRO\",\n  \"id\": \"cvt_temp_public_id\",\n  \"version\": 1,\n  \"securityGroups\": [],\n  \"displayName\": \"SharedID (SharedID Edge)\",\n  \"categories\": [\n    \"UTILITY\",\n    \"ADVERTISING\"\n  ],\n  \"brand\": {\n    \"id\": \"brand_dummy\",\n    \"displayName\": \"SharedID Edge\"\n  },\n  \"description\": \"Returns the visitor's Prebid SharedID from the _pubcid cookie that SharedID Edge sets, or undefined when there is none, the visitor opted out, or sends Global Privacy Control. Reads cookies only; sends nothing.\",\n  \"containerContexts\": [\n    \"SERVER\"\n  ]\n}\n\n\n___TEMPLATE_PARAMETERS___\n\n[\n  {\n    \"type\": \"TEXT\",\n    \"name\": \"cookieName\",\n    \"displayName\": \"SharedID cookie\",\n    \"simpleValueType\": true,\n    \"defaultValue\": \"_pubcid\",\n    \"help\": \"SharedID Edge's SID_COOKIE_NAME. If you change it, add the new name to this template's <b>Reads cookie value(s)</b> permission.\",\n    \"valueValidators\": [\n      {\n        \"type\": \"NON_EMPTY\"\n      }\n    ]\n  },\n  {\n    \"type\": \"TEXT\",\n    \"name\": \"recoveryCookieName\",\n    \"displayName\": \"Recovery cookie (HttpOnly copy)\",\n    \"simpleValueType\": true,\n    \"defaultValue\": \"_pubcid_sv\",\n    \"help\": \"SharedID Edge's SID_RECOVERY_COOKIE. It is read first, as SharedID Edge does: when it differs from the SharedID cookie, the page re-minted the ID after Safari capped it, and SharedID Edge restores this value on its next call. Leave empty to read the SharedID cookie only.\"\n  },\n  {\n    \"type\": \"TEXT\",\n    \"name\": \"optOutCookieName\",\n    \"displayName\": \"Opt-out cookie\",\n    \"simpleValueType\": true,\n    \"defaultValue\": \"_pubcid_optout\",\n    \"help\": \"When this cookie is present, the variable returns undefined, as SharedID Edge and Prebid.js set no ID. Leave empty to ignore it.\"\n  },\n  {\n    \"type\": \"CHECKBOX\",\n    \"name\": \"honorGpc\",\n    \"checkboxText\": \"Return undefined for requests with Global Privacy Control (Sec-GPC: 1)\",\n    \"simpleValueType\": true,\n    \"defaultValue\": true,\n    \"help\": \"SharedID Edge sets no ID for these requests and deletes the ID cookies on its next call; until then the browser may still send them.\"\n  }\n]\n\n\n___SANDBOXED_JS_FOR_SERVER___\n\n// SharedID variable for server-side Google Tag Manager, from SharedID Edge\n// (https://github.com/patmmccann/sharedid-edge, templates/sgtm). Apache-2.0.\n// It reads the SharedID cookies from the incoming request, as SharedID Edge's\n// specification (spec/SPEC.md, \"The ID\") chooses between them, and calls\n// nothing else.\n\nconst createRegex = require('createRegex');\nconst getCookieValues = require('getCookieValues');\nconst getRequestHeader = require('getRequestHeader');\nconst getType = require('getType');\nconst testRegex = require('testRegex');\n\n// A valid ID, as in SharedID Edge's specification. createRegex returns null\n// on server images older than 2.0.0, and then no ID is returned.\nconst validId = createRegex('^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$');\n\nfunction named(value) {\n  return getType(value) === 'string' && value !== '';\n}\n\n// Browsers send cookies of the same name oldest first, and SharedID Edge\n// uses the first one; a first value that isn't a valid ID doesn't count.\n// Values are read as sent (noDecode), as SharedID Edge reads them: a\n// percent-encoded value isn't a valid ID there, so it mustn't be one here.\nfunction firstValid(name) {\n  if (!named(name) || validId === null) return undefined;\n  const value = getCookieValues(name, true)[0];\n  if (getType(value) !== 'string' || !testRegex(validId, value)) return undefined;\n  return value;\n}\n\nif (named(data.optOutCookieName) && getCookieValues(data.optOutCookieName).length > 0) {\n  return undefined;\n}\nif (data.honorGpc && getRequestHeader('sec-gpc') === '1') {\n  return undefined;\n}\n\nconst recovered = firstValid(data.recoveryCookieName);\nreturn recovered !== undefined ? recovered : firstValid(data.cookieName);\n\n\n___SERVER_PERMISSIONS___\n\n[\n  {\n    \"instance\": {\n      \"key\": {\n        \"publicId\": \"get_cookies\",\n        \"versionId\": \"1\"\n      },\n      \"param\": [\n        {\n          \"key\": \"cookieAccess\",\n          \"value\": {\n            \"type\": 1,\n            \"string\": \"specific\"\n          }\n        },\n        {\n          \"key\": \"cookieNames\",\n          \"value\": {\n            \"type\": 2,\n            \"listItem\": [\n              {\n                \"type\": 1,\n                \"string\": \"_pubcid\"\n              },\n              {\n                \"type\": 1,\n                \"string\": \"_pubcid_sv\"\n              },\n              {\n                \"type\": 1,\n                \"string\": \"_pubcid_optout\"\n              }\n            ]\n          }\n        }\n      ]\n    },\n    \"clientAnnotations\": {\n      \"isEditedByUser\": true\n    },\n    \"isRequired\": true\n  },\n  {\n    \"instance\": {\n      \"key\": {\n        \"publicId\": \"read_request\",\n        \"versionId\": \"1\"\n      },\n      \"param\": [\n        {\n          \"key\": \"requestAccess\",\n          \"value\": {\n            \"type\": 1,\n            \"string\": \"specific\"\n          }\n        },\n        {\n          \"key\": \"headersAllowed\",\n          \"value\": {\n            \"type\": 8,\n            \"boolean\": true\n          }\n        },\n        {\n          \"key\": \"headerAccess\",\n          \"value\": {\n            \"type\": 1,\n            \"string\": \"specific\"\n          }\n        },\n        {\n          \"key\": \"headerWhitelist\",\n          \"value\": {\n            \"type\": 2,\n            \"listItem\": [\n              {\n                \"type\": 3,\n                \"mapKey\": [\n                  {\n                    \"type\": 1,\n                    \"string\": \"headerName\"\n                  }\n                ],\n                \"mapValue\": [\n                  {\n                    \"type\": 1,\n                    \"string\": \"sec-gpc\"\n                  }\n                ]\n              }\n            ]\n          }\n        }\n      ]\n    },\n    \"clientAnnotations\": {\n      \"isEditedByUser\": true\n    },\n    \"isRequired\": true\n  }\n]\n\n\n___TESTS___\n\nscenarios:\n- name: Returns the SharedID cookie\n  code: |-\n    mockCookies({_pubcid: ['c29cb2ae-769d-42f6-891a-f53cadee823d']});\n    assertThat(runCode(defaults)).isEqualTo('c29cb2ae-769d-42f6-891a-f53cadee823d');\n- name: Prefers the recovery copy, as SharedID Edge does\n  code: |-\n    mockCookies({_pubcid: ['0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10'], _pubcid_sv: ['c29cb2ae-769d-42f6-891a-f53cadee823d']});\n    assertThat(runCode(defaults)).isEqualTo('c29cb2ae-769d-42f6-891a-f53cadee823d');\n- name: Uses the first of duplicate cookies\n  code: |-\n    mockCookies({_pubcid: ['c29cb2ae-769d-42f6-891a-f53cadee823d', '0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10']});\n    assertThat(runCode(defaults)).isEqualTo('c29cb2ae-769d-42f6-891a-f53cadee823d');\n- name: Skips an invalid recovery copy\n  code: |-\n    mockCookies({_pubcid: ['c29cb2ae-769d-42f6-891a-f53cadee823d'], _pubcid_sv: ['not valid!']});\n    assertThat(runCode(defaults)).isEqualTo('c29cb2ae-769d-42f6-891a-f53cadee823d');\n- name: Reads values undecoded, so a percent-encoded recovery copy isn't valid\n  code: |-\n    mock('getCookieValues', (name, noDecode) => {\n      if (name === '_pubcid_sv') return [noDecode ? '%41' : 'A'];\n      return name === '_pubcid' ? ['c29cb2ae-769d-42f6-891a-f53cadee823d'] : [];\n    });\n    assertThat(runCode(defaults)).isEqualTo('c29cb2ae-769d-42f6-891a-f53cadee823d');\n- name: Returns undefined without a cookie\n  code: |-\n    mockCookies({});\n    assertThat(runCode(defaults)).isUndefined();\n- name: Returns undefined after opt-out\n  code: |-\n    mockCookies({_pubcid: ['c29cb2ae-769d-42f6-891a-f53cadee823d'], _pubcid_optout: ['1']});\n    assertThat(runCode(defaults)).isUndefined();\n- name: Returns undefined with Global Privacy Control\n  code: |-\n    mockCookies({_pubcid: ['c29cb2ae-769d-42f6-891a-f53cadee823d']});\n    mock('getRequestHeader', name => name === 'sec-gpc' ? '1' : undefined);\n    assertThat(runCode(defaults)).isUndefined();\n- name: Ignores Global Privacy Control when unticked\n  code: |-\n    mockCookies({_pubcid: ['c29cb2ae-769d-42f6-891a-f53cadee823d']});\n    mock('getRequestHeader', name => name === 'sec-gpc' ? '1' : undefined);\n    assertThat(runCode({cookieName: '_pubcid', recoveryCookieName: '_pubcid_sv', optOutCookieName: '_pubcid_optout', honorGpc: false})).isEqualTo('c29cb2ae-769d-42f6-891a-f53cadee823d');\n- name: Reads only the SharedID cookie when the recovery cookie is empty\n  code: |-\n    mockCookies({_pubcid: ['c29cb2ae-769d-42f6-891a-f53cadee823d'], _pubcid_sv: ['0f0e6fd3-2a43-4d0b-9e5b-0c6f5a1f8a10']});\n    assertThat(runCode({cookieName: '_pubcid', recoveryCookieName: '', optOutCookieName: '_pubcid_optout', honorGpc: true})).isEqualTo('c29cb2ae-769d-42f6-891a-f53cadee823d');\nsetup: |-\n  const defaults = {cookieName: '_pubcid', recoveryCookieName: '_pubcid_sv', optOutCookieName: '_pubcid_optout', honorGpc: true};\n  function mockCookies(cookies) {\n    mock('getCookieValues', name => cookies[name] || []);\n  }\n  mock('getRequestHeader', name => undefined);\n\n\n___NOTES___\n\nFrom SharedID Edge (https://github.com/patmmccann/sharedid-edge), templates/sgtm.\nSee its README for importing, permissions and an example.\n"
+            },
+            {
+                "accountId": "1234567890",
+                "containerId": "111111111",
+                "templateId": "2",
+                "name": "SharedID echo (SharedID Edge tests)",
+                "fingerprint": "1763424000000",
+                "templateData": "___TERMS_OF_SERVICE___\n\nBy creating or modifying this file you agree to Google Tag Manager's Community\nTemplate Gallery Developer Terms of Service available at\nhttps://developers.google.com/tag-manager/gallery-tos (or such other URL as\nGoogle may provide), as modified from time to time.\n\n\n___INFO___\n\n{\n  \"type\": \"CLIENT\",\n  \"id\": \"cvt_temp_public_id\",\n  \"version\": 1,\n  \"securityGroups\": [],\n  \"displayName\": \"SharedID echo (SharedID Edge tests)\",\n  \"brand\": {\n    \"id\": \"brand_dummy\",\n    \"displayName\": \"SharedID Edge\"\n  },\n  \"description\": \"Test fixture for SharedID Edge's sGTM tests (e2e/sgtm). Claims requests to one path and runs the container with an event named sid_echo, so the SharedID echo tag can answer with the SharedID variable's value. Not for production containers.\",\n  \"containerContexts\": [\n    \"SERVER\"\n  ]\n}\n\n\n___TEMPLATE_PARAMETERS___\n\n[\n  {\n    \"type\": \"TEXT\",\n    \"name\": \"path\",\n    \"displayName\": \"Path to claim\",\n    \"simpleValueType\": true,\n    \"defaultValue\": \"/metrics/sid-echo\",\n    \"help\": \"The request path this client claims, exactly, with the path the tagging server is served on.\",\n    \"valueValidators\": [\n      {\n        \"type\": \"NON_EMPTY\"\n      }\n    ]\n  }\n]\n\n\n___SANDBOXED_JS_FOR_SERVER___\n\n// A test fixture from SharedID Edge (https://github.com/patmmccann/sharedid-edge, e2e/sgtm). Apache-2.0.\n// It claims requests to one path and runs the container with an event that carries nothing from the request, so\n// the SharedID echo tag answers with the SharedID variable's value, which the variable reads from the request's\n// cookies. It reads only the request path.\n\nconst claimRequest = require('claimRequest');\nconst getRequestPath = require('getRequestPath');\nconst returnResponse = require('returnResponse');\nconst runContainer = require('runContainer');\n\nif (getRequestPath() === data.path) {\n  claimRequest();\n  runContainer({event_name: 'sid_echo'}, () => returnResponse());\n}\n\n\n___SERVER_PERMISSIONS___\n\n[\n  {\n    \"instance\": {\n      \"key\": {\n        \"publicId\": \"read_request\",\n        \"versionId\": \"1\"\n      },\n      \"param\": [\n        {\n          \"key\": \"requestAccess\",\n          \"value\": {\n            \"type\": 1,\n            \"string\": \"specific\"\n          }\n        },\n        {\n          \"key\": \"pathAllowed\",\n          \"value\": {\n            \"type\": 8,\n            \"boolean\": true\n          }\n        }\n      ]\n    },\n    \"clientAnnotations\": {\n      \"isEditedByUser\": true\n    },\n    \"isRequired\": true\n  },\n  {\n    \"instance\": {\n      \"key\": {\n        \"publicId\": \"run_container\",\n        \"versionId\": \"1\"\n      },\n      \"param\": []\n    },\n    \"isRequired\": true\n  },\n  {\n    \"instance\": {\n      \"key\": {\n        \"publicId\": \"return_response\",\n        \"versionId\": \"1\"\n      },\n      \"param\": []\n    },\n    \"isRequired\": true\n  }\n]\n\n\n___TESTS___\n\nscenarios: []\n\n\n___NOTES___\n\nFrom SharedID Edge (https://github.com/patmmccann/sharedid-edge), e2e/sgtm: a test fixture.\n"
+            },
+            {
+                "accountId": "1234567890",
+                "containerId": "111111111",
+                "templateId": "3",
+                "name": "SharedID echo response (SharedID Edge tests)",
+                "fingerprint": "1763424000000",
+                "templateData": "___TERMS_OF_SERVICE___\n\nBy creating or modifying this file you agree to Google Tag Manager's Community\nTemplate Gallery Developer Terms of Service available at\nhttps://developers.google.com/tag-manager/gallery-tos (or such other URL as\nGoogle may provide), as modified from time to time.\n\n\n___INFO___\n\n{\n  \"type\": \"TAG\",\n  \"id\": \"cvt_temp_public_id\",\n  \"version\": 1,\n  \"securityGroups\": [],\n  \"displayName\": \"SharedID echo response (SharedID Edge tests)\",\n  \"brand\": {\n    \"id\": \"brand_dummy\",\n    \"displayName\": \"SharedID Edge\"\n  },\n  \"description\": \"Test fixture for SharedID Edge's sGTM tests (e2e/sgtm). Answers the SharedID echo client's request with JSON holding one value, normally {{SharedID}}: {\\\"sharedid\\\":\\\"<id>\\\"}, or {\\\"sharedid\\\":null}. Not for production containers.\",\n  \"containerContexts\": [\n    \"SERVER\"\n  ]\n}\n\n\n___TEMPLATE_PARAMETERS___\n\n[\n  {\n    \"type\": \"TEXT\",\n    \"name\": \"sharedid\",\n    \"displayName\": \"SharedID\",\n    \"simpleValueType\": true,\n    \"help\": \"The value to answer with: the SharedID variable, {{SharedID}}.\"\n  }\n]\n\n\n___SANDBOXED_JS_FOR_SERVER___\n\n// A test fixture from SharedID Edge (https://github.com/patmmccann/sharedid-edge, e2e/sgtm). Apache-2.0.\n// It writes the echo client's response: the field's value and nothing else from the request.\n\nconst JSON = require('JSON');\nconst getType = require('getType');\nconst setResponseBody = require('setResponseBody');\nconst setResponseHeader = require('setResponseHeader');\nconst setResponseStatus = require('setResponseStatus');\n\nconst value = data.sharedid;\n// The variable returns undefined when there is no ID; a field that holds only a variable passes its value as it is.\nconst sharedid = getType(value) === 'string' && value !== '' ? value : null;\n\nsetResponseStatus(200);\nsetResponseHeader('content-type', 'application/json');\nsetResponseHeader('cache-control', 'no-store');\nsetResponseBody(JSON.stringify({sharedid: sharedid}));\ndata.gtmOnSuccess();\n\n\n___SERVER_PERMISSIONS___\n\n[\n  {\n    \"instance\": {\n      \"key\": {\n        \"publicId\": \"access_response\",\n        \"versionId\": \"1\"\n      },\n      \"param\": [\n        {\n          \"key\": \"writeResponseAccess\",\n          \"value\": {\n            \"type\": 1,\n            \"string\": \"specific\"\n          }\n        },\n        {\n          \"key\": \"writeStatusAllowed\",\n          \"value\": {\n            \"type\": 8,\n            \"boolean\": true\n          }\n        },\n        {\n          \"key\": \"writeBodyAllowed\",\n          \"value\": {\n            \"type\": 8,\n            \"boolean\": true\n          }\n        },\n        {\n          \"key\": \"writeHeadersAllowed\",\n          \"value\": {\n            \"type\": 8,\n            \"boolean\": true\n          }\n        },\n        {\n          \"key\": \"writeHeaderAccess\",\n          \"value\": {\n            \"type\": 1,\n            \"string\": \"specific\"\n          }\n        },\n        {\n          \"key\": \"writeHeaderWhitelist\",\n          \"value\": {\n            \"type\": 2,\n            \"listItem\": [\n              {\n                \"type\": 3,\n                \"mapKey\": [\n                  {\n                    \"type\": 1,\n                    \"string\": \"headerName\"\n                  }\n                ],\n                \"mapValue\": [\n                  {\n                    \"type\": 1,\n                    \"string\": \"content-type\"\n                  }\n                ]\n              },\n              {\n                \"type\": 3,\n                \"mapKey\": [\n                  {\n                    \"type\": 1,\n                    \"string\": \"headerName\"\n                  }\n                ],\n                \"mapValue\": [\n                  {\n                    \"type\": 1,\n                    \"string\": \"cache-control\"\n                  }\n                ]\n              }\n            ]\n          }\n        }\n      ]\n    },\n    \"clientAnnotations\": {\n      \"isEditedByUser\": true\n    },\n    \"isRequired\": true\n  }\n]\n\n\n___TESTS___\n\nscenarios: []\n\n\n___NOTES___\n\nFrom SharedID Edge (https://github.com/patmmccann/sharedid-edge), e2e/sgtm: a test fixture.\n"
+            }
+        ]
+    }
+}
