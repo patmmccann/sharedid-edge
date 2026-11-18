@@ -5,9 +5,11 @@
   "description": "End-to-end: unmodified Prebid.js sharedIdSystem with pixelUrl against SharedID Edge, in Chromium, Firefox and WebKit",
   "scripts": {
     "bundle-prebid": "node --experimental-strip-types bundle-prebid.ts",
+    "sgtm-container": "node --experimental-strip-types sgtm/container.ts",
     "tc-string": "node --experimental-strip-types tc-string.ts",
     "test": "playwright test",
     "test:safari": "node --experimental-strip-types --test --test-concurrency=1 safari/safari.test.ts",
+    "test:sgtm": "node --experimental-strip-types bundle-prebid.ts && playwright test -c playwright.sgtm.config.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {

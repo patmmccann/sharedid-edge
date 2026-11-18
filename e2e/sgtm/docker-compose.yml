@@ -1,0 +1,90 @@
+# The sGTM tests' stack (README.md): Google's tagging server image, as the tagging server and the one preview server,
+# SharedID Edge's Node.js server built from this checkout, and nginx in front, with a self-signed certificate. One
+# hostname, as docs/sgtm.md recommends: /_sid/* goes to SharedID Edge, /metrics/* to the tagging server, and the rest
+# is the test page. The layout follows giovaniortolani/local-sgtm (MIT; see README.md, Credits).
+#
+# cp .env.example .env, set CONTAINER_CONFIG, then: docker compose up -d --build && sh wait.sh
+name: sharedid-sgtm
+
+services:
+  certs:
+    image: alpine:3.22
+    command: ["sh", "/certs.sh"]
+    environment:
+      SITE_HOST: ${SITE_HOST:-www.sharedid.test}
+      PREVIEW_HOST: ${PREVIEW_HOST:-sgtm-preview.sharedid.test}
+    volumes:
+      - ./certs.sh:/certs.sh:ro
+      - certs:/certs
+    restart: "no"
+
+  proxy:
+    image: nginx:1.29-alpine
+    # Only on this machine's loopback address: the stack is for the tests, never for visitors.
+    ports: ["127.0.0.1:${HTTPS_PORT:-8443}:443"]
+    environment:
+      SITE_HOST: ${SITE_HOST:-www.sharedid.test}
+      PREVIEW_HOST: ${PREVIEW_HOST:-sgtm-preview.sharedid.test}
+    volumes:
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./site:/srv/site:ro
+      # The e2e page's consent (tcf.js), stand-in vendor tag (vendor-uid1.js) and Prebid.js bundle (npm run bundle-prebid).
+      - ../site/public:/srv/e2e:ro
+      - certs:/etc/nginx/certs:ro
+    depends_on:
+      certs: { condition: service_completed_successfully }
+      sharedid: { condition: service_started }
+      sgtm: { condition: service_started }
+      sgtm-preview: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/nginx-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  sharedid:
+    build:
+      context: ../..
+      dockerfile: e2e/sgtm/Dockerfile
+    environment:
+      SID_COOKIE_DOMAIN: ${SID_COOKIE_DOMAIN:-sharedid.test}
+      SID_PUBLIC_ORIGIN: https://${SITE_HOST:-www.sharedid.test}:${HTTPS_PORT:-8443}
+      SID_TRUST_PROXY: "true"
+      # Every visit reaches the endpoint, as in the other browser tests.
+      SID_SYNC_CACHE_SECONDS: "0"
+      # As docs/sgtm.md recommends beside sGTM: reflect keeps non-Google cookies only (uid1, from the e2e page's
+      # stand-in vendor tag), and leaves _ga and _gcl_* to sGTM; clickid writes its own _sid_gclid.
+      SID_MODULES: reflect,clickid
+      SID_MODULE_CONFIG: '{"reflect":{"cookies":[{"name":"uid1","maxAgeDays":365,"domain":"${SID_COOKIE_DOMAIN:-sharedid.test}","httpOnly":false,"restore":true}]}}'
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/_sid/v1').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  sgtm:
+    image: gcr.io/cloud-tagging-10302018/gtm-cloud-image:stable
+    environment:
+      CONTAINER_CONFIG: ${CONTAINER_CONFIG:?Set CONTAINER_CONFIG in .env (README.md)}
+      PREVIEW_SERVER_URL: https://${PREVIEW_HOST:-sgtm-preview.sharedid.test}:${HTTPS_PORT:-8443}
+      # How often it fetches the published container version (seconds).
+      CONTAINER_REFRESH_SECONDS: ${CONTAINER_REFRESH_SECONDS:-60}
+    healthcheck: &sgtm-health
+      # The image has no shell tools; its Node.js answers the check (as in local-sgtm).
+      test: ["CMD", "/nodejs/bin/node", "-e", "require('http').get('http://127.0.0.1:8080/healthy', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # Google: "You must deploy exactly 1 preview server."
+  sgtm-preview:
+    image: gcr.io/cloud-tagging-10302018/gtm-cloud-image:stable
+    environment:
+      CONTAINER_CONFIG: ${CONTAINER_CONFIG:?Set CONTAINER_CONFIG in .env (README.md)}
+      RUN_AS_PREVIEW_SERVER: "true"
+    healthcheck: *sgtm-health
+
+volumes:
+  certs:

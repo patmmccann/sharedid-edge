@@ -5,7 +5,7 @@ Many publishers run a server-side Google Tag Manager container (sGTM) as well: G
 - **sGTM handles Google's identifiers** (the GA4 client ID, ad click IDs), with Google's own building blocks.
 - **SharedID Edge handles the publisher's own** (`_pubcid`, and with `reflect`, non-Google cookies such as `uid1`), and gives sGTM the SharedID for tags that send a publisher-provided ID.
 
-Google's documentation is quoted where it says something; where it doesn't, this page says so. Everything here is **documented only** ([How it's verified](verification.md#alongside-server-side-gtm)): check it on your own setup.
+Google's documentation is quoted where it says something; where it doesn't, this page says so. Everything here is **documented only** ([How it's verified](verification.md#alongside-server-side-gtm)): check it on your own setup. This project's [sGTM tests](../e2e/sgtm/README.md) check the variable template and what this page says about Google's cookies and consent against Google's tagging server image, once they run.
 
 ## Contents
 
