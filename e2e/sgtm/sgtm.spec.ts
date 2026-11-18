@@ -182,7 +182,7 @@ test.describe('beside the GA4 client and Conversion Linker (docs/sgtm.md)', () =
       _pubcid: (await cookie(context, '_pubcid'))?.value,
       uid1: (await cookie(context, 'uid1'))?.value
     };
-    expect(setCookies.sid).toContain('uid1');
+    expect([...setCookies.sid]).toContain('uid1');
 
     // More page views: every value stays as it was.
     await visitWithGa4(page);
