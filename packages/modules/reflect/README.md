@@ -181,6 +181,8 @@ Google's tag (gtag.js, or Google Tag Manager) writes its cookies with `document.
 
 Safari caps them at 7 days. A visitor who returns after that is counted as a new user, and a conversion can no longer be tied to the ad click. Reflecting the cookies keeps them alive while the visitor keeps coming back; the keeper brings them back when Safari has deleted them anyway.
 
+**If you run server-side Google Tag Manager** on your own hostname, its GA4 client (server managed, the `FPID` cookie) and Conversion Linker (`FPGCLAW` and others) already keep Google's identifiers in server-set cookies. Use those for Google's cookies and leave them out of this module, so two servers don't restore different values: see [Google's cookies: the keeper or sGTM, not both](../../../docs/sgtm.md#googles-cookies-the-keeper-or-sgtm-not-both).
+
 ### Configuration
 
 gtag usually sets these cookies on your registrable domain (Domain `.example.com`); check yours in the developer tools as in [step 1 above](#make-uid1-sticky-and-server-set).

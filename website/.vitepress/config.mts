@@ -61,6 +61,7 @@ for (const name of modules) pages[`packages/modules/${name}/README.md`] = `modul
 pages['packages/vendor-modules/README.md'] = 'vendor-modules.md';
 const vendorModules = subfolders('packages/vendor-modules');
 for (const name of vendorModules) pages[`packages/vendor-modules/${name}/README.md`] = `vendor-modules/${name}.md`;
+pages['templates/sgtm/README.md'] = 'templates/sgtm.md';
 if (existsSync(join(ROOT, 'packages/adapters/vercel/example/README.md'))) pages['packages/adapters/vercel/example/README.md'] = 'adapters/vercel-example.md';
 
 /** A heading's anchor as GitHub makes it (repeats get -1, -2 from VitePress's anchor plugin, as on GitHub). */

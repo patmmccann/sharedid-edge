@@ -55,6 +55,8 @@ Cloud Run has two shapes, and SharedID Edge fits both:
 
 Choose functions unless you have a reason for containers. Both run on the same infrastructure, with the same scaling and pricing model.
 
+If you run server-side Google Tag Manager on Cloud Run, the same load balancer can route its path to it, next to `/_sid/*`: see [On Google Cloud](../../../docs/sgtm.md#on-google-cloud).
+
 ## Firebase Hosting
 
 Firebase Hosting can send `/_sid/**` to a function with a rewrite, on the site's own domain:

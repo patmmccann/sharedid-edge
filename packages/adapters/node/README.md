@@ -92,6 +92,7 @@ HOST=0.0.0.0 node packages/adapters/node/dist/cli.js
 - Keep the secrets in your secret manager, not a committed file. Put TLS in front of the server: the secret travels in a header.
 
 - **Process management:** run it under systemd, in a container, or with another process manager, like any Node.js service. It needs Node.js 24 or later.
+- **Beside server-side Google Tag Manager:** the server and Google's tagging server image can run side by side behind the same proxy; see the [docker-compose example](../../../docs/sgtm.md#both-in-containers-with-docker-compose).
 
 ## Configuration and secrets
 

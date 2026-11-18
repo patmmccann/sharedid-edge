@@ -83,6 +83,7 @@ Also on the web at [sharedid.dev](https://sharedid.dev).
 - [Migrate from the WordPress or Drupal plugin](docs/migrating.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Abuse protection and cost control](docs/abuse-protection.md): what the worker refuses, the rate limiting rule for each platform, and budget alerts
+- [Using SharedID Edge with server-side GTM](docs/sgtm.md): the SharedID in sGTM (a page snippet, or the [variable template](templates/sgtm/README.md)), serving both on your own hostname, Google's cookies, and consent
 - [For hosting companies](docs/hosting-companies.md): SharedID Edge for every site you serve, from one deployment
 - [For upstream operators](docs/upstream-operators.md): running one endpoint for many publishers, on their CDNs or behind them
 - [How it's verified](docs/verification.md): every deployment, how it's tested (live, emulated, simulated or from the vendor's docs), and what each test proves
