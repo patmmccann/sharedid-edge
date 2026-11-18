@@ -12,6 +12,7 @@ This page is the overall picture. The guides' "What's been verified live" sectio
   - [Upstream-operator endpoints](#upstream-operator-endpoints)
   - [Publisher CDN recipes](#publisher-cdn-recipes)
   - [Hosting-company models](#hosting-company-models)
+  - [Alongside server-side GTM](#alongside-server-side-gtm)
   - [Opt-in and vendor modules](#opt-in-and-vendor-modules)
   - [Counts](#counts)
 - [The behaviour that must not regress](#the-behaviour-that-must-not-regress)
@@ -115,6 +116,17 @@ One deployment for many sites ([Choosing a deployment](hosting-companies.md#choo
 | Azure Front Door, one function app per site | **4. Simulated** | As for the Azure adapter. | As for the Azure adapter. |
 | Your own nginx, HAProxy or ingress, in front of the Node.js server | **4. Simulated** | `hosts.json` against the Node.js server; the proxy stand-in in `packages/adapters/node/test/proxy.test.ts`. | Your proxy's configuration. |
 
+### Alongside server-side GTM
+
+SharedID Edge next to a server-side Google Tag Manager container on the same hostname ([Using SharedID Edge with server-side GTM](sgtm.md)). SharedID Edge's part in each is the deployment above it runs on; these rows are about the combination.
+
+| Recipe | Level | Evidence | Not proven |
+| --- | --- | --- | --- |
+| [Cloudflare](sgtm.md#on-cloudflare): the SharedID Edge Worker on `/_sid/*`, a forwarding Worker on the sGTM path | **5. Documented only** | Google's custom domain guide and Cloudflare's documentation. The forwarding Worker has the shape of the live-tested upstream-operator [`forward.js`](../packages/adapters/cloudflare/live/forward.js), not its tests. | All of it: the tagging server behind the forwarding Worker, the visitor's address reaching sGTM, the domain of sGTM's cookies. |
+| [docker-compose](sgtm.md#both-in-containers-with-docker-compose): Google's tagging server image and the Node.js server behind nginx | **5. Documented only** | Google's manual setup guide. The Node.js server alone is simulated (above). | All of it; the image hasn't been run by this project. |
+
+The [SharedID variable template](../templates/sgtm/README.md) isn't a deployment: its ten test scenarios ran in Node.js against its code, with stand-ins for sGTM's sandboxed APIs, not in Google's Template Editor or a server container.
+
 ### Opt-in and vendor modules
 
 Modules don't have deployments of their own: these rows say where each has run. Every module's conformance cases run on every target, so a module is emulated on the Worker and on Fastly, and simulated elsewhere, unless the row says more.
@@ -130,7 +142,7 @@ Modules don't have deployments of their own: these rows say where each has run. 
 
 ### Counts
 
-Counting each row of the first four tables once (not the unsupported endpoints, nor the modules):
+Counting each row of the first five tables once (not the unsupported endpoints, nor the modules):
 
 | Level | Deployments |
 | --- | --- |
@@ -138,9 +150,9 @@ Counting each row of the first four tables once (not the unsupported endpoints, 
 | 2. Live, manual | 0: every deployment run live by hand is now in a live workflow |
 | 3. Emulated | 2: Fastly Compute, and Fastly Compute as an upstream-operator endpoint |
 | 4. Simulated | 15: the Snippet; Lambda@Edge on origin-request and on viewer-request; Akamai, Azure, Google Cloud and Node.js; Node.js and Lambda as upstream-operator endpoints; custom hostname metadata; Akamai, Vercel, Google Cloud, Azure and Node.js for many sites |
-| 5. Documented only | 11: six publisher CDN recipes; Workers for Platforms, Snippets on SaaS zones, orange-to-orange, CloudFront with many domains, and Fastly Request Routing. No platform adapter is documented only |
+| 5. Documented only | 13: six publisher CDN recipes; Workers for Platforms, Snippets on SaaS zones, orange-to-orange, CloudFront with many domains, and Fastly Request Routing; the two server-side GTM recipes. No platform adapter is documented only |
 
-That's 36 rows. The 11 documented-only rows are the first place to look when a deployment behaves unexpectedly.
+That's 38 rows. The 13 documented-only rows are the first place to look when a deployment behaves unexpectedly.
 
 ## The behaviour that must not regress
 
@@ -287,6 +299,7 @@ What would raise a level, and where it's tracked:
 - **Lambda and Fastly as upstream-operator endpoints,** custom hostname metadata, Workers for Platforms and orange-to-orange. [#150](https://github.com/patmmccann/sharedid-edge/issues/150).
 - **The Lambda@Edge live jobs running green,** once the role has the Lambda@Edge statements and `AWS_LAMBDA_EDGE_ENABLED` is set ([#177](https://github.com/patmmccann/sharedid-edge/issues/177)); then both Lambda@Edge rows move to level 1.
 - **Fastly, Akamai, Azure and Google Cloud** on live accounts, and the Fastly, Akamai, nginx, HAProxy and Azure Front Door publisher recipes. Each adapter's README lists what a first deployment should check.
+- **SharedID Edge beside server-side GTM,** on Cloudflare or in containers, and the variable template in a real server container. [#20](https://github.com/patmmccann/sharedid-edge/issues/20).
 - **Real Safari against a live deployment:** it can run against one by hand (`E2E_BASE_URL=… npm run test:safari` on a Mac), but no run is recorded.
 
 If you run SharedID Edge on one of these, [an issue](https://github.com/patmmccann/sharedid-edge/issues) with what you checked and saw moves it up this page.

@@ -28,6 +28,7 @@ Browser ──► www.example.com (proxied by Cloudflare)
 ```
 
 - **Routing:** the Worker runs on a **route** of your own zone, so it answers on your site's hostname and Cloudflare's IP addresses, the same ones that serve your pages. That's what lets Safari treat its cookies as first-party server-set cookies. A `workers.dev` hostname or a CNAME to another domain won't do.
+- **Beside server-side Google Tag Manager:** a second route of the zone can forward an sGTM path to the tagging server; see [On Cloudflare](../../../docs/sgtm.md#on-cloudflare).
 - **Statelessness:** the Worker keeps nothing between requests (no KV, Durable Objects or logs). Workers observability is off in `wrangler.jsonc`.
 - **Contents:** `src/index.ts` (the fetch handler, one handler per `env`), `src/platform.ts` (request data into `PlatformInfo`) and `wrangler.jsonc` (the route and every `SID_*` setting).
 

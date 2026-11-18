@@ -7,7 +7,7 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | Folder | What | Notes |
 | --- | --- | --- |
 | `spec/` | The specification: `SPEC.md`, and `modules/<name>.md` per module | Behaviour changes start here. |
-| `docs/` | Topic docs for publishers (Prebid.js, responses, configuration, consent, modules, migrating, troubleshooting, abuse protection, development, verification) and the guides for hosting companies and upstream operators | Linked from [README.md](README.md). |
+| `docs/` | Topic docs for publishers (Prebid.js, responses, configuration, consent, modules, migrating, troubleshooting, abuse protection, server-side GTM, development, verification) and the guides for hosting companies and upstream operators | Linked from [README.md](README.md). |
 | `conformance/` | HTTP cases and their runner | The contract; every implementation must pass. |
 | `packages/core/` | Platform-neutral handler, consent, cookies, module interface | Published as `@sharedid-edge/core`. Depends on no module. |
 | `packages/ip-ranges/` | IP range tables, the MMDB reader and the country module that IP database vendor modules share | Published as `@sharedid-edge/ip-ranges`. Not a module; see its [`AGENTS.md`](packages/ip-ranges/AGENTS.md). |
@@ -15,6 +15,7 @@ SharedID Edge keeps the Prebid SharedID cookie durable by setting it from an edg
 | `packages/adapters/` | Deployable platform packages, one folder per platform (listed below) | Rules for every adapter in [`packages/adapters/AGENTS.md`](packages/adapters/AGENTS.md). Each is a conformance target. |
 | `packages/modules/` | Modules this project maintains, one folder per module (listed below), and `all/` (`@sharedid-edge/modules`, the built-in list) | Rules and how to write a module in [`packages/modules/AGENTS.md`](packages/modules/AGENTS.md). Published as `@sharedid-edge/module-<name>`; built into every adapter, except [opt-in modules](packages/modules/AGENTS.md#opt-in-modules) (`"optIn": true`, such as `cmp`), added at build time like vendor modules. |
 | `packages/vendor-modules/` | Modules contributed and maintained by vendors (listed below) | Extra rules in [`packages/vendor-modules/AGENTS.md`](packages/vendor-modules/AGENTS.md). Opt-in at build time; tested in their own CI job. |
+| `templates/` | Templates for other systems that work with SharedID Edge: `sgtm/`, a server-side Google Tag Manager variable template (`.tpl`, Tag Manager's export format) | Not packages: nothing in the build imports them, and lint and `check:duplication` don't cover them. Each has a README; their test scenarios run in the vendor's editor. See [Using SharedID Edge with server-side GTM](docs/sgtm.md). |
 | `e2e/` | Unmodified Prebid.js against the worker in three browsers | Separate install. |
 | `website/` | [sharedid.dev](https://sharedid.dev): the Markdown above, published with VitePress | Separate install. See [The website](docs/development.md#the-website). |
 | `scripts/` | Type-check helpers, the repo checks (`check-projects`, `check-links`), the docs generator (`docs.mjs`), the bundled adapters' build and size budget (`bundle-adapter.mjs`), the settings file of the builds that bake settings in (`settings-file.mjs`: the Snippet and Lambda@Edge), the vendor-module checks (`no-network.mjs`, `check-build-secrets.mjs`), `verify-deployment`, the live tests' checks (`check-cloudfront`, `check-live-site`, `check-eu-visitor`) and their failure issue (`live-issue`, tested in `scripts/test/`) | `projects.mjs` derives the project list from the workspace folders. |
@@ -82,6 +83,7 @@ Every pull request that adds or changes something users touch ships its document
   | Configuring Prebid.js | [`docs/prebid.md`](docs/prebid.md) |
   | Core responses (`/sync`, `/v1`, opt-out, the debugging headers) | [`docs/responses.md`](docs/responses.md) |
   | Core settings | `SETTINGS` in [`packages/core/src/config.ts`](packages/core/src/config.ts); [`docs/configuration.md`](docs/configuration.md) is generated from it |
+  | Working with server-side Google Tag Manager (and its templates in `templates/sgtm/`) | [`docs/sgtm.md`](docs/sgtm.md), and `templates/sgtm/README.md` for the template |
   | Consent, modules in general, migrating, troubleshooting, development | [`docs/consent.md`](docs/consent.md), [`docs/modules.md`](docs/modules.md), [`docs/migrating.md`](docs/migrating.md), [`docs/troubleshooting.md`](docs/troubleshooting.md), [`docs/development.md`](docs/development.md) |
   | Running it for many publishers: hosting companies, upstream operators (the canonical publisher-CDN recipes for trusted-upstream mode) | [`docs/hosting-companies.md`](docs/hosting-companies.md), [`docs/upstream-operators.md`](docs/upstream-operators.md); the platform steps stay in each adapter's README, which links to them |
   | How each deployment is verified (the levels, the matrix, the workflows) | [`docs/verification.md`](docs/verification.md) |
