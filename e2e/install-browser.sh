@@ -7,7 +7,9 @@
 #   ./install-browser.sh chromium|firefox|webkit      (from e2e/, after npm ci)
 #
 # 1. The browser itself, from Playwright's CDN (not apt), so an apt outage doesn't stop it.
-# 2. Its system packages, through apt, with a time limit: two tries of up to 3 minutes each.
+# 2. Its system packages, through apt, with a time limit: two tries of up to 3 minutes each. `timeout` stops npx but
+#    not the `sudo apt-get` it started, which keeps running and holds dpkg's lock, so the second try waits for the lock
+#    (apt's DPkg::Lock::Timeout) instead of failing at once on it.
 # 3. If apt still fails, carry on with the runner image's packages, with a warning. The image already has most of
 #    them (all of Chromium's), so the tests usually still run; if one is missing, the browser fails to launch and the
 #    test step fails, naming the library.
@@ -15,6 +17,8 @@ set -u
 browser="${1:?usage: install-browser.sh chromium|firefox|webkit}"
 
 npx playwright install "$browser" || exit 1
+
+echo 'DPkg::Lock::Timeout "170";' | sudo tee /etc/apt/apt.conf.d/99-lock-timeout > /dev/null
 
 for attempt in 1 2; do
   if timeout 180 npx playwright install-deps "$browser"; then
