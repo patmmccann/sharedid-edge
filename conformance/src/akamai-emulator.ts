@@ -8,7 +8,7 @@
 // PMUSER_SID_* variables from the case's SID_* settings. The value it resolves to (from createResponse) is written back.
 //
 // Started by targets.ts with the case file's configuration as environment variables, plus PORT, SID_PUBLIC_ORIGIN
-// and CONFORMANCE_AKAMAI_BUNDLE (the bundle's directory: deploy, deploy-bowser or deploy-vendor).
+// and CONFORMANCE_AKAMAI_BUNDLE (the bundle's directory: deploy, deploy-bowser, deploy-vendor or deploy-no-tcf).
 import { readFileSync } from 'node:fs';
 import type { IncomingMessage } from 'node:http';
 import { join } from 'node:path';
@@ -20,7 +20,7 @@ import { SourceTextModule, SyntheticModule, createContext, type Context, type Mo
 import type { EdgeWorkerRequest, EdgeWorkerUserLocation } from '@sharedid-edge/akamai';
 import { caseClientIp, caseLocation, emulatorPort, serve, trustProxyFromEnv, type CaseLocationHeader } from './emulator.js';
 
-const BUNDLE_DIR = ['deploy-bowser', 'deploy-vendor'].find(dir => dir === process.env['CONFORMANCE_AKAMAI_BUNDLE']) ?? 'deploy';
+const BUNDLE_DIR = ['deploy-bowser', 'deploy-vendor', 'deploy-no-tcf'].find(dir => dir === process.env['CONFORMANCE_AKAMAI_BUNDLE']) ?? 'deploy';
 const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/akamai', BUNDLE_DIR, 'main.js');
 
 /** A string body passed to createResponse is limited to 16 KB. */

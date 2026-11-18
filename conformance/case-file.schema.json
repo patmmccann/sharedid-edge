@@ -9,10 +9,10 @@
     "description": { "type": "string" },
     "config": { "type": "object", "additionalProperties": { "type": "string" } },
     "build": {
-      "description": "Build options the target must be built with. bowser: Bowser in the ua module (the Worker's and Lambda's Bowser builds; the Node.js server always has it). vendor-modules: every opt-in module added to the built-in ones (ec, vendor modules, and the project's opt-in modules such as cmp). Not both.",
+      "description": "Build options the target must be built with. bowser: Bowser in the ua module (the Worker's and Lambda's Bowser builds; the Node.js server always has it). vendor-modules: every opt-in module added to the built-in ones (ec, vendor modules, and the project's opt-in modules such as cmp). no-tcf: core's TCF decoder left out (--no-tcf). One at most: the targets have no bundle with two.",
       "type": "array",
-      "uniqueItems": true,
-      "items": { "enum": ["bowser", "vendor-modules"] }
+      "maxItems": 1,
+      "items": { "enum": ["bowser", "vendor-modules", "no-tcf"] }
     },
     "live": {
       "description": "Whether a file with the default configuration also runs against live deployments (--base-url); default true. false for cases a CDN or proxy in front answers itself, with its own limits, before the implementation sees the request (the request limits: CloudFront answers an 8 KB URL with its own 414 and a 16 KB Cookie header with a 400).",

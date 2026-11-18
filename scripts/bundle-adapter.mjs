@@ -14,6 +14,9 @@
 //                   not enforced: a build with opt-in modules answers to the platform's limit.
 //   --vendor-modules  add every opt-in module: those in packages/vendor-modules/, and the project's opt-in modules
 //                   (`"optIn": true` in packages/modules/, such as cmp). The conformance suite's build.
+//   --no-tcf        leave core's TCF decoder out (NO_TCF in packages/core/src/consent.ts): a TC string then denies
+//                   storage and precise location, as an unreadable one does. Only for deployments that never need
+//                   TCF; the conformance suite builds it into deploy-no-tcf/ for consent-no-tcf.json.
 //
 // An adapter can add options of its own (`args`, parsed with these) and change the build from them (`variant`): the
 // Fastly adapter's --reusable-sandbox builds another entry point.
@@ -58,6 +61,7 @@ export async function bundleAdapter({ root, entry, file, label, options = {}, ar
       outdir: { type: 'string', default: 'deploy' },
       module: { type: 'string', multiple: true, default: [] },
       'vendor-modules': { type: 'boolean', default: false },
+      'no-tcf': { type: 'boolean', default: false },
       ...own
     }
   });
@@ -90,10 +94,11 @@ export async function bundleAdapter({ root, entry, file, label, options = {}, ar
     // compiles away (NO_CONSENT_HOOKS in packages/core/src/modules.ts).
     // No bundled adapter wires a rate limiter (`rateLimit`): core's check for one compiles away (NO_RATE_LIMIT in
     // packages/core/src/handler.ts).
-    define: { 'globalThis.__SID_PREVALIDATED__': 'false', 'globalThis.__SID_NO_CONSENT_HOOKS__': String(extra.length === 0), 'globalThis.__SID_NO_RATE_LIMIT__': 'true', ...options.define, ...chosen.options?.define },
+    // The TCF decoder is in unless --no-tcf leaves it out (NO_TCF in packages/core/src/consent.ts).
+    define: { 'globalThis.__SID_PREVALIDATED__': 'false', 'globalThis.__SID_NO_CONSENT_HOOKS__': String(extra.length === 0), 'globalThis.__SID_NO_RATE_LIMIT__': 'true', 'globalThis.__SID_NO_TCF__': String(args['no-tcf']), ...options.define, ...chosen.options?.define },
     ...moduleAlias(root, args.bowser, extra)
   });
-  const labelled = `${label}${chosen.label === undefined ? '' : ` ${chosen.label}`}${args.bowser ? ' with Bowser' : ''}${extra.length > 0 ? ` with ${extra.map(spec => spec.slice(0, spec.indexOf('#'))).join(', ')}` : ''}`;
+  const labelled = `${label}${chosen.label === undefined ? '' : ` ${chosen.label}`}${args.bowser ? ' with Bowser' : ''}${extra.length > 0 ? ` with ${extra.map(spec => spec.slice(0, spec.indexOf('#'))).join(', ')}` : ''}${args['no-tcf'] ? ' without TCF' : ''}`;
   checkBudget(outfile, labelled, root, { enforce: extra.length === 0, bowser: args.bowser });
   return { outdir, outfile, pkg: JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')), args };
 }

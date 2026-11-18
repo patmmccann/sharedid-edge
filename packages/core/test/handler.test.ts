@@ -117,6 +117,27 @@ describe('sync (pixelUrl)', () => {
     expect(cookieNamed(allowed, '_pubcid')?.value).toBe(UUID);
   });
 
+  it('denies a TC string in a build without the TCF decoder (NO_TCF), whatever gdpr says, and never allows', async () => {
+    const flags = globalThis as { __SID_NO_TCF__?: boolean };
+    flags.__SID_NO_TCF__ = true;
+    try {
+      for (const query of ['gdpr=1', 'gdpr=0', '']) {
+        const denied = await handler()(get(`/_sid/sync?id=pubcid:${UUID}&${query}&gdpr_consent=${publisherTc([1, 2])}`, { Cookie: `_pubcid=${UUID}` }));
+        expect(denied.headers.get('X-SharedID-Status')).toBe('denied: tcf: TC string not decoded (build without TCF)');
+        expect(setCookies(denied).map(c => [c.name, c.attributes.get('max-age')])).toEqual([['_pubcid', '0'], ['_pubcid_sv', '0']]);
+      }
+      const probe = defineModule({ name: 'where', run: ({ consent }) => ({ ortb2: { ext: { tcf: consent.tcf === undefined ? 'none' : 'decoded' } } }) });
+      const payload = await (await handler({ SID_MODULES: 'where' }, { modules: [probe] })(get(`/_sid/v1?gdpr=1&gdpr_consent=${publisherTc([1, 2])}`))).json() as PayloadV1;
+      expect(payload.ortb2).toEqual({ ext: { tcf: 'none' } });
+      // Without a TC string nothing changes: GDPR still denies, and elsewhere the ID is set.
+      expect((await handler()(get(`/_sid/sync?id=pubcid:${UUID}&gdpr=1`))).headers.get('X-SharedID-Status')).toBe('denied: tcf: GDPR applies and there is no TC string');
+      expect(cookieNamed(await handler()(get(`/_sid/sync?id=pubcid:${UUID}`)), '_pubcid')?.value).toBe(UUID);
+    } finally {
+      delete flags.__SID_NO_TCF__;
+    }
+    expect(cookieNamed(await handler()(get(`/_sid/sync?id=pubcid:${UUID}&gdpr=1&gdpr_consent=${publisherTc([1, 2])}`)), '_pubcid')?.value).toBe(UUID);
+  });
+
   it('checks the configured vendor in vendor mode', async () => {
     const vendor = handler({ SID_VENDOR_ID: '755' });
     const allowed = await vendor(get(`/_sid/sync?id=pubcid:${UUID}&gdpr=1&gdpr_consent=${tcString([1, 2], { vendors: [755] })}`));

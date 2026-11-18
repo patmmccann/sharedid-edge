@@ -12,7 +12,7 @@ export interface ConsentContext {
   readonly gdprApplies: boolean | undefined;
   /** The TC string, from the `gdpr_consent` query parameter or the CMP's `euconsent-v2` cookie. */
   readonly tcString: string | undefined;
-  /** The decoded TC string; undefined when there is none or it isn't valid. */
+  /** The decoded TC string; undefined when there is none, it isn't valid, or the build leaves the decoder out (NO_TCF). */
   readonly tcf: TcfConsents | undefined;
   /** The `us_privacy` (USP) string, if sent. */
   readonly usPrivacy: string | undefined;
@@ -27,6 +27,19 @@ export interface ConsentContext {
 
 export const TCF_COOKIE = 'euconsent-v2';
 
+/**
+ * NO_TCF: `globalThis.__SID_NO_TCF__`, set to `true` with esbuild's `define` by builds that leave the TCF decoder out
+ * (`--no-tcf` in the Cloudflare Snippet's build and in `scripts/bundle-adapter.mjs`), so `decodeTcf` compiles away.
+ * There a TC string is never decoded: it denies storage and precise location as an unreadable one does, with its own
+ * reason (`TCF_NOT_DECODED`), whatever `gdpr` says. Every default build keeps the decoder; unset everywhere else.
+ */
+interface TcfFlag {
+  readonly __SID_NO_TCF__?: boolean;
+}
+
+/** The reason a TC string denies storage and precise location in a build without the TCF decoder (NO_TCF). */
+const TCF_NOT_DECODED = 'tcf: TC string not decoded (build without TCF)';
+
 export function readConsent(url: URL, headers: Headers, cookies: ReadonlyMap<string, string>, platform: PlatformInfo): ConsentContext {
   const gdprParam = url.searchParams.get('gdpr');
   const gdprApplies = gdprParam === '1' ? true : gdprParam === '0' ? false : gdprFromLocation(platform);
@@ -38,7 +51,8 @@ export function readConsent(url: URL, headers: Headers, cookies: ReadonlyMap<str
   return {
     gdprApplies,
     tcString,
-    tcf: tcString === undefined ? undefined : decodeTcf(tcString),
+    // Read from globalThis in place: `define` replaces only the expression `globalThis.__SID_NO_TCF__`.
+    tcf: tcString === undefined || (globalThis as TcfFlag).__SID_NO_TCF__ === true ? undefined : decodeTcf(tcString),
     usPrivacy: nonEmpty(url.searchParams.get('us_privacy')),
     gppString: nonEmpty(url.searchParams.get('gpp')),
     gppSid,
@@ -91,7 +105,7 @@ export function storageDecision(config: Pick<SharedIdEdgeConfig, 'vendorId'>, co
   if (consent.coppa) return { allowed: false, reason: 'coppa' };
   if (consent.tcString !== undefined) {
     const tcf = consent.tcf;
-    if (tcf === undefined) return { allowed: false, reason: 'tcf: invalid TC string' };
+    if (tcf === undefined) return { allowed: false, reason: (globalThis as TcfFlag).__SID_NO_TCF__ === true ? TCF_NOT_DECODED : 'tcf: invalid TC string' };
     if (config.vendorId !== undefined) {
       if (!tcf.vendorConsent(config.vendorId)) return { allowed: false, reason: `tcf: no consent for vendor ${String(config.vendorId)}` };
       return purposeDecision(tcf.purposeConsents, tcf.purposeLegitimateInterests, 'vendor');
@@ -106,15 +120,16 @@ export function storageDecision(config: Pick<SharedIdEdgeConfig, 'vendorId'>, co
 }
 
 /** Why precise location data is left out; see `preciseLocationDenial`. */
-export type PreciseLocationDenial = 'gpc' | 'coppa' | 'us-privacy' | 'tcf: no TC string' | 'tcf: invalid TC string' | 'tcf: no opt-in to precise geolocation';
+export type PreciseLocationDenial = 'gpc' | 'coppa' | 'us-privacy' | 'tcf: no TC string' | 'tcf: invalid TC string' | 'tcf: TC string not decoded (build without TCF)' | 'tcf: no opt-in to precise geolocation';
 
 /**
  * Why data that locates the user precisely (a full IP address, coordinates, a postal code) must be left out, or
  * undefined if it may be sent. It's left out:
  *
  * - with Global Privacy Control, for a request subject to COPPA, or with a `us_privacy` string that opts out of sale;
- * - when there is a TC string that is invalid or doesn't opt in to Special Feature 1 (use precise geolocation data),
- *   whatever `gdpr` says, or when GDPR applies and there is no TC string.
+ * - when there is a TC string that is invalid, isn't decoded (a build without the TCF decoder, NO_TCF) or doesn't opt
+ *   in to Special Feature 1 (use precise geolocation data), whatever `gdpr` says, or when GDPR applies and there is no
+ *   TC string.
  *
  * Modules send such data in full or not at all: truncating or rounding it isn't a substitute.
  */
@@ -123,7 +138,7 @@ export function preciseLocationDenial(consent: ConsentContext): PreciseLocationD
   if (consent.coppa) return 'coppa';
   if (consent.usPrivacy?.charAt(2).toUpperCase() === 'Y') return 'us-privacy';
   if (consent.tcString !== undefined) {
-    if (consent.tcf === undefined) return 'tcf: invalid TC string';
+    if (consent.tcf === undefined) return (globalThis as TcfFlag).__SID_NO_TCF__ === true ? TCF_NOT_DECODED : 'tcf: invalid TC string';
     if (!consent.tcf.specialFeatureOptIns.has(1)) return 'tcf: no opt-in to precise geolocation';
     return undefined;
   }

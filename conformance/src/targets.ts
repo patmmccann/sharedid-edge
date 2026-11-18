@@ -4,6 +4,7 @@ import type { BuildOption } from './cases.js';
 import { freePort } from './emulator.js';
 import { startFastlyTarget } from './fastly-viceroy.js';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 export interface RunningTarget {
   readonly baseUrl: string;
@@ -162,6 +163,7 @@ function gdprByLocation(reason: string): [string, string][] {
       "a UK visitor's existing ID cookies are deleted without a TC string",
       "a visitor in Turkey's existing ID cookies are deleted without a TC string"
     ]),
+    ...limited('consent-no-tcf.json', reason, ['GDPR applies from the location without a TC string: nothing is set, as in every build']),
     ...limited('module-ec-gdpr.json', reason, [
       'a UK visitor without a TC string gets no EC and no SharedID',
       'a Norwegian visitor without a TC string gets no EC or SharedID, and an existing ts-ec is kept',
@@ -318,7 +320,11 @@ export async function startTarget(
   // them: the bundled targets load deploy-vendor/ (built by the root conformance:* scripts), the Node.js server gets
   // SID_MODULE_PACKAGES, and the Worker a generated entry point (scripts/module-list.mjs).
   const vendor = build.includes('vendor-modules');
-  const bundle = bowser ? 'deploy-bowser' : vendor ? 'deploy-vendor' : 'deploy';
+  // With no-tcf, core's TCF decoder is left out (NO_TCF in core's consent.ts): the bundled targets load deploy-no-tcf/
+  // (built --no-tcf by the root conformance:* scripts), the Worker gets the define, and the Node.js server, which runs
+  // core unbundled, sets the flag before it loads (no-tcf.ts), so the same check in core takes the same branch.
+  const noTcf = build.includes('no-tcf');
+  const bundle = bowser ? 'deploy-bowser' : vendor ? 'deploy-vendor' : noTcf ? 'deploy-no-tcf' : 'deploy';
   const moduleList = (...args: string[]): string => execFileSync(process.execPath, [join(ROOT, 'scripts/module-list.mjs'), ...args], { encoding: 'utf8', cwd: join(ROOT, 'packages/adapters/cloudflare') }).trim();
   const vendorPackages = vendor ? { SID_MODULE_PACKAGES: moduleList('--print-vendor-modules') } : {};
   const port = await freePort();
@@ -341,7 +347,7 @@ export async function startTarget(
   // A process the target needs besides `child`, stopped with it.
   let upstream: { readonly child: ChildProcess; readonly url: string } | undefined;
   if (target === 'node') {
-    child = spawn(process.execPath, [join(ROOT, 'packages/adapters/node/dist/cli.js')], {
+    child = spawn(process.execPath, [...(noTcf ? ['--import', pathToFileURL(join(ROOT, 'conformance/dist/no-tcf.js')).href] : []), join(ROOT, 'packages/adapters/node/dist/cli.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), HOST: '127.0.0.1', ...vendorPackages, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
@@ -429,7 +435,8 @@ export async function startTarget(
     if (vendor) moduleList('.sharedid-modules', '--worker', '--vendor-modules');
     const entry = bowser ? ['src/bowser.ts'] : vendor ? ['.sharedid-modules/worker.ts'] : [];
     const wrangler = join(ROOT, 'node_modules/wrangler/bin/wrangler.js');
-    child = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'error', '--show-interactive-dev-session=false', ...entry, ...vars], {
+    const defines = noTcf ? ['--define', 'globalThis.__SID_NO_TCF__:true'] : [];
+    child = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'error', '--show-interactive-dev-session=false', ...entry, ...defines, ...vars], {
       cwd: join(ROOT, 'packages/adapters/cloudflare'),
       env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
       stdio: ['ignore', 'ignore', 'inherit']

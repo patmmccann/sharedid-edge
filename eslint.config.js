@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', 'packages/adapters/*/deploy/**', 'packages/adapters/*/deploy-bowser/**', 'packages/adapters/*/dist-bowser/**', 'packages/adapters/*/dist-rate-limit/**', 'packages/adapters/*/deploy-vendor/**', 'packages/adapters/aws-lambda/deploy-edge*/**', 'packages/adapters/*/.sharedid-modules/**', 'packages/adapters/*/dist-snippet/**', 'packages/adapters/vercel/example/**', '**/.tsbuild/**', '**/.wrangler/**', '**/node_modules/**', 'e2e/**', 'website/**', 'consumer-types/**', '**/worker-configuration.d.ts']
+    ignores: ['**/dist/**', 'packages/adapters/*/deploy/**', 'packages/adapters/*/deploy-bowser/**', 'packages/adapters/*/dist-bowser/**', 'packages/adapters/*/dist-rate-limit/**', 'packages/adapters/*/deploy-vendor/**', 'packages/adapters/*/deploy-no-tcf/**', 'packages/adapters/aws-lambda/deploy-edge*/**', 'packages/adapters/*/.sharedid-modules/**', 'packages/adapters/*/dist-snippet/**', 'packages/adapters/vercel/example/**', '**/.tsbuild/**', '**/.wrangler/**', '**/node_modules/**', 'e2e/**', 'website/**', 'consumer-types/**', '**/worker-configuration.d.ts']
   },
   js.configs.recommended,
   // The strictest type-aware presets: no `any` leaks, no floating promises, no unnecessary conditions.

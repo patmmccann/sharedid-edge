@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import type { CloudFrontRequestEvent, CloudFrontResultResponse, EdgeHandler } from '@sharedid-edge/aws-lambda/edge';
 import { CLOUDFRONT_LOCATION_HEADERS, caseClientIp, caseLocation, emulatorPort, loadBundleExport, serve, trustProxyFromEnv } from './emulator.js';
 
-const BUNDLE_DIR = ['deploy-edge-bowser', 'deploy-edge-vendor'].find(dir => dir === process.env['CONFORMANCE_LAMBDA_EDGE_BUNDLE']) ?? 'deploy-edge';
+const BUNDLE_DIR = ['deploy-edge-bowser', 'deploy-edge-vendor', 'deploy-edge-no-tcf'].find(dir => dir === process.env['CONFORMANCE_LAMBDA_EDGE_BUNDLE']) ?? 'deploy-edge';
 const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/aws-lambda', BUNDLE_DIR, 'edge.mjs');
 const EVENT_TYPE = process.env['CONFORMANCE_LAMBDA_EDGE_EVENT'] === 'viewer-request' ? 'viewer-request' : 'origin-request';
 

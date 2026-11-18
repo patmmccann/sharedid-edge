@@ -11,7 +11,7 @@
 // the ones below, with the requests in REQUESTS.
 import { Buffer } from 'node:buffer';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -186,16 +186,17 @@ function asEnv(config) {
 }
 
 let serial = 0;
-function buildSnippet(config) {
+function buildSnippet(config, { noTcf = false } = {}) {
   const n = String(++serial);
   const file = join(temp, `config-${n}.json`);
   const out = join(temp, `snippet-${n}.js`);
   writeFileSync(file, JSON.stringify(config));
-  const run = spawnSync(process.execPath, [BUILD, '--config', file, '--out', out], { cwd: ROOT, encoding: 'utf8' });
+  const run = spawnSync(process.execPath, [BUILD, '--config', file, '--out', out, ...(noTcf ? ['--no-tcf'] : [])], { cwd: ROOT, encoding: 'utf8' });
   return { status: run.status, output: `${run.stdout}${run.stderr}`, out };
 }
 
-async function buildWorker(modules) {
+/** The Worker with `modules`; with `noTcf`, without the TCF decoder, as a Snippet built --no-tcf (NO_TCF in core). */
+async function buildWorker(modules, { noTcf = false } = {}) {
   const out = join(temp, `worker-${String(++serial)}.mjs`);
   const imports = modules.map(([pkg, name]) => `import { ${name} } from '${pkg}';`).join('\n');
   await build({
@@ -205,19 +206,28 @@ async function buildWorker(modules) {
     format: 'esm',
     platform: 'neutral',
     mainFields: ['module', 'main'],
+    ...(noTcf ? { define: { 'globalThis.__SID_NO_TCF__': 'true' } } : {}),
     logLevel: 'warning'
   });
   return (await import(pathToFileURL(out).href)).default;
 }
 
-/** Builds both for `config`, sends `requests` (to each host given) to each, and checks the responses are the same. */
-async function compare(label, config, requests, hosts = ['127.0.0.1']) {
-  const snippetBuild = buildSnippet(config);
+/**
+ * Builds both for `config`, sends `requests` (to each host given) to each, and checks the responses are the same. With
+ * `noTcf`, both leave the TCF decoder out (the Snippet with --no-tcf).
+ */
+async function compare(label, config, requests, hosts = ['127.0.0.1'], { noTcf = false } = {}) {
+  const snippetBuild = buildSnippet(config, { noTcf });
   check(snippetBuild.status === 0, `${label}: the Snippet builds\n${snippetBuild.output}`);
   if (snippetBuild.status !== 0) return;
+  // The build reports what leaving TCF out saves, or would save.
+  check(/TCF decoder: (left out \(--no-tcf\), saving|included \(--no-tcf would save) \d+\.\d KB minified/.test(snippetBuild.output), `${label}: the Snippet build reports the TCF decoder's size\n${snippetBuild.output}`);
+  // The decoder's base64url alphabet is in the bundle when the decoder is (gpp has its own copy, so not checked with it).
+  const alphabet = readFileSync(snippetBuild.out, 'utf8').includes('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_');
+  if (!modulesOf(asEnv(config)).some(m => m?.[1] === 'gppModule')) check(alphabet !== noTcf, `${label}: the Snippet ${noTcf ? 'leaves the TCF decoder out' : 'has the TCF decoder'}`);
   const snippet = (await import(pathToFileURL(snippetBuild.out).href)).default;
   const env = asEnv(config);
-  const worker = await buildWorker(modulesOf(env));
+  const worker = await buildWorker(modulesOf(env), { noTcf });
   for (const host of hosts) {
     for (const r of requests) {
       const known = [ID, OTHER_ID, ...JSON.stringify(r).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g) ?? []];
@@ -259,7 +269,7 @@ try {
     // A configuration that makes a module an error on every request in the Worker fails the Snippet build (section 3).
     if (file.cases.some(c => c.expect.jsonIncludes?.ext?.modules !== undefined && JSON.stringify(c.expect.jsonIncludes.ext.modules).includes('"error"'))) continue;
     files++;
-    await compare(file.file, config, file.cases.map(c => c.request));
+    await compare(file.file, config, file.cases.map(c => c.request), undefined, { noTcf: file.build.includes('no-tcf') });
   }
   check(files >= 20, `at least 20 conformance case files run against both (${String(files)})`);
 
