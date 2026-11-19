@@ -40,6 +40,7 @@ describe('trafficReport', () => {
 
   it('never makes a relay a bot', () => {
     expect(trafficReport({ proxy: 'relay' })).toEqual({ proxy: 'relay' });
+    expect(trafficReport({ proxy: 'public' })).toEqual({ proxy: 'public' });
   });
 
   it.each([
@@ -81,8 +82,8 @@ describe('mergeTraffic', () => {
     expect(kind('likely', 'likely')).toBe('likely');
   });
 
-  it('proxy keeps the most specific: tor, residential, relay, vpn, datacenter', () => {
-    const proxy = (...kinds: ('datacenter' | 'vpn' | 'residential' | 'tor' | 'relay')[]): string | undefined =>
+  it('proxy keeps the most specific: tor, residential, relay, vpn, public, datacenter', () => {
+    const proxy = (...kinds: ('datacenter' | 'vpn' | 'public' | 'residential' | 'tor' | 'relay')[]): string | undefined =>
       mergeTraffic(kinds.map((p, i) => entry(String(i), { proxy: p })))?.proxy;
     expect(proxy('datacenter', 'vpn')).toBe('vpn');
     expect(proxy('vpn', 'datacenter')).toBe('vpn');
@@ -90,6 +91,8 @@ describe('mergeTraffic', () => {
     expect(proxy('relay', 'vpn')).toBe('relay');
     expect(proxy('relay', 'residential')).toBe('residential');
     expect(proxy('residential', 'tor')).toBe('tor');
+    expect(proxy('datacenter', 'public')).toBe('public');
+    expect(proxy('public', 'vpn')).toBe('vpn');
     expect(proxy('datacenter', 'datacenter')).toBe('datacenter');
   });
 

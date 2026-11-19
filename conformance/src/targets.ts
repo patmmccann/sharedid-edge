@@ -232,6 +232,15 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
     ]),
     ...limited('module-maxmind.json', NO_LOCATION, ["leaves the CDN's country alone, with no ipservice"]),
     ...limited('module-maxmind-replace.json', NO_LOCATION_OR_CLIENT_IP, ["replaces the CDN's country, keeping geo's other fields"]),
+    ...limited('module-ip2location.json', CLIENT_IP, [
+      'fills in the country, with ipservice 1, and sends the proxy signal',
+      'does the same for an IPv6 address',
+      'keeps the most specific proxy kind',
+      'sends only the traffic signal when the country has no alpha-3 code',
+      'sends the country with Global Privacy Control and for a COPPA request'
+    ]),
+    ...limited('module-ip2location.json', NO_LOCATION_OR_CLIENT_IP, ["leaves the CDN's country alone, and still sends the proxy signal"]),
+    ...limited('module-ip2location-replace.json', NO_LOCATION_OR_CLIENT_IP, ["replaces the CDN's country, keeping geo's other fields, and sends the proxy signal"]),
     ...limited('routes.json', 'AWS Emulator refuses requests with an Origin header before they reach the function', [
       'v1 allows credentialed CORS from a configured origin',
       'v1 sends no CORS headers for other origins',
@@ -259,7 +268,7 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
   'lambda-edge': { 'trusted-upstream.json': NO_UPSTREAM },
   'lambda-edge-viewer': Object.fromEntries([
     ...gdprByLocation(VIEWER_NO_LOCATION),
-    ...['forwarded-headers-untrusted.json', 'module-dbip.json', 'module-dbip-replace.json', 'module-geo.json', 'module-geo-coarse.json', 'module-geo-invalid-config.json', 'module-maxmind.json', 'module-maxmind-replace.json', 'module-sync-modules.json'].map((file): [string, string] => [file, VIEWER_NO_GEO]),
+    ...['forwarded-headers-untrusted.json', 'module-dbip.json', 'module-dbip-replace.json', 'module-geo.json', 'module-geo-coarse.json', 'module-geo-invalid-config.json', 'module-ip2location.json', 'module-ip2location-replace.json', 'module-maxmind.json', 'module-maxmind-replace.json', 'module-sync-modules.json'].map((file): [string, string] => [file, VIEWER_NO_GEO]),
     ['trusted-upstream.json', NO_UPSTREAM]
   ]),
   vercel: { 'trusted-upstream.json': NO_UPSTREAM },

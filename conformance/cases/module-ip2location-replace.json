@@ -1,0 +1,13 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The ip2location vendor module in replace mode (SID_MODULES=geo,ip2location, SID_MODULE_CONFIG={\"ip2location\":{\"mode\":\"replace\"}}): IP2Location's country always, with ipservice 1, and, listed after geo, it wins the merge; geo's other fields stay. The traffic signal is unaffected by mode. The country fixture maps 192.0.2.0/25 to FR and the proxy fixture maps 192.0.2.0/26 to tor.",
+  "build": ["vendor-modules"],
+  "config": { "SID_MODULES": "geo,ip2location", "SID_MODULE_CONFIG": "{\"ip2location\":{\"mode\":\"replace\"},\"geo\":{\"precision\":\"coarse\"}}", "SID_TRUST_PROXY": "true" },
+  "cases": [
+    {
+      "name": "replaces the CDN's country, keeping geo's other fields, and sends the proxy signal",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.10", "cf-connecting-ip": "192.0.2.10", "cf-ipcountry": "DE", "cf-region-code": "BE" } },
+      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "geo": { "type": 2, "country": "FRA", "region": "BE", "ipservice": 1 }, "ext": { "traffic": { "proxy": "tor", "sources": ["ip2location"] } } } }, "ext": { "modules": { "geo": { "status": "ok" }, "ip2location": { "status": "ok" } } } } }
+    }
+  ]
+}

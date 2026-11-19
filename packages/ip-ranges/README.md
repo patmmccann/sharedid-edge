@@ -10,8 +10,8 @@ You don't use this package directly to deploy: it's a dependency of the modules.
 
 | Import | Runs | What |
 | --- | --- | --- |
-| `@sharedid-edge/ip-ranges` | In the worker | `decodeRangeTable`, `lookupRange`; `ipDatabaseModule`, a module that returns the country as `ortb2.device.geo` with a `mode` (`fill` or `replace`) setting; `ipDatabaseSettings` (`mode` and optional `maxAgeDays`) and `geoMode` (its `mode`); `countryFor` |
-| `@sharedid-edge/ip-ranges/build` | At build time | `MmdbReader`, a dependency-free MMDB reader; `buildRangeTable` and `encodeRangeTable`; `buildCountryData`, which turns a downloaded file (`.mmdb`, `.mmdb.gz` or MaxMind's `.tar.gz`) into a module's data file; `writeMmdb`, for test fixtures; `FIXTURE_TABLE` |
+| `@sharedid-edge/ip-ranges` | In the worker | `decodeRangeTable`, `lookupRange`; `ipDatabaseModule`, a module that returns the country as `ortb2.device.geo` with a `mode` (`fill` or `replace`) setting; `ipDatabaseSettings` (`mode` and optional `maxAgeDays`) and `geoMode` (its `mode`); `countryFor`; `lookupClient`, the table value for the client IP |
+| `@sharedid-edge/ip-ranges/build` | At build time | `MmdbReader`, a dependency-free MMDB reader; `buildRangeTable` and `encodeRangeTable`; `buildCountryData`, which turns a downloaded file (`.mmdb`, gzipped, MaxMind's `.tar.gz` or IP2Location's `.zip`) into a module's data file; `mmdbBytes`, the file inside such an archive; `writeMmdb`, for test fixtures; `FIXTURE_TABLE` |
 
 Both use web-standard APIs only, like core.
 

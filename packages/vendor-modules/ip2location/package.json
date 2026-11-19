@@ -1,0 +1,55 @@
+{
+  "name": "@sharedid-edge/module-ip2location",
+  "version": "0.1.0",
+  "description": "SharedID Edge module: the visitor's country from IP2Location LITE DB1 and proxy signals from IP2Proxy LITE PX10, built in at build time, as ortb2.device.geo and ortb2.device.ext.traffic",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.tsbuildinfo",
+    "scripts"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "data": "node scripts/build-data.mjs",
+    "attw": "attw --pack . --profile esm-only --quiet || attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "@sharedid-edge/core": "0.1.0",
+    "@sharedid-edge/ip-ranges": "0.1.0"
+  },
+  "devDependencies": {
+    "@sharedid-edge/module-geo": "0.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patmmccann/sharedid-edge.git",
+    "directory": "packages/vendor-modules/ip2location"
+  },
+  "sharedidEdge": {
+    "kind": "module",
+    "name": "ip2location",
+    "title": "IP2Location LITE country and proxy signals",
+    "summary": "`ortb2.device.geo` (with `ipservice` 1) from IP2Location LITE DB1 and `ortb2.device.ext.traffic` from IP2Proxy LITE PX10, built in at build time",
+    "export": "ip2locationModule",
+    "network": "none",
+    "buildCredentials": [
+      "IP2LOCATION_DOWNLOAD_TOKEN"
+    ],
+    "settings": "`mode`: `fill` (default) or `replace`; optional `maxAgeDays`; build-time `IP2LOCATION_DOWNLOAD_TOKEN`",
+    "routes": [
+      "v1"
+    ]
+  }
+}

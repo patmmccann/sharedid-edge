@@ -4,6 +4,7 @@ export {
   geoMode,
   ipDatabaseModule,
   ipDatabaseSettings,
+  lookupClient,
   type DataInfo,
   type GeoMode,
   type IpDatabaseGeo,

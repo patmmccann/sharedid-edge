@@ -1,10 +1,10 @@
 import { MmdbReader, type MmdbMap, type MmdbNetwork, type MmdbValue } from './mmdb.js';
-import { dataModuleSource, gunzip, isGzip, tarEntry } from './archive.js';
+import { dataModuleSource, gunzip, isGzip, isZip, tarEntry, zipEntry } from './archive.js';
 import type { DataInfo } from './module.js';
 import { decodeRangeTable, RANGE_TABLE_VERSION } from './table.js';
 
 export { MmdbReader, type MmdbMap, type MmdbMetadata, type MmdbNetwork, type MmdbValue } from './mmdb.js';
-export { dataModuleSource, gunzip, isGzip, tarEntry } from './archive.js';
+export { dataModuleSource, gunzip, isGzip, isZip, tarEntry, zipEntry } from './archive.js';
 export type { DataInfo } from './module.js';
 export { decodeRangeTable, lookupRange, RANGE_TABLE_VERSION, type RangeTable, type ValueColumn } from './table.js';
 
@@ -188,19 +188,32 @@ export interface CountryDataOptions {
 }
 
 /**
+ * The MMDB file inside a download: the file itself, or the `.mmdb` in a gzip, tar or ZIP archive (MaxMind ships
+ * `.tar.gz`, IP2Location `.zip`). The entry's name is matched case-insensitively through `suffix`.
+ */
+export async function mmdbBytes(file: Uint8Array, suffix = '.mmdb'): Promise<Uint8Array> {
+  const bytes = isGzip(file) ? await gunzip(file) : file;
+  if (isZip(bytes)) {
+    const entry = await zipEntry(bytes, suffix);
+    if (entry === undefined) throw new Error(`No ${suffix} file in the archive`);
+    return entry.bytes;
+  }
+  // A tar archive has "ustar" at offset 257 of its first header.
+  if (new TextDecoder().decode(bytes.subarray(257, 262)) === 'ustar') {
+    const entry = tarEntry(bytes, suffix);
+    if (entry === undefined) throw new Error(`No ${suffix} file in the archive`);
+    return entry.bytes;
+  }
+  return bytes;
+}
+
+/**
  * Turns a downloaded country database (an `.mmdb` file, gzipped, or in a `.tar.gz` as MaxMind ships it) into the
  * contents of a module's `dist/data.js`: a range table of ISO 3166-1 alpha-2 country codes. The table is decoded
  * again before it's returned, so a broken one fails the build rather than the worker.
  */
 export async function buildCountryData(file: Uint8Array, options: CountryDataOptions): Promise<{ readonly source: string; readonly data: string; readonly info: DataInfo; readonly stats: RangeTableStats; readonly encodedLength: number }> {
-  let bytes = isGzip(file) ? await gunzip(file) : file;
-  // A tar archive has "ustar" at offset 257 of its first header.
-  if (new TextDecoder().decode(bytes.subarray(257, 262)) === 'ustar') {
-    const entry = tarEntry(bytes, '.mmdb');
-    if (entry === undefined) throw new Error('No .mmdb file in the archive');
-    bytes = entry.bytes;
-  }
-  const reader = new MmdbReader(bytes);
+  const reader = new MmdbReader(await mmdbBytes(file));
   if (!options.databaseType(reader.metadata.databaseType)) throw new Error(`Unexpected database type "${reader.metadata.databaseType}"`);
   const { source, stats } = buildRangeTable(reader, countryCode);
   const table: RangeTableSource = options.ipv4Only ? { ...source, v6: [[0n, 0]] } : source;

@@ -11,6 +11,69 @@ export async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
+/** Whether bytes start with a ZIP local-file header or an empty archive's end record. */
+export function isZip(bytes: Uint8Array): boolean {
+  return bytes[0] === 0x50 && bytes[1] === 0x4b && (bytes[2] === 0x03 && bytes[3] === 0x04 || bytes[2] === 0x05 && bytes[3] === 0x06);
+}
+
+function uint16(bytes: Uint8Array, at: number): number {
+  return (bytes[at] ?? 0) | ((bytes[at + 1] ?? 0) << 8);
+}
+
+function uint32(bytes: Uint8Array, at: number): number {
+  return ((bytes[at] ?? 0) | ((bytes[at + 1] ?? 0) << 8) | ((bytes[at + 2] ?? 0) << 16)) + (bytes[at + 3] ?? 0) * 0x1000000;
+}
+
+/** Decompresses a raw deflate stream with the web-standard `DecompressionStream`. */
+async function inflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Blob([bytes.slice()]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/**
+ * The first file in a ZIP archive whose name ends with `suffix` (case-insensitive), with its path, or undefined.
+ * Stored and deflated entries only. ZIP64 archives are rejected: they're over 4 GB, too big for a build.
+ */
+export async function zipEntry(archive: Uint8Array, suffix: string): Promise<{ readonly name: string; readonly bytes: Uint8Array } | undefined> {
+  let end = -1;
+  for (let at = Math.max(0, archive.length - 22 - 0xffff); at <= archive.length - 22; at++) {
+    if (uint32(archive, at) === 0x06054b50) end = at;
+  }
+  if (end < 0) throw new Error('ZIP: no end of central directory');
+  const count = uint16(archive, end + 10);
+  const directorySize = uint32(archive, end + 12);
+  const directoryStart = uint32(archive, end + 16);
+  if (count === 0xffff || directorySize === 0xffffffff || directoryStart === 0xffffffff) throw new Error('ZIP: ZIP64 archives are not supported');
+  const directoryEnd = directoryStart + directorySize;
+  if (directoryEnd > archive.length) throw new Error('ZIP: truncated central directory');
+  const decoder = new TextDecoder();
+  for (let at = directoryStart; at + 46 <= directoryEnd; ) {
+    if (uint32(archive, at) !== 0x02014b50) throw new Error('ZIP: bad central directory entry');
+    const flags = uint16(archive, at + 8);
+    const method = uint16(archive, at + 10);
+    const compressedSize = uint32(archive, at + 20);
+    const size = uint32(archive, at + 24);
+    const nameLength = uint16(archive, at + 28);
+    const extraLength = uint16(archive, at + 30);
+    const commentLength = uint16(archive, at + 32);
+    const localStart = uint32(archive, at + 42);
+    if (compressedSize === 0xffffffff || size === 0xffffffff || localStart === 0xffffffff) throw new Error('ZIP: ZIP64 archives are not supported');
+    const name = decoder.decode(archive.subarray(at + 46, at + 46 + nameLength));
+    at += 46 + nameLength + extraLength + commentLength;
+    if (!name.toLowerCase().endsWith(suffix.toLowerCase())) continue;
+    if ((flags & 1) !== 0) throw new Error('ZIP: encrypted entries are not supported');
+    if (uint32(archive, localStart) !== 0x04034b50) throw new Error('ZIP: bad local file header');
+    const dataStart = localStart + 30 + uint16(archive, localStart + 26) + uint16(archive, localStart + 28);
+    if (dataStart + compressedSize > archive.length) throw new Error('ZIP: truncated entry');
+    const stored = archive.subarray(dataStart, dataStart + compressedSize);
+    const bytes = method === 0 ? stored.slice() : method === 8 ? await inflateRaw(stored) : undefined;
+    if (bytes === undefined) throw new Error(`ZIP: unsupported compression method ${String(method)}`);
+    if (bytes.length !== size) throw new Error('ZIP: entry size does not match its directory');
+    return { name, bytes };
+  }
+  return undefined;
+}
+
 function tarString(block: Uint8Array, at: number, length: number): string {
   const field = block.subarray(at, at + length);
   const end = field.indexOf(0);

@@ -15,3 +15,6 @@
 
 # maxmind: MaxMind's free GeoLite2 Country data, built in with the deployer's licence key; maintained by the project.
 /packages/vendor-modules/maxmind/  @patmmccann
+
+# ip2location: IP2Location LITE DB1 and IP2Proxy LITE PX10 data, built in with the deployer's download token; maintained by IP2Location.
+/packages/vendor-modules/ip2location/  @kim-ip2location @patmmccann

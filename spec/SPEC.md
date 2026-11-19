@@ -203,7 +203,7 @@ A response where storage was denied SHOULD carry `X-SharedID-Status: denied: <re
 | --- | --- |
 | `bot` | Boolean: the request comes from a bot. |
 | `botKind` | How sure: `verified` (a known good bot the platform verified, such as a search crawler), `declared` (a crawler that names itself in its user agent) or `likely` (a heuristic or a score). A report with a `botKind` is a bot. |
-| `proxy` | `datacenter` (a hosting address), `vpn`, `residential` (a residential proxy), `tor` (a Tor exit), or `relay`: a known service carrying people's traffic, such as iCloud Private Relay and other privacy relays, or a verified corporate proxy. |
+| `proxy` | `datacenter` (a hosting address), `vpn`, `public` (a public or web proxy), `residential` (a residential proxy), `tor` (a Tor exit), or `relay`: a known service carrying people's traffic, such as iCloud Private Relay and other privacy relays, or a verified corporate proxy. |
 | `score` | Human-likelihood, an integer from 1 (almost certainly a bot) to 99 (almost certainly human), on Cloudflare Bot Management's scale. |
 | `internal` | Boolean: the visitor marked themselves as the site's own staff. |
 | `sources` | The sources that reported anything, in order: `platform` first, then module names in `SID_MODULES` order, each once. |
@@ -212,7 +212,7 @@ A response where storage was denied SHOULD carry `X-SharedID-Status: denied: <re
 
 - `bot` is `true` if any report says `true`, else `false` if any says `false`, else absent;
 - `botKind` keeps the strongest claim: `verified`, then `declared`, then `likely`;
-- `proxy` keeps the most specific value, in this order: `tor`, `residential`, `relay`, `vpn`, `datacenter`. A data centre is the least specific, since VPNs and relays also use hosting addresses; a source that knows the address is a relay wins over one that only sees a data centre;
+- `proxy` keeps the most specific value, in this order: `tor`, `residential`, `relay`, `vpn`, `public`, `datacenter`. A data centre is the least specific, since VPNs, public proxies and relays also use hosting addresses; a source that knows the address is a relay wins over one that only sees a data centre;
 - `score` keeps the minimum;
 - `internal` is `true` if any report says `true`, else `false` if any says `false`, else absent;
 - `sources` is the ordered union.
@@ -324,6 +324,7 @@ Each module's behaviour is specified in its own file under [`modules/`](modules)
 - **Vendor modules** (`packages/vendor-modules/`):
   - [The `dbip` module](modules/dbip.md)
   - [The `ec` module](modules/ec.md)
+  - [The `ip2location` module](modules/ip2location.md)
   - [The `maxmind` module](modules/maxmind.md)
 <!-- generated:spec-modules:end -->
 

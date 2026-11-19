@@ -86,10 +86,15 @@ export interface IpDatabaseModuleOptions {
   readonly ipservice?: number;
 }
 
+/** The value in `table` for the client IP, or undefined when it's missing, unparsable, or has no data. */
+export function lookupClient(table: RangeTable, clientIp: string | undefined): string | undefined {
+  const ip = clientIp === undefined ? undefined : parseIp(clientIp);
+  return ip === undefined ? undefined : lookupRange(table, ip);
+}
+
 /** The country for an address, as alpha-3, or undefined when the table has none or the code has no alpha-3. */
 export function countryFor(table: RangeTable, clientIp: string | undefined): string | undefined {
-  const ip = clientIp === undefined ? undefined : parseIp(clientIp);
-  const code = ip === undefined ? undefined : lookupRange(table, ip);
+  const code = lookupClient(table, clientIp);
   return code === undefined ? undefined : alpha3(code);
 }
 

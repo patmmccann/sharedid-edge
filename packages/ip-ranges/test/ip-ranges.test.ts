@@ -9,14 +9,17 @@ import {
   decodeRangeTable,
   encodeRangeTable,
   FIXTURE_TABLE,
+  isZip,
   lookupRange,
   MmdbReader,
+  mmdbBytes,
   tarEntry,
   writeMmdb,
+  zipEntry,
   type MmdbFixtureNetwork,
   type RangeTable
 } from '../src/build.js';
-import { countryFor, geoMode, ipDatabaseModule, ipDatabaseSettings } from '../src/index.js';
+import { countryFor, geoMode, ipDatabaseModule, ipDatabaseSettings, lookupClient } from '../src/index.js';
 
 function ip(text: string): ParsedIp {
   const parsed = parseIp(text);
@@ -198,6 +201,62 @@ async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
+async function deflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Blob([bytes.slice()]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/** A ZIP archive with the given entries, stored or deflated. Checksums are left at 0: the reader doesn't use them. */
+async function zip(files: readonly { name: string; content: Uint8Array; deflate?: boolean }[]): Promise<Uint8Array> {
+  const encoder = new TextEncoder();
+  const parts: Uint8Array[] = [];
+  const centrals: Uint8Array[] = [];
+  let offset = 0;
+  for (const file of files) {
+    const name = encoder.encode(file.name);
+    const method = file.deflate === true ? 8 : 0;
+    const data = method === 8 ? await deflateRaw(file.content) : file.content;
+    const local = new Uint8Array(30 + name.length);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(8, method, true);
+    lv.setUint32(18, data.length, true);
+    lv.setUint32(22, file.content.length, true);
+    lv.setUint16(26, name.length, true);
+    local.set(name, 30);
+    const central = new Uint8Array(46 + name.length);
+    const cv = new DataView(central.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(10, method, true);
+    cv.setUint32(20, data.length, true);
+    cv.setUint32(24, file.content.length, true);
+    cv.setUint16(28, name.length, true);
+    cv.setUint32(42, offset, true);
+    central.set(name, 46);
+    parts.push(local, data);
+    centrals.push(central);
+    offset += local.length + data.length;
+  }
+  const directorySize = centrals.reduce((total, central) => total + central.length, 0);
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, files.length, true);
+  ev.setUint16(10, files.length, true);
+  ev.setUint32(12, directorySize, true);
+  ev.setUint32(16, offset, true);
+  const out = new Uint8Array(offset + directorySize + end.length);
+  let at = 0;
+  for (const part of [...parts, ...centrals, end]) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out;
+}
+
 function tar(name: string, content: Uint8Array): Uint8Array {
   const header = new Uint8Array(512);
   header.set(new TextEncoder().encode(name), 0);
@@ -215,12 +274,14 @@ describe('buildCountryData', () => {
   const mmdb = writeMmdb({ databaseType: 'Test-Country', ipVersion: 6, networks: NETWORKS, ipv4Aliases: true });
   const options = { database: 'test-2026-11', ipv4Only: false, attribution: 'Test data.', databaseType: (type: string) => type === 'Test-Country' };
 
-  it('reads a plain, gzipped or tar.gz database into the same data file', async () => {
+  it('reads a plain, gzipped, tar.gz or ZIP database into the same data file', async () => {
     const plain = await buildCountryData(mmdb, options);
     const gzipped = await buildCountryData(await gzip(mmdb), options);
     const archived = await buildCountryData(await gzip(tar('Test-Country_20261101/Test-Country.mmdb', mmdb)), options);
+    const zipped = await buildCountryData(await zip([{ name: 'readme.txt', content: new Uint8Array(3) }, { name: 'TEST-COUNTRY.MMDB', content: mmdb, deflate: true }]), options);
     expect(gzipped.source).toBe(plain.source);
     expect(archived.source).toBe(plain.source);
+    expect(zipped.source).toBe(plain.source);
     expect(plain.info).toEqual({ database: 'test-2026-11', built: '2026-11-01', families: 'ipv4,ipv6', fixture: false, attribution: 'Test data.' });
     expect(plain.source).toMatch(/^\/\/ Generated at build time from test-2026-11\. Test data\./);
   });
@@ -245,6 +306,26 @@ describe('buildCountryData', () => {
     const archive = tar('dir/readme.txt', new Uint8Array(3));
     expect(tarEntry(archive, '.mmdb')).toBeUndefined();
     expect(tarEntry(tar('dir/x.mmdb', mmdb), '.mmdb')?.name).toBe('dir/x.mmdb');
+  });
+
+  it('finds the .MMDB file in a ZIP whatever its case, stored or deflated', async () => {
+    const archive = await zip([
+      { name: 'readme.txt', content: new Uint8Array(3) },
+      { name: 'IP2LOCATION-LITE-DB1.MMDB', content: mmdb, deflate: true },
+      { name: 'other.mmdb', content: new Uint8Array(2) }
+    ]);
+    expect(isZip(archive)).toBe(true);
+    expect((await zipEntry(archive, '.mmdb'))?.name).toBe('IP2LOCATION-LITE-DB1.MMDB');
+    expect((await zipEntry(await zip([{ name: 'x.mmdb', content: mmdb }]), '.mmdb'))?.bytes).toEqual(mmdb);
+    expect(await zipEntry(await zip([{ name: 'x.txt', content: mmdb }]), '.mmdb')).toBeUndefined();
+    expect(await mmdbBytes(archive)).toEqual(mmdb);
+    expect(await mmdbBytes(await gzip(mmdb))).toEqual(mmdb);
+  });
+
+  it('rejects ZIP64 archives', async () => {
+    const archive = await zip([{ name: 'x.mmdb', content: mmdb }]);
+    new DataView(archive.buffer).setUint16(archive.length - 22 + 10, 0xffff, true);
+    await expect(zipEntry(archive, '.mmdb')).rejects.toThrow('ZIP64');
   });
 
   it('writes only base64', () => {
@@ -340,5 +421,13 @@ describe('ipDatabaseModule', () => {
     const t = decodeRangeTable(data);
     expect(countryFor(t, '198.51.100.1')).toBe('JPN');
     expect(countryFor(t, undefined)).toBeUndefined();
+  });
+
+  it('lookupClient returns the table value for a client IP', () => {
+    const t = decodeRangeTable(data);
+    expect(lookupClient(t, '198.51.100.1')).toBe('JP');
+    expect(lookupClient(t, '8.8.8.8')).toBeUndefined();
+    expect(lookupClient(t, 'not an address')).toBeUndefined();
+    expect(lookupClient(t, undefined)).toBeUndefined();
   });
 });

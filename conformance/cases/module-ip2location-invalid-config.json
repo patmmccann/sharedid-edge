@@ -1,0 +1,13 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The ip2location vendor module with an invalid mode (SID_MODULE_CONFIG={\"ip2location\":{\"mode\":\"merge\"}}): reported as an error, adding nothing.",
+  "build": ["vendor-modules"],
+  "config": { "SID_MODULES": "ip2location", "SID_MODULE_CONFIG": "{\"ip2location\":{\"mode\":\"merge\"}}", "SID_TRUST_PROXY": "true" },
+  "cases": [
+    {
+      "name": "reports an invalid mode as an error",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.10", "cf-connecting-ip": "192.0.2.10" } },
+      "expect": { "status": 200, "jsonIncludes": { "ext": { "modules": { "ip2location": { "status": "error" } } } }, "jsonAbsent": ["ortb2"] }
+    }
+  ]
+}

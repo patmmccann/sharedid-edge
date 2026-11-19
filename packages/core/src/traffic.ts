@@ -5,11 +5,11 @@
 export type BotKind = 'verified' | 'declared' | 'likely';
 
 /**
- * The kind of proxy or network the request comes through: a data centre or hosting address, a VPN, a residential
- * proxy, a Tor exit, or a relay that carries people's traffic (iCloud Private Relay and similar privacy relays, or a
- * verified corporate proxy). A relay never implies a bot.
+ * The kind of proxy or network the request comes through: a data centre or hosting address, a VPN, a public proxy, a
+ * residential proxy, a Tor exit, or a relay that carries people's traffic (iCloud Private Relay and similar privacy
+ * relays, or a verified corporate proxy). A relay never implies a bot.
  */
-export type ProxyKind = 'datacenter' | 'vpn' | 'residential' | 'tor' | 'relay';
+export type ProxyKind = 'datacenter' | 'vpn' | 'public' | 'residential' | 'tor' | 'relay';
 
 /**
  * What one source (a module, or the platform) reports about the traffic. Every field is optional; a source reports
@@ -45,11 +45,11 @@ export const BOT_KINDS: readonly BotKind[] = Object.freeze(['verified', 'declare
 
 /**
  * Proxy kinds, most specific first. `tor` and `residential` name the exit itself; `relay` is a named service
- * carrying people's traffic; `vpn` a VPN service; `datacenter` only says the address is a hosting address, which
- * VPNs and relays also use. When sources disagree, the most specific wins: an IP database that sees iCloud Private
- * Relay as a data centre doesn't override a source that knows it's a relay.
+ * carrying people's traffic; `vpn` a VPN service; `public` a public or web proxy; `datacenter` only says the address
+ * is a hosting address, which VPNs and relays also use. When sources disagree, the most specific wins: an IP database
+ * that sees iCloud Private Relay as a data centre doesn't override a source that knows it's a relay.
  */
-export const PROXY_KINDS: readonly ProxyKind[] = Object.freeze(['tor', 'residential', 'relay', 'vpn', 'datacenter']);
+export const PROXY_KINDS: readonly ProxyKind[] = Object.freeze(['tor', 'residential', 'relay', 'vpn', 'public', 'datacenter']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -75,7 +75,7 @@ export function trafficReport(value: unknown): TrafficReport {
   if (bot !== undefined && typeof bot !== 'boolean') throw new TypeError('traffic: "bot" must be a boolean');
   if (botKind !== undefined && !isBotKind(botKind)) throw new TypeError('traffic: "botKind" must be verified, declared or likely');
   if (botKind !== undefined && bot === false) throw new TypeError('traffic: "botKind" needs "bot" to be true');
-  if (proxy !== undefined && !isProxyKind(proxy)) throw new TypeError('traffic: "proxy" must be datacenter, vpn, residential, tor or relay');
+  if (proxy !== undefined && !isProxyKind(proxy)) throw new TypeError('traffic: "proxy" must be datacenter, vpn, public, residential, tor or relay');
   if (score !== undefined && (typeof score !== 'number' || !Number.isInteger(score) || score < 1 || score > 99)) {
     throw new TypeError('traffic: "score" must be a whole number from 1 to 99');
   }
@@ -110,7 +110,7 @@ function first<T>(order: readonly T[], values: readonly (T | undefined)[]): T | 
  * - `bot` is true if any report says so (`false` only if some report says `false` and none says `true`);
  * - `botKind` keeps the strongest claim: `verified`, then `declared`, then `likely`;
  * - `proxy` keeps the most specific value, in {@link PROXY_KINDS} order: `tor`, `residential`, `relay`, `vpn`,
- *   `datacenter`. A proxy never sets `bot`;
+ *   `public`, `datacenter`. A proxy never sets `bot`;
  * - `score` keeps the minimum (the most bot-like);
  * - `internal` is true if any report says so;
  * - `sources` lists the sources that reported anything, in order, once each.
