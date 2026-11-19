@@ -56,6 +56,10 @@ describe('ip2locationModule', () => {
     expect(body.ext.modules['ip2location']).toMatchObject({ status: 'ok' });
   });
 
+  it('sends a public proxy, the main signal in LITE PX10, on its own', async () => {
+    expect((await payload({ clientIp: '192.0.2.200' })).ortb2).toEqual({ device: { ext: { traffic: { proxy: 'public', sources: ['ip2location'] } } } });
+  });
+
   it('keeps the most specific proxy kind', async () => {
     expect((await payload({ clientIp: '198.51.100.5' })).ortb2).toEqual({
       device: {

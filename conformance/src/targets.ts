@@ -235,6 +235,7 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
     ...limited('module-ip2location.json', CLIENT_IP, [
       'fills in the country, with ipservice 1, and sends the proxy signal',
       'does the same for an IPv6 address',
+      'sends a public proxy on its own',
       'keeps the most specific proxy kind',
       'sends only the traffic signal when the country has no alpha-3 code',
       'sends the country with Global Privacy Control and for a COPPA request'

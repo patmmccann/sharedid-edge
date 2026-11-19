@@ -20,6 +20,11 @@
       "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "geo": { "type": 2, "country": "DEU" }, "ext": { "traffic": { "proxy": "tor", "sources": ["ip2location"] } } } }, "ext": { "modules": { "geo": { "status": "ok" }, "ip2location": { "status": "ok" } } } }, "jsonAbsent": ["ortb2.device.geo.ipservice"] }
     },
     {
+      "name": "sends a public proxy on its own",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.200", "cf-connecting-ip": "192.0.2.200" } },
+      "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "ext": { "traffic": { "proxy": "public", "sources": ["ip2location"] } } } }, "ext": { "modules": { "ip2location": { "status": "ok" } } } }, "jsonAbsent": ["ortb2.device.geo"] }
+    },
+    {
       "name": "keeps the most specific proxy kind",
       "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "198.51.100.5", "cf-connecting-ip": "198.51.100.5" } },
       "expect": { "status": 200, "jsonIncludes": { "ortb2": { "device": { "geo": { "type": 2, "country": "JPN", "ipservice": 1 }, "ext": { "traffic": { "proxy": "public", "sources": ["ip2location"] } } } }, "ext": { "modules": { "ip2location": { "status": "ok" } } } } }

@@ -2,7 +2,7 @@
 
 User documentation is in [README.md](README.md) (also the npm package page). The rules for the modules that use it are in [`../modules/AGENTS.md`](../modules/AGENTS.md) and [`../vendor-modules/AGENTS.md`](../vendor-modules/AGENTS.md).
 
-`@sharedid-edge/ip-ranges`: what IP database vendor modules (`dbip`, and MaxMind's to come) share, so they don't copy code (vendor modules are outside `check:duplication`). Not a module itself: it has no `sharedidEdge` block and isn't in the module index.
+`@sharedid-edge/ip-ranges`: what IP database vendor modules (`dbip`, `maxmind` and `ip2location`) share, so they don't copy code (vendor modules are outside `check:duplication`). Not a module itself: it has no `sharedidEdge` block and isn't in the module index.
 
 - **Two entry points.** `.` is what runs in the worker: `decodeRangeTable`, `lookupRange`, `lookupClient` and `ipDatabaseModule`. `./build` adds what runs at build time: the MMDB reader, `buildRangeTable`, `encodeRangeTable`, `buildCountryData`, gunzip, tar and ZIP, `mmdbBytes` and `writeMmdb` for fixtures. Keep build-time code out of `.`, so bundles don't carry it.
 - **Archives:** vendors ship databases differently (MaxMind `.tar.gz`, DB-IP `.gz`, IP2Location `.zip`). `buildCountryData` and `mmdbBytes` unwrap gzip, tar and ZIP, matching the `.mmdb` name case-insensitively; `zipEntry` reads stored and deflated entries and rejects ZIP64. Put a new archive format here, not in a vendor module.

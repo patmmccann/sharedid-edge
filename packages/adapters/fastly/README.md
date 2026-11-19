@@ -68,7 +68,7 @@ npm run wasm -w @sharedid-edge/fastly      # compiles it to packages/adapters/fa
 | --- | --- | --- |
 | Default | 21.7 KB | 16.2 MB (5.1 MB gzipped) |
 | With Bowser | 30.1 KB | 19.1 MB (5.7 MB gzipped) |
-| With `ec`, `dbip` and `maxmind` (the fixtures) | 24.0 KB | 16.6 MB (5.2 MB gzipped) |
+| With every opt-in module (`--vendor-modules`: `cmp`, `gpp`, `ec`, `dbip`, `maxmind` and `ip2location`, with the fixtures) | 29.3 KB | 17.9 MB (5.6 MB gzipped) |
 
 Fastly's limit for a compiled package is [100 MB](https://docs.fastly.com/products/compute-resource-limits); `npm run wasm` fails above it.
 
