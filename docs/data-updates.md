@@ -237,7 +237,7 @@ export default [
 ];
 ```
 
-`googleIpKeySource()` downloads [Google's key file](https://www.gstatic.com/real-ip/ip_enc_key.json) for Google Publisher Tag's [publisher-provided IP](https://developers.google.com/publisher-tag/guides/unmasked-ip/publisher-provided#encrypt_ip_address); `pbsIpKeySource` a Prebid Server host's, from the HTTPS URL its operator publishes ([prebid/prebid-server#5106](https://github.com/prebid/prebid-server/issues/5106), a proposal). They send no credentials and no visitor data, keep the file's first X25519 key (the current one), refuse anything else (another key type, an `x` that isn't 32 bytes, a private key, more than 16 KB), and publish only `{ kid, x }`.
+`googleIpKeySource()` downloads [Google's key file](https://www.gstatic.com/real-ip/ip_enc_key.json) for Google Publisher Tag's [publisher-provided IP](https://developers.google.com/publisher-tag/guides/unmasked-ip/publisher-provided#encrypt_ip_address); `pbsIpKeySource` a Prebid Server host's, from the HTTPS URL its operator publishes ([prebid/prebid-server#5106](https://github.com/prebid/prebid-server/issues/5106), a proposal). They send no credentials and no visitor data. A key file must hold exactly one key, the active one, as Google's does (`kty` `OKP`, `crv` `X25519`, a `kid`, a 32-byte `x`): a file with no key or several, another key type, a private key, or more than 16 KB fails the run, which keeps the previous snapshot. They publish only `{ kid, x }` and the file's `Cache-Control` `max-age` (`no-store` and `no-cache` count as 0).
 
 **Schedule them often.** Google asks that its key be refreshed at least every 24 hours, and sooner when its `Cache-Control` says so: `max-age=3000` (50 minutes) when this was written. Give these sources their own job, every 30 minutes (Cloudflare cron `*/30 * * * *`, EventBridge `rate(30 minutes)`, a systemd timer `OnCalendar=*:0/30`), rather than the databases' 12-hour one. Each run is one small download; an unchanged key only updates the manifest's `checkedAt`.
 
@@ -256,7 +256,9 @@ const module = createEncryptedIpModule({ keys: { google: () => google.current, p
 // SID_MODULES=encrypted-ip and SID_MODULE_CONFIG={"encrypted-ip":{"google":{},"pbs":{"pbs.example.com":{}}}}.
 ```
 
-A key is fresh for 24 hours after the snapshot's last successful check. Older, the module keeps encrypting with it and marks that recipient's value `stale: true` (Google keeps rotated private keys for 24 hours; if it can't decrypt a value, GPT uses the request's own address). With no snapshot yet, that recipient gets no value and the module reports `stale`.
+Validating a reloaded snapshot also imports its key into Web Crypto, in the background reload, so requests only do the work each value needs.
+
+The rules follow [Google's guide](https://developers.google.com/publisher-tag/guides/unmasked-ip/publisher-provided#encrypt_ip_address), counting from the snapshot's last successful check: a key is fresh until its recorded `max-age` (held to 1 minute to 24 hours, an hour without one); past that, the module still encrypts with it and marks that recipient's value `stale: true`, so a failing job shows early; more than 24 hours after the last check, that recipient gets **no value**, since Google promises to decrypt only with keys fetched within 24 hours. With no snapshot yet, that recipient gets no value either. Both make the module report `stale`. See the module's [Keys](../packages/modules/encrypted-ip/README.md#keys).
 
 ## Freshness, failures and licences
 

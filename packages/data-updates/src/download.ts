@@ -53,10 +53,10 @@ export async function requireOk(response: Response, message: string): Promise<vo
   throw new Error(message);
 }
 
-export async function downloaded(response: Response, url: string, limit?: number): Promise<Download> {
+export async function downloaded(response: Response, url: string): Promise<Download> {
   await requireOk(response, 'Download failed');
   const etag = response.headers.get('ETag');
-  return { bytes: await bytes(response, limit), url, ...(etag === null ? {} : { etag }) };
+  return { bytes: await bytes(response), url, ...(etag === null ? {} : { etag }) };
 }
 
 export function checkNotModified(url: string, context: DownloadContext): void {

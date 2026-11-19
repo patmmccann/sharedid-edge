@@ -7,7 +7,9 @@ import {
   encryptedIpSettings,
   encryptIp,
   fromBase64url,
+  importIpKey,
   IP_KEY_MAX_AGE_MS,
+  keyAge,
   parseIpKey,
   type EncryptedIpModuleOptions
 } from '../src/index.js';
@@ -58,32 +60,60 @@ describe('base64url', () => {
 
 describe('recipient keys', () => {
   const x = google.jwk.x;
-  it('reads a JWKS, taking its first X25519 key (the current one), or a single JWK', () => {
-    expect(parseIpKey({ keys: [{ kty: 'EC', crv: 'P-256', x }, { kty: 'OKP', crv: 'X25519', x, kid: 'ypXWcw' }, { kty: 'OKP', crv: 'X25519', x: pbs.jwk.x, kid: 'old' }] })).toEqual({ kid: 'ypXWcw', x });
-    expect(parseIpKey({ kty: 'OKP', crv: 'X25519', x })).toEqual({ x });
+  const file = (...keys: unknown[]): Record<string, unknown> => ({ keys });
+  it('reads a key file with exactly one X25519 key, as Google publishes it', () => {
+    expect(parseIpKey(file({ kty: 'OKP', crv: 'X25519', x, kid: 'ypXWcw' }))).toEqual({ kid: 'ypXWcw', x });
+    // Other members of the key, or of the file, are ignored.
+    expect(parseIpKey({ ...file({ kty: 'OKP', crv: 'X25519', x, kid: 'k', use: 'enc' }), note: 1 })).toEqual({ kid: 'k', x });
   });
   it.each([
-    ['no keys', { keys: [] }],
-    ['another curve', { kty: 'OKP', crv: 'Ed25519', x }],
-    ['an x that isn\'t 32 bytes', { kty: 'OKP', crv: 'X25519', x: x.slice(0, 40) }],
-    ['an x in standard base64', { kty: 'OKP', crv: 'X25519', x: `${x}=` }],
-    ['an empty kid', { kty: 'OKP', crv: 'X25519', x, kid: '' }],
-    ['a kid with a space', { kty: 'OKP', crv: 'X25519', x, kid: 'a b' }],
-    ['not an object', 'key']
-  ])('refuses %s', (_name, value) => {
-    expect(() => parseIpKey(value)).toThrow(TypeError);
+    ['no key', file(), /exactly one key; it has 0/],
+    ['two keys, even both X25519', file(google.jwk, pbs.jwk), /exactly one key; it has 2/],
+    ['a single JWK rather than a key file', google.jwk, /Not a key file/],
+    ['another curve', file({ kty: 'OKP', crv: 'Ed25519', x, kid: 'k' }), /X25519/],
+    ['an x that is not 32 bytes', file({ kty: 'OKP', crv: 'X25519', x: x.slice(0, 40), kid: 'k' }), /32 bytes/],
+    ['an x in standard base64', file({ kty: 'OKP', crv: 'X25519', x: `${x}=`, kid: 'k' }), /32 bytes/],
+    ['no kid', file({ kty: 'OKP', crv: 'X25519', x }), /kid/],
+    ['an empty kid', file({ kty: 'OKP', crv: 'X25519', x, kid: '' }), /kid/],
+    ['a kid with a space', file({ kty: 'OKP', crv: 'X25519', x, kid: 'a b' }), /kid/],
+    ['not an object', 'key', /Not a key file/]
+  ])('refuses %s', (_name, value, message) => {
+    expect(() => parseIpKey(value)).toThrow(message);
   });
   it('refuses a private key, without naming its value', () => {
-    expect(() => parseIpKey({ kty: 'OKP', crv: 'X25519', x, d: 'c2VjcmV0' })).toThrow(/private part/);
-    expect(() => parseIpKey({ kty: 'OKP', crv: 'X25519', x, d: 'c2VjcmV0' })).not.toThrow(/c2VjcmV0/);
+    expect(() => parseIpKey(file({ kty: 'OKP', crv: 'X25519', x, kid: 'k', d: 'c2VjcmV0' }))).toThrow(/private part/);
+    expect(() => parseIpKey(file({ kty: 'OKP', crv: 'X25519', x, kid: 'k', d: 'c2VjcmV0' }))).not.toThrow(/c2VjcmV0/);
+  });
+});
+
+describe('key age', () => {
+  const at = (ms: number): ReturnType<typeof keyAge> => keyAge(NOW - ms, undefined, NOW);
+  it('keeps a key fresh until its refresh time: an hour without a max-age, else the max-age, held to 1 minute to 24 hours', () => {
+    expect(at(HOUR)).toEqual({ usable: true, stale: false });
+    expect(at(HOUR + 1)).toEqual({ usable: true, stale: true });
+    expect(keyAge(NOW - 3000_000, 3000, NOW)).toEqual({ usable: true, stale: false });
+    expect(keyAge(NOW - 3000_001, 3000, NOW)).toEqual({ usable: true, stale: true });
+    expect(keyAge(NOW - 61_000, 0, NOW).stale).toBe(true);
+    expect(keyAge(NOW - 59_000, 0, NOW).stale).toBe(false);
+    expect(keyAge(NOW - 2 * HOUR, 7 * 86_400, NOW).stale).toBe(false);
+  });
+  it('stops using a key fetched over 24 hours ago', () => {
+    expect(at(IP_KEY_MAX_AGE_MS)).toEqual({ usable: true, stale: true });
+    expect(at(IP_KEY_MAX_AGE_MS + 1)).toEqual({ usable: false, stale: true });
+    expect(keyAge(NOW - IP_KEY_MAX_AGE_MS - 1, 7 * 86_400, NOW).usable).toBe(false);
+  });
+  it('marks a key more than 5 minutes ahead of the clock stale, and a key without a fetch time fresh', () => {
+    expect(at(-5 * 60_000)).toEqual({ usable: true, stale: false });
+    expect(at(-5 * 60_000 - 1)).toEqual({ usable: true, stale: true });
+    expect(keyAge(undefined, undefined, NOW)).toEqual({ usable: true, stale: false });
   });
 });
 
 describe('settings', () => {
-  it('accepts each recipient on its own or together, with or without a key and fetch time', () => {
-    expect(encryptedIpSettings({ google: {} })).toEqual({ google: { key: undefined, keyFetched: undefined }, pbs: {} });
-    expect(encryptedIpSettings({ pbs: { [HOST]: { key: pbs.jwk, keyFetched: '2026-11-19T10:00:00.5+01:00' } } })).toEqual({
-      google: undefined, pbs: { [HOST]: { key: { kid: '2026-11', x: pbs.jwk.x }, keyFetched: Date.parse('2026-11-19T09:00:00.5Z') } }
+  it('accepts each recipient on its own or together, with or without a key, fetch time and max-age', () => {
+    expect(encryptedIpSettings({ google: {} })).toEqual({ google: { key: undefined, keyFetched: undefined, keyMaxAge: undefined }, pbs: {} });
+    expect(encryptedIpSettings({ pbs: { [HOST]: { key: jwks(pbs), keyFetched: '2026-11-19T10:00:00.5+01:00', keyMaxAge: 3000 } } })).toEqual({
+      google: undefined, pbs: { [HOST]: { key: { kid: '2026-11', x: pbs.jwk.x }, keyFetched: Date.parse('2026-11-19T09:00:00.5Z'), keyMaxAge: 3000 } }
     });
     expect(Object.keys(encryptedIpSettings({ google: {}, pbs: { [HOST]: {}, [OTHER_HOST]: {} } }).pbs)).toEqual([HOST, OTHER_HOST]);
   });
@@ -93,14 +123,17 @@ describe('settings', () => {
     [{ other: 1 }, /unknown setting "other"/],
     [{ google: { url: 'x' } }, /google has an unknown setting "url"/],
     [{ google: { keyFetched: '2026-11-19T10:00:00Z' } }, /needs google.key/],
-    [{ google: { key: google.jwk, keyFetched: '2026-11-19' } }, /time zone/],
-    [{ google: { key: google.jwk, keyFetched: '2026-11-19T10:00:00' } }, /time zone/],
-    [{ google: { key: { kty: 'OKP' } } }, /google.key: No X25519/],
+    [{ google: { key: jwks(google), keyMaxAge: 3000 } }, /keyMaxAge needs google.keyFetched/],
+    [{ google: { key: jwks(google), keyFetched: '2026-11-19T10:00:00Z', keyMaxAge: '3000' } }, /whole number of seconds/],
+    [{ google: { key: jwks(google), keyFetched: '2026-11-19' } }, /time zone/],
+    [{ google: { key: jwks(google), keyFetched: '2026-11-19T10:00:00' } }, /time zone/],
+    [{ google: { key: google.jwk } }, /google.key: Not a key file/],
+    [{ google: { key: { keys: [google.jwk, pbs.jwk] } } }, /google.key: A key file must hold exactly one key/],
     [{ google: 'on' }, /google must be an object/],
     [{ pbs: [] }, /keyed by Prebid Server host name/],
     [{ pbs: { 'PBS.example.com': {} } }, /lower-case host names/],
     [{ pbs: { 'https://pbs.example.com': {} } }, /lower-case host names/],
-    [{ pbs: { [HOST]: { key: { ...pbs.jwk, d: 'c2VjcmV0' } } } }, /private part/]
+    [{ pbs: { [HOST]: { key: { keys: [{ ...pbs.jwk, d: 'c2VjcmV0' }] } } } }, /private part/]
   ])('refuses %j', (config, message) => {
     expect(() => encryptedIpSettings(config)).toThrow(message);
   });
@@ -117,6 +150,15 @@ describe('encryption', () => {
     expect(fromBase64url(value)?.byteLength).toBe(32 + address.length + 16);
     expect(await decrypt({ value }, google)).toBe(address);
     expect(await encryptIp(address, { x: google.jwk.x })).not.toBe(value);
+  });
+});
+
+describe('importing keys ahead of use', () => {
+  it('imports a key once and encrypts with it, and rejects one that cannot be imported without keeping it', async () => {
+    await expect(importIpKey({ x: google.jwk.x })).resolves.toBeUndefined();
+    expect(await decrypt({ value: await encryptIp('192.0.2.1', { x: google.jwk.x }) }, google)).toBe('192.0.2.1');
+    await expect(importIpKey({ x: 'not base64url!' })).rejects.toThrow();
+    await expect(importIpKey({ x: 'not base64url!' })).rejects.toThrow();
   });
 });
 
@@ -142,7 +184,7 @@ describe('the encrypted-ip module in the handler', () => {
   });
 
   it('encrypts for a Prebid Server host only, keyed by host, to that host\'s key', async () => {
-    const body = await payload(settings({ pbs: { [HOST]: { key: pbs.jwk } } }), { clientIp: '2001:db8::7' });
+    const body = await payload(settings({ pbs: { [HOST]: { key: jwks(pbs) } } }), { clientIp: '2001:db8::7' });
     expect(Object.keys(body.eip ?? {})).toEqual(['pbs']);
     expect(body.eip?.pbs?.[HOST]?.kid).toBe('2026-11');
     expect(await decrypt(body.eip?.pbs?.[HOST], pbs)).toBe('2001:db8::7');
@@ -205,23 +247,41 @@ describe('the encrypted-ip module in the handler', () => {
     expect(report(await payload(settings({ google: {} }), undefined, '/_sid/v1?coppa=1'))).toMatchObject({ status: 'empty', stale: true });
   });
 
-  it('marks only the recipient whose key is over 24 hours old (or too far ahead) stale, and keeps encrypting', async () => {
+  it('marks a value stale past the refresh time of its key, per recipient, and still encrypts', async () => {
     const at = (time: number): string => new Date(time).toISOString();
-    const fresh = await payload(settings({ google: { key: google.jwk, keyFetched: at(NOW - IP_KEY_MAX_AGE_MS) }, pbs: { [HOST]: { key: pbs.jwk, keyFetched: at(NOW) } } }));
+    const fresh = await payload(settings({ google: { key: jwks(google), keyFetched: at(NOW - HOUR) }, pbs: { [HOST]: { key: jwks(pbs), keyFetched: at(NOW - 40 * 60_000), keyMaxAge: 3000 } } }));
     expect(report(fresh)).toEqual({ ms: expect.any(Number) as number, status: 'ok' });
-    for (const time of [NOW - IP_KEY_MAX_AGE_MS - 1, NOW + 6 * 60_000]) {
-      const body = await payload(settings({ google: { key: google.jwk, keyFetched: at(NOW) }, pbs: { [HOST]: { key: pbs.jwk, keyFetched: at(time) } } }));
+    for (const [time, maxAge] of [[NOW - HOUR - 1, undefined], [NOW - 3000_001, 3000], [NOW - 11 * 60_000, 600], [NOW + 6 * 60_000, undefined]] as const) {
+      const body = await payload(settings({ google: { key: jwks(google), keyFetched: at(NOW) }, pbs: { [HOST]: { key: jwks(pbs), keyFetched: at(time), ...(maxAge === undefined ? {} : { keyMaxAge: maxAge }) } } }));
       expect(report(body)).toEqual({ ms: expect.any(Number) as number, status: 'ok', stale: true });
       expect(body.eip?.google).not.toHaveProperty('stale');
-      expect(body.eip?.pbs?.[HOST]?.stale).toBe(true);
+      expect(body.eip?.pbs?.[HOST]).toMatchObject({ kid: '2026-11', stale: true });
       expect(await decrypt(body.eip?.pbs?.[HOST], pbs)).toBe('192.0.2.77');
     }
   });
 
-  it('takes keys from scheduled snapshots for listed recipients, with their own age', async () => {
+  it('gives no value for a key fetched over 24 hours ago, whatever its max-age, and reports stale', async () => {
+    const old = new Date(NOW - IP_KEY_MAX_AGE_MS - 1).toISOString();
+    const body = await payload(settings({ google: { key: jwks(google), keyFetched: old, keyMaxAge: 7 * 86_400 }, pbs: { [HOST]: { key: jwks(pbs) } } }));
+    expect(Object.keys(body.eip ?? {})).toEqual(['pbs']);
+    expect(report(body)).toEqual({ ms: expect.any(Number) as number, status: 'ok', stale: true });
+    const only = await payload(settings({ google: { key: jwks(google), keyFetched: old } }));
+    expect(only).not.toHaveProperty('eip');
+    expect(report(only)).toEqual({ ms: expect.any(Number) as number, status: 'empty', stale: true });
+  });
+
+  it('treats a key setting without keyFetched as fresh', async () => {
+    const body = await payload(settings({ google: { key: jwks(google) } }));
+    expect(report(body)).toEqual({ ms: expect.any(Number) as number, status: 'ok' });
+  });
+
+  it('takes keys from scheduled snapshots for listed recipients, with their own age and max-age', async () => {
     const keys = {
-      google: () => ({ data: { kid: 'ypXWcw', x: google.jwk.x }, checkedAt: NOW - HOUR }),
-      pbs: { [HOST]: () => ({ data: { x: pbs.jwk.x }, checkedAt: NOW - 25 * HOUR }), [OTHER_HOST]: () => ({ data: { x: pbsOther.jwk.x }, checkedAt: NOW }) }
+      google: () => ({ data: { kid: 'ypXWcw', x: google.jwk.x, maxAgeSeconds: 3000 }, checkedAt: NOW - 49 * 60_000 }),
+      pbs: {
+        [HOST]: () => ({ data: { kid: '2026-11', x: pbs.jwk.x }, checkedAt: NOW - 2 * HOUR }),
+        [OTHER_HOST]: () => ({ data: { kid: 'other-1', x: pbsOther.jwk.x }, checkedAt: NOW })
+      }
     };
     const body = await payload(settings({ google: {}, pbs: { [HOST]: {} } }), undefined, undefined, undefined, { options: { keys } });
     expect(await decrypt(body.eip?.google, google)).toBe('192.0.2.77');
@@ -231,14 +291,18 @@ describe('the encrypted-ip module in the handler', () => {
     // The settings decide who's on: a snapshot for a host they don't list is ignored.
     expect(body.eip?.pbs).not.toHaveProperty(OTHER_HOST);
     expect(report(body)).toMatchObject({ status: 'ok', stale: true });
+    const expired = await payload(settings({ google: {} }), undefined, undefined, undefined, { options: { keys: { google: () => ({ data: { kid: 'k', x: google.jwk.x }, checkedAt: NOW - 25 * HOUR }) } } });
+    expect(expired).not.toHaveProperty('eip');
+    expect(report(expired)).toMatchObject({ status: 'empty', stale: true });
     const missing = await payload(settings({ google: {} }), undefined, undefined, undefined, { options: { keys: { google: () => undefined } } });
     expect(report(missing)).toMatchObject({ status: 'empty', stale: true });
   });
 
   it('is an error, with no field, on invalid settings, or a key both in settings and a snapshot', async () => {
     expect(report(await payload(settings({ google: { key: { kty: 'OKP' } } })))).toMatchObject({ status: 'error' });
+    expect(report(await payload(settings({ google: { key: { keys: [google.jwk, pbs.jwk] } } })))).toMatchObject({ status: 'error' });
     expect(report(await payload(settings({})))).toMatchObject({ status: 'error' });
-    const doubled = await payload(settings({ google: { key: google.jwk } }), undefined, undefined, undefined, { options: { keys: { google: () => undefined } } });
+    const doubled = await payload(settings({ google: { key: jwks(google) } }), undefined, undefined, undefined, { options: { keys: { google: () => undefined } } });
     expect(doubled).not.toHaveProperty('eip');
     expect(report(doubled)).toMatchObject({ status: 'error' });
   });

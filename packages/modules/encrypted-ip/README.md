@@ -42,17 +42,17 @@ Each recipient is separate and opt-in: Google only, Prebid Server only, or both.
    ```jsonc
    "vars": {
      "SID_MODULES": "encrypted-ip",          // with others: "ip,geo,encrypted-ip"
-     "SID_MODULE_CONFIG": "{\"encrypted-ip\":{\"google\":{\"key\":{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"X25519\",\"x\":\"OQOocFPWwDfHQ1SdhGII-6_DHfAqamg2qC2E5kygfis\",\"kid\":\"ypXWcw\"}]},\"keyFetched\":\"2026-11-19T14:55:00Z\"}}}"
+     "SID_MODULE_CONFIG": "{\"encrypted-ip\":{\"google\":{\"key\":{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"X25519\",\"x\":\"OQOocFPWwDfHQ1SdhGII-6_DHfAqamg2qC2E5kygfis\",\"kid\":\"ypXWcw\"}]},\"keyFetched\":\"2026-11-19T14:55:00Z\",\"keyMaxAge\":3000}}}"
    }
    ```
 
-   That's Google's key file as it was on 19 November 2026; it rotates, so for anything but a test, deliver keys on a schedule ([Keys](#keys)).
+   That's Google's key file as it was on 19 November 2026, with the time it was fetched and its `Cache-Control` `max-age`. It rotates, and the module stops using a key 24 hours after it was fetched, so for anything but a test, deliver keys on a schedule ([Keys](#keys)).
 
 3. **Check:**
 
    ```sh
    curl -s https://www.example.com/_sid/v1 | jq '.eip, .ext.modules["encrypted-ip"]'
-   # { "google": { "value": "_akzTBlVz4LP2tqx4KnsOJ-7h684zRfGjrzIBE7sow-N_eaRN4vyI2pGN8DB6Y4WyRaLYECvhJtTQg", "kid": "ypXWcw" } }
+   # { "google": { "value": "cyWZlNXEZe-odZOaF3z_tGMgBc0pVTuNm3-9iNeb-ChzyEIF2qvzjoLs6H2hnyEI1yS79fylVfKtQQ", "kid": "ypXWcw" } }
    # { "ms": 1, "status": "ok" }
    ```
 
@@ -69,8 +69,9 @@ Each recipient's entry is an object, `{}` or:
 
 | Setting | |
 | --- | --- |
-| `key` | The recipient's public key: its key file as published (a JWKS, `{ "keys": [ … ] }`) or one key (`{ "kty": "OKP", "crv": "X25519", "x": "…", "kid": "…" }`). From a key file, the first X25519 key is used: the current one. Leave it out when a scheduled snapshot provides the key. A key with a private part (`d`) is refused. |
-| `keyFetched` | When you fetched that key: an ISO 8601 date and time with a time zone (`2026-11-19T14:55:00Z`). Optional; with it, the module reports `stale` once the key is over 24 hours old. |
+| `key` | The recipient's key file, as published: `{ "keys": [ { "kty": "OKP", "crv": "X25519", "kid": "…", "x": "…" } ] }`, with **exactly one key**, the active one, as Google's has. A file with no key or several is refused (recipients rotate by keeping old private keys, not by listing several public keys), as is a key without a `kid`, another key type, or one with a private part (`d`). Leave `key` out when a scheduled snapshot provides the key. |
+| `keyFetched` | When you fetched that key: an ISO 8601 date and time with a time zone (`2026-11-19T14:55:00Z`). Optional; with it, the module reports the key `stale` past its refresh time and stops using it 24 hours after this. Without it, the key never ages: see [Keys](#keys). |
+| `keyMaxAge` | The key file's `Cache-Control` `max-age` when you fetched it, in seconds (Google's: 3000). Optional, needs `keyFetched`; without it, the key is due for a refresh after an hour. |
 
 ```jsonc
 {"encrypted-ip":{"google":{}}}                                         // Google, key from a schedule
@@ -84,16 +85,23 @@ Keys are public: they go in `SID_MODULE_CONFIG`, not `SID_MODULE_SECRETS`. A set
 
 Keys are never fetched while answering a visitor. Each recipient's comes from one of two places:
 
-- **Settings** (`key`), for a test, or a deployment that redeploys at least daily with a fresh key. Add `keyFetched` so a forgotten one shows up as `stale`.
-- **A scheduled snapshot,** with the opt-in [`@sharedid-edge/data-updates`](../../data-updates/README.md) package, the same way as the IP databases ([Scheduled data updates](../../../docs/data-updates.md#encrypted-ip-keys)): a scheduled job downloads the key file, validates it (an X25519 key, `x` 32 bytes) and publishes `{ kid, x }` to private storage; the worker reloads it in the background. `googleIpKeySource()` downloads [Google's key file](https://www.gstatic.com/real-ip/ip_enc_key.json); `pbsIpKeySource({ name, url })` a Prebid Server host's, from the HTTPS URL its operator publishes.
+- **Settings** (`key`), for a test, or a deployment that replaces the key, with its `keyFetched`, at least as often as its `max-age`. Without `keyFetched` the key never ages, so nothing warns you, and once Google rotates it the values stop decrypting (GPT then uses the request's own address).
+- **A scheduled snapshot,** with the opt-in [`@sharedid-edge/data-updates`](../../data-updates/README.md) package, the same way as the IP databases ([Scheduled data updates](../../../docs/data-updates.md#encrypted-ip-keys)): a scheduled job downloads the key file, validates it (exactly one X25519 key with a `kid`) and publishes `{ kid, x }` and the file's `Cache-Control` `max-age` to private storage; the worker reloads it in the background, and the key is imported into Web Crypto then, not on a visitor's request. `googleIpKeySource()` downloads [Google's key file](https://www.gstatic.com/real-ip/ip_enc_key.json); `pbsIpKeySource({ name, url })` a Prebid Server host's, from the HTTPS URL its operator publishes.
 
-**Freshness.** Google keeps rotated private keys, so a value encrypted with a key fetched within the last 24 hours still decrypts. Google asks that you refresh its key at least every 24 hours, and sooner when its `Cache-Control` says so: `max-age=3000`, 50 minutes, when this was written. So schedule the job every 30 minutes or so. The module counts a key as fresh for 24 hours after it was fetched (`keyFetched`, or the snapshot's last successful check). Older, or more than 5 minutes ahead of the worker's clock, its values are marked `stale: true`, and still sent: if Google can't decrypt one, GPT falls back to the request's own address. A recipient with no key at all gets no value, and the module reports `stale: true`.
+**Freshness** follows [Google's guide](https://developers.google.com/publisher-tag/guides/unmasked-ip/publisher-provided#encrypt_ip_address), for Google and Prebid Server hosts alike: refresh a key at least every 24 hours, and sooner when its `Cache-Control` says so (`max-age=3000`, 50 minutes, for Google's when this was written); a value encrypted with a key fetched within the last 24 hours keeps decrypting during a rotation, and nothing is promised after that. A key's age counts from when it was fetched (`keyFetched`, or the snapshot's last successful check, an unchanged download included):
 
-A Prebid Server host's operator says how often its keys rotate; the proposal keeps previous keys for a grace period like Google's. The same 24-hour rule applies.
+| Age | Value | Report |
+| --- | --- | --- |
+| Up to its refresh time: the file's `max-age` (held to 1 minute to 24 hours), or an hour without one | Sent | `ok` |
+| Past its refresh time, or more than 5 minutes ahead of the worker's clock | Sent, marked `"stale": true` | `ok`, `stale: true` |
+| Over 24 hours | **Not sent** | `stale: true` |
+| No key | Not sent, no error | `stale: true` |
+
+So schedule the update every 30 minutes or so: a missed run or two shows as `stale` long before values stop. Prebid Server hosts follow the same rules ([prebid/prebid-server#5106](https://github.com/prebid/prebid-server/issues/5106)).
 
 ## Response
 
-The values go in the `/_sid/v1` payload's `eip`, never in `ortb2` (which pages hand to every bidder). Each is `{ value, kid?, stale? }`: `value` is the encrypted address, unpadded base64url of 67 to 124 characters; `kid` the ID of the key it was encrypted to, when the key has one; `stale: true` when that key is over 24 hours old. With `SID_MODULES=encrypted-ip`, Google and two Prebid Server hosts (one of whose keys was fetched two days earlier), and an IPv4 visitor (`192.0.2.77`), real output:
+The values go in the `/_sid/v1` payload's `eip`, never in `ortb2` (which pages hand to every bidder). Each is `{ value, kid, stale? }`: `value` is the encrypted address, unpadded base64url of 67 to 124 characters; `kid` the ID of the key it was encrypted to; `stale: true` when that key is past its refresh time. With `SID_MODULES=encrypted-ip`, Google and two Prebid Server hosts (one of whose keys, with a `max-age` of an hour, was fetched two hours earlier), and an IPv4 visitor (`192.0.2.77`), real output:
 
 ```json
 {
@@ -103,10 +111,10 @@ The values go in the `/_sid/v1` payload's `eip`, never in `ortb2` (which pages h
     { "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }
   ],
   "eip": {
-    "google": { "value": "_akzTBlVz4LP2tqx4KnsOJ-7h684zRfGjrzIBE7sow-N_eaRN4vyI2pGN8DB6Y4WyRaLYECvhJtTQg", "kid": "ypXWcw" },
+    "google": { "value": "cyWZlNXEZe-odZOaF3z_tGMgBc0pVTuNm3-9iNeb-ChzyEIF2qvzjoLs6H2hnyEI1yS79fylVfKtQQ", "kid": "ypXWcw" },
     "pbs": {
-      "pbs.example.com": { "value": "BHSfq6suB9Drbec7UQHG0CqELgYS6HZBNdX9k4YcdkV8Pl7hLiuU9dj-6pd6BDFf1prYVSNPtKSIWQ", "kid": "2026-11" },
-      "pbs.example.org:8443": { "value": "QF6xmKJozIhzb0QiecpZ_KXBzMAlDCjOwClzNqYoZiNggvvEGQInplfjwxsj6aBLsyU9H0p0EXJdKA", "stale": true }
+      "pbs.example.com": { "value": "2M1YdSXF3iiAZeAHRUb8ltNx_RjKW2E8y1jL80aCrVDW8qK6oUkGQYur0AagsI4HxSYa67jQkZ8bfg", "kid": "2026-11" },
+      "pbs.example.org:8443": { "value": "ej4ApgEvaBwytL6CvmpUg6f0XCNoScM1EjSmVDo6iAfQgLx1xX4fCwYhp7U87Alu9iVc43DDuHjxmA", "kid": "k7", "stale": true }
     }
   },
   "ext": { "modules": { "encrypted-ip": { "ms": 1, "status": "ok", "stale": true } } }
@@ -127,7 +135,7 @@ When consent rules it out, or the platform has no client IP, there's no `eip` an
 }
 ```
 
-A recipient without a key is left out, the others are not, and the report adds `"stale": true`.
+A recipient without a key, or whose key was fetched over 24 hours ago, is left out, the others are not, and the report adds `"stale": true`.
 
 ## On the page
 
@@ -178,8 +186,8 @@ On Akamai and Fastly the module reports `error` and returns nothing; the rest of
 
 Measured with this repository's build:
 
-- **A Lambda bundle with it:** 2.7 KB more gzipped than the default bundle (24.1 KB, 26.8 KB with the module), including the `ip` module's address parser, which a build with `ip` already has. Measure your own build: `npm run bundle` prints its gzipped size.
-- **Speed:** about 0.5 ms per value on Node.js 24 (one X25519 key generation and agreement, five HMACs and AES-GCM), measured with 5,000 encryptions in a row on a laptop. Values are made per request, one per recipient: caching them per address would keep visitor data between requests.
+- **A Lambda bundle with it:** 3.1 KB more gzipped than the default bundle (24.1 KB, 27.3 KB with the module), including the `ip` module's address parser, which a build with `ip` already has. Measure your own build: `npm run bundle` prints its gzipped size.
+- **Speed,** on Node.js 24 on a laptop, through the handler, median of 9 fresh processes: about 0.5 to 0.65 ms per value once warm (one X25519 key generation and agreement, five HMACs and AES-GCM; the recipient's key is imported once and kept), and 10 to 13 ms for the module on a process's first request, most of it Web Crypto starting up. A key imported ahead, as the scheduled snapshots' reload does, takes about 2 ms off that first request. Values are made per request, one per recipient: caching them per address would keep visitor data between requests. The first request stays well inside `SID_MODULE_TIMEOUT_MS`'s default 50 ms.
 
 ## Using it in code
 
@@ -201,9 +209,10 @@ const value = await encryptIp('203.0.113.42', { x: 'OQOocFPWwDfHQ1SdhGII-6_DHfAq
 ## Troubleshooting
 
 - **`ext.modules["encrypted-ip"]` is `skipped`, `not installed`:** your build doesn't have the module. Add it ([Turning it on](#turning-it-on)), and check you deployed that build.
-- **`error`:** the settings are invalid (see [Settings](#settings)), or the runtime has no X25519 ([Runtimes](#runtimes)).
-- **`empty`, with `stale: true`, and no `eip`:** no recipient has a key. Check the scheduled job ran and published (its manifest's `checkedAt`), and that the snapshot names match.
+- **`error`:** the settings are invalid (see [Settings](#settings)), a key file holds no key or more than one, or the runtime has no X25519 ([Runtimes](#runtimes)).
+- **`empty`, with `stale: true`, and no `eip`:** no recipient has a usable key (none, or all over 24 hours old).
 - **`empty` without `stale`:** consent ruled it out, or the platform has no client IP. Try without GPC, outside GDPR, and look at `X-SharedID-Status`.
 - **`timeout`:** a fresh worker's first Web Crypto call takes longer than later ones (about 15 ms on Node.js on a laptop, against 1 ms or less after). If it happens often, raise `SID_MODULE_TIMEOUT_MS` (50 ms by default).
-- **A value has `stale: true`:** its key is over 24 hours old. Check the job's schedule and failures.
+- **A value has `stale: true`:** its key is past its refresh time. Check the job's schedule and failures: 24 hours after the last successful fetch, that recipient gets no value.
+- **`stale: true` and a recipient is missing:** it has no key, or its key was fetched over 24 hours ago. Check the job ran and published (its manifest's `checkedAt`), and that the snapshot names match.
 - **GPT ignores `ipAddress`:** check the Publisher Console's Page Request tab. A value outside 67 to 124 characters is dropped (this module's never are); one Google can't decrypt (an old key) makes GPT use the request's own address. Make sure `setConfig` runs before the ad request.

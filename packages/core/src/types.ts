@@ -65,7 +65,7 @@ export interface EncryptedIpValue {
   readonly value: string;
   /** The `kid` of the recipient's key it was encrypted to, when the key has one. */
   readonly kid?: string;
-  /** The key is older than its maximum age (or ahead of the clock); the value may still decrypt. */
+  /** The key is past its refresh time (or ahead of the clock): the value should still decrypt, but the key is due for a refresh. */
   readonly stale?: true;
 }
 

@@ -18,19 +18,24 @@ Name `encrypted-ip`; no `purposes`, no `gvlid`; `routes` `v1` only. An opt-in pr
 
 Each recipient is on only when listed; any combination works (Google alone, Prebid Server alone, both). Each recipient's entry is an object with:
 
-- `key` (optional): the recipient's public key, its JWKS (`{ "keys": [ … ] }`) or one JWK. The key used is the first with `kty` `OKP` and `crv` `X25519` (the current one), with `x` 32 bytes of unpadded base64url and an optional `kid` (printable ASCII without spaces, at most 256 characters). A JWK with a private part (`d`) is refused.
+- `key` (optional): the recipient's **key file**, as Google publishes one: `{ "keys": [ { "kty": "OKP", "crv": "X25519", "kid": …, "x": … } ] }`, with **exactly one key**, the active one. `x` is 32 bytes of unpadded base64url; `kid` is required, printable ASCII without spaces, at most 256 characters. Recipients rotate by keeping their previous private keys for a while, not by listing several public keys, so a file with no key or more than one is invalid, never guessed at. Other members are ignored, except a private part (`d`), which is refused.
 - `keyFetched` (optional, needs `key`): when that copy was fetched, an ISO 8601 date and time with a time zone (`Z` or an offset).
+- `keyMaxAge` (optional, needs `keyFetched`): the key file's `Cache-Control` `max-age` when it was fetched, in whole seconds.
 
-Without `key`, the recipient's key comes from a scheduled snapshot ([Keys](#keys)); a recipient with both is an error. Any other setting, a malformed value, no recipient at all, or a `pbs` key that isn't a lower-case host name (with an optional port) makes the module an `error`, with no output.
+Without `key`, the recipient's key comes from a scheduled snapshot ([Keys](#keys)); a recipient with both is an error. Any other setting, a malformed value (an invalid key file included), no recipient at all, or a `pbs` key that isn't a lower-case host name (with an optional port) makes the module an `error`, with no output.
 
 ## Keys
 
-Keys are never fetched while answering a request. Each comes either from the settings, or from a snapshot that the opt-in updater ([`@sharedid-edge/data-updates`](../../packages/data-updates/README.md)) downloads on a schedule: Google's from its fixed URL, a Prebid Server host's from the JWKS URL its operator publishes (`https:` only). The updater validates the file (an X25519 key as above) before publishing it, keeps the previous snapshot when a download fails, and stores only `{ kid, x }`.
+Keys are never fetched while answering a request. Each comes either from the settings, or from a snapshot that the opt-in updater ([`@sharedid-edge/data-updates`](../../packages/data-updates/README.md)) downloads on a schedule: Google's from its fixed URL, a Prebid Server host's from the key file URL its operator publishes (`https:` only). The updater validates the file (exactly one X25519 key, as above) before publishing it, keeps the previous snapshot when a download fails or the file is invalid, and stores only `{ kid, x }` and the file's `Cache-Control` `max-age` (`no-store` or `no-cache` count as 0), if any. An implementation SHOULD import each key into its crypto library once, when the key is loaded or reloaded, rather than for every value.
 
-A recipient's key is **fresh** for 24 hours after it was fetched (`keyFetched`, or the snapshot's last successful check): Google keeps rotated private keys, so a value encrypted with a key fetched within the last 24 hours still decrypts. Google asks that its key be refreshed at least every 24 hours, and sooner when its `Cache-Control` says so; the updater's schedule is where that's honoured. A key without a fetch time (a `key` setting without `keyFetched`) isn't checked for age.
+The rules follow [Google's guide](https://developers.google.com/publisher-tag/guides/unmasked-ip/publisher-provided#encrypt_ip_address), for Google and Prebid Server hosts alike: cache the key, refresh it at least every 24 hours, or sooner when `Cache-Control` says so; a value encrypted with a key fetched within the preceding 24 hours keeps decrypting during a rotation, and nothing is promised beyond that. A key's age is the time since it was fetched: `keyFetched`, or the snapshot's last successful check (an unchanged download counts).
 
-- A recipient without a key gets no value, with no error, and the module reports `stale: true`.
-- A recipient whose key is older than 24 hours, or more than 5 minutes ahead of the worker's clock, still gets a value, encrypted with that key, marked `stale: true`; the module reports `stale: true`.
+- **Fresh** until its refresh time: the recorded `max-age`, held to at least 1 minute and at most 24 hours, or 1 hour when there's none. Its values have no `stale` flag.
+- **Stale** past its refresh time, or more than 5 minutes ahead of the worker's clock: still used, its value marked `stale: true`, so a failing updater shows long before values stop.
+- **Expired** more than 24 hours after it was fetched: **no value** for that recipient.
+- **Missing** (no key setting and no snapshot): no value, with no error.
+
+Stale, expired and missing keys all make the module report `stale: true`. A `key` setting without `keyFetched` has no age: it's always fresh. Such a static key stops working with Google once Google rotates it, so it suits tests, or deployments that replace it, with its fetch time, at least daily.
 
 ## Encryption
 
@@ -38,7 +43,7 @@ For each recipient with a key: HPKE ([RFC 9180](https://www.rfc-editor.org/rfc/r
 
 ## Output
 
-`{ "eip": { "google": { "value", "kid"? , "stale"? }, "pbs": { "<host>": { "value", "kid"?, "stale"? } } } }`, with an entry for each recipient that has a key, and nothing else; `kid` when the key has one. The module's report is `ok` when there's at least one value, `empty` otherwise, with `stale: true` as above. Nothing goes into `ortb2`.
+`{ "eip": { "google": { "value", "kid", "stale"? }, "pbs": { "<host>": { "value", "kid", "stale"? } } } }`, with an entry for each recipient that has a usable (fresh or stale) key, and nothing else; `kid` is the key's. The module's report is `ok` when there's at least one value, `empty` otherwise, with `stale: true` as above. Nothing goes into `ortb2`.
 
 It returns **no value for any recipient** (status `empty`) when:
 

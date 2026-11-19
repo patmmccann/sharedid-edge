@@ -70,16 +70,27 @@ export async function generateEphemeralKey(): Promise<EphemeralKey> {
   return { privateKey: pair.privateKey, publicKey: new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey)) };
 }
 
+/** A recipient's X25519 public key: its 32 raw bytes (for the KEM context) and, imported once, its `CryptoKey`. */
+export interface RecipientKey {
+  readonly raw: Bytes;
+  readonly publicKey: CryptoKey;
+}
+
+/** Imports a recipient's 32-byte X25519 public key, once per key rather than once per message. */
+export async function importRecipient(raw: Bytes): Promise<RecipientKey> {
+  if (raw.byteLength !== 32) throw new TypeError('An X25519 public key is 32 bytes');
+  return { raw, publicKey: await crypto.subtle.importKey('raw', raw, X25519, true, []) };
+}
+
 /** DHKEM(X25519, HKDF-SHA256)'s `Encap` with the given ephemeral key: the shared secret and `enc`. */
-export async function encap(recipient: Bytes, ephemeral: EphemeralKey): Promise<{ readonly sharedSecret: Bytes; readonly enc: Bytes }> {
-  if (recipient.byteLength !== 32) throw new TypeError('An X25519 public key is 32 bytes');
-  const publicKey = await crypto.subtle.importKey('raw', recipient, X25519, true, []);
-  const dh = new Uint8Array(await crypto.subtle.deriveBits({ name: 'X25519', public: publicKey }, ephemeral.privateKey, 256));
+export async function encap(to: Bytes | RecipientKey, ephemeral: EphemeralKey): Promise<{ readonly sharedSecret: Bytes; readonly enc: Bytes }> {
+  const recipient = to instanceof Uint8Array ? await importRecipient(to) : to;
+  const dh = new Uint8Array(await crypto.subtle.deriveBits({ name: 'X25519', public: recipient.publicKey }, ephemeral.privateKey, 256));
   // RFC 9180 7.1.4: an all-zero X25519 output (a small-order public key) must abort.
   if (dh.every(byte => byte === 0)) throw new TypeError('Invalid X25519 public key');
   const enc = ephemeral.publicKey;
   const prk = await labeledExtract(KEM_SUITE, EMPTY, 'eae_prk', dh);
-  return { sharedSecret: await labeledExpand(KEM_SUITE, prk, 'shared_secret', concat(enc, recipient), SECRET_BYTES), enc };
+  return { sharedSecret: await labeledExpand(KEM_SUITE, prk, 'shared_secret', concat(enc, recipient.raw), SECRET_BYTES), enc };
 }
 
 /** `key_schedule_context` for mode 0: the mode, then the hashes of the (empty) PSK ID and of `info`. */
@@ -109,10 +120,11 @@ export interface SealOptions {
 }
 
 /**
- * Single-shot HPKE base-mode seal to an X25519 public key (32 raw bytes): `enc` (32 bytes) followed by the AES-256-GCM
- * ciphertext and its 16-byte tag. The first message of a context uses the base nonce unchanged (sequence number 0).
+ * Single-shot HPKE base-mode seal to an X25519 public key (32 raw bytes, or imported with `importRecipient`): `enc`
+ * (32 bytes) followed by the AES-256-GCM ciphertext and its 16-byte tag. The first message of a context uses the base
+ * nonce unchanged (sequence number 0).
  */
-export async function seal(recipient: Bytes, plaintext: Bytes, options: SealOptions = {}): Promise<Bytes> {
+export async function seal(recipient: Bytes | RecipientKey, plaintext: Bytes, options: SealOptions = {}): Promise<Bytes> {
   const { sharedSecret, enc } = await encap(recipient, options.ephemeral ?? await generateEphemeralKey());
   const { key, baseNonce } = await keySchedule(sharedSecret, options.info ?? EMPTY);
   const aesKey = await crypto.subtle.importKey('raw', key, { name: 'AES-GCM' }, false, ['encrypt']);
