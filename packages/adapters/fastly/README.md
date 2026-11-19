@@ -232,10 +232,11 @@ With `SID_MODULES=ip,geo`, `/_sid/v1` shows the client IP and location the servi
 
 ## The Compute runtime
 
-The SDK runs the bundle in SpiderMonkey, compiled to WebAssembly, not in V8. Core and the built-in modules need only what it provides: `Request`, `Response`, `Headers` with `getSetCookie()` (every `Set-Cookie` is sent as its own header), `URL`, `TextEncoder`, `atob`/`btoa`, `crypto.randomUUID`, `crypto.subtle` HMAC-SHA-256 (for `ec`), and `setTimeout`, which core's module time limit (`SID_MODULE_TIMEOUT_MS`) uses. Two gaps, neither of which matters today:
+The SDK runs the bundle in SpiderMonkey, compiled to WebAssembly, not in V8. Core and the built-in modules need only what it provides: `Request`, `Response`, `Headers` with `getSetCookie()` (every `Set-Cookie` is sent as its own header), `URL`, `TextEncoder`, `atob`/`btoa`, `crypto.randomUUID`, `crypto.subtle` HMAC-SHA-256 (for `ec`), and `setTimeout`, which core's module time limit (`SID_MODULE_TIMEOUT_MS`) uses. Three gaps; only the last matters, and only to one opt-in module:
 
 - **No `Intl`.** The `geo` module's `utcoffset` uses it, inside a `try`, and Fastly has no IANA time zone anyway. If core or a module starts depending on `Intl`, the Fastly conformance run fails.
 - **No `AbortController` or `AbortSignal`.** Nothing here uses them.
+- **No X25519 or AES-GCM in `crypto.subtle`.** Its [`deriveBits`](https://js-compute-reference-docs.edgecompute.app/docs/globals/SubtleCrypto/prototype/deriveBits) supports PBKDF2 only and [`encrypt`](https://js-compute-reference-docs.edgecompute.app/docs/globals/SubtleCrypto/prototype/encrypt) AES-CBC only, so the opt-in [`encrypted-ip`](../../modules/encrypted-ip/README.md#runtimes) module (HPKE) can't run on Compute: it reports `error` and returns nothing, and the conformance target lists its encrypting cases as known limitations.
 
 **CPU time.** Fastly allows 50 ms of CPU per request. Measured in Viceroy with `vCpuTime()` (`fastly:compute`), on the Bowser build with every built-in module on (`ip`, `geo`, `reflect`, `bot`, `ua` with Bowser, `clickid`) and a Safari `User-Agent`: 7 to 9 ms for `/_sid/v1` and 2 to 3 ms for `/_sid/sync`, plus 2 to 4 ms before the handler runs; that includes reading the stores and building the handler, which a fresh instance does on every request. These are a laptop's numbers in the local runtime, not Fastly's, but far from the limit.
 

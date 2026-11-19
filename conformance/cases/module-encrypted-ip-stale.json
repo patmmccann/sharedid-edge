@@ -1,0 +1,56 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The encrypted-ip module (opt-in build) with keys fetched at different times (keyFetched): Google's on 2026-11-01 and pbs-b's on 2026-11-02, before these cases were added, so older than 24 hours; pbs-a's without a time. The old keys still encrypt (Google keeps rotated private keys; GPT falls back to the request's own address when it can't decrypt); each of their values is marked stale: true, the other isn't, and the module reports stale. SID_MODULE_TIMEOUT_MS is 1000 so that a busy test machine's first Web Crypto call (about 15 ms cold on a laptop, against the default limit of 50) can't time out. Requests carry the client IP as both X-Forwarded-For (with SID_TRUST_PROXY) and CF-Connecting-IP (the Workers runtime). Every value is random (a fresh ephemeral key each time), so cases check its shape: unpadded base64url whose length gives 32 (enc) + the address's length + 16 (the AES-GCM tag) bytes: 192.0.2.77 is 10 characters, 58 bytes, 78 base64url characters; 2001:db8::abcd:0:0:1 (RFC 5952 form) is 20, 68 bytes, 91 characters. The keys are the recipient public keys (pkRm) of RFC 9180's published test vectors, for tests only: their private keys are public too. Prebid Server hosts here are single-label names (pbs-a, pbs-b) so that the dotted paths of jsonPatterns and jsonAbsent can name them.",
+  "build": [
+    "vendor-modules"
+  ],
+  "config": {
+    "SID_MODULES": "encrypted-ip",
+    "SID_MODULE_CONFIG": "{\"encrypted-ip\":{\"google\":{\"key\":{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"X25519\",\"kid\":\"google-test\",\"x\":\"Qw9LmFlmUUWmsbonQCRIe9ZvA6LdV313U8aNfX0AwAw\"}]},\"keyFetched\":\"2026-11-01T00:00:00Z\"},\"pbs\":{\"pbs-a\":{\"key\":{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"X25519\",\"kid\":\"pbs-test\",\"x\":\"OUjP4K0d22ldeA5ZB3GV2mxWUGsCcyl5SrAryoCBXE0\"}]}},\"pbs-b\":{\"key\":{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"X25519\",\"kid\":\"pbs-test\",\"x\":\"OUjP4K0d22ldeA5ZB3GV2mxWUGsCcyl5SrAryoCBXE0\"}]},\"keyFetched\":\"2026-11-02T00:00:00Z\"}}}}",
+    "SID_TRUST_PROXY": "true",
+    "SID_MODULE_TIMEOUT_MS": "1000"
+  },
+  "cases": [
+    {
+      "name": "marks only the values whose key is over 24 hours old as stale, and still encrypts with them",
+      "request": {
+        "path": "/_sid/v1",
+        "headers": {
+          "x-forwarded-for": "192.0.2.77",
+          "cf-connecting-ip": "192.0.2.77"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "eip": {
+            "google": {
+              "stale": true
+            },
+            "pbs": {
+              "pbs-b": {
+                "stale": true
+              }
+            }
+          },
+          "ext": {
+            "modules": {
+              "encrypted-ip": {
+                "status": "ok",
+                "stale": true
+              }
+            }
+          }
+        },
+        "jsonPatterns": {
+          "eip.google.value": "^[A-Za-z0-9_-]{78}$",
+          "eip.pbs.pbs-a.value": "^[A-Za-z0-9_-]{78}$",
+          "eip.pbs.pbs-b.value": "^[A-Za-z0-9_-]{78}$"
+        },
+        "jsonAbsent": [
+          "eip.pbs.pbs-a.stale"
+        ]
+      }
+    }
+  ]
+}

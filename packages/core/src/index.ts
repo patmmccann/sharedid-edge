@@ -69,4 +69,4 @@ export {
   type TrafficReport,
   type TrafficSignal
 } from './traffic.js';
-export type { Eid, ModuleReport, PayloadV1, PlatformInfo } from './types.js';
+export type { EncryptedIp, EncryptedIpValue, Eid, ModuleReport, PayloadV1, PlatformInfo } from './types.js';

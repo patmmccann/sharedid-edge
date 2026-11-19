@@ -30,6 +30,11 @@ export interface Case {
     readonly jsonIncludes?: unknown;
     /** Dot-separated paths of object keys the JSON body must not have, e.g. `ortb2.device.geo.lat`. */
     readonly jsonAbsent?: readonly string[];
+    /**
+     * Dot-separated paths to strings in the JSON body, each with a regular expression the whole string must match, for
+     * values that differ on every request (a ciphertext), e.g. `{ "gpt.ipAddress": "^[A-Za-z0-9_-]{76}$" }`.
+     */
+    readonly jsonPatterns?: Readonly<Record<string, string>>;
     readonly cookies?: readonly ExpectedCookie[];
     /** No other cookies than those listed may be set. */
     readonly onlyListedCookies?: boolean;
@@ -104,6 +109,7 @@ const EXPECT_FIELDS: Readonly<Record<string, Check>> = {
   json: isAnything,
   jsonIncludes: isAnything,
   jsonAbsent: isStringArray,
+  jsonPatterns: isStringRecord,
   cookies: v => Array.isArray(v),
   onlyListedCookies: isBoolean,
   noCookies: isBoolean

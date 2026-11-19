@@ -1,0 +1,47 @@
+{
+  "name": "@sharedid-edge/module-encrypted-ip",
+  "version": "0.1.0",
+  "description": "SharedID Edge module (opt-in): the client's IP address encrypted (HPKE) to Google's key for Google Publisher Tag's publisher-provided IP, and to Prebid Server hosts' keys",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.tsbuildinfo"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "attw": "attw --pack . --profile esm-only --quiet || attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "@sharedid-edge/core": "0.1.0",
+    "@sharedid-edge/module-ip": "0.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patmmccann/sharedid-edge.git",
+    "directory": "packages/modules/encrypted-ip"
+  },
+  "sharedidEdge": {
+    "kind": "module",
+    "name": "encrypted-ip",
+    "title": "the client IP, encrypted for Google Publisher Tag and Prebid Server",
+    "summary": "`eip`: the visitor's IP address encrypted (HPKE) to each configured recipient's public key: `google` for `googletag.setConfig({ ipAddress })`, and `pbs` by Prebid Server host (experimental); nothing when consent rules it out. Not an ID, and readable only by its recipient",
+    "export": "encryptedIpModule",
+    "optIn": true,
+    "settings": "`google`, `pbs` (by host): each `key` (unless a scheduled snapshot provides it) and `keyFetched`",
+    "routes": [
+      "v1"
+    ]
+  }
+}

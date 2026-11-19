@@ -169,12 +169,38 @@ With the [`bot` module](../packages/modules/bot/README.md) (`SID_MODULES=bot`), 
 }
 ```
 
+With the opt-in [`encrypted-ip` module](../packages/modules/encrypted-ip/README.md) (`SID_MODULES=encrypted-ip`), configured for Google and two Prebid Server hosts (the second host's key fetched two days earlier), and an IPv4 visitor, the address is returned **encrypted**, once per recipient, in `eip`, never in `ortb2`. Real output:
+
+```json
+{
+  "v": 1,
+  "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+  "eids": [
+    { "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }
+  ],
+  "eip": {
+    "google": { "value": "_akzTBlVz4LP2tqx4KnsOJ-7h684zRfGjrzIBE7sow-N_eaRN4vyI2pGN8DB6Y4WyRaLYECvhJtTQg", "kid": "ypXWcw" },
+    "pbs": {
+      "pbs.example.com": { "value": "BHSfq6suB9Drbec7UQHG0CqELgYS6HZBNdX9k4YcdkV8Pl7hLiuU9dj-6pd6BDFf1prYVSNPtKSIWQ", "kid": "2026-11" },
+      "pbs.example.org:8443": { "value": "QF6xmKJozIhzb0QiecpZ_KXBzMAlDCjOwClzNqYoZiNggvvEGQInplfjwxsj6aBLsyU9H0p0EXJdKA", "stale": true }
+    }
+  },
+  "ext": { "modules": { "encrypted-ip": { "ms": 1, "status": "ok", "stale": true } } }
+}
+```
+
+- `eip.google.value` is Google Publisher Tag's [publisher-provided IP address](https://developers.google.com/publisher-tag/guides/unmasked-ip/publisher-provided#encrypt_ip_address), encrypted to [Google's key](https://www.gstatic.com/real-ip/ip_enc_key.json): pass it to `googletag.setConfig({ ipAddress })` ([On the page](prebid.md#encrypted-client-ip-google-publisher-tag-and-prebid-server)).
+- `eip.pbs` is keyed by Prebid Server host (the host of the `s2sConfig` endpoint, lower case, with `:port` when it isn't the default), each value encrypted to that host's own key, for Prebid Server's proposed `device.ext.prebid.eip`. **Experimental:** it follows [prebid/prebid-server#5106](https://github.com/prebid/prebid-server/issues/5106) and [prebid/Prebid.js#16281](https://github.com/prebid/Prebid.js/issues/16281), neither shipped yet, and may change.
+- Each entry is `{ value, kid?, stale? }`: the value is HPKE ([RFC 9180](https://www.rfc-editor.org/rfc/rfc9180)) as unpadded base64url, 67 to 124 characters, different on every request; `kid` names the key it was encrypted to; `stale: true` marks a key over 24 hours old. A recipient without a key is left out, and the module's report says `stale`.
+- With GPC, COPPA, a US privacy opt-out, the opt-out cookie, a consent provider's refusal, or under GDPR without opt-in to TCF Special Feature 1, there's no `eip` at all, as for the `ip` module's plain address.
+
 | Field | |
 | --- | --- |
 | `v` | Payload version, `1`. |
 | `sharedid` | The SharedID. Absent when storage isn't allowed (opt-out, GPC, COPPA, consent), or for a bot with `SID_SKIP_BOTS`. |
 | `eids` | OpenRTB `user.ext.eids`: the SharedID as `pubcid.org` (`atype` 1), then any IDs from modules. `[]` when there are none. |
 | `ortb2` | An OpenRTB 2.x first-party data fragment, merged from every module's output in `SID_MODULES` order, plus the traffic signal in `device.ext.traffic` (which the worker writes from every module's report and, on Cloudflare with Bot Management, the platform's verdict). Absent when there's nothing to return. Pass it to `pbjs.mergeConfig({ ortb2 })`. |
+| `eip` | The client IP encrypted per recipient, from the [`encrypted-ip`](../packages/modules/encrypted-ip/README.md) module: `google`, and `pbs` keyed by Prebid Server host (experimental), each `{ value, kid?, stale? }`. Absent when there's none. Pass each value to its recipient only, never in `ortb2`. |
 | `ext.modules` | One entry per module in `SID_MODULES`: `ms` (time taken) and `status`: `ok` (it returned data), `empty` (nothing to add, for example consent rules out the IP), `skipped` (with a `reason`, such as `not installed` for a name the worker doesn't have), `error` or `timeout`. An optional `stale: true` flag marks missing or old reference data; usable last-good output may still contribute. Error details are never returned. See [Scheduled data updates](data-updates.md). |
 
 To read `/v1` from a page on another origin, list that origin in `SID_ALLOWED_ORIGINS` and fetch with `credentials: 'include'`. The response then carries `Access-Control-Allow-Origin: <origin>` and `Access-Control-Allow-Credentials: true`; it never carries `*`.

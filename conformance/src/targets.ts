@@ -181,8 +181,32 @@ function gdprByLocation(reason: string): [string, string][] {
 const VIEWER_NO_LOCATION = 'no location in a viewer-request function: CloudFront adds its location headers after the viewer request';
 const VIEWER_NO_GEO = "the geo module needs the visitor's location, which a viewer-request function doesn't have: the adapter refuses it";
 
+/**
+ * The encrypted-ip cases that encrypt (every other one sends nothing, or fails before encrypting), which a runtime
+ * without Web Crypto X25519 can't pass (the module reports `error`), nor a target whose client IP the suite can't set
+ * (the value's length follows from the address).
+ */
+function encryptedIpCases(reason: string): [string, string][] {
+  return [
+    ...limited('module-encrypted-ip.json', reason, [
+      'encrypts an IPv4 address for Google as eip.google, outside ortb2',
+      'encrypts an IPv6 address, in RFC 5952 form',
+      'encrypts the address with opt-in to precise geolocation'
+    ]),
+    ...limited('module-encrypted-ip-pbs.json', reason, [
+      'encrypts an IPv4 address for the Prebid Server host, keyed by its name',
+      'encrypts an IPv6 address for the Prebid Server host'
+    ]),
+    ...limited('module-encrypted-ip-both.json', reason, ['encrypts for every recipient separately']),
+    ...limited('module-encrypted-ip-missing-key.json', reason, ['leaves out the recipients without a key, and reports stale']),
+    ['module-encrypted-ip-stale.json', reason]
+  ];
+}
+const NO_X25519 = "the runtime's Web Crypto has no X25519, which HPKE needs";
+
 const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, string>>>>> = {
   'lambda-aws-emulator': Object.fromEntries([
+    ...encryptedIpCases(CLIENT_IP),
     ...gdprByLocation(NO_LOCATION),
     ...limited('module-geo.json', NO_LOCATION, [
       'returns the location as device.geo, precise fields included',
@@ -275,7 +299,8 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
   vercel: { 'trusted-upstream.json': NO_UPSTREAM },
   azure: { 'trusted-upstream.json': NO_UPSTREAM },
   gcp: { 'trusted-upstream.json': NO_UPSTREAM },
-  akamai: { 'trusted-upstream.json': NO_UPSTREAM }
+  akamai: Object.fromEntries([['trusted-upstream.json', NO_UPSTREAM], ...encryptedIpCases(NO_X25519)]),
+  fastly: Object.fromEntries(encryptedIpCases(NO_X25519))
 };
 
 /** The environment without SID_* settings, so only the case file's reach a target that's given the environment. */

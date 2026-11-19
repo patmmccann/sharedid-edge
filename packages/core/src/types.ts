@@ -49,10 +49,33 @@ export interface PayloadV1 {
   readonly eids: readonly Eid[];
   /** An OpenRTB 2.x fragment for the auction's first-party data, merged from the modules' output. */
   readonly ortb2?: Readonly<Record<string, unknown>>;
+  /**
+   * The client's IP address encrypted for each configured recipient (Google Publisher Tag, Prebid Server hosts), kept
+   * out of `ortb2` so that the page passes each value to its recipient alone rather than to every bidder.
+   */
+  readonly eip?: EncryptedIp;
   readonly ext: {
     /** Per module: how long it took, and whether it was skipped or failed. */
     readonly modules: Readonly<Record<string, ModuleReport>>;
   };
+}
+
+/** One recipient's encrypted IP address: HPKE to its public key, as unpadded base64url of 67 to 124 characters. */
+export interface EncryptedIpValue {
+  readonly value: string;
+  /** The `kid` of the recipient's key it was encrypted to, when the key has one. */
+  readonly kid?: string;
+  /** The key is older than its maximum age (or ahead of the clock); the value may still decrypt. */
+  readonly stale?: true;
+}
+
+/**
+ * The `eip` payload field: `google` for Google Publisher Tag's `googletag.setConfig({ ipAddress })`, and
+ * `pbs` keyed by each Prebid Server host's name (host, or host:port, lower case).
+ */
+export interface EncryptedIp {
+  readonly google?: EncryptedIpValue;
+  readonly pbs?: Readonly<Record<string, EncryptedIpValue>>;
 }
 
 export interface ModuleReport {

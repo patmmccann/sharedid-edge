@@ -2,7 +2,7 @@
 
 Use [@sharedid-edge/data-updates](../packages/data-updates/README.md) to refresh shared reference data separately from visitor requests. Existing build-time DB-IP and MaxMind modules remain available; a scheduled snapshot module is an opt-in replacement, not an additional module with the same name.
 
-The concrete sources here are DB-IP Lite country and MaxMind GeoLite2 Country. Other lists use the same update interface with their own validator and in-memory lookup. The `ua` module's compiled crawler detector is unchanged.
+The concrete sources here are DB-IP Lite country, MaxMind GeoLite2 Country, and the public keys the [`encrypted-ip`](#encrypted-ip-keys) module encrypts to. Other lists use the same update interface with their own validator and in-memory lookup. The `ua` module's compiled crawler detector is unchanged.
 
 ## Shared source configuration
 
@@ -223,6 +223,40 @@ createNodeServer({
 ```
 
 Set `SID_COOKIE_DOMAIN` and `SID_MODULES=geo,dbip`. Keep the usual proxy/origin configuration from the [Node guide](../packages/adapters/node/README.md); add its `trustProxy`, `publicOrigin` and other options when your deployment needs them. Files are mode 0600 and created directories mode 0700. If updater and server use different users, give the server read access through an appropriate service group or ACL. Only JSON snapshots cross the process boundary; the command never changes the running server's JavaScript.
+
+## Encrypted IP keys
+
+The [`encrypted-ip` module](../packages/modules/encrypted-ip/README.md) encrypts the client IP to each recipient's public key. Deliver those keys with the same updater, rather than in settings, so they follow the recipients' rotations:
+
+```js
+import { googleIpKeySource, pbsIpKeySource } from '@sharedid-edge/data-updates/encrypted-ip';
+
+export default [
+  googleIpKeySource(),                                                       // source "google-ip-key"
+  pbsIpKeySource({ name: 'pbs-example', url: 'https://pbs.example.com/ip_enc_key.json' })   // experimental
+];
+```
+
+`googleIpKeySource()` downloads [Google's key file](https://www.gstatic.com/real-ip/ip_enc_key.json) for Google Publisher Tag's [publisher-provided IP](https://developers.google.com/publisher-tag/guides/unmasked-ip/publisher-provided#encrypt_ip_address); `pbsIpKeySource` a Prebid Server host's, from the HTTPS URL its operator publishes ([prebid/prebid-server#5106](https://github.com/prebid/prebid-server/issues/5106), a proposal). They send no credentials and no visitor data, keep the file's first X25519 key (the current one), refuse anything else (another key type, an `x` that isn't 32 bytes, a private key, more than 16 KB), and publish only `{ kid, x }`.
+
+**Schedule them often.** Google asks that its key be refreshed at least every 24 hours, and sooner when its `Cache-Control` says so: `max-age=3000` (50 minutes) when this was written. Give these sources their own job, every 30 minutes (Cloudflare cron `*/30 * * * *`, EventBridge `rate(30 minutes)`, a systemd timer `OnCalendar=*:0/30`), rather than the databases' 12-hour one. Each run is one small download; an unchanged key only updates the manifest's `checkedAt`.
+
+In the request worker, load each key with a `SnapshotCache` and give it to the module for the recipients its settings list:
+
+```js
+import { SnapshotCache } from '@sharedid-edge/data-updates';
+import { r2Store } from '@sharedid-edge/data-updates/cloudflare';
+import { validateIpKey } from '@sharedid-edge/data-updates/encrypted-ip';
+import { createEncryptedIpModule } from '@sharedid-edge/module-encrypted-ip';
+
+const google = new SnapshotCache(r2Store(env.SID_DATA), 'google-ip-key', validateIpKey);
+const pbs = new SnapshotCache(r2Store(env.SID_DATA), 'pbs-example', validateIpKey);
+const module = createEncryptedIpModule({ keys: { google: () => google.current, pbs: { 'pbs.example.com': () => pbs.current } } });
+// Reload the caches as in the recipes above (first use, then background work), and set
+// SID_MODULES=encrypted-ip and SID_MODULE_CONFIG={"encrypted-ip":{"google":{},"pbs":{"pbs.example.com":{}}}}.
+```
+
+A key is fresh for 24 hours after the snapshot's last successful check. Older, the module keeps encrypting with it and marks that recipient's value `stale: true` (Google keeps rotated private keys for 24 hours; if it can't decrypt a value, GPT uses the request's own address). With no snapshot yet, that recipient gets no value and the module reports `stale`.
 
 ## Freshness, failures and licences
 
