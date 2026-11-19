@@ -207,6 +207,8 @@ const NO_X25519 = "the runtime's Web Crypto has no X25519, which HPKE needs";
 const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, string>>>>> = {
   'lambda-aws-emulator': Object.fromEntries([
     ...encryptedIpCases(CLIENT_IP),
+    // the module is off here, but the case shows the ip module's ortb2.device.ip for its fixture client IP
+    ...limited('module-encrypted-ip-off.json', CLIENT_IP, ['adds no eip field unless listed in SID_MODULES']),
     ...gdprByLocation(NO_LOCATION),
     ...limited('module-geo.json', NO_LOCATION, [
       'returns the location as device.geo, precise fields included',
