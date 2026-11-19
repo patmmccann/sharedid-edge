@@ -71,6 +71,12 @@ The Snippet ships its settings already validated. The build checks them as the W
 
 The User-Agent parser is part of the size: the `ua` module bundles only `isbot` by default, and Bowser (the Worker's [Bowser build](#build)) only when `SID_MODULE_CONFIG` sets `{"ua":{"parser":"bowser"}}`. The build prints which one it bundled. You don't need to work this out: the build prints the size of each part, and when the result is over 32 KB it writes nothing, lists the modules by size, and names a set that fits.
 
+#### Leaving TCF out
+
+Core's TCF decoder, which reads TC strings, is in every build by default and takes about 1.6 KB of a Snippet (0.6 KB gzipped): 1,649 bytes minified with `snippet.config.example.json`. If the site never needs TCF (it serves no visitors where GDPR applies, or decides consent another way, such as the [`cmp`](../../modules/cmp/README.md) module), `npm run build:snippet -w @sharedid-edge/cloudflare -- --no-tcf` leaves it out. Every build prints the decoder's size, and what `--no-tcf` saves or would save; an over-the-limit build suggests it.
+
+Without the decoder a TC string can't be read, so it's treated as an unreadable one: a request that carries one (from `gdpr_consent` or the `euconsent-v2` cookie) gets no SharedID and loses an existing one, whatever `gdpr` says, with `X-SharedID-Status: denied: tcf: TC string not decoded (build without TCF)`. It never allows more than the default build. If your CMP writes `euconsent-v2`, don't use `--no-tcf`. See [Consent](../../../docs/consent.md).
+
 ### The 5 ms CPU limit
 
 SharedID Edge is far under it. The handler does no I/O: it reads cookies and headers, maybe mints a UUID, and writes cookies. Measured on a laptop, with every module that fits a Snippet:

@@ -13,8 +13,8 @@ import { join } from 'node:path';
 import type { LambdaEventV2, LambdaHandler } from '@sharedid-edge/aws-lambda';
 import { CLOUDFRONT_LOCATION_HEADERS, caseClientIp, caseLocation, emulatorPort, loadBundleExport, readBody, serve, trustProxyFromEnv } from './emulator.js';
 
-// deploy, deploy-bowser (Bowser in the ua module) or deploy-vendor (the vendor modules added); anything else is deploy.
-const BUNDLE_DIR = ['deploy-bowser', 'deploy-vendor'].find(dir => dir === process.env['CONFORMANCE_LAMBDA_BUNDLE']) ?? 'deploy';
+// deploy, deploy-bowser (Bowser in the ua module), deploy-vendor (the vendor modules added) or deploy-no-tcf (no TCF decoder); anything else is deploy.
+const BUNDLE_DIR = ['deploy-bowser', 'deploy-vendor', 'deploy-no-tcf'].find(dir => dir === process.env['CONFORMANCE_LAMBDA_BUNDLE']) ?? 'deploy';
 const BUNDLE = join(import.meta.dirname, '..', '..', 'packages/adapters/aws-lambda', BUNDLE_DIR, 'lambda.mjs');
 
 async function loadHandler(): Promise<LambdaHandler> {

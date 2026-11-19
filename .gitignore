@@ -29,3 +29,4 @@ packages/adapters/fastly/pkg/
 packages/adapters/fastly/bin/
 packages/adapters/aws-lambda/live/.out/
 packages/adapters/cloudflare/live/.out/
+packages/adapters/*/deploy-no-tcf/

@@ -1,0 +1,41 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "A build without the TCF decoder (--no-tcf, for deployments that never need TCF). A TC string isn't decoded, so it denies storage exactly as an unreadable one does, whatever gdpr says, with its own reason, and deletes existing ID cookies: a TC string that would allow storage in the default build never does here. Where GDPR applies from the location (Germany here) without a TC string, storage is denied as in every build; elsewhere without a TC string the ID is set. TC string: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA has publisher consent for purposes 1-2 (the default build sets the ID with it; see consent.json). Requests describe the location with Cloudflare's visitor location headers, as in consent-eu-location.json.",
+  "config": { "SID_TRUST_PROXY": "true" },
+  "build": ["no-tcf"],
+  "cases": [
+    {
+      "name": "GDPR applies (gdpr=1): a TC string with publisher consent sets nothing",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA" },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "denied: tcf: TC string not decoded (build without TCF)" }, "noCookies": true }
+    },
+    {
+      "name": "GDPR applies from the location: the CMP's euconsent-v2 cookie sets nothing and existing ID cookies are deleted",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d",
+        "headers": { "cf-ipcountry": "DE", "cookie": "euconsent-v2=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA; _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" }
+      },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-status": "denied: tcf: TC string not decoded (build without TCF)" },
+        "cookies": [{ "name": "_pubcid", "value": "", "maxAge": 0 }, { "name": "_pubcid_sv", "value": "", "maxAge": 0 }],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "a TC string denies even with gdpr=0, as an unreadable one does",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&gdpr=0&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.eAAAAAAAAA" },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "denied: tcf: TC string not decoded (build without TCF)" }, "noCookies": true }
+    },
+    {
+      "name": "GDPR applies from the location without a TC string: nothing is set, as in every build",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "cf-ipcountry": "DE" } },
+      "expect": { "status": 200, "headers": { "x-sharedid-status": "denied: tcf: GDPR applies and there is no TC string" }, "noCookies": true }
+    },
+    {
+      "name": "outside the GDPR countries without a TC string, the ID is set",
+      "request": { "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d", "headers": { "cf-ipcountry": "US" } },
+      "expect": { "status": 200, "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }, { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }] }
+    }
+  ]
+}

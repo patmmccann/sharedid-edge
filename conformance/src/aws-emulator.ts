@@ -3,7 +3,7 @@
 // AWS-built runtime and function URL, where lambda-emulator.ts is this project's own stand-in for both.
 //
 // Started by targets.ts with the case file's configuration as environment variables, plus PORT, SID_PUBLIC_ORIGIN
-// and CONFORMANCE_LAMBDA_BUNDLE (deploy, deploy-bowser or deploy-vendor). It needs an emulator already running on
+// and CONFORMANCE_LAMBDA_BUNDLE (deploy, deploy-bowser, deploy-vendor or deploy-no-tcf). It needs an emulator already running on
 // 127.0.0.1 (CONFORMANCE_AWS_EMULATOR_PORT, default 9297), and the AWS CLI. It:
 //
 // 1. zips the bundle's lambda.mjs, unchanged, with aws-emulator-runtime.ts (see there for why) preloaded through
@@ -28,8 +28,8 @@ import { transform } from 'esbuild';
 import { emulatorPort, readBody, serve } from './emulator.js';
 
 const ROOT = join(import.meta.dirname, '..', '..');
-// deploy, deploy-bowser (Bowser in the ua module) or deploy-vendor (the vendor modules added); anything else is deploy.
-const BUNDLE_DIR = ['deploy-bowser', 'deploy-vendor'].find(dir => dir === process.env['CONFORMANCE_LAMBDA_BUNDLE']) ?? 'deploy';
+// deploy, deploy-bowser (Bowser in the ua module), deploy-vendor (the vendor modules added) or deploy-no-tcf (no TCF decoder); anything else is deploy.
+const BUNDLE_DIR = ['deploy-bowser', 'deploy-vendor', 'deploy-no-tcf'].find(dir => dir === process.env['CONFORMANCE_LAMBDA_BUNDLE']) ?? 'deploy';
 const EMULATOR_PORT = process.env['CONFORMANCE_AWS_EMULATOR_PORT'] ?? '9297';
 const EMULATOR_FILES = join(homedir(), '.aws', 'emulator', EMULATOR_PORT);
 const ENDPOINT = new URL(`https://127.0.0.1:${EMULATOR_PORT}`);

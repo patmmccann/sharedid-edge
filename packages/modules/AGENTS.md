@@ -36,7 +36,7 @@ export const example = defineModule({
 
 ## Consent providers
 
-A module can read a consent signal core doesn't (a CMP's cookie, Google Consent Mode, a TCF decoder outside core) with a `consent(context)` hook; spec: [Consent providers](../../spec/SPEC.md#consent-providers).
+A module can read a consent signal core doesn't (a CMP's cookie, Google Consent Mode; TCF stays in core, and builds that never need it leave its decoder out with `--no-tcf`) with a `consent(context)` hook; spec: [Consent providers](../../spec/SPEC.md#consent-providers).
 
 ```ts
 consent({ cookies, config }) {   // synchronous; the request, URL, cookies, platform, core's consent signals, config

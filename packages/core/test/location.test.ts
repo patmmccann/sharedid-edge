@@ -73,6 +73,15 @@ describe('preciseLocationDenial', () => {
     expect(preciseLocationDenial(consent({ gdprApplies: false, usPrivacy: '1YNN' }))).toBeUndefined();
     expect(preciseLocationDenial(consent({ gdprApplies: true, tcString: 'x', tcf: tcf([1]) }))).toBeUndefined();
   });
+  it('denies it for a TC string in a build without the TCF decoder (NO_TCF)', () => {
+    const flags = globalThis as { __SID_NO_TCF__?: boolean };
+    flags.__SID_NO_TCF__ = true;
+    try {
+      expect(preciseLocationDenial(consent({ gdprApplies: false, tcString: 'x' }))).toBe('tcf: TC string not decoded (build without TCF)');
+    } finally {
+      delete flags.__SID_NO_TCF__;
+    }
+  });
   it('denies it with GPC, COPPA or a US privacy opt-out', () => {
     expect(preciseLocationDenial(consent({ gpc: true }))).toBe('gpc');
     expect(preciseLocationDenial(consent({ coppa: true }))).toBe('coppa');

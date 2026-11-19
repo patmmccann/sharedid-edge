@@ -1,7 +1,11 @@
 // Builds SharedID Edge as a Cloudflare Snippet: one file, with the configuration baked in, checked against the
 // Snippet size limit. Run `npm run build` at the repository root first (core and the modules resolve to their dist/).
 //
-//   npm run build:snippet -w @sharedid-edge/cloudflare -- [--config snippet.config.json] [--out dist-snippet/snippet.js]
+//   npm run build:snippet -w @sharedid-edge/cloudflare -- [--config snippet.config.json] [--out dist-snippet/snippet.js] [--no-tcf]
+//
+// --no-tcf leaves core's TCF decoder out (NO_TCF in core's consent.ts): a TC string then denies storage and precise
+// location, as an unreadable one does, whatever `gdpr` says. Only for sites that never need TCF. The build reports the
+// bytes it saves (or would save).
 //
 // The configuration file is a JSON object of SID_* settings, as the Worker's vars (SID_MODULE_CONFIG may be an object).
 // It's validated as a deployment validates it, SID_COOKIE_DOMAIN included, and the Snippet ships it validated, without
@@ -58,7 +62,8 @@ const TRADE_OFFS = `Snippet or Worker? The Snippet's trade-offs (see README.md, 
   - Operations: no versions, rollbacks or logs for Snippets; deploy with the dashboard, the API or Terraform. The Worker
     has wrangler deploy, versions, rollbacks and logs.`;
 
-const { values: args } = parseArgs({ options: { config: { type: 'string', default: 'snippet.config.json' }, out: { type: 'string', default: 'dist-snippet/snippet.js' } } });
+const { values: args } = parseArgs({ options: { config: { type: 'string', default: 'snippet.config.json' }, out: { type: 'string', default: 'dist-snippet/snippet.js' }, 'no-tcf': { type: 'boolean', default: false } } });
+const noTcf = args['no-tcf'];
 const configFile = resolve(ROOT, args.config);
 const outfile = resolve(ROOT, args.out);
 /** The snippet rule expression, written next to the Snippet. */
@@ -156,7 +161,8 @@ const unused = {
 };
 // Without a module that has a consent hook, core's code that runs them compiles away (NO_CONSENT_HOOKS in core's modules.ts).
 // A Snippet has no bindings, so no rate limiter: core's check for one compiles away too (NO_RATE_LIMIT in handler.ts).
-const define = { [PREVALIDATED]: 'true', 'globalThis.__SID_NO_CONSENT_HOOKS__': String(!consentHooks), 'globalThis.__SID_NO_RATE_LIMIT__': 'true', ...Object.fromEntries(Object.entries(unused).map(([name, value]) => [`globalThis.__SID_UNUSED_${name}__`, String(value)])) };
+// With --no-tcf, core's TCF decoder compiles away (NO_TCF in consent.ts).
+const define = { [PREVALIDATED]: 'true', 'globalThis.__SID_NO_CONSENT_HOOKS__': String(!consentHooks), 'globalThis.__SID_NO_RATE_LIMIT__': 'true', 'globalThis.__SID_NO_TCF__': String(noTcf), ...Object.fromEntries(Object.entries(unused).map(([name, value]) => [`globalThis.__SID_UNUSED_${name}__`, String(value)])) };
 
 /** `value` as a JavaScript expression: JSON, with `undefined` and Maps, which the settings have. */
 function literal(value) {
@@ -187,7 +193,7 @@ export default createSnippet(freeze(${literal(prevalidated)}), [${moduleNames.ma
 if (!/\.m?js$/.test(outfile)) fail(`--out must name a .js or .mjs file, not ${show(outfile)}.`, 2);
 for (const file of [outfile, ruleFile]) rmSync(file, { force: true });
 mkdirSync(dirname(outfile), { recursive: true });
-const result = await build({
+const esbuildOptions = {
   stdin: { contents: entry, resolveDir: ROOT, sourcefile: 'snippet-entry.mjs', loader: 'ts' },
   outfile,
   bundle: true,
@@ -199,10 +205,15 @@ const result = await build({
   legalComments: 'none',
   metafile: true,
   logLevel: 'warning'
-});
+};
+const result = await build(esbuildOptions);
 const bundle = readFileSync(outfile);
 const size = bundle.length;
 const gzipped = gzipSync(bundle).length;
+// The same Snippet with the TCF decoder the other way (in memory), for the bytes --no-tcf saves.
+const [other] = (await build({ ...esbuildOptions, metafile: false, write: false, define: { ...define, 'globalThis.__SID_NO_TCF__': String(!noTcf) } })).outputFiles;
+const tcfBytes = Math.abs(other.contents.length - size);
+const tcfGzipped = Math.abs(gzipSync(other.contents).length - gzipped);
 
 // 3. What takes the space, by package.
 const parts = new Map();
@@ -213,7 +224,7 @@ for (const [path, { bytesInOutput }] of Object.entries(Object.values(result.meta
   const module = /packages\/modules\/([^/]+)\//.exec(p)?.[1];
   const label = dependency !== undefined && !dependency.startsWith('@sharedid-edge/') ? `dependency ${dependency}`
     : module !== undefined ? `module ${module}`
-      : p.includes('packages/core/') ? 'core'
+      : p.includes('packages/core/') ? (p.endsWith('/tcf.js') ? 'core: TCF decoder' : 'core')
         : 'Cloudflare adapter and settings';
   parts.set(label, (parts.get(label) ?? 0) + bytesInOutput);
 }
@@ -222,6 +233,7 @@ const breakdown = [...parts].sort((a, b) => b[1] - a[1]).map(([label, bytes]) =>
 console.log(`\nSharedID Edge Snippet: ${show(outfile)}
   Modules: ${moduleNames.length === 0 ? 'none' : moduleNames.join(', ')}
   User-Agent parser: ${parserLine}
+  TCF decoder: ${noTcf ? `left out (--no-tcf), saving ${kb(tcfBytes)} minified (${kb(tcfGzipped)} gzipped): a TC string denies storage` : `included (--no-tcf would save ${kb(tcfBytes)} minified, ${kb(tcfGzipped)} gzipped, if the site never needs TCF)`}
   Size: ${kb(size)} minified, of the ${kb(SNIPPET_LIMIT)} limit (${kb(gzipped)} gzipped; the check uses the minified size)
   By part (minified, before gzip):
 ${breakdown}`);
@@ -253,6 +265,9 @@ if (size > SNIPPET_LIMIT) {
     ? `  First, use the small parser: remove "parser": "bowser" from ua in SID_MODULE_CONFIG. That drops Bowser (${kb(bowserBytes)});
      ua keeps the bot flag and Client Hints, without parsing the User-Agent.${bowserBytes >= over ? ' That alone fits.' : ''}\n`
     : '';
+  const tcfTip = noTcf ? '' : `  If the site never needs TCF (no visitors where GDPR applies, or consent from another signal), --no-tcf leaves the TCF
+     decoder out and saves ${kb(tcfBytes)}${tcfBytes >= over ? ', which alone fits' : ''}. A TC string then denies storage.
+`;
   const suggestion = saved >= over
     ? `     For example, dropping ${drop.join(' and ')} saves ${kb(saved)}: SID_MODULES "${keep.join(',')}"${keep.length === 0 ? ' (core alone)' : ''} fits.`
     : "     Even core alone is over the limit, which shouldn't happen; please report it.";
@@ -263,7 +278,7 @@ Snippet this size may be refused by Cloudflare. (Measured on the minified file b
 is compressed; gzipped it's ${kb(gzipped)}.)
 
 What you can do:
-${bowserTip}  1. Drop modules from SID_MODULES. Largest first:
+${bowserTip}${tcfTip}  1. Drop modules from SID_MODULES. Largest first:
 ${modules.map(([name, group]) => `     - ${name}: ${kb(group.bytes)}${group.with.length > 0 ? ` (with ${group.with.join(', ')})` : ''}${group.bytes >= over ? ', enough on its own' : ''}`).join('\n')}
 ${suggestion}
   2. Deploy the Worker instead (npm run deploy, configured in wrangler.jsonc), which has no such limit and takes every
