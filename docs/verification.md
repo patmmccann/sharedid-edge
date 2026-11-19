@@ -140,7 +140,7 @@ Modules don't have deployments of their own: these rows say where each has run. 
 | `ua`, `bot` | **1. Live, automated** on AWS | `check-cloudfront` on every AWS live run: Chrome's Client Hints become `device.sua`, and `Accept-Language` arrives, so `bot` doesn't flag a likely bot. | Not live on Cloudflare; Bot Management's data (an Enterprise add-on). |
 | `ua` with Bowser (an opt-in build) | **3. Emulated** | `module-ua-bowser.json` in workerd and Viceroy, simulated on the other targets; CI builds the Worker with Bowser and checks it against the 40 KB Bowser budget. | Never deployed live. |
 | `ec` (a vendor module, an IP-derived ID) | **3. Emulated** | The `module-ec*.json` case files (minting from IPv4 and IPv6, the EID, GDPR by location, consent deleting `ts-ec`, an invalid passphrase) in workerd and Viceroy, simulated on the other targets; its own tests in the `vendor-modules` job. | Never deployed live; GDPR for a real EU visitor. |
-| `dbip`, `maxmind` (vendor modules) | **3. Emulated** | Their case files, with fixture databases, as for `ec`. | Never deployed live. |
+| `dbip`, `maxmind`, `ip2location` (vendor modules) | **3. Emulated** | Their case files, with fixture databases, as for `ec`. | Never deployed live. |
 
 ### Counts
 
