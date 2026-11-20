@@ -16,6 +16,7 @@ This is the full guide. The other platforms are listed under [Pick your platform
 - [Origin lock: only your Front Door](#origin-lock-only-your-front-door)
 - [Configuration](#configuration)
 - [Secrets](#secrets)
+- [Scheduled data updates](#scheduled-data-updates)
 - [Verify](#verify)
 - [Platform information](#platform-information)
 - [Cookie values](#cookie-values)
@@ -211,6 +212,10 @@ az deployment group create ... --parameters 'sidModuleSecrets={"ec":{"passphrase
 ```
 
 App settings are encrypted at rest, but anyone who can read the function app's configuration can read them. To keep the secret in **Key Vault** instead, store it there, give the function app's identity the *Key Vault Secrets User* role on the vault, and set the setting to a Key Vault reference: `sidModuleSecrets=@Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/sid-module-secrets/)`. The platform resolves the reference when the app starts, so SharedID Edge still reads a plain setting and makes no network calls. To rotate, update the secret (or the setting) and restart the app.
+
+## Scheduled data updates
+
+**Not supported on Azure.** There's no recipe yet for a timer-triggered update function, and the updater has no storage adapter for Blob Storage. Without it you get what every default build has: the data compiled into your bundle, refreshed by upgrading and rebuilding. That's isbot's crawler list in the [`ua`](../../modules/ua/README.md) module, and a vendor module's country database ([DB-IP](../../vendor-modules/dbip/README.md), [MaxMind](../../vendor-modules/maxmind/README.md), [IP2Location](../../vendor-modules/ip2location/README.md); their `maxAgeDays` setting reports `stale` when it's old). The [`encrypted-ip`](../../modules/encrypted-ip/README.md#keys) module takes its keys from its settings instead, which you replace as often as the key's `max-age`. [Scheduled data updates](../../../docs/data-updates.md#platforms) lists the platforms that support them.
 
 ## Verify
 

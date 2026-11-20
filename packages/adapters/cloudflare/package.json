@@ -39,6 +39,10 @@
   "sharedidEdge": {
     "kind": "adapter",
     "platform": "Cloudflare Workers",
-    "summary": "A Worker on a route of your proxied Cloudflare zone (`www.example.com/_sid/*`)."
+    "summary": "A Worker on a route of your proxied Cloudflare zone (`www.example.com/_sid/*`).",
+    "dataUpdates": {
+      "supported": true,
+      "how": "Workers: a separate update Worker on a Cron Trigger writes private R2 (or KV) snapshots, and your request Worker's entry point loads them. Not the Snippet (no scheduler, secrets or storage bindings), which keeps the data compiled into it."
+    }
   }
 }

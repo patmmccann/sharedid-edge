@@ -40,6 +40,10 @@
   "sharedidEdge": {
     "kind": "adapter",
     "platform": "Vercel",
-    "summary": "A Next.js route handler, or Routing Middleware, in your site's Vercel project."
+    "summary": "A Next.js route handler, or Routing Middleware, in your site's Vercel project.",
+    "dataUpdates": {
+      "supported": false,
+      "how": "No recipe or storage adapter yet for Vercel Cron Jobs and Vercel Blob. You get the data compiled into your build (isbot's crawler list in `ua`, a vendor module's country database), refreshed by upgrading and rebuilding; `encrypted-ip` keys come from its settings."
+    }
   }
 }

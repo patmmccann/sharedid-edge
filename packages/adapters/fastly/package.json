@@ -46,6 +46,10 @@
   "sharedidEdge": {
     "kind": "adapter",
     "platform": "Fastly Compute",
-    "summary": "A Fastly Compute (JavaScript) service on your site's `/_sid/*` path."
+    "summary": "A Fastly Compute (JavaScript) service on your site's `/_sid/*` path.",
+    "dataUpdates": {
+      "supported": false,
+      "how": "Compute has no scheduled jobs, and there's no storage adapter for its KV Store. You get the data compiled into your build (isbot's crawler list in `ua`, a vendor module's country database), refreshed by upgrading and rebuilding; `encrypted-ip` keys come from its settings."
+    }
   }
 }

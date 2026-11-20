@@ -12,8 +12,15 @@ export interface ParsedUserAgent {
   readonly bot: boolean;
 }
 
-/** Parses a User-Agent string. Must be synchronous, make no network calls, and not throw on any input. */
-export type UserAgentParser = (userAgent: string) => ParsedUserAgent;
+/** Whether a User-Agent identifies a crawler: isbot's compiled-in list, or a scheduled list's (`crawlerMatcher`). */
+export type BotTest = (userAgent: string) => boolean;
+
+/**
+ * Parses a User-Agent string. Must be synchronous, make no network calls, and not throw on any input. `isBot`, when
+ * given, replaces the parser's own crawler list (the module passes a scheduled list's test); a parser without one
+ * ignores it.
+ */
+export type UserAgentParser = (userAgent: string, isBot?: BotTest) => ParsedUserAgent;
 
 /** Only this much of a User-Agent is parsed: real ones are far shorter, and it bounds the work per request. */
 export const MAX_UA_LENGTH = 512;
@@ -24,4 +31,4 @@ export const MAX_UA_LENGTH = 512;
  * (browser, OS, device class, maker and model for browsers that send no hints), the setting `"bowser"` uses
  * `bowserParser` from `@sharedid-edge/module-ua/bowser`.
  */
-export const botParser: UserAgentParser = userAgent => ({ bot: isbot(userAgent.slice(0, MAX_UA_LENGTH)) });
+export const botParser: UserAgentParser = (userAgent, isBot = isbot) => ({ bot: isBot(userAgent.slice(0, MAX_UA_LENGTH)) });

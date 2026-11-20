@@ -51,7 +51,7 @@ function setTopBox(ua: string): { readonly vendor: string; readonly model: strin
  * crawlers and automated clients). Values browsers freeze are left out rather than reported wrong. Adds about 8.5 KB
  * gzipped to a minified bundle.
  */
-export const bowserParser: UserAgentParser = userAgent => {
+export const bowserParser: UserAgentParser = (userAgent, isBot = isbot) => {
   const ua = userAgent.slice(0, MAX_UA_LENGTH);
   const result = Bowser.parse(ua);
   const browserName = nonEmpty(result.browser.name);
@@ -70,7 +70,7 @@ export const bowserParser: UserAgentParser = userAgent => {
     // A crawler's "vendor" is its operator (Google, Bing), not a device maker.
     ...(vendor === undefined || platformType === 'bot' ? {} : { vendor }),
     ...(model === undefined ? {} : { model }),
-    bot: platformType === 'bot' || isbot(ua)
+    bot: platformType === 'bot' || isBot(ua)
   };
 };
 

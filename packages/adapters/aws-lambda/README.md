@@ -1,7 +1,5 @@
 # @sharedid-edge/aws-lambda
 
-For opt-in reference-data refreshes, see [Scheduled data updates: AWS](../../../docs/data-updates.md#aws-eventbridge-and-a-separate-update-function): a separate EventBridge-triggered updater writes private S3 snapshots; a custom request entry point polls them read-only. The default template and request bundle are unchanged.
-
 [SharedID Edge](../../../README.md) on AWS: a Lambda function behind a `/_sid/*` behaviour of the CloudFront distribution that serves your site. It's the same platform-neutral handler as the Cloudflare Worker and the Node.js server, with built-in modules `ip`, `geo`, `reflect`, `bot`, `ua` and `clickid` (`ec` and vendor modules are added at build time), and it passes the same conformance suite.
 
 To run it at CloudFront's edge instead, near each visitor, see [Lambda@Edge](#lambdaedge): the same handler, on the origin-request or viewer-request event of the behaviour.
@@ -19,6 +17,7 @@ This is the full guide. The other platforms are listed under [Pick your platform
 - [Configuration](#configuration)
 - [Secrets](#secrets)
 - [Behind a publisher's CDN (trusted upstream)](#behind-a-publishers-cdn-trusted-upstream)
+- [Scheduled data updates](#scheduled-data-updates)
 - [Verify](#verify)
 - [How events map to requests and responses](#how-events-map-to-requests-and-responses)
 - [Platform information](#platform-information)
@@ -220,6 +219,12 @@ sam deploy --parameter-overrides CreateDistribution=true \
 - **Headers through your distribution:** the template's `AllViewerExceptHostHeader` origin request policy forwards the publisher CDN's headers to the function. A custom policy must forward `X-SID-Upstream-Auth`, `X-Forwarded-Host` and the client IP and location headers.
 
 Check it: `curl -sI https://<your distribution>/_sid/v1` answers `403`; through a publisher's site, `/_sid/v1` with the `ip` and `geo` modules shows your own IP address and country. Not yet tested with a real publisher CDN in front of a real distribution and function.
+
+## Scheduled data updates
+
+**Supported on the regional Lambda function, opt-in.** A separate update function on an EventBridge schedule downloads the sources you list into a private S3 bucket, and a custom entry point for your request function loads them into memory; no request downloads anything. It covers every source the updater has: the country databases (DB-IP Lite, MaxMind GeoLite2), the [`encrypted-ip`](../../modules/encrypted-ip/README.md) module's keys (Google's, Prebid Server hosts'), and the [`ua`](../../modules/ua/README.md#scheduled-crawler-list-updates) module's crawler list (isbot's patterns). The `bot` module uses no list, so it has nothing to update. The default template and bundle are unchanged until you set this up. Turn it on with [Scheduled data updates: AWS](../../../docs/data-updates.md#aws-eventbridge-and-a-separate-update-function).
+
+**Not supported on [Lambda@Edge](#lambdaedge):** it has no environment variables or secrets (its settings are baked into the bundle), and no recipe for reading the snapshots. It keeps the data compiled into its bundle, refreshed by upgrading and rebuilding; [Scheduled data updates](../../../docs/data-updates.md#platforms) lists the other platforms.
 
 ## Verify
 

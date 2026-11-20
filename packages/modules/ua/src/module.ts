@@ -1,6 +1,7 @@
 import { defineModule, type ConsentContext, type EdgeModule, type ModuleContext, type ModuleResult } from '@sharedid-edge/core';
 import { readClientHints, type BrandVersion, type ClientHints } from './client-hints.js';
-import { botParser, type ParsedUserAgent, type UserAgentParser } from './parse.js';
+import { crawlerMatcher, type CrawlerList } from './crawlers.js';
+import { botParser, type BotTest, type ParsedUserAgent, type UserAgentParser } from './parse.js';
 
 /** OpenRTB 2.6 `BrandVersion`: a brand and its version split into components (`["131", "0", "6778", "86"]`). */
 export interface SuaBrandVersion {
@@ -165,9 +166,9 @@ export function hintOsVersion(platform: string | undefined, platformVersion: str
 export function uaDevice(
   hints: ClientHints,
   userAgent: string | undefined,
-  options: { readonly highEntropy: boolean; readonly includeUa: boolean; readonly parser?: UserAgentParser }
+  options: { readonly highEntropy: boolean; readonly includeUa: boolean; readonly parser?: UserAgentParser; readonly isBot?: BotTest }
 ): UaDevice | undefined {
-  const parsed: ParsedUserAgent = userAgent === undefined ? { bot: false } : (options.parser ?? botParser)(userAgent);
+  const parsed: ParsedUserAgent = userAgent === undefined ? { bot: false } : (options.parser ?? botParser)(userAgent, options.isBot);
   const { highEntropy } = options;
   const devicetype = deviceType(hints, parsed);
 
@@ -246,6 +247,40 @@ function visitorUserAgent(headers: Headers): string | undefined {
   return ua === undefined || ua === '' || ua === 'Amazon CloudFront' ? undefined : ua;
 }
 
+/** A crawler list from scheduled data: the shape of `SnapshotCache.current` from `@sharedid-edge/data-updates`. */
+export type CrawlerSnapshot = () => { readonly data: CrawlerList; readonly checkedAt: number } | undefined;
+
+/** Scheduled crawler-list options for {@link createUaModule}. */
+export interface UaCrawlerOptions {
+  /** The current snapshot; read on each request, never refreshed by the module. */
+  readonly snapshot: CrawlerSnapshot;
+  /** Past this age since the last successful check, the list is still used and the module reports `stale`. */
+  readonly maxAgeMs: number;
+  /** Optional: past this age (at least `maxAgeMs`), the compiled-in list is used instead, still reported `stale`. */
+  readonly expireAfterMs?: number;
+  /** The clock, for the snapshot's age; `Date.now` by default. */
+  readonly now?: () => number;
+}
+
+/** A snapshot up to this far ahead of the clock is clock skew between hosts (age 0), as in `@sharedid-edge/data-updates`. */
+const CLOCK_SKEW_MS = 5 * 60_000;
+
+/**
+ * The bot test for this request from a scheduled crawler list, and whether the module reports `stale`: the list while
+ * it's usable (stale past `maxAgeMs`); the compiled-in list (`isBot` undefined), stale, when there's no snapshot, it's
+ * expired or too far ahead of the clock, or it doesn't compile.
+ */
+function scheduledBotTest(crawlers: UaCrawlerOptions | undefined): { readonly isBot?: BotTest; readonly stale: boolean } {
+  if (crawlers === undefined) return { stale: false };
+  const current = crawlers.snapshot();
+  if (current === undefined) return { stale: true };
+  const age = (crawlers.now ?? Date.now)() - current.checkedAt;
+  if (age < -CLOCK_SKEW_MS || (crawlers.expireAfterMs !== undefined && age > crawlers.expireAfterMs)) return { stale: true };
+  let isBot: BotTest;
+  try { isBot = crawlerMatcher(current.data); } catch { return { stale: true }; }
+  return { isBot, stale: age > crawlers.maxAgeMs };
+}
+
 /**
  * Builds the `ua` module: the request's User-Agent Client Hints and User-Agent as the `/v1` payload's OpenRTB 2.6
  * `ortb2.device` (`sua`, `devicetype`, `os`, `osv`, `make`, `model`, and `ua` when enabled), plus the shared traffic
@@ -256,9 +291,18 @@ function visitorUserAgent(headers: Headers): string | undefined {
  * `"isbot"`) only detects bots. `bowser` is the parser for the setting `"bowser"`: pass `bowserParser` from
  * `@sharedid-edge/module-ua/bowser` (as `uaModuleWithBowser` does) to make it available. Without it, that setting
  * makes the module an `error`, so a deployment that asks for Bowser without building it in notices.
+ *
+ * `crawlers` gives the parsers a crawler list from scheduled data in place of isbot's compiled-in one (see
+ * {@link UaCrawlerOptions}). Without a usable snapshot, the compiled-in list decides and the module reports `stale`.
  */
-export function createUaModule(options: { readonly parser?: UserAgentParser; readonly bowser?: UserAgentParser } = {}): EdgeModule {
-  const { parser = botParser, bowser } = options;
+export function createUaModule(
+  options: { readonly parser?: UserAgentParser; readonly bowser?: UserAgentParser; readonly crawlers?: UaCrawlerOptions } = {}
+): EdgeModule {
+  const { parser = botParser, bowser, crawlers } = options;
+  if (crawlers !== undefined && (!Number.isFinite(crawlers.maxAgeMs) || crawlers.maxAgeMs < 0 ||
+    (crawlers.expireAfterMs !== undefined && (!Number.isFinite(crawlers.expireAfterMs) || crawlers.expireAfterMs < crawlers.maxAgeMs)))) {
+    throw new TypeError('Invalid crawler list maximum age');
+  }
   const parserFor = (name: UaParserName | undefined): UserAgentParser => {
     if (name === undefined) return parser;
     if (name === 'isbot') return botParser;
@@ -269,12 +313,15 @@ export function createUaModule(options: { readonly parser?: UserAgentParser; rea
     name: 'ua',
     run({ request, consent, config }: ModuleContext): ModuleResult | undefined {
       const settings = uaSettings(config);
+      const { isBot, stale } = scheduledBotTest(crawlers);
       const device = uaDevice(readClientHints(request.headers), visitorUserAgent(request.headers), {
         highEntropy: highEntropyDenial(consent) === undefined,
         includeUa: settings.ua,
-        parser: parserFor(settings.parser)
+        parser: parserFor(settings.parser),
+        ...(isBot === undefined ? {} : { isBot })
       });
-      return device === undefined ? undefined : { ortb2: { device } };
+      const flag = stale ? { stale: true } : {};
+      return device === undefined ? (stale ? flag : undefined) : { ortb2: { device }, ...flag };
     }
   });
 }

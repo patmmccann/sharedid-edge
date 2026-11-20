@@ -48,6 +48,10 @@
   "sharedidEdge": {
     "kind": "adapter",
     "platform": "AWS (Lambda and CloudFront)",
-    "summary": "A Lambda function behind a `/_sid/*` behaviour of your site's CloudFront distribution, or Lambda@Edge on that behaviour, at CloudFront's edge."
+    "summary": "A Lambda function behind a `/_sid/*` behaviour of your site's CloudFront distribution, or Lambda@Edge on that behaviour, at CloudFront's edge.",
+    "dataUpdates": {
+      "supported": true,
+      "how": "Lambda behind CloudFront: a separate update function on an EventBridge schedule writes private S3 snapshots, and your request function's entry point loads them. Not Lambda@Edge (no environment or secrets; its settings are baked into the bundle), which keeps the data compiled into it."
+    }
   }
 }

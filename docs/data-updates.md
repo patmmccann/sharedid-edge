@@ -2,7 +2,26 @@
 
 Use [@sharedid-edge/data-updates](../packages/data-updates/README.md) to refresh shared reference data separately from visitor requests. Existing build-time DB-IP and MaxMind modules remain available; a scheduled snapshot module is an opt-in replacement, not an additional module with the same name.
 
-The concrete sources here are DB-IP Lite country, MaxMind GeoLite2 Country, and the public keys the [`encrypted-ip`](#encrypted-ip-keys) module encrypts to. Other lists use the same update interface with their own validator and in-memory lookup. The `ua` module's compiled crawler detector is unchanged.
+The concrete sources here are DB-IP Lite country, MaxMind GeoLite2 Country, the public keys the [`encrypted-ip`](#encrypted-ip-keys) module encrypts to, and the [crawler User-Agent patterns](#crawler-user-agent-patterns) the `ua` module flags declared bots with. Other lists use the same update interface with their own validator and in-memory lookup. The `bot` module uses no reference list, so it has no source.
+
+## Platforms
+
+Scheduled updates need a scheduler and private storage next to the request worker. Each platform's README has a "Scheduled data updates" section; this table is generated from their `package.json` metadata (`dataUpdates`):
+
+<!-- generated:data-updates-platforms:start -->
+| Platform | Supported | How, or what you get instead |
+| --- | --- | --- |
+| [Akamai EdgeWorkers](../packages/adapters/akamai/README.md#scheduled-data-updates) | No | EdgeWorkers have no scheduled jobs, and there's no storage adapter for EdgeKV. You get the data compiled into your build (isbot's crawler list in `ua`, a vendor module's country database), refreshed by upgrading and rebuilding; `encrypted-ip` keys come from its settings. |
+| [AWS (Lambda and CloudFront)](../packages/adapters/aws-lambda/README.md#scheduled-data-updates) | Yes | Lambda behind CloudFront: a separate update function on an EventBridge schedule writes private S3 snapshots, and your request function's entry point loads them. Not Lambda@Edge (no environment or secrets; its settings are baked into the bundle), which keeps the data compiled into it. |
+| [Azure (Functions and Front Door)](../packages/adapters/azure-functions/README.md#scheduled-data-updates) | No | No recipe or storage adapter yet for a timer-triggered function and Blob Storage. You get the data compiled into your build (isbot's crawler list in `ua`, a vendor module's country database), refreshed by upgrading and rebuilding; `encrypted-ip` keys come from its settings. |
+| [Cloudflare Workers](../packages/adapters/cloudflare/README.md#scheduled-data-updates) | Yes | Workers: a separate update Worker on a Cron Trigger writes private R2 (or KV) snapshots, and your request Worker's entry point loads them. Not the Snippet (no scheduler, secrets or storage bindings), which keeps the data compiled into it. |
+| [Fastly Compute](../packages/adapters/fastly/README.md#scheduled-data-updates) | No | Compute has no scheduled jobs, and there's no storage adapter for its KV Store. You get the data compiled into your build (isbot's crawler list in `ua`, a vendor module's country database), refreshed by upgrading and rebuilding; `encrypted-ip` keys come from its settings. |
+| [Google Cloud (Cloud Run functions and Load Balancing)](../packages/adapters/gcp-functions/README.md#scheduled-data-updates) | No | No recipe or storage adapter yet for Cloud Scheduler and Cloud Storage. You get the data compiled into your build (isbot's crawler list in `ua`, a vendor module's country database), refreshed by upgrading and rebuilding; `encrypted-ip` keys come from its settings. |
+| [Node.js (self-hosted)](../packages/adapters/node/README.md#scheduled-data-updates) | Yes | cron or a systemd timer runs `sharedid-edge-update`, which writes private files, and your server's entry point reloads them in the background. |
+| [Vercel](../packages/adapters/vercel/README.md#scheduled-data-updates) | No | No recipe or storage adapter yet for Vercel Cron Jobs and Vercel Blob. You get the data compiled into your build (isbot's crawler list in `ua`, a vendor module's country database), refreshed by upgrading and rebuilding; `encrypted-ip` keys come from its settings. |
+<!-- generated:data-updates-platforms:end -->
+
+Where they aren't supported, nothing changes: the modules use the data compiled into the build, as without the updater.
 
 ## Shared source configuration
 
@@ -259,6 +278,41 @@ const module = createEncryptedIpModule({ keys: { google: () => google.current, p
 Validating a reloaded snapshot also imports its key into Web Crypto, in the background reload, so requests only do the work each value needs.
 
 The rules follow [Google's guide](https://developers.google.com/publisher-tag/guides/unmasked-ip/publisher-provided#encrypt_ip_address), counting from the snapshot's last successful check: a key is fresh until its recorded `max-age` (held to 1 minute to 24 hours, an hour without one); past that, the module still encrypts with it and marks that recipient's value `stale: true`, so a failing job shows early; more than 24 hours after the last check, that recipient gets **no value**, since Google promises to decrypt only with keys fetched within 24 hours. With no snapshot yet, that recipient gets no value either. Both make the module report `stale`. See the module's [Keys](../packages/modules/encrypted-ip/README.md#keys).
+
+## Crawler User-Agent patterns
+
+The [`ua` module](../packages/modules/ua/README.md#scheduled-crawler-list-updates) flags crawlers that identify themselves with [isbot](https://github.com/omrilotan/isbot)'s pattern list, compiled into the build. To follow isbot's list between releases, add its source:
+
+```js
+import { isbotPatternsSource } from '@sharedid-edge/data-updates/crawlers';
+
+export default [
+  isbotPatternsSource()   // source "isbot-patterns"
+];
+```
+
+It downloads [`src/patterns.json`](https://github.com/omrilotan/isbot/blob/main/src/patterns.json) from isbot's main branch on GitHub (about 3 KB; released under [the Unlicense](https://github.com/omrilotan/isbot/blob/main/LICENSE), public domain), with no credentials and no visitor data, and publishes `{ "patterns": [...] }`. `isbotPatternsSource({ url })` takes another `https:` URL, such as a release tag's copy (`https://raw.githubusercontent.com/omrilotan/isbot/v5.2.3/src/patterns.json`) or your own reviewed mirror, in the same format; `name` gives the source another name. Run it once a day; an unchanged list (ETag or content) only updates the manifest's `checkedAt`.
+
+**A list is checked before it's published**, with the module's own rules (`validateCrawlerPatterns`, the module's `parseCrawlerList`), and again when a request worker loads it: 50 to 10,000 patterns of at most 1,024 characters, no duplicates, each compiling as a case-insensitive regular expression and none matching an empty `User-Agent`, the whole list matching Googlebot, Bingbot, YandexBot, DuckDuckBot, Baiduspider, `facebookexternalhit` and AhrefsBot, and matching no current Chrome, Edge, Safari, Firefox or Samsung Internet `User-Agent`. A download that fails, such as an empty list, a truncated one or a pattern that doesn't compile, fails the run and the previous snapshot stays published, so a bad download can't flag every visitor as a bot or turn detection off. The patterns are regular expressions run on every request's `User-Agent` (at most 512 characters of it): use only a source you trust as you trust the isbot package.
+
+In the request worker, load it and give it to the `ua` module in place of the built-in one:
+
+```js
+import { SnapshotCache } from '@sharedid-edge/data-updates';
+import { validateCrawlerPatterns } from '@sharedid-edge/data-updates/crawlers';
+import { createUaModule } from '@sharedid-edge/module-ua';
+import { bowserParser } from '@sharedid-edge/module-ua/bowser';
+
+const crawlers = new SnapshotCache(r2Store(env.SID_DATA), 'isbot-patterns', validateCrawlerPatterns);
+const ua = createUaModule({
+  bowser: bowserParser,                                   // only in a build with Bowser
+  crawlers: { snapshot: () => crawlers.current, maxAgeMs: 3 * 86400000 }
+});
+const modules = [...builtInModules.filter(module => module.name !== 'ua'), ua];
+// Reload the cache as in the recipes above (first use, then background work).
+```
+
+Validation also compiles the list, during the reload, so requests only look it up. Until the first snapshot loads, the module uses the compiled-in list and reports `stale`; past `maxAgeMs` it keeps using the snapshot, reported `stale`; past the optional `expireAfterMs` it goes back to the compiled-in list, still `stale`. Its other output never changes. See the module's [Scheduled crawler-list updates](../packages/modules/ua/README.md#scheduled-crawler-list-updates).
 
 ## Freshness, failures and licences
 

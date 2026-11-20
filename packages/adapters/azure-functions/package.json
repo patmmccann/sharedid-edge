@@ -50,6 +50,10 @@
   "sharedidEdge": {
     "kind": "adapter",
     "platform": "Azure (Functions and Front Door)",
-    "summary": "An Azure Functions app behind a `/_sid/*` route of your site's Front Door profile."
+    "summary": "An Azure Functions app behind a `/_sid/*` route of your site's Front Door profile.",
+    "dataUpdates": {
+      "supported": false,
+      "how": "No recipe or storage adapter yet for a timer-triggered function and Blob Storage. You get the data compiled into your build (isbot's crawler list in `ua`, a vendor module's country database), refreshed by upgrading and rebuilding; `encrypted-ip` keys come from its settings."
+    }
   }
 }
