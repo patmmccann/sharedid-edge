@@ -165,6 +165,32 @@ describe('SID_COOKIE_DOMAIN=auto', () => {
       expect(domains(fallback, 'own_auto')).toEqual([undefined]);
     });
 
+    it('deletes a module\'s cookies everywhere when it deletes them on /v1 or /sync, keeping host-only deletions host-only', async () => {
+      const deleting = defineModule({
+        name: 'deleting',
+        routes: ['v1', 'sync'],
+        run: () => ({
+          cookies: [
+            { ...cookie('core_default'), value: '', maxAgeSeconds: 0 },
+            { ...cookie('own_auto', 'auto'), value: '', maxAgeSeconds: 0 },
+            { ...cookie('host_only'), value: '', maxAgeSeconds: 0, hostOnly: true }
+          ]
+        })
+      });
+      const everywhere = [undefined, 'www.example.com', 'example.com'];
+      const h = (env: Record<string, string>): ReturnType<typeof createHandler> =>
+        createHandler({ config: resolveConfig({ SID_MODULES: 'deleting', ...env }), modules: [deleting], now: () => NOW });
+      // GPC on /v1, without cookie_domain: the parent-domain copies go too.
+      const v1 = await h({ SID_COOKIE_DOMAIN: 'auto' })(new Request('https://www.example.com/_sid/v1', { headers: { 'Sec-GPC': '1' } }));
+      expect(domains(v1, 'core_default')).toEqual(everywhere);
+      expect(domains(v1, 'own_auto')).toEqual(everywhere);
+      expect(domains(v1, 'host_only')).toEqual([undefined]);
+      // A module's own `auto` under a fixed domain, on /sync; core's default follows the fixed domain.
+      const fixed = await h({ SID_COOKIE_DOMAIN: 'example.com' })(sync('www.example.com', 'example.com'));
+      expect(domains(fixed, 'own_auto')).toEqual(everywhere);
+      expect(domains(fixed, 'core_default')).toEqual(['example.com']);
+    });
+
     it('deletes a module\'s `auto` cookie everywhere on opt-out', async () => {
       const response = await withSpy({ SID_COOKIE_DOMAIN: 'example.com' })(new Request('https://www.example.com/_sid/optout', { headers: { Cookie: 'own_auto=x' } }));
       expect(domains(response, 'own_auto')).toEqual([undefined, 'www.example.com', 'example.com']);

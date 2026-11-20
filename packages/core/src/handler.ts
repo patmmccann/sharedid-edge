@@ -170,6 +170,12 @@ function configuredHandler(options: HandlerOptions, base: SharedIdEdgeConfig, re
     // suffixes among them), so they go to each.
     const sweep = [undefined, ...hostDomains(host)];
     const domains = auto ? sweep : config.cookieDomain === undefined ? [undefined] : [config.cookieDomain, undefined];
+    // A module cookie's Set-Cookie lines. A deletion on `auto` (its own, or core's) goes everywhere the cookie could be,
+    // since the request may not carry the cookie_domain it was set with; an explicitly host-only one stays host-only.
+    const moduleCookieLines = (cookie: ModuleCookie): string[] =>
+      cookie.maxAgeSeconds === 0 && cookie.hostOnly !== true && (cookie.domain === AUTO_COOKIE_DOMAIN || (auto && cookie.domain === undefined))
+        ? sweep.map(domain => serializeModuleCookie(domain === undefined ? { ...cookie, hostOnly: true } : { ...cookie, domain }, config, secure, date, undefined))
+        : [serializeModuleCookie(cookie, config, secure, date, autoDomain)];
 
     switch (route) {
       case ROUTES.optout:
@@ -177,12 +183,8 @@ function configuredHandler(options: HandlerOptions, base: SharedIdEdgeConfig, re
           // With auto, the opt-out cookie goes wherever an ID cookie could be, as the deletions do.
           ...(auto ? sweep : [config.cookieDomain]).map(domain => serializeCookie(config.optOutCookieName, '1', { ...cookieOptions(config, secure, false), domain }, date)),
           ...expireIdCookies(config, domains, secure, date),
-          // Only cookies the browser sent: nothing to delete otherwise. A module cookie on `auto` (its own, or core's) is
-          // deleted everywhere it could be.
-          ...optOutCookies(registry, config).filter(cookie => cookies.has(cookie.name)).flatMap(cookie =>
-            cookie.hostOnly !== true && (cookie.domain === AUTO_COOKIE_DOMAIN || (auto && cookie.domain === undefined))
-              ? sweep.map(domain => serializeModuleCookie(domain === undefined ? { ...cookie, hostOnly: true } : { ...cookie, domain }, config, secure, date, undefined))
-              : [serializeModuleCookie(cookie, config, secure, date, undefined)])
+          // Only cookies the browser sent: nothing to delete otherwise.
+          ...optOutCookies(registry, config).filter(cookie => cookies.has(cookie.name)).flatMap(moduleCookieLines)
         ]);
       case ROUTES.optin:
         return withCookies(new Response(null, { status: 204, headers: NO_STORE }), domains.map(domain =>
@@ -230,8 +232,8 @@ function configuredHandler(options: HandlerOptions, base: SharedIdEdgeConfig, re
         }
 
         const response = route === ROUTES.sync
-          ? syncResponse({ modules, state, allowed: decision.allowed, config, secure, date, autoDomain })
-          : payloadResponse({ request, modules, traffic, state, config, secure, date, autoDomain });
+          ? syncResponse({ modules, state, allowed: decision.allowed, config, moduleCookieLines })
+          : payloadResponse({ request, modules, traffic, state, config, moduleCookieLines });
         // Which domain auto chose, or why it fell back to host-only.
         if (auto) response.headers.set('X-SharedID-Cookie-Domain', autoDomain ?? (cookieDomainParam !== null ? 'host-only: cookie_domain not this host or a parent' : 'host-only: no cookie_domain'));
         if (!decision.allowed) response.headers.set('X-SharedID-Status', `denied: ${decision.reason}`);
@@ -375,14 +377,12 @@ interface SyncInputs {
   readonly state: IdState;
   readonly allowed: boolean;
   readonly config: SharedIdEdgeConfig;
-  readonly secure: boolean;
-  readonly date: Date;
-  /** The request's `auto` domain, for module cookies on `auto`. */
-  readonly autoDomain: string | undefined;
+  /** A module cookie's Set-Cookie lines for this request. */
+  readonly moduleCookieLines: (cookie: ModuleCookie) => string[];
 }
 
 function syncResponse(inputs: SyncInputs): Response {
-  const { modules, state, allowed, config, secure, date, autoDomain } = inputs;
+  const { modules, state, allowed, config, moduleCookieLines } = inputs;
   // A module that must see every sync (`noStore`) keeps it out of the browser's cache.
   const cacheable = allowed && state.id !== undefined && config.syncCacheSeconds > 0 && !modules.noStore;
   const response = new Response(PIXEL, {
@@ -397,7 +397,7 @@ function syncResponse(inputs: SyncInputs): Response {
   const statuses = Object.entries(modules.reports).map(([name, report]) => `${name}=${report.status}`);
   if (statuses.length > 0) response.headers.set('X-SharedID-Modules', statuses.join(', '));
   // Cookies only: there's no payload for eids, ortb2 or the traffic signal.
-  for (const cookie of modules.cookies) response.headers.append('Set-Cookie', serializeModuleCookie(cookie, config, secure, date, autoDomain));
+  for (const line of modules.cookies.flatMap(moduleCookieLines)) response.headers.append('Set-Cookie', line);
   return response;
 }
 
@@ -408,13 +408,11 @@ interface PayloadInputs {
   readonly traffic: TrafficSignal | undefined;
   readonly state: IdState;
   readonly config: SharedIdEdgeConfig;
-  readonly secure: boolean;
-  readonly date: Date;
-  readonly autoDomain: string | undefined;
+  readonly moduleCookieLines: (cookie: ModuleCookie) => string[];
 }
 
 function payloadResponse(inputs: PayloadInputs): Response {
-  const { request, modules, traffic, state, config, secure, date, autoDomain } = inputs;
+  const { request, modules, traffic, state, config, moduleCookieLines } = inputs;
   const eids: Eid[] = state.id === undefined ? [] : [{ source: 'pubcid.org', uids: [{ id: state.id, atype: 1 }] }];
   eids.push(...modules.eids);
   // Written by core from the merged signal, after the modules' fragments, so no module's output can replace it.
@@ -432,7 +430,7 @@ function payloadResponse(inputs: PayloadInputs): Response {
     headers: { 'Content-Type': 'application/json; charset=utf-8', ...NO_STORE, 'X-Robots-Tag': 'noindex' }
   });
   applyCors(request, config, response.headers);
-  for (const cookie of modules.cookies) response.headers.append('Set-Cookie', serializeModuleCookie(cookie, config, secure, date, autoDomain));
+  for (const line of modules.cookies.flatMap(moduleCookieLines)) response.headers.append('Set-Cookie', line);
   return response;
 }
 

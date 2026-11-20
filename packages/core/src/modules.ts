@@ -106,7 +106,7 @@ export interface ModuleCookie {
   readonly httpOnly: boolean;
   /**
    * The `Domain` attribute; `SID_COOKIE_DOMAIN` when omitted, host-only when that's `host-only`. `auto`: the request's
-   * `autoCookieDomain`, else host-only; on opt-out, deleted on the host and every domain above it.
+   * `autoCookieDomain`, else host-only; a deletion goes to the host and every domain above it.
    */
   readonly domain?: string;
   /** `true`: no `Domain` attribute, whatever `SID_COOKIE_DOMAIN` says (for re-setting a host-only cookie). */
