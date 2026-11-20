@@ -126,6 +126,14 @@ describe('SID_COOKIE_DOMAIN=auto', () => {
       expect(domains(response, '_pubcid')).toEqual([undefined, 'www.example.com', 'example.com']);
     });
 
+    it('a host that isn\'t a valid hostname (over 253 characters) gets host-only deletions only, quickly', async () => {
+      const host = `${'a.'.repeat(8000)}example.com`;
+      const started = performance.now();
+      const response = await auto()(new Request(`https://${host}/_sid/optout`));
+      expect(domains(response, '_pubcid')).toEqual([undefined]);
+      expect(performance.now() - started).toBeLessThan(200);
+    });
+
     it('an IP address host gets host-only cookies only', async () => {
       const response = await auto()(new Request('https://192.0.2.10/_sid/optout'));
       expect(domains(response, '_pubcid')).toEqual([undefined]);

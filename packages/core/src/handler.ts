@@ -168,26 +168,27 @@ function configuredHandler(options: HandlerOptions, base: SharedIdEdgeConfig, re
     const config = auto ? { ...base, cookieDomain: autoDomain } : base;
     // Where deletions go. With auto, a cookie may be on the host or any domain above it (a browser refuses the public
     // suffixes among them), so they go to each.
-    const sweep = [undefined, ...hostDomains(host)];
-    const domains = auto ? sweep : config.cookieDomain === undefined ? [undefined] : [config.cookieDomain, undefined];
+    // Built only when used: most requests delete nothing.
+    const sweep = (): (string | undefined)[] => [undefined, ...hostDomains(host)];
+    const domains = (): (string | undefined)[] => auto ? sweep() : config.cookieDomain === undefined ? [undefined] : [config.cookieDomain, undefined];
     // A module cookie's Set-Cookie lines. A deletion on `auto` (its own, or core's) goes everywhere the cookie could be,
     // since the request may not carry the cookie_domain it was set with; an explicitly host-only one stays host-only.
     const moduleCookieLines = (cookie: ModuleCookie): string[] =>
       cookie.maxAgeSeconds === 0 && cookie.hostOnly !== true && (cookie.domain === AUTO_COOKIE_DOMAIN || (auto && cookie.domain === undefined))
-        ? sweep.map(domain => serializeModuleCookie(domain === undefined ? { ...cookie, hostOnly: true } : { ...cookie, domain }, config, secure, date, undefined))
+        ? sweep().map(domain => serializeModuleCookie(domain === undefined ? { ...cookie, hostOnly: true } : { ...cookie, domain }, config, secure, date, undefined))
         : [serializeModuleCookie(cookie, config, secure, date, autoDomain)];
 
     switch (route) {
       case ROUTES.optout:
         return withCookies(new Response(null, { status: 204, headers: NO_STORE }), [
           // With auto, the opt-out cookie goes wherever an ID cookie could be, as the deletions do.
-          ...(auto ? sweep : [config.cookieDomain]).map(domain => serializeCookie(config.optOutCookieName, '1', { ...cookieOptions(config, secure, false), domain }, date)),
-          ...expireIdCookies(config, domains, secure, date),
+          ...(auto ? sweep() : [config.cookieDomain]).map(domain => serializeCookie(config.optOutCookieName, '1', { ...cookieOptions(config, secure, false), domain }, date)),
+          ...expireIdCookies(config, domains(), secure, date),
           // Only cookies the browser sent: nothing to delete otherwise.
           ...optOutCookies(registry, config).filter(cookie => cookies.has(cookie.name)).flatMap(moduleCookieLines)
         ]);
       case ROUTES.optin:
-        return withCookies(new Response(null, { status: 204, headers: NO_STORE }), domains.map(domain =>
+        return withCookies(new Response(null, { status: 204, headers: NO_STORE }), domains().map(domain =>
           serializeCookie(config.optOutCookieName, '', { ...cookieOptions(config, secure, false), maxAgeSeconds: 0, domain }, date)
         ));
       case ROUTES.sync:
@@ -228,7 +229,7 @@ function configuredHandler(options: HandlerOptions, base: SharedIdEdgeConfig, re
         if (state.id !== undefined) {
           setCookies.push(...idCookies(config, state.id, secure, date), ...hostOnlyDuplicates(config, cookieHeader, secure, date));
         } else if (!decision.allowed && (cookies.has(config.cookieName) || (config.recoveryCookieName !== undefined && cookies.has(config.recoveryCookieName)))) {
-          setCookies.push(...expireIdCookies(config, domains, secure, date));
+          setCookies.push(...expireIdCookies(config, domains(), secure, date));
         }
 
         const response = route === ROUTES.sync
@@ -295,9 +296,12 @@ function autoCookieDomain(host: string, value: string | null): string | undefine
   return host === domain || host.endsWith('.' + domain) ? domain : undefined;
 }
 
-/** The host and each domain above it, short of the top level: `www.example.com`, `example.com`. None for an IP address. */
+/**
+ * The host and each domain above it, short of the top level: `www.example.com`, `example.com`. None for an IP address,
+ * or for a host that isn't a valid hostname (at most 253 characters), which also bounds the work.
+ */
 function hostDomains(host: string): string[] {
-  if (IPV4.test(host) || host.startsWith('[')) return [];
+  if (!HOSTNAME.test(host) || IPV4.test(host)) return [];
   const labels = host.split('.');
   return labels.slice(0, -1).map((_, i) => labels.slice(i).join('.'));
 }
