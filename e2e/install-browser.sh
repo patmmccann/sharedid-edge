@@ -55,13 +55,14 @@ newer_debs() {
   done
 }
 
-# Installs the newer .deb files in BROWSER_DEBS, without the network: `--no-download` makes apt refuse, before changing
-# anything, when they need a package that is neither installed nor among them.
+# Installs the newer .deb files in BROWSER_DEBS. With the full set from this image, apt needs no mirror; when they need
+# a package that is neither installed nor among them, apt fails before changing anything (or, if a mirror answers,
+# downloads it). Not `--no-download`: apt counts reading local .deb files as a download and refuses.
 install_cached_debs() {
   local -a files
   mapfile -t files < <(newer_debs)
   [ "${#files[@]}" -eq 0 ] && return 0
-  sudo apt-get -c "$apt_conf" install -y --no-download --no-install-recommends "${files[@]}"
+  apt_with_limit 120 install -y --no-install-recommends "${files[@]}"
 }
 
 # apt's settings for every call: give up on an unreachable mirror in seconds rather than minutes, and wait for dpkg's
@@ -193,7 +194,7 @@ fi
 
 # 4. apt is unavailable: install what an earlier image's cache has, then check the browser can load its libraries.
 if [ -n "$(newer_debs)" ]; then
-  install_cached_debs || warning "Installing $browser's system packages from an earlier runner image's cache failed."
+  install_cached_debs || warning "Installing $browser's system packages from the cache failed."
 fi
 mapfile -t libraries < <(missing_libraries)
 if [ "${#libraries[@]}" -eq 0 ]; then
@@ -202,8 +203,12 @@ if [ "${#libraries[@]}" -eq 0 ]; then
 fi
 list=$(printf '%s, ' "${libraries[@]}")
 list=${list%, }
-message="Infrastructure: apt outage. The Ubuntu apt mirrors couldn't be reached, the cache had no system packages for this runner image, and $browser can't start without these libraries: $list. This isn't a regression; re-run the job once the mirrors are back."
+message="Infrastructure: apt outage. The Ubuntu apt mirrors couldn't be reached or were too slow, the cache had no usable system packages for this runner image, and $browser can't start without these libraries: $list. This isn't a regression; re-run the job once the mirrors are back."
 echo "::error title=apt outage: $browser's system packages couldn't be installed::$message"
 summary "### Infrastructure: apt outage" "" "$message"
-output infrastructure "apt outage ($browser is missing $list)"
+# The first few, for the issue.
+short=$(printf '%s, ' "${libraries[@]:0:5}")
+short=${short%, }
+if [ "${#libraries[@]}" -gt 5 ]; then short="$short and $((${#libraries[@]} - 5)) more"; fi
+output infrastructure "apt outage ($browser is missing $short)"
 exit 1
