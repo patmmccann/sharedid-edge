@@ -2,7 +2,7 @@
 // collide on shared tables. Each section sits between `<!-- generated:<name>:start -->` and
 // `<!-- generated:<name>:end -->` markers. Sources:
 //
-// - the `sharedidEdge` block in each adapter's and module's package.json (the platform table and module lists);
+// - the `sharedidEdge` block in each adapter's and module's package.json (the platform tables and module lists);
 // - `SETTINGS` in packages/core/src/config.ts (the configuration reference);
 // - the files in spec/modules/ (the spec's list of module specifications, grouped by where each module lives).
 //
@@ -82,10 +82,23 @@ function packages() {
       if (meta.ipDerived === true && parent === 'modules') problems.push(`${where}: a project module can't derive an ID from the IP address (see packages/vendor-modules/AGENTS.md#ip-derived-ids)`);
       if (parent === 'modules' && !existsSync(join(root, 'spec/modules', `${dir}.md`))) problems.push(`${where}: no specification in spec/modules/${dir}.md`);
     }
+    if (meta.kind === 'adapter') problems.push(...dataUpdatesProblems(where, meta.dataUpdates));
     if (meta.kind !== 'module-list' && !existsSync(join(root, folder, 'README.md'))) problems.push(`${folder}: no README.md`);
     result.push({ folder, parent, dir, meta });
   }
   return result;
+}
+
+/**
+ * An adapter's `dataUpdates`: whether the platform supports scheduled data updates (docs/data-updates.md), and how
+ * (or, when it doesn't, what deployments get instead), for the generated platform table there.
+ */
+function dataUpdatesProblems(where, value) {
+  if (typeof value !== 'object' || value === null || typeof value.supported !== 'boolean' || typeof value.how !== 'string' || value.how.trim() === '' ||
+    Object.keys(value).some(key => key !== 'supported' && key !== 'how')) {
+    return [`${where}: sharedidEdge.dataUpdates must be { "supported": true or false, "how": "…" } (see docs/development.md#package-metadata)`];
+  }
+  return [];
 }
 
 /** The box a forwarding module's README starts with: a blockquote whose first line begins with this. */
@@ -136,6 +149,14 @@ function platformTable(file, adapters) {
     .sort((a, b) => a.meta.platform.localeCompare(b.meta.platform))
     .map(({ folder, meta }) => `| [${cell(meta.platform)}](${link(file, `${folder}/README.md`)}) | ${cell(meta.summary)} |`);
   return ['| Platform | How it runs |', '| --- | --- |', ...rows].join('\n');
+}
+
+/** Where scheduled data updates are supported, from each adapter's `dataUpdates`. */
+function dataUpdatesTable(file, adapters) {
+  const rows = [...adapters]
+    .sort((a, b) => a.meta.platform.localeCompare(b.meta.platform))
+    .map(({ folder, meta }) => `| [${cell(meta.platform)}](${link(file, `${folder}/README.md`)}#scheduled-data-updates) | ${meta.dataUpdates?.supported === true ? 'Yes' : 'No'} | ${cell(meta.dataUpdates?.how ?? '')} |`);
+  return ['| Platform | Supported | How, or what you get instead |', '| --- | --- | --- |', ...rows].join('\n');
 }
 
 function moduleName({ parent, meta }) {
@@ -214,6 +235,7 @@ const sections = {
   'README.md': { platforms: platformTable('README.md', adapters), modules: moduleList('README.md', modules) },
   'docs/modules.md': { 'module-index': moduleIndex('docs/modules.md', modules) },
   'docs/configuration.md': { settings: settingsTable(SETTINGS) },
+  'docs/data-updates.md': { 'data-updates-platforms': dataUpdatesTable('docs/data-updates.md', adapters) },
   'spec/SPEC.md': { 'spec-modules': specModules(modules) },
   'AGENTS.md': { packages: packageList('AGENTS.md', adapters, modules, lists) }
 };

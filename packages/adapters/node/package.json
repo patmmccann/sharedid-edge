@@ -36,7 +36,11 @@
   "sharedidEdge": {
     "kind": "adapter",
     "platform": "Node.js (self-hosted)",
-    "summary": "A Node.js server behind the web server or load balancer that serves your site."
+    "summary": "A Node.js server behind the web server or load balancer that serves your site.",
+    "dataUpdates": {
+      "supported": true,
+      "how": "cron or a systemd timer runs `sharedid-edge-update`, which writes private files, and your server's entry point reloads them in the background."
+    }
   },
   "devDependencies": {
     "@sharedid-edge/module-ec": "0.1.0"

@@ -40,6 +40,10 @@
   "sharedidEdge": {
     "kind": "adapter",
     "platform": "Akamai EdgeWorkers",
-    "summary": "An EdgeWorker (`responseProvider`) on a `/_sid/*` rule of your site's Akamai property."
+    "summary": "An EdgeWorker (`responseProvider`) on a `/_sid/*` rule of your site's Akamai property.",
+    "dataUpdates": {
+      "supported": false,
+      "how": "EdgeWorkers have no scheduled jobs, and there's no storage adapter for EdgeKV. You get the data compiled into your build (isbot's crawler list in `ua`, a vendor module's country database), refreshed by upgrading and rebuilding; `encrypted-ip` keys come from its settings."
+    }
   }
 }

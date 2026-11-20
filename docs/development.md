@@ -88,7 +88,11 @@ Every package in `packages/adapters/` and `packages/modules/` (and `packages/ven
 "sharedidEdge": {
   "kind": "adapter",
   "platform": "Cloudflare Workers",
-  "summary": "Where it runs, in one line (Markdown)."
+  "summary": "Where it runs, in one line (Markdown).",
+  "dataUpdates": {                     // required: scheduled data updates on this platform (docs/data-updates.md#platforms)
+    "supported": true,                 // true or false
+    "how": "How to run them here, or, when unsupported, what deployments get instead (Markdown)."
+  }
 }
 ```
 

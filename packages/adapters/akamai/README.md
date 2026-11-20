@@ -15,6 +15,7 @@ This is the full guide. The other platforms are listed under [Pick your platform
 - [The property rule](#the-property-rule)
 - [Configuration](#configuration)
 - [Secrets](#secrets)
+- [Scheduled data updates](#scheduled-data-updates)
 - [Verify](#verify)
 - [How requests map to requests and responses](#how-requests-map-to-requests-and-responses)
 - [Base path](#base-path)
@@ -201,6 +202,10 @@ EdgeWorkers hands the variables over with each request, so the EdgeWorker reads 
 Property Manager has no secret store an EdgeWorker can read: `getVariable` can't read variables whose security is *Sensitive*. *Hidden* keeps the value out of Akamai's debug headers (`Pragma: akamai-x-get-extracted-values`), but anyone who can view the property's configuration can read it, so keep property access to the people who deploy it. Akamai's [EdgeKV](https://techdocs.akamai.com/edgekv/docs) store is another place for a secret, which this adapter doesn't read. Without a secret, `ec` reports an error and sets nothing; the built-in modules need none.
 
 To rotate, change the variable and activate the property version.
+
+## Scheduled data updates
+
+**Not supported on Akamai.** EdgeWorkers have no scheduled jobs, and the updater has no storage adapter for EdgeKV. Without it you get what every default build has: the data compiled into your bundle, refreshed by upgrading and rebuilding. That's isbot's crawler list in the [`ua`](../../modules/ua/README.md) module, and a vendor module's country database ([DB-IP](../../vendor-modules/dbip/README.md), [MaxMind](../../vendor-modules/maxmind/README.md), [IP2Location](../../vendor-modules/ip2location/README.md); their `maxAgeDays` setting reports `stale` when it's old). The [`encrypted-ip`](../../modules/encrypted-ip/README.md#keys) module takes its keys from its settings instead, which you replace as often as the key's `max-age`. [Scheduled data updates](../../../docs/data-updates.md#platforms) lists the platforms that support them.
 
 ## Verify
 

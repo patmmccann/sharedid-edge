@@ -15,6 +15,7 @@ This is the full guide. The other platforms are listed under [Pick your platform
 - [Routing](#routing)
 - [Configuration](#configuration)
 - [Secrets](#secrets)
+- [Scheduled data updates](#scheduled-data-updates)
 - [Verify](#verify)
 - [Platform information](#platform-information)
 - [The Compute runtime](#the-compute-runtime)
@@ -193,6 +194,10 @@ fastly service resource-link create --service-id <service-id> --version latest -
 `SID_UPSTREAM_SECRETS`, for [trusted-upstream mode](#b-service-chaining-from-your-vcl-service), is another key in the same store (`--name SID_UPSTREAM_SECRETS`), a JSON array of secrets.
 
 The secret store is optional: without one linked, there are no module secrets (and `ec` reports an error and sets nothing) and no trusted upstream. The service reads two secrets per request (Fastly allows 5 reads per request; accounts get 10 secrets by default, 64 KB each). Never put secrets in `fastly.toml` outside `[local_server]`, or in the bundle: the build is checked for vendor modules' build-time credentials.
+
+## Scheduled data updates
+
+**Not supported on Fastly Compute.** Compute has no scheduled jobs, and the updater has no storage adapter for its KV Store. Without it you get what every default build has: the data compiled into your bundle, refreshed by upgrading and rebuilding. That's isbot's crawler list in the [`ua`](../../modules/ua/README.md) module, and a vendor module's country database ([DB-IP](../../vendor-modules/dbip/README.md), [MaxMind](../../vendor-modules/maxmind/README.md), [IP2Location](../../vendor-modules/ip2location/README.md); their `maxAgeDays` setting reports `stale` when it's old). The [`encrypted-ip`](../../modules/encrypted-ip/README.md#keys) module takes its keys from its settings instead, which you replace as often as the key's `max-age`. [Scheduled data updates](../../../docs/data-updates.md#platforms) lists the platforms that support them.
 
 ## Verify
 

@@ -14,6 +14,7 @@ This is the full guide. The other platforms are listed under [Pick your platform
 - [Deploy with middleware](#deploy-with-middleware)
 - [Configuration](#configuration)
 - [Secrets](#secrets)
+- [Scheduled data updates](#scheduled-data-updates)
 - [Verify](#verify)
 - [Platform information](#platform-information)
 - [Using it in code](#using-it-in-code)
@@ -180,6 +181,10 @@ vercel env add SID_MODULE_SECRETS production --sensitive
 ```
 
 or tick *Sensitive* when adding it under Project Settings → Environment Variables. Vercel encrypts environment variables at rest. Never put it in `.env` files you commit, or in `vercel.json`. To rotate, change the value and redeploy.
+
+## Scheduled data updates
+
+**Not supported on Vercel.** There's no recipe yet for a Vercel Cron Job, and the updater has no storage adapter for Vercel Blob. Without it you get what every default build has: the data compiled into your bundle, refreshed by upgrading and rebuilding. That's isbot's crawler list in the [`ua`](../../modules/ua/README.md) module, and a vendor module's country database ([DB-IP](../../vendor-modules/dbip/README.md), [MaxMind](../../vendor-modules/maxmind/README.md), [IP2Location](../../vendor-modules/ip2location/README.md); their `maxAgeDays` setting reports `stale` when it's old). The [`encrypted-ip`](../../modules/encrypted-ip/README.md#keys) module takes its keys from its settings instead, which you replace as often as the key's `max-age`. [Scheduled data updates](../../../docs/data-updates.md#platforms) lists the platforms that support them.
 
 ## Verify
 

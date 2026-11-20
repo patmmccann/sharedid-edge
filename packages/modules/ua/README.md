@@ -12,6 +12,7 @@ The worker sees the request headers before any script on the page runs. Prebid.j
 - [Fields](#fields)
 - [Responses](#responses)
 - [The traffic signal](#the-traffic-signal)
+- [Scheduled crawler-list updates](#scheduled-crawler-list-updates)
 - [Consent](#consent)
 - [Settings](#settings)
 - [Getting high-entropy hints](#getting-high-entropy-hints)
@@ -226,6 +227,34 @@ if (payload.ortb2?.device?.ext?.traffic?.bot) {
 
 Core reads the module's `device.ext.traffic` as its report to the shared [traffic signal](../../../docs/modules.md#the-traffic-signal) and merges it with the other reports (the `bot` module's, the platform's), most cautious first, so `sources` lists every contributor. With `SID_SKIP_BOTS=declared` (or `likely`), a crawler `ua` flags gets no SharedID.
 
+## Scheduled crawler-list updates
+
+By default the crawler list is the one isbot compiled into your build, and it changes when you upgrade and rebuild. On platforms with [scheduled data updates](../../../docs/data-updates.md#crawler-user-agent-patterns) (Cloudflare Workers, AWS Lambda, Node.js), you can refresh it between releases instead: a scheduled job downloads isbot's current pattern list (`isbotPatternsSource()` from `@sharedid-edge/data-updates/crawlers`) into private storage, and your request entry point hands the in-memory copy to the module:
+
+```js
+import { SnapshotCache } from '@sharedid-edge/data-updates';
+import { validateCrawlerPatterns } from '@sharedid-edge/data-updates/crawlers';
+import { createUaModule } from '@sharedid-edge/module-ua';
+import { bowserParser } from '@sharedid-edge/module-ua/bowser';
+
+const crawlers = new SnapshotCache(store, 'isbot-patterns', validateCrawlerPatterns);   // reload it in background work
+const ua = createUaModule({
+  bowser: bowserParser,                     // leave out in a build without Bowser
+  crawlers: { snapshot: () => crawlers.current, maxAgeMs: 3 * 86400000 }
+});
+const modules = [...builtInModules.filter(module => module.name !== 'ua'), ua];
+```
+
+- **Both parsers use it,** `isbot` and `bowser` (Bowser's own crawler detection still applies too). Nothing else about the module changes.
+- **A list is checked before it's published, and again when it's loaded:** at least 50 and at most 10,000 patterns, each compiling as a regular expression and none matching an empty `User-Agent`, matching Googlebot, Bingbot and other well-known crawlers, and matching no current Chrome, Edge, Safari, Firefox or Samsung Internet `User-Agent`. A download that fails any check is refused, and the previous list stays in use, so a bad download can't flag every visitor or turn detection off.
+- **Fallback:** until the first snapshot loads, or when it's past `expireAfterMs` (optional; at least `maxAgeMs`), the module uses the compiled-in list. Both add `stale: true` to the module's report; so does a snapshot older than `maxAgeMs`, which is still used:
+
+  ```json
+  { "ua": { "ms": 0, "status": "ok", "stale": true } }
+  ```
+
+- **No request downloads anything** or reads storage; the module only reads the in-memory copy, and compiling a new list happens when it's loaded.
+
 ## Consent
 
 Device data isn't personal on its own, but high-entropy hints and models add to what can fingerprint a browser. So, like the `geo` module's precise fields, they're left out when consent asks for less.
@@ -380,13 +409,13 @@ uaDevice(hints, undefined, { highEntropy: true, includeUa: false });
 // { sua: { platform: { brand: 'Android' }, mobile: 1, source: 1 }, devicetype: 4, os: 'Android' }
 ```
 
-Other exports: `createUaModule({ parser, bowser })` (the module with any `UserAgentParser`, and the one the `"bowser"` setting picks), `botParser` (the default parser), the header parsers `parseBrandList`, `parseStringHeader` and `parseBooleanHeader`, `deviceType`, `hintOsVersion`, `versionComponents`, `highEntropyDenial(consent)`, `uaSettings(config)`, and the types. `@sharedid-edge/module-ua/bowser` exports `bowserParser` and `uaModuleWithBowser`.
+Other exports: `createUaModule({ parser, bowser, crawlers })` (the module with any `UserAgentParser`, the one the `"bowser"` setting picks, and a [scheduled crawler list](#scheduled-crawler-list-updates)), `botParser` (the default parser; a parser gets the scheduled list's test as its second argument), `parseCrawlerList` and `crawlerMatcher` (check and compile a crawler list), the header parsers `parseBrandList`, `parseStringHeader` and `parseBooleanHeader`, `deviceType`, `hintOsVersion`, `versionComponents`, `highEntropyDenial(consent)`, `uaSettings(config)`, and the types. `@sharedid-edge/module-ua/bowser` exports `bowserParser` and `uaModuleWithBowser`.
 
 ## Credits and licences
 
 This package is Apache-2.0. It depends on:
 
-- **[isbot](https://github.com/omrilotan/isbot)** by Omri Lotan, released under [the Unlicense](https://github.com/omrilotan/isbot/blob/main/LICENSE) (public domain). Built into every adapter. No attribution is required; we credit it anyway.
+- **[isbot](https://github.com/omrilotan/isbot)** by Omri Lotan, released under [the Unlicense](https://github.com/omrilotan/isbot/blob/main/LICENSE) (public domain). Built into every adapter; its pattern list ([`src/patterns.json`](https://github.com/omrilotan/isbot/blob/main/src/patterns.json)), under the same licence, is also what a [scheduled update](#scheduled-crawler-list-updates) downloads. No attribution is required; we credit it anyway.
 - **[Bowser](https://github.com/bowser-js/bowser)**, © 2015 Dustin Diaz and contributors, [MIT licence](https://github.com/bowser-js/bowser/blob/master/LICENSE). Used by `@sharedid-edge/module-ua/bowser`, in the adapters' Bowser builds and the Node.js server. If you distribute a bundle built with it, the MIT licence asks you to include Bowser's copyright and licence notice.
 
 ## Troubleshooting
@@ -401,4 +430,5 @@ This package is Apache-2.0. It depends on:
 | No `osv` for a Mac, or for Windows | The `User-Agent` freezes them (macOS `10.15.7`, `Windows NT 10.0`). With `Sec-CH-UA-Platform-Version`, Chromium sends the real version. |
 | An iPad is reported as a Mac | iPadOS asks for desktop sites with a Mac's `User-Agent`. |
 | Every request has the bot flag | The requests come from a tool such as `curl`, a test runner or a headless browser, which isbot counts as automated clients. Or a proxy in front of the worker replaces the `User-Agent`. |
+| `stale: true` in `ext.modules.ua` | Only with a [scheduled crawler list](#scheduled-crawler-list-updates): no snapshot has loaded yet, or the last successful update is older than `maxAgeMs`. Check the update job and the storage permissions; meanwhile the module uses the last good list, or the compiled-in one. |
 | `status` is `timeout` | The first request in a fresh isolate compiles isbot's pattern (a few milliseconds). If it still exceeds `SID_MODULE_TIMEOUT_MS` (50 ms by default), raise that. |

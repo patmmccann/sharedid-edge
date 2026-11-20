@@ -52,6 +52,10 @@
   "sharedidEdge": {
     "kind": "adapter",
     "platform": "Google Cloud (Cloud Run functions and Load Balancing)",
-    "summary": "A Cloud Run function behind a `/_sid/*` path rule of your site's external Application Load Balancer."
+    "summary": "A Cloud Run function behind a `/_sid/*` path rule of your site's external Application Load Balancer.",
+    "dataUpdates": {
+      "supported": false,
+      "how": "No recipe or storage adapter yet for Cloud Scheduler and Cloud Storage. You get the data compiled into your build (isbot's crawler list in `ua`, a vendor module's country database), refreshed by upgrading and rebuilding; `encrypted-ip` keys come from its settings."
+    }
   }
 }

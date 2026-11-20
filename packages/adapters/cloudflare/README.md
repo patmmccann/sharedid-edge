@@ -1,7 +1,5 @@
 # @sharedid-edge/cloudflare
 
-For opt-in reference-data refreshes, see [Scheduled data updates: Cloudflare](../../../docs/data-updates.md#cloudflare-cron-triggers-and-r2): a separate Cron Worker writes private R2/KV snapshots, and custom request workers load them into memory. The default Worker and Snippet are unchanged.
-
 SharedID Edge as a **Cloudflare Worker**: the `/_sid/*` routes on your own site, answered at Cloudflare's edge, never reaching your origin. This page is the adapter's full guide: the deployment walkthrough and the reference.
 
 ## Contents
@@ -15,6 +13,7 @@ SharedID Edge as a **Cloudflare Worker**: the `/_sid/*` routes on your own site,
 - [Platform data: what the Worker knows about each request](#platform-data-what-the-worker-knows-about-each-request)
 - [Built-in modules](#built-in-modules)
 - [Google's tag gateway on the same zone](#googles-tag-gateway-on-the-same-zone)
+- [Scheduled data updates](#scheduled-data-updates)
 - [Verify](#verify)
 - [Local development and tests](#local-development-and-tests)
 - [Live tests](#live-tests)
@@ -372,6 +371,12 @@ Google's [tag gateway for advertisers](https://developers.google.com/tag-platfor
 **Keep the routes apart.** The gateway's path and the Worker's route must not overlap: `example.com/_sid/*` for the Worker, `/metrics` for the gateway, never a gateway path under `/_sid`, nor a Worker route like `example.com/*` that covers the gateway's path.
 
 If you want SharedID Edge's consent handling in front of the tag (nothing forwarded on opt-out, COPPA, GPC or missing TCF consent), the opt-in [`tag-gateway`](../../modules/tag-gateway/README.md) module serves the gateway from this Worker or Snippet instead: build it in as above, add a route for its path (`example.com/metrics/*`) next to `example.com/_sid/*` (the Snippet build prints a rule that covers both), and turn Cloudflare's integration off for that path. Its README has the details, and the disclosure of what it sends to Google.
+
+## Scheduled data updates
+
+**Supported on Workers, opt-in.** A separate update Worker on a Cron Trigger downloads the sources you list into a private R2 bucket (or KV namespace), and a custom entry point for your request Worker loads them into memory in background work; no request downloads anything. It covers every source the updater has: the country databases (DB-IP Lite, MaxMind GeoLite2), the [`encrypted-ip`](../../modules/encrypted-ip/README.md) module's keys (Google's, Prebid Server hosts'), and the [`ua`](../../modules/ua/README.md#scheduled-crawler-list-updates) module's crawler list (isbot's patterns). The `bot` module uses no list, so it has nothing to update. The default Worker is unchanged until you set this up. Turn it on with [Scheduled data updates: Cloudflare](../../../docs/data-updates.md#cloudflare-cron-triggers-and-r2).
+
+**Not supported on the Snippet:** Snippets have no scheduler, secrets or storage bindings. A Snippet keeps the data compiled into it, refreshed by upgrading and rebuilding it; [Scheduled data updates](../../../docs/data-updates.md#platforms) lists the other platforms.
 
 ## Verify
 

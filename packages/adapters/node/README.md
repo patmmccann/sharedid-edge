@@ -1,7 +1,5 @@
 # @sharedid-edge/node
 
-For opt-in reference-data refreshes, see [Scheduled data updates: Node.js](../../../docs/data-updates.md#nodejs-cron-or-a-systemd-timer): cron/systemd runs `sharedid-edge-update`, and a custom server entry point reloads private JSON snapshots in the background. The standard HTTP server CLI is unchanged.
-
 SharedID Edge as a **Node.js HTTP server**, for self-hosting behind the web server or load balancer that already serves your site. It's also used for local development and as a conformance target. This page is the full guide. The other platforms are listed under [Pick your platform](../../../README.md#pick-your-platform).
 
 ## Contents
@@ -13,6 +11,7 @@ SharedID Edge as a **Node.js HTTP server**, for self-hosting behind the web serv
 - [Platform data: what the server knows about each request](#platform-data-what-the-server-knows-about-each-request)
 - [Built-in modules](#built-in-modules)
 - [Using it as a library](#using-it-as-a-library)
+- [Scheduled data updates](#scheduled-data-updates)
 - [Verify](#verify)
 - [Troubleshooting](#troubleshooting)
 
@@ -157,6 +156,10 @@ createNodeServer({
 `createNodeServer` returns a plain `node:http` `Server`. Repeated `Set-Cookie` headers are sent separately.
 
 The conversion is exported too, for platforms that hand you Node.js requests (or Express's, like Google Cloud's Functions Framework, which [`@sharedid-edge/gcp-functions`](../gcp-functions/README.md) uses): `toWebRequest(req, origin)` builds a `Request` with that origin, `sendWebResponse(res, response, method)` writes a `Response` with each `Set-Cookie` separate, and `utf8(value)` re-decodes a header value Node.js read as Latin-1. `clientIpFromHeader(name, value)` reads a client-IP header as `clientIpHeader` does.
+
+## Scheduled data updates
+
+**Supported, opt-in.** cron or a systemd timer runs `sharedid-edge-update`, which downloads the sources you list into private files, and a custom server entry point reloads them in the background; no request downloads anything. It covers every source the updater has: the country databases (DB-IP Lite, MaxMind GeoLite2), the [`encrypted-ip`](../../modules/encrypted-ip/README.md) module's keys (Google's, Prebid Server hosts'), and the [`ua`](../../modules/ua/README.md#scheduled-crawler-list-updates) module's crawler list (isbot's patterns). The `bot` module uses no list, so it has nothing to update. The standard server command is unchanged until you set this up. Turn it on with [Scheduled data updates: Node.js](../../../docs/data-updates.md#nodejs-cron-or-a-systemd-timer).
 
 ## Verify
 

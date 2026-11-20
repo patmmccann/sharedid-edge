@@ -140,7 +140,7 @@ A likely bot with Global Privacy Control (`Sec-GPC: 1`): no ID, the ID cookies a
 - it has no `Accept-Language`, or an empty one. Every browser sends it, with `fetch()` too; or
 - it has none of `Sec-Fetch-Site`, `Sec-Fetch-Mode` and `Sec-Fetch-Dest`, and the user agent is a version that always sends them over https: Chrome, Edge, Opera and other Chromium browsers from version 80, Firefox from 90, Safari from 17. Older browsers, and other iOS browsers, aren't expected to send them.
 
-This is a weak signal: a browser extension or a privacy proxy can strip headers, and a careful bot can send them all. The policy is deliberately conservative, so treat `likely` as a hint, not proof. It doesn't use a crawler list: crawlers that name themselves are the [`ua` module](../../../docs/modules.md)'s job, reported as `declared`.
+This is a weak signal: a browser extension or a privacy proxy can strip headers, and a careful bot can send them all. The policy is deliberately conservative, so treat `likely` as a hint, not proof. It doesn't use a crawler list, or any other reference data, so there's nothing for [scheduled data updates](../../../docs/data-updates.md) to refresh: crawlers that name themselves are the [`ua` module](../ua/README.md)'s job, reported as `declared`, and its list can be [updated on a schedule](../ua/README.md#scheduled-crawler-list-updates).
 
 **Internal traffic** (`internalCookie`). Your staff set a cookie, and their visits are marked `internal: true`, so the page can, for example, skip ad auctions for them or set OpenRTB `test: 1` so QA traffic isn't billed. That's the page's decision; the worker only reports it, and `SID_SKIP_BOTS` doesn't skip internal traffic (staff see what visitors see). Set the cookie from an internal page:
 
