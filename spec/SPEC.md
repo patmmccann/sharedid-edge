@@ -11,7 +11,7 @@ An implementation runs on the publisher's own domain (normally a route on the CD
 - sets and refreshes the SharedID first-party identifier as a **server-set cookie**, compatible with Prebid.js's unmodified `sharedIdSystem` module through its `pixelUrl` parameter;
 - returns a JSON payload of the SharedID and the output of **modules**, which add IDs or signals from what the worker already has.
 
-It never forwards requests to the publisher's origin and never adds `Set-Cookie` to cacheable responses.
+It never forwards requests to the publisher's origin and never adds `Set-Cookie` to cacheable responses. It sends nothing to any other host either, except through an opt-in [forwarding module](#forwarding-modules), and then only to the hosts that module declares.
 
 ## Configuration
 
@@ -70,7 +70,7 @@ An endpoint can sit behind a CDN it doesn't run: an upstream operator's endpoint
 
 ## Routes
 
-All routes are under `SID_BASE_PATH`; a trailing slash is accepted. Any other path MUST get `404`. Methods other than `GET` and `HEAD` (and `OPTIONS` on `/v1`) MUST get `405` with an `Allow` header. `/sync` and `/v1` have [request limits](#request-limits) and may be [rate limited](#rate-limiting).
+All routes are under `SID_BASE_PATH`; a trailing slash is accepted. Any other path MUST get `404`, unless a [forwarding module](#forwarding-modules) in `SID_MODULES` owns it. Methods other than `GET` and `HEAD` (and `OPTIONS` on `/v1`) MUST get `405` with an `Allow` header. `/sync` and `/v1` have [request limits](#request-limits) and may be [rate limited](#rate-limiting).
 
 | Route | Response |
 | --- | --- |
@@ -83,7 +83,7 @@ Every response carries `Cache-Control`: `no-store`, except a successful sync tha
 
 ### Request limits
 
-No route takes a request body: implementations MUST NOT read one (an adapter that copies a request leaves it out), so a large body costs nothing before its `405`.
+No route takes a request body: implementations MUST NOT read one (an adapter that copies a request leaves it out), so a large body costs nothing before its `405`. The one exception is a `POST` to a [forwarding module](#forwarding-modules)'s path, within the limits given there.
 
 On `/sync` and `/v1`, after the route and method checks and before consent is read, an ID is chosen or any module runs:
 
@@ -203,7 +203,7 @@ A response where storage was denied SHOULD carry `X-SharedID-Status: denied: <re
 - `eids` follows OpenRTB `user.ext.eids`. Module eids follow the SharedID's, in module order.
 - `ortb2` is the deep merge of the modules' OpenRTB fragments, in module order, plus the [traffic signal](#traffic-signal) as `ortb2.device.ext.traffic`; absent when there's neither.
 - `eip` is the client's IP address encrypted for each configured recipient (the opt-in [`encrypted-ip`](modules/encrypted-ip.md) module): `google`, for Google Publisher Tag's `googletag.setConfig({ ipAddress })`, and `pbs`, an object keyed by Prebid Server host name (lower case, with `:port` when not the default), for Prebid Server's proposed `device.ext.prebid.eip` (experimental). Each value is `{ value, kid?, stale? }`: `value` is unpadded base64url of 67 to 124 characters, `kid` the ID of the recipient key it was encrypted to, `stale: true` when that key is past its refresh time (a key over 24 hours old gives no value). It's kept out of `ortb2`, which pages pass to every bidder, so that each value goes to its recipient alone; absent when there's no value. A module's `eip` with any other field, a value or `kid` of the wrong form, or a host name that isn't one, makes the module an `error`, and none of its output is used. A later module's value for a recipient replaces an earlier one's.
-- `ext.modules` reports each configured module: `status` is `ok`, `empty`, `skipped` (with a `reason`), `error` or `timeout`. An optional `stale: true` flag marks missing or old reference data; usable previous data MAY still contribute. Error details MUST NOT be returned, since they may contain request data.
+- `ext.modules` reports each configured module: `status` is `ok`, `empty`, `skipped` (with a `reason`), `error` or `timeout`. An optional `stale: true` flag marks missing or old reference data; usable previous data MAY still contribute. A [forwarding module](#forwarding-modules)'s report has `forwards`, `true` or `false`: whether this visitor's requests to its paths are passed on (anonymously included), and nothing about them. Error details MUST NOT be returned, since they may contain request data.
 
 ### Traffic signal
 
@@ -260,6 +260,7 @@ A module has:
 - optionally `purposes` (TCF purposes it needs publisher consent for when GDPR applies) and `gvlid` (its IAB vendor ID);
 - optionally `routes`, the routes it runs on: a non-empty list of `v1` and `sync` without repeats, defaulting to `v1` only (see [Modules on `/sync`](#modules-on-sync));
 - optionally a `consent(context)` hook, which makes it a [consent provider](#consent-providers);
+- optionally `forwarding`, which makes it a [forwarding module](#forwarding-modules);
 - a `run(context)` function returning `{ eids?, ortb2?, eip?, cookies?, traffic?, noStore?, stale? }` or nothing (`eip`: see [Payload v1](#payload-v1); `traffic`: see [Traffic signal](#traffic-signal); `noStore`: see [Modules on `/sync`](#modules-on-sync); `stale`: see [Scheduled data updates](#scheduled-data-updates)).
 
 The context has the request, its URL and cookies, the platform information (see [Platform information](#platform-information)), the SharedID (when storage is allowed), whether the browser opted out, the consent signals, and the module's configuration and secrets.
@@ -272,7 +273,7 @@ A module's `cookies` are set on the response (of `/v1`, or `/sync`) with `Path=/
 
 A module that sets cookies SHOULD also declare the deletions for opt-out. `{basePath}/optout` deletes the ones the browser sent along with the ID cookies, for every installed module (whether or not it's in `SID_MODULES`), so an opt-out takes effect at once and not only on the next `/v1` call.
 
-Modules work only from what the worker has; by default they make no network calls. The worker:
+Modules work only from what the worker has, and make no network calls; a [forwarding module](#forwarding-modules) passes requests on to its declared hosts, through the implementation. The worker:
 
 - on `/v1`, runs the modules listed in `SID_MODULES`, in order, reporting unknown names, and modules whose `routes` leave out `v1`, as `skipped`;
 - when GDPR applies, skips a module whose `purposes` don't all have publisher consent, and (until vendor consent is decoded) any module with a `gvlid`;
@@ -321,6 +322,54 @@ The platform information MAY carry the platform's own traffic verdict, a report 
 
 Without Bot Management the object is absent, or has no score and false flags, and the platform adds nothing. `request.cf.verifiedBotCategory` isn't in the Workers runtime types, so it isn't read. Other platforms add nothing.
 
+### Forwarding modules
+
+A module MAY **forward**: own paths on the site and answer the requests under them by passing them on to a service it names, such as the [`tag-gateway`](modules/tag-gateway.md) module for Google's tag gateway. It's the only way an implementation sends anything to another host. Such a module has `forwarding`, with:
+
+- `hosts`: the hosts it may send requests to, fixed in its code (and listed as `forwards` in its package metadata). Each is a lower-case host name of two labels or more, or `*.` and such a name for any host under it (`*.fps.goog` allows `g-1.fps.goog`, not `fps.goog`);
+- `paths(config)`: the path prefixes it owns, from its settings;
+- optionally `anonymousOnGpc(config)`: whether, with Global Privacy Control, it forwards anonymously (below) rather than not at all;
+- `serve(context)`: answers a request under one of its paths.
+
+**Off by default.** A forwarding module owns paths only when it's listed in `SID_MODULES` and its settings name them. An implementation, or a platform adapter, that can't send requests to another host MUST treat a forwarding module in `SID_MODULES` as invalid configuration (every request gets a 5xx), never ignore it.
+
+**Paths.** A prefix is `/` and one or more segments of `A-Z a-z 0-9 . _ ~ -` joined by `/`, at most 100 characters, with no trailing slash. A request is under a prefix when its path is the prefix or starts with the prefix and `/`. A prefix MUST NOT overlap (be equal to, or a parent or child of) `SID_BASE_PATH` (with the root base path, any of core's routes) or another forwarding module's prefix: that's invalid configuration. A module whose settings are invalid owns no path (its requests get `404`) and its `/v1` report is `error`. With [several sites](#several-sites), each site's settings give its own paths.
+
+**Requests.** On a forwarding module's path, after [trusted upstream](#trusted-upstream)'s check and the choice of the site's settings:
+
+- methods other than `GET`, `HEAD` and `POST` get `405` with `Allow: GET, HEAD, POST`;
+- the [request limits](#request-limits) of `/sync` and `/v1` apply (`414`, `431`); the rate limiter isn't asked;
+- the **forwarding decision** is made (below), and the module's `serve` is called with the request, its URL and cookies, the matched prefix, the platform information, the consent signals, the decision, and the module's configuration and secrets. No SharedID is chosen and no ID cookie is set or deleted;
+- only when the decision forwards, the body of a `POST` is read, up to 65,536 bytes: without `Content-Length` the request gets `411`, with a larger one `413`. Otherwise no body is read.
+
+**The forwarding decision**, in this order:
+
+1. the opt-out cookie is present: blocked (reason `opt-out`);
+2. COPPA (`coppa=1`): blocked (`coppa`);
+3. a [consent provider](#consent-providers) denies: blocked (`<module>: …`);
+4. there's a TC string that is invalid, or isn't decoded (a build without TCF): blocked (`tcf: …`, as for storage);
+5. GDPR applies and there's no TC string: blocked (`tcf: GDPR applies and there is no TC string`); a consent provider's grant doesn't lift this, since the request goes to another party;
+6. GDPR applies and the module's `purposes` don't all have consent in the publisher TC segment, or it has a `gvlid`: blocked (the reasons modules get on `/v1`);
+7. Global Privacy Control (`Sec-GPC: 1`): blocked (`gpc`), unless the module's `anonymousOnGpc(config)` is true, when it's forwarded **anonymously**;
+8. otherwise forwarded.
+
+**Outbound requests** go only through the implementation (`context.forward`), which MUST refuse, without sending anything:
+
+- any request while the decision is blocked;
+- a URL that isn't `https` on the default port, has a user name or password, or whose host isn't one of the module's `hosts`.
+
+It doesn't follow redirects (a `3xx` is returned as is), gives up after 10 seconds, and adds nothing to what the module sends. When forwarding anonymously it also removes every header that carries the client's address or location: `Forwarded`, `X-Forwarded-*`, `X-Real-IP`, `True-Client-IP`, `CF-Connecting-IP`, `X-Client-IP`, `Client-IP` and `X-Cluster-Client-IP`. Modules MUST NOT copy the request's own forwarding, client IP or CDN location headers onward; the client IP and location they send come from the platform information, under the consent rules for precise location (see [Consent](#consent)).
+
+**Responses.** The module's response is returned with:
+
+- `X-SharedID-Forwarding`: `forwarded`, `anonymous`, or `blocked: <reason>`; `error` when `serve` throws or an outbound request fails, which gets `502` with nothing from the request in the body;
+- `Cache-Control: no-store` added when the module set none;
+- hop-by-hop headers (`Connection`, `Keep-Alive`, `Transfer-Encoding`, `TE`, `Trailer`, `Upgrade`, `Proxy-*`), `Content-Encoding` and `Content-Length` removed (the body is decoded), and every `Access-Control-*` header removed: the paths are the site's own, and `Access-Control-Allow-Origin` is never `*`.
+
+A blocked request still gets the module's answer, which SHOULD be one that doesn't break the page (an empty script, a `204`) and MUST NOT carry anything from the other service.
+
+**Reporting.** On `/v1`, a forwarding module in `SID_MODULES` reports `forwards` (see [Payload v1](#payload-v1)): whether the decision above, for this request, forwards. Nothing about forwarded requests is logged or kept.
+
 ### Module specifications
 
 Each module's behaviour is specified in its own file under [`modules/`](modules), named after the module:
@@ -335,6 +384,7 @@ Each module's behaviour is specified in its own file under [`modules/`](modules)
   - [The `gpp` module](modules/gpp.md)
   - [The `ip` module](modules/ip.md)
   - [The `reflect` module](modules/reflect.md)
+  - [The `tag-gateway` module](modules/tag-gateway.md)
   - [The `ua` module](modules/ua.md)
 - **Vendor modules** (`packages/vendor-modules/`):
   - [The `dbip` module](modules/dbip.md)
