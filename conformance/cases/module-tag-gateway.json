@@ -1,0 +1,128 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The tag-gateway module (SID_MODULES=tag-gateway, {\"tags\":[{\"id\":\"G-12345\",\"path\":\"/metrics\"}]}), a forwarding module: requests under /metrics go to the local stand-in for Google's tag gateway (conformance/src/upstream-stand-in.ts), which answers a measurement hit with the request it received, as JSON. Only the request's allowed headers and Google cookies are passed on; the client IP and location come from the platform, the full IP and precise location only under the precise-location consent rules, and nothing at all is sent with opt-out, COPPA, GPC (the default \"gpc\": \"block\") or without the module's TCF purposes (1 and 7) where GDPR applies. TC strings: CAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAA.cEAAAAAAAA has publisher consent for purposes 1 and 7 and opts in to Special Feature 1; CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.cEAAAAAAAA has publisher consent for 1 and 7 only; CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.cAAAAAAAAA for purpose 1 only.",
+  "build": ["vendor-modules"],
+  "config": { "SID_MODULES": "tag-gateway", "SID_TRUST_PROXY": "true", "SID_MODULE_CONFIG": "{\"tag-gateway\":{\"tags\":[{\"id\":\"G-12345\",\"path\":\"/metrics\"}]}}" },
+  "cases": [
+    {
+      "name": "forwards a measurement hit to the tag's gateway host, with the client IP and location from the platform and only Google's cookies",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1","cookie":"_ga=GA1.1.111.222; _pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d; _gcl_au=1.1.333.444; other=1; _ga_ABC123=GS1.1.555","user-agent":"Mozilla/5.0 (conformance)","referer":"https://www.example.com/page","x-forwarded-host":"elsewhere.example","x-real-ip":"198.51.100.9","accept-encoding":"identity"}},
+      "expect": {"status":200,"headers":{"content-type":"application/json","cache-control":"no-store","x-sharedid-forwarding":"forwarded"},"absentHeaders":["content-encoding","access-control-allow-origin"],"noCookies":true,"jsonIncludes":{"method":"GET","host":"g-12345.fps.goog","path":"/metrics/g/collect","query":"?v=2&tid=G-12345&en=page_view","headers":{"x-forwarded-for":"192.0.2.77","x-forwarded-country":"US","x-forwarded-countryregion":"US-CA","x-forwarded-geolocation":"latlong=37.4,-122.1;city=Mountain View","cookie":"_ga=GA1.1.111.222; _gcl_au=1.1.333.444; _ga_ABC123=GS1.1.555","user-agent":"Mozilla/5.0 (conformance)","referer":"https://www.example.com/page"}},"jsonAbsent":["headers.cf-connecting-ip","headers.cf-ipcountry","headers.cf-region-code","headers.cf-ipcity","headers.cf-iplatitude","headers.x-forwarded-host","headers.x-real-ip"]}
+    },
+    {
+      "name": "forwards an IPv6 client address in full",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view","headers":{"x-forwarded-for":"2001:db8::77","cf-connecting-ip":"2001:db8::77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":200,"jsonIncludes":{"host":"g-12345.fps.goog","headers":{"x-forwarded-for":"2001:db8::77"}}}
+    },
+    {
+      "name": "forwards a POST hit as a POST",
+      "request": {"method":"POST","path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":200,"headers":{"cache-control":"no-store","x-sharedid-forwarding":"forwarded"},"jsonIncludes":{"method":"POST","path":"/metrics/g/collect","body":""}}
+    },
+    {
+      "name": "serves the tag script, cacheable by the browser only",
+      "request": {"path":"/metrics/?id=G-12345","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1","sec-fetch-dest":"script"}},
+      "expect": {"status":200,"headers":{"content-type":"text/javascript","cache-control":"private, max-age=900","x-sharedid-forwarding":"forwarded"},"noCookies":true}
+    },
+    {
+      "name": "passes the gateway's health check through, uncached",
+      "request": {"path":"/metrics/healthy","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":200,"headers":{"cache-control":"no-store"},"bodyLength":2}
+    },
+    {
+      "name": "returns the gateway's redirect rather than following it",
+      "request": {"path":"/metrics/redirect","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":302,"headers":{"location":"https://elsewhere.example/","cache-control":"no-store"}}
+    },
+    {
+      "name": "answers other methods with 405",
+      "request": {"method":"PUT","path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view"},
+      "expect": {"status":405,"headers":{"allow":"GET, HEAD, POST"},"noCookies":true}
+    },
+    {
+      "name": "owns only its prefix and what is under it",
+      "request": {"path":"/metricsx/g/collect"},
+      "expect": {"status":404,"noCookies":true}
+    },
+    {
+      "name": "leaves the SharedID routes as they are, and reports on /v1 that this visitor is forwarded",
+      "request": {"path":"/_sid/v1","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":200,"jsonIncludes":{"ext":{"modules":{"tag-gateway":{"status":"empty","forwards":true}}}},"cookies":[{"name":"_pubcid"}]}
+    },
+    {
+      "name": "/sync is unchanged",
+      "request": {"path":"/_sid/sync?id=pubcid:c29cb2ae-769d-42f6-891a-f53cadee823d"},
+      "expect": {"status":200,"headers":{"content-type":"image/gif"},"bodyLength":43,"absentHeaders":["x-sharedid-forwarding"]}
+    },
+    {
+      "name": "forwards nothing with the opt-out cookie: a hit gets 204",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1","cookie":"_pubcid_optout=1; _ga=GA1.1.111.222"}},
+      "expect": {"status":204,"headers":{"cache-control":"no-store","x-sharedid-forwarding":"blocked: opt-out"},"bodyLength":0,"noCookies":true}
+    },
+    {
+      "name": "forwards nothing with the opt-out cookie: the script is empty",
+      "request": {"path":"/metrics/?id=G-12345","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1","sec-fetch-dest":"script","cookie":"_pubcid_optout=1"}},
+      "expect": {"status":200,"headers":{"content-type":"text/javascript; charset=utf-8","cache-control":"no-store","x-sharedid-forwarding":"blocked: opt-out"},"bodyLength":0,"noCookies":true}
+    },
+    {
+      "name": "forwards nothing for a COPPA request",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view&coppa=1","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":204,"headers":{"cache-control":"no-store","x-sharedid-forwarding":"blocked: coppa"},"bodyLength":0,"noCookies":true}
+    },
+    {
+      "name": "forwards nothing with Global Privacy Control",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1","sec-gpc":"1"}},
+      "expect": {"status":204,"headers":{"cache-control":"no-store","x-sharedid-forwarding":"blocked: gpc"},"bodyLength":0,"noCookies":true}
+    },
+    {
+      "name": "serves an empty script with Global Privacy Control",
+      "request": {"path":"/metrics/?id=G-12345","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1","sec-fetch-dest":"script","sec-gpc":"1"}},
+      "expect": {"status":200,"headers":{"content-type":"text/javascript; charset=utf-8","cache-control":"no-store","x-sharedid-forwarding":"blocked: gpc"},"bodyLength":0,"noCookies":true}
+    },
+    {
+      "name": "reports on /v1 that a visitor with Global Privacy Control is not forwarded",
+      "request": {"path":"/_sid/v1","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1","sec-gpc":"1"}},
+      "expect": {"status":200,"jsonIncludes":{"ext":{"modules":{"tag-gateway":{"status":"empty","forwards":false}}}}}
+    },
+    {
+      "name": "forwards nothing when GDPR applies and there is no TC string",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view&gdpr=1","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":204,"headers":{"cache-control":"no-store","x-sharedid-forwarding":"blocked: tcf: GDPR applies and there is no TC string"},"bodyLength":0,"noCookies":true}
+    },
+    {
+      "name": "forwards nothing for an EU visitor without a TC string",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"DE","cf-region-code":"BE","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":204,"headers":{"cache-control":"no-store","x-sharedid-forwarding":"blocked: tcf: GDPR applies and there is no TC string"},"bodyLength":0,"noCookies":true}
+    },
+    {
+      "name": "forwards nothing without publisher consent for purpose 7",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.cAAAAAAAAA","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":204,"headers":{"cache-control":"no-store","x-sharedid-forwarding":"blocked: tcf: no publisher consent for purpose 7"},"bodyLength":0,"noCookies":true}
+    },
+    {
+      "name": "forwards nothing with an invalid TC string",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view&gdpr=1&gdpr_consent=notatcstring","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":204,"headers":{"cache-control":"no-store","x-sharedid-forwarding":"blocked: tcf: invalid TC string"},"bodyLength":0,"noCookies":true}
+    },
+    {
+      "name": "forwards the client IP and precise location with consent to purposes 1 and 7 and Special Feature 1",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAA.cEAAAAAAAA","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":200,"headers":{"x-sharedid-forwarding":"forwarded"},"jsonIncludes":{"headers":{"x-forwarded-for":"192.0.2.77","x-forwarded-country":"US","x-forwarded-countryregion":"US-CA","x-forwarded-geolocation":"latlong=37.4,-122.1;city=Mountain View"}}}
+    },
+    {
+      "name": "reads the TC string from the CMP's cookie, as a gateway request carries it",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"DE","cf-region-code":"BE","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1","cookie":"euconsent-v2=CAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAA.cEAAAAAAAA"}},
+      "expect": {"status":200,"headers":{"x-sharedid-forwarding":"forwarded"},"jsonIncludes":{"headers":{"x-forwarded-for":"192.0.2.77","x-forwarded-countryregion":"DE-BE"}},"jsonAbsent":["headers.cookie"]}
+    },
+    {
+      "name": "forwards without the client IP or precise location when the TC string has no opt-in to precise geolocation",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view&gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.cEAAAAAAAA","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":200,"headers":{"x-sharedid-forwarding":"forwarded"},"jsonIncludes":{"headers":{"x-forwarded-country":"US","x-forwarded-countryregion":"US-CA"}},"jsonAbsent":["headers.x-forwarded-for","headers.x-forwarded-geolocation","headers.cf-connecting-ip","headers.cf-ipcountry","headers.cf-region-code","headers.cf-ipcity","headers.cf-iplatitude","headers.x-forwarded-host","headers.x-real-ip"]}
+    },
+    {
+      "name": "forwards without the client IP or precise location with a US privacy opt-out of sale",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view&us_privacy=1YYN","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":200,"headers":{"x-sharedid-forwarding":"forwarded"},"jsonIncludes":{"headers":{"x-forwarded-countryregion":"US-CA"}},"jsonAbsent":["headers.x-forwarded-for","headers.x-forwarded-geolocation","headers.cf-connecting-ip","headers.cf-ipcountry","headers.cf-region-code","headers.cf-ipcity","headers.cf-iplatitude","headers.x-forwarded-host","headers.x-real-ip"]}
+    }
+  ]
+}

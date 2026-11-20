@@ -1,4 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { EU_COUNTRY_CODES } from '@sharedid-edge/core';
 import type { BuildOption } from './cases.js';
 import { freePort } from './emulator.js';
@@ -37,6 +38,28 @@ export interface RunningTarget {
 export type TargetName = 'node' | 'wrangler' | 'lambda' | 'lambda-aws-emulator' | 'lambda-edge' | 'lambda-edge-viewer' | 'vercel' | 'azure' | 'gcp' | 'akamai' | 'fastly';
 
 const ROOT = join(import.meta.dirname, '..', '..');
+
+/**
+ * `node --import` of the upstream stand-in (upstream-stand-in.ts), for every target process run with Node.js: forwarding
+ * modules' requests get the stand-in's answer, and any other request that would leave the machine fails.
+ */
+const STAND_IN = ['--import', pathToFileURL(join(ROOT, 'conformance/dist/upstream-preload.js')).href];
+
+/**
+ * For `wrangler dev`: a Worker entry point that installs the upstream stand-in, then exports `entry` (relative to the
+ * Cloudflare adapter's folder). Written to its `.sharedid-modules/`, which git ignores; returns its path from there.
+ */
+function standInWorker(entry: string): string {
+  const dir = join(ROOT, 'packages/adapters/cloudflare/.sharedid-modules');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'conformance.ts'), [
+    '// Written by conformance/src/targets.ts: the upstream stand-in first, then the Worker under test.',
+    "import '../../../../conformance/src/upstream-preload.ts';",
+    `export { default } from '../${entry}';`,
+    ''
+  ].join('\n'));
+  return '.sharedid-modules/conformance.ts';
+}
 
 async function waitUntilUp(baseUrl: string, child: ChildProcess, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -204,8 +227,48 @@ function encryptedIpCases(reason: string): [string, string][] {
 }
 const NO_X25519 = "the runtime's Web Crypto has no X25519, which HPKE needs";
 
+/**
+ * Forwarding modules (tag-gateway): adapters whose platform doesn't send requests to other hosts refuse one in
+ * SID_MODULES (no `forwardFetch`: every request the adapter answers is a 500), so their files are listed, except, for a
+ * target whose platform routes only the base path to the adapter (Azure's route template), the cases that expect the
+ * platform's own 404 for a path the module doesn't own.
+ */
+const NO_FORWARDING = "the adapter doesn't support forwarding modules, and refuses one in SID_MODULES";
+const FORWARDING_FILES = ['module-tag-gateway.json', 'module-tag-gateway-gpc-anonymous.json', 'module-tag-gateway-invalid-config.json'];
+function forwardingFiles(reason: string, except: readonly string[] = []): [string, string][] {
+  return FORWARDING_FILES.flatMap(file => {
+    const parsed = JSON.parse(readFileSync(join(ROOT, 'conformance/cases', file), 'utf8')) as { readonly cases: readonly { readonly name: string }[] };
+    const names = parsed.cases.map(c => c.name);
+    return names.some(name => except.includes(name)) ? limited(file, reason, names.filter(name => !except.includes(name))) : [[file, reason]];
+  });
+}
+/**
+ * AWS Emulator's Lambda runtime has no fetch (aws-emulator-runtime.ts fills in only what the other modules use), so the
+ * tag-gateway cases that reach the gateway fail there; the blocked ones, and the GDPR-by-location one (no location),
+ * don't. Lambda's nodejs24.x runtime has fetch, and the lambda target passes them.
+ */
+const NO_FETCH = "AWS Emulator's Lambda runtime has no fetch, which forwarding needs (Lambda's nodejs24.x has it)";
+
 const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, string>>>>> = {
   'lambda-aws-emulator': Object.fromEntries([
+    ...limited('module-tag-gateway.json', NO_FETCH, [
+      "forwards a measurement hit to the tag's gateway host, with the client IP and location from the platform and only Google's cookies",
+      'forwards an IPv6 client address in full',
+      'forwards a POST hit as a POST',
+      'serves the tag script, cacheable by the browser only',
+      "passes the gateway's health check through, uncached",
+      "returns the gateway's redirect rather than following it",
+      'forwards the client IP and precise location with consent to purposes 1 and 7 and Special Feature 1',
+      "reads the TC string from the CMP's cookie, as a gateway request carries it",
+      'forwards without the client IP or precise location when the TC string has no opt-in to precise geolocation',
+      'forwards without the client IP or precise location with a US privacy opt-out of sale'
+    ]),
+    ...limited('module-tag-gateway.json', NO_LOCATION, ['forwards nothing for an EU visitor without a TC string']),
+    ...limited('module-tag-gateway-gpc-anonymous.json', NO_FETCH, [
+      'forwards a hit with Global Privacy Control anonymously: no client IP or location',
+      'serves the tag script with Global Privacy Control',
+      'forwards the client IP and location as usual without Global Privacy Control'
+    ]),
     ...encryptedIpCases(CLIENT_IP),
     // the module is off here, but the case shows the ip module's ortb2.device.ip for its fixture client IP
     ...limited('module-encrypted-ip-off.json', CLIENT_IP, ['adds no eip field unless listed in SID_MODULES']),
@@ -306,18 +369,20 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
   ]),
   // Trusted-upstream mode is refused on these adapters (SID_UPSTREAM_SECRETS is a configuration error, so every request
   // gets a 500); see their READMEs.
-  'lambda-edge': { 'trusted-upstream.json': NO_UPSTREAM, 'cookie-domain-auto-upstream.json': NO_UPSTREAM },
+  'lambda-edge': Object.fromEntries([['trusted-upstream.json', NO_UPSTREAM], ['cookie-domain-auto-upstream.json', NO_UPSTREAM], ...forwardingFiles(NO_FORWARDING)]),
   'lambda-edge-viewer': Object.fromEntries([
     ...gdprByLocation(VIEWER_NO_LOCATION),
     ...['forwarded-headers-untrusted.json', 'module-dbip.json', 'module-dbip-replace.json', 'module-geo.json', 'module-geo-coarse.json', 'module-geo-invalid-config.json', 'module-ip2location.json', 'module-ip2location-replace.json', 'module-maxmind.json', 'module-maxmind-replace.json', 'module-sync-modules.json'].map((file): [string, string] => [file, VIEWER_NO_GEO]),
     ['trusted-upstream.json', NO_UPSTREAM],
-    ['cookie-domain-auto-upstream.json', NO_UPSTREAM]
+    ['cookie-domain-auto-upstream.json', NO_UPSTREAM],
+    ...forwardingFiles(NO_FORWARDING)
   ]),
   vercel: { 'trusted-upstream.json': NO_UPSTREAM, 'cookie-domain-auto-upstream.json': NO_UPSTREAM },
-  azure: { 'trusted-upstream.json': NO_UPSTREAM, 'cookie-domain-auto-upstream.json': NO_UPSTREAM },
+  // Azure's route template sends only the base path to the function: the stand-in answers other paths with its own 404.
+  azure: Object.fromEntries([['trusted-upstream.json', NO_UPSTREAM], ['cookie-domain-auto-upstream.json', NO_UPSTREAM], ...forwardingFiles(NO_FORWARDING, ['owns only its prefix and what is under it', 'owns no path'])]),
   gcp: { 'trusted-upstream.json': NO_UPSTREAM, 'cookie-domain-auto-upstream.json': NO_UPSTREAM },
-  akamai: Object.fromEntries([['trusted-upstream.json', NO_UPSTREAM], ['cookie-domain-auto-upstream.json', NO_UPSTREAM], ...encryptedIpCases(NO_X25519)]),
-  fastly: Object.fromEntries(encryptedIpCases(NO_X25519))
+  akamai: Object.fromEntries([['trusted-upstream.json', NO_UPSTREAM], ['cookie-domain-auto-upstream.json', NO_UPSTREAM], ...encryptedIpCases(NO_X25519), ...forwardingFiles(NO_FORWARDING)]),
+  fastly: Object.fromEntries([...encryptedIpCases(NO_X25519), ...forwardingFiles(NO_FORWARDING)])
 };
 
 /** The environment without SID_* settings, so only the case file's reach a target that's given the environment. */
@@ -399,14 +464,14 @@ export async function startTarget(
   // A process the target needs besides `child`, stopped with it.
   let upstream: { readonly child: ChildProcess; readonly url: string } | undefined;
   if (target === 'node') {
-    child = spawn(process.execPath, [...(noTcf ? ['--import', pathToFileURL(join(ROOT, 'conformance/dist/no-tcf.js')).href] : []), join(ROOT, 'packages/adapters/node/dist/cli.js')], {
+    child = spawn(process.execPath, [...STAND_IN, ...(noTcf ? ['--import', pathToFileURL(join(ROOT, 'conformance/dist/no-tcf.js')).href] : []), join(ROOT, 'packages/adapters/node/dist/cli.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), HOST: '127.0.0.1', ...vendorPackages, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else if (target === 'lambda') {
     // The bundled Lambda handler behind a local CloudFront and function URL stand-in (lambda-emulator.ts). The
     // public origin is the emulator's own http URL, so cookies aren't Secure, as for the other local targets.
-    child = spawn(process.execPath, [join(ROOT, 'conformance/dist/lambda-emulator.js')], {
+    child = spawn(process.execPath, [...STAND_IN, join(ROOT, 'conformance/dist/lambda-emulator.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_LAMBDA_BUNDLE: bundle, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
@@ -426,14 +491,14 @@ export async function startTarget(
     // runner calls. A viewer-request function runs before CloudFront adds that header, and takes https (the behaviour
     // redirects http), so it gets the runner's URL as SID_PUBLIC_ORIGIN, as the Lambda target does. Either way cookies
     // aren't Secure, as for the other local targets.
-    child = spawn(process.execPath, [join(ROOT, 'conformance/dist/lambda-edge-emulator.js')], {
+    child = spawn(process.execPath, [...STAND_IN, join(ROOT, 'conformance/dist/lambda-edge-emulator.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), CONFORMANCE_LAMBDA_EDGE_BUNDLE: bundle.replace('deploy', 'deploy-edge'), CONFORMANCE_LAMBDA_EDGE_EVENT: target === 'lambda-edge' ? 'origin-request' : 'viewer-request', ...(target === 'lambda-edge-viewer' ? { SID_PUBLIC_ORIGIN: baseUrl } : {}), ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else if (target === 'vercel') {
     // The bundled Vercel adapter behind a local stand-in for Vercel's proxy (vercel-emulator.ts), which sets the
     // x-real-ip and x-vercel-ip-* headers. Plain http, so cookies aren't Secure, as for the other local targets.
-    child = spawn(process.execPath, [join(ROOT, 'conformance/dist/vercel-emulator.js')], {
+    child = spawn(process.execPath, [...STAND_IN, join(ROOT, 'conformance/dist/vercel-emulator.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_VERCEL_BUNDLE: bundle, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
@@ -441,7 +506,7 @@ export async function startTarget(
     // The bundled function app behind a local stand-in for Front Door and the Functions host (azure-emulator.ts). The
     // handler checks X-Azure-FDID against a fixed profile ID the stand-in sends, and reads every location field from
     // the headers a Front Door rule set would add. Plain http, so cookies aren't Secure, as for the other targets.
-    child = spawn(process.execPath, [join(ROOT, 'conformance/dist/azure-emulator.js')], {
+    child = spawn(process.execPath, [...STAND_IN, join(ROOT, 'conformance/dist/azure-emulator.js')], {
       env: {
         PATH: process.env['PATH'] ?? '',
         PORT: String(port),
@@ -458,7 +523,7 @@ export async function startTarget(
     // The bundled EdgeWorker in a V8 context of its own, behind a local stand-in for EdgeWorkers (akamai-emulator.ts)
     // that calls its responseProvider with the request object, EdgeScape's location and the PMUSER_SID_* variables.
     // node:vm's SourceTextModule needs --experimental-vm-modules. Plain http, so cookies aren't Secure.
-    child = spawn(process.execPath, ['--experimental-vm-modules', '--disable-warning=ExperimentalWarning', join(ROOT, 'conformance/dist/akamai-emulator.js')], {
+    child = spawn(process.execPath, [...STAND_IN, '--experimental-vm-modules', '--disable-warning=ExperimentalWarning', join(ROOT, 'conformance/dist/akamai-emulator.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), SID_PUBLIC_ORIGIN: baseUrl, CONFORMANCE_AKAMAI_BUNDLE: bundle, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
@@ -471,12 +536,12 @@ export async function startTarget(
     const framework = join(ROOT, 'node_modules/@google-cloud/functions-framework/build/src/main.js');
     upstream = {
       url: `http://127.0.0.1:${String(functionPort)}`,
-      child: spawn(process.execPath, [framework, '--target=sharedidEdge', `--source=${join(ROOT, 'packages/adapters/gcp-functions', bundle)}`, `--port=${String(functionPort)}`], {
+      child: spawn(process.execPath, [...STAND_IN, framework, '--target=sharedidEdge', `--source=${join(ROOT, 'packages/adapters/gcp-functions', bundle)}`, `--port=${String(functionPort)}`], {
         env: { PATH: process.env['PATH'] ?? '', SID_PUBLIC_ORIGIN: baseUrl, SID_LOCATION_HEADERS: location, ...config },
         stdio: ['ignore', 'ignore', 'inherit']
       })
     };
-    child = spawn(process.execPath, [join(ROOT, 'conformance/dist/gcp-emulator.js')], {
+    child = spawn(process.execPath, [...STAND_IN, join(ROOT, 'conformance/dist/gcp-emulator.js')], {
       env: { PATH: process.env['PATH'] ?? '', PORT: String(port), UPSTREAM_PORT: String(functionPort), SID_LOCATION_HEADERS: location, ...config },
       stdio: ['ignore', 'ignore', 'inherit']
     });
@@ -485,7 +550,7 @@ export async function startTarget(
     const vars = Object.entries(config).flatMap(([key, value]) => ['--var', `${key}:${value}`]);
     // The Bowser build is its own entry point, src/bowser.ts, as in the Worker's dev:bowser and deploy:bowser scripts.
     if (vendor) moduleList('.sharedid-modules', '--worker', '--vendor-modules');
-    const entry = bowser ? ['src/bowser.ts'] : vendor ? ['.sharedid-modules/worker.ts'] : [];
+    const entry = [standInWorker(bowser ? 'src/bowser.ts' : vendor ? '.sharedid-modules/worker.ts' : 'src/index.ts')];
     const wrangler = join(ROOT, 'node_modules/wrangler/bin/wrangler.js');
     const defines = noTcf ? ['--define', 'globalThis.__SID_NO_TCF__:true'] : [];
     child = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'error', '--show-interactive-dev-session=false', ...entry, ...defines, ...vars], {

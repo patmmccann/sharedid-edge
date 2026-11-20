@@ -1,0 +1,23 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "Without a forwarding module, the worker forwards nothing: paths outside SID_BASE_PATH, including the ones a tag gateway would use, get 404, and the SharedID routes still refuse other methods without reading a body. Not run live: a live deployment's site answers its own paths.",
+  "live": false,
+  "config": {},
+  "cases": [
+    {
+      "name": "a tag gateway hit gets 404",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view"},
+      "expect": {"status":404,"noCookies":true,"absentHeaders":["x-sharedid-forwarding"]}
+    },
+    {
+      "name": "a POST outside the base path gets 404",
+      "request": {"method":"POST","path":"/metrics/g/collect"},
+      "expect": {"status":404,"noCookies":true}
+    },
+    {
+      "name": "a POST to /v1 still gets 405",
+      "request": {"method":"POST","path":"/_sid/v1"},
+      "expect": {"status":405,"noCookies":true}
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The tag-gateway module with {\"gpc\":\"forward-anonymous\"}: with Global Privacy Control, requests are still forwarded to the local stand-in for Google's tag gateway, without any client IP or location header, so Google's Consent Mode decides. Opt-out and COPPA still block, and without GPC nothing changes.",
+  "build": ["vendor-modules"],
+  "config": { "SID_MODULES": "tag-gateway", "SID_TRUST_PROXY": "true", "SID_MODULE_CONFIG": "{\"tag-gateway\":{\"tags\":[{\"id\":\"G-12345\",\"path\":\"/metrics\"}],\"gpc\":\"forward-anonymous\"}}" },
+  "cases": [
+    {
+      "name": "forwards a hit with Global Privacy Control anonymously: no client IP or location",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1","sec-gpc":"1","cookie":"_ga=GA1.1.111.222"}},
+      "expect": {"status":200,"headers":{"cache-control":"no-store","x-sharedid-forwarding":"anonymous"},"jsonIncludes":{"host":"g-12345.fps.goog","headers":{"sec-gpc":"1","cookie":"_ga=GA1.1.111.222"}},"jsonAbsent":["headers.x-forwarded-for","headers.x-forwarded-country","headers.x-forwarded-countryregion","headers.x-forwarded-region","headers.x-forwarded-geolocation","headers.cf-connecting-ip","headers.cf-ipcountry","headers.cf-region-code","headers.cf-ipcity","headers.cf-iplatitude","headers.x-forwarded-host","headers.x-real-ip"]}
+    },
+    {
+      "name": "serves the tag script with Global Privacy Control",
+      "request": {"path":"/metrics/?id=G-12345","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1","sec-fetch-dest":"script","sec-gpc":"1"}},
+      "expect": {"status":200,"headers":{"content-type":"text/javascript","cache-control":"private, max-age=900","x-sharedid-forwarding":"anonymous"}}
+    },
+    {
+      "name": "reports on /v1 that a visitor with Global Privacy Control is forwarded",
+      "request": {"path":"/_sid/v1","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1","sec-gpc":"1"}},
+      "expect": {"status":200,"jsonIncludes":{"ext":{"modules":{"tag-gateway":{"status":"empty","forwards":true}}}},"noCookies":true}
+    },
+    {
+      "name": "still forwards nothing for a COPPA request with Global Privacy Control",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view&coppa=1","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1","sec-gpc":"1"}},
+      "expect": {"status":204,"headers":{"cache-control":"no-store","x-sharedid-forwarding":"blocked: coppa"},"bodyLength":0,"noCookies":true}
+    },
+    {
+      "name": "still forwards nothing with the opt-out cookie and Global Privacy Control",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1","sec-gpc":"1","cookie":"_pubcid_optout=1"}},
+      "expect": {"status":204,"headers":{"cache-control":"no-store","x-sharedid-forwarding":"blocked: opt-out"},"bodyLength":0,"noCookies":true}
+    },
+    {
+      "name": "forwards the client IP and location as usual without Global Privacy Control",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view","headers":{"x-forwarded-for":"192.0.2.77","cf-connecting-ip":"192.0.2.77","cf-ipcountry":"US","cf-region-code":"CA","cf-ipcity":"Mountain View","cf-iplatitude":"37.4","cf-iplongitude":"-122.1"}},
+      "expect": {"status":200,"headers":{"x-sharedid-forwarding":"forwarded"},"jsonIncludes":{"headers":{"x-forwarded-for":"192.0.2.77","x-forwarded-country":"US","x-forwarded-countryregion":"US-CA","x-forwarded-geolocation":"latlong=37.4,-122.1;city=Mountain View"}}}
+    }
+  ]
+}
