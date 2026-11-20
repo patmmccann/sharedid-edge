@@ -505,13 +505,13 @@ The function runs on one of two CloudFront events, chosen when you build it and 
 SharedID Edge answers in milliseconds with responses under 2 KB, so the limits don't matter here; where it runs and what it knows do:
 
 - **Use `origin-request`** when you want GDPR decided by the visitor's location (visitors in the EU, the EEA, the UK or Turkey without a TC string get no cookie, as on every other platform), or the `geo` module. It's one hop further from the visitor than `viewer-request`, still far closer than one region.
-- **Use `viewer-request`** when the page supplies consent itself: your CMP writes the TC string to the `euconsent-v2` cookie (or the page sends `gdpr_consent`) before Prebid.js calls `/_sid/sync`, so the decision never needs the country. It's the lowest latency.
+- **Use `viewer-request`** when the page supplies consent itself, so the decision never needs the country. Best, set `pixelConsent: true` in Prebid.js (11.53.0 and later; see [Configure Prebid.js](../../../docs/prebid.md)): its `/_sid/sync` call then carries the consent Prebid.js used, `gdpr` from your CMP's `gdprApplies` (so `gdpr=0` lets visitors outside GDPR get the ID even with the default `--gdpr-without-location applies`), `gdpr_consent`, and the GPP string of a GPP-only CMP. Otherwise your CMP must write the TC string to the `euconsent-v2` cookie (or the page send `gdpr_consent`) before Prebid.js calls `/_sid/sync`. It's the lowest latency.
 
 #### GDPR without a location
 
 Without a country (always on `viewer-request`; on `origin-request` when CloudFront can't place the address, or a custom origin request policy doesn't forward `CloudFront-Viewer-Country`), SharedID Edge never assumes the visitor is outside the EU. The bundle's `--gdpr-without-location` option says what happens:
 
-- **`applies` (the default): fail closed.** GDPR applies, so without a valid TC string nothing is set and existing ID cookies are deleted (`X-SharedID-Status: denied: tcf: GDPR applies and there is no TC string`); with one, the TC string decides, as everywhere. A page can still say `gdpr=0` on calls it makes itself (`/_sid/v1`). On a site whose visitors outside the EU have no TC string, they get no server-set ID: use `origin-request` for those.
+- **`applies` (the default): fail closed.** GDPR applies, so without a valid TC string nothing is set and existing ID cookies are deleted (`X-SharedID-Status: denied: tcf: GDPR applies and there is no TC string`); with one, the TC string decides, as everywhere. A page can still say `gdpr=0`: on calls it makes itself (`/_sid/v1`), and on Prebid.js's `/_sid/sync` with `pixelConsent: true`, when its CMP says GDPR doesn't apply. On a site whose visitors outside the EU have no TC string, they get no server-set ID: use `origin-request` for those.
 - **`client`: the client decides.** GDPR applies only when the request says so: a TC string, or `gdpr=1`. Choose it only when your CMP writes the TC string for every visitor GDPR covers before Prebid.js calls `/_sid/sync`; an EU visitor without one gets the ID. This is how the other platforms treat a request without a location.
 
 ### What's different from the regional function

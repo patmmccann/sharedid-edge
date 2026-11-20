@@ -51,14 +51,14 @@ pbjs.setConfig({
   userSync: {
     userIds: [{
       name: 'sharedId',
-      params: { pixelUrl: '/_sid/sync', extend: true },
+      params: { pixelUrl: '/_sid/sync', extend: true, pixelConsent: true },  // pixelConsent: Prebid.js 11.53+
       storage: { type: 'cookie', name: '_pubcid', expires: 365 }
     }]
   }
 });
 ```
 
-[Configure Prebid.js](docs/prebid.md) explains each option, three Prebid.js issues fixed in 11.49.0, and how to pass the modules' output to the auction.
+`pixelConsent: true` (Prebid.js 11.53.0 and later) sends the consent Prebid.js has to the worker, so it decides with exactly that consent; leave it out on older versions. [Configure Prebid.js](docs/prebid.md) explains each option, three Prebid.js issues fixed in 11.49.0, and how to pass the modules' output to the auction.
 
 ## Modules
 

@@ -1,11 +1,12 @@
 // Test site: serves a page that loads unmodified Prebid.js (a bundle of the npm package's chunks, bundle-prebid.ts), and answers
-// /_sid/* with SharedID Edge (the built core package and the reflect and clickid modules), on one origin, as a publisher's CDN would.
+// /_sid/* with SharedID Edge (the built core package and the reflect, clickid and gpp modules), on one origin, as a publisher's CDN would.
 import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { connect } from 'node:net';
 import { join, normalize, sep } from 'node:path';
 import { createHandler, resolveConfig } from '../packages/core/dist/index.js';
 import { clickIdModule } from '../packages/modules/clickid/dist/index.js';
+import { gppModule } from '../packages/modules/gpp/dist/index.js';
 import { reflectModule } from '../packages/modules/reflect/dist/index.js';
 
 // The Prebid.js bundle bundle-prebid.ts builds (Playwright's webServer command runs it first).
@@ -13,19 +14,21 @@ const prebidDist = join(import.meta.dirname, 'site', 'public', 'prebid');
 const port = Number(process.env['PORT'] ?? 4310);
 // No pixel caching, so every visit reaches the endpoint and the tests can observe it. The reflect module runs on
 // /sync, so Prebid.js's pixel call refreshes uid1 and keeps _ga; so does clickid, which keeps ad click IDs from the
-// landing page's URL (the pixel call's Referer).
+// landing page's URL (the pixel call's Referer). The opt-in gpp module reads the US opt-outs in the gpp and gpp_sid
+// parameters Prebid.js adds to the pixel call with pixelConsent: true. The live deployments don't build it, so the
+// tests that need it run locally only.
 const handler = createHandler({
   config: resolveConfig({
     // The tests browse http://e2e.sharedid.test through this server as their proxy (playwright.config.ts), and Prebid.js
     // writes _pubcid on sharedid.test, so the endpoint does too, as on the live site with sharedid.dev.
     SID_COOKIE_DOMAIN: 'sharedid.test',
     SID_SYNC_CACHE_SECONDS: '0',
-    SID_MODULES: 'reflect,clickid',
+    SID_MODULES: 'reflect,clickid,gpp',
     // uid1 as the reflect README's walkthrough configures it: on the domain the vendor tag writes it on, readable by
     // script, and restored from the keeper.
     SID_MODULE_CONFIG: JSON.stringify({ reflect: { cookies: [{ name: 'uid1', maxAgeDays: 365, domain: 'sharedid.test', httpOnly: false, restore: true }, { name: '_ga', maxAgeDays: 400, restore: true }] } })
   }),
-  modules: [reflectModule, clickIdModule]
+  modules: [reflectModule, clickIdModule, gppModule]
 });
 // The same page the live test site (site/) serves.
 const PAGE = readFileSync(join(import.meta.dirname, 'site', 'public', 'index.html'), 'utf8');
@@ -47,7 +50,7 @@ const server = createServer((req, res) => {
     });
     return;
   }
-  if (url.pathname === '/tcf.js' || url.pathname === '/vendor-uid1.js') {
+  if (url.pathname === '/tcf.js' || url.pathname === '/gpp.js' || url.pathname === '/vendor-uid1.js') {
     res.writeHead(200, { 'Content-Type': 'application/javascript' }).end(readFileSync(join(import.meta.dirname, 'site', 'public', url.pathname.slice(1))));
     return;
   }
