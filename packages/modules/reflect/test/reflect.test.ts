@@ -383,6 +383,20 @@ describe('the reflect module in the handler', () => {
     expect(cookies.find(c => c.startsWith('fpid='))).toMatch(/; Domain=example\.com;/);
   });
 
+  it('sets a cookie with "domain": "auto" on the domain Prebid.js reports, and deletes its host-only duplicate', async () => {
+    const reflectConfig = { reflect: { cookies: [{ name: 'uid1', maxAgeDays: 30, domain: 'auto' }] } };
+    const h = createHandler({
+      config: resolveConfig({ SID_MODULES: 'reflect', SID_COOKIE_DOMAIN: 'example.com', SID_MODULE_CONFIG: JSON.stringify(reflectConfig) }),
+      modules: [reflectModule]
+    });
+    const cookies = (await h(new Request('https://a.www.example.com/_sid/sync?cookie_domain=www.example.com', { headers: { Cookie: 'uid1=abc; uid1=abc' } }))).headers.getSetCookie();
+    expect(cookies.filter(c => c.startsWith('uid1=')).map(c => /Domain=([^;]+)/.exec(c)?.[1])).toEqual(['www.example.com', undefined]);
+    // Without a cookie_domain it can use, host-only, so the host-only copy stays.
+    const fallback = (await h(new Request('https://a.www.example.com/_sid/sync', { headers: { Cookie: 'uid1=abc; uid1=abc' } }))).headers.getSetCookie();
+    expect(fallback.filter(c => c.startsWith('uid1=')).map(c => /Domain=([^;]+)/.exec(c)?.[1])).toEqual([undefined]);
+    expect(reflectModuleConfig({ cookies: [{ name: 'x', maxAgeDays: 1, domain: 'auto' }], keeper: { domain: 'auto' } }).keeper.domain).toBe('auto');
+  });
+
   it('reflects only configured cookies the request carries, with reflectable values', async () => {
     expect((await call('/_sid/v1', { Cookie: 'other=1; uid1=; fpid=x' })).cookies.map(c => c.split(';')[0])).toEqual(['fpid=x']);
     expect((await call('/_sid/v1', { Cookie: 'uid1="abc"; fpid=a b' })).cookies).toEqual([]);

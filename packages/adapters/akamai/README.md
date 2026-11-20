@@ -139,7 +139,7 @@ In Property Manager, edit a new version of your site's property.
 
 | Variable | Value | Security |
 | --- | --- | --- |
-| `PMUSER_SID_COOKIE_DOMAIN` | **Required:** the domain Prebid.js writes `_pubcid` on, normally your registrable domain (`example.com`), or `host-only`. See [Configure Prebid.js](../../../docs/prebid.md). | Hidden |
+| `PMUSER_SID_COOKIE_DOMAIN` | **Required:** the domain Prebid.js writes `_pubcid` on, normally your registrable domain (`example.com`), `host-only`, or `auto` ([Cookie domain `auto`](../../../docs/configuration.md#cookie-domain-auto)). See [Configure Prebid.js](../../../docs/prebid.md). | Hidden |
 | `PMUSER_SID_CLIENT_IP` | **Required:** leave the initial value empty; the rule sets it (below). | Hidden |
 
 Set the value as the variable's initial value. Leave a setting out (or empty) for its default. Use *Hidden* so values don't appear in Akamai's debug headers; not *Sensitive*, which [EdgeWorkers can't read](https://techdocs.akamai.com/edgeworkers/docs/request-object).

@@ -32,6 +32,20 @@ pbjs.setConfig({
 - **With `storageControl` in Prebid.js 11.48.0 or earlier** (fixed in 11.49.0), `sharedIdSystem` can't find the registrable domain: `storageControl` blocks the probe cookie it uses (`_gd…_sharedId`), which those releases don't disclose, so it writes `_pubcid` host-only. Prebid.js [#16156](https://github.com/prebid/Prebid.js/pull/16156), in 11.49.0, fixes that. On older versions, either leave `storageControl` out or set its `enforcement` to `off`, or set `SID_COOKIE_DOMAIN=host-only` to match.
 - If Prebid.js runs on a different subdomain than the route, set `pixelUrl` to an absolute URL on a host under the cookie's domain (`SID_COOKIE_DOMAIN`).
 
+### Cookie domain `auto`
+
+With Prebid.js 11.53.0 or later, `pixelCookieDomain: true` makes `sharedIdSystem` tell the worker which domain it writes `_pubcid` on, so a deployment set to `SID_COOKIE_DOMAIN=auto` can match it without being told ([Cookie domain `auto`](configuration.md#cookie-domain-auto)):
+
+```js
+params: {
+  pixelUrl: '/_sid/sync',
+  extend: true,
+  pixelCookieDomain: true   // adds &cookie_domain=example.com to the pixelUrl request
+}
+```
+
+It's harmless with a fixed `SID_COOKIE_DOMAIN`, which wins over `cookie_domain`. Without it, a deployment on `auto` sets host-only cookies, which don't match the `_pubcid` Prebid.js writes on your registrable domain.
+
 **Fixed in Prebid.js: `getUserIdsAsync()` didn't resolve with `extend: true`.** The fix, [prebid/Prebid.js#16135](https://github.com/prebid/Prebid.js/pull/16135), is in Prebid.js 11.49.0. In 11.48.0 and earlier, with `extend: true` and `pixelUrl`, `pbjs.getUserIdsAsync()` doesn't resolve on visits after the first, because `sharedIdSystem`'s extend callback never signals completion. Cookies aren't affected, but code that awaits `getUserIdsAsync()` hangs, and with `auctionDelay` above 0 every auction waits the full delay. On those versions, keep `auctionDelay` at 0 with `extend: true` and `pixelUrl`.
 
 **Fixed in Prebid.js: the first visit's cookie was rewritten by script.** The fix, [prebid/Prebid.js#16136](https://github.com/prebid/Prebid.js/pull/16136), is in Prebid.js 11.49.0. In 11.48.0 and earlier, on a first visit, `sharedIdSystem` mints an ID, calls `pixelUrl`, and when the pixel loads it stores the ID again with `document.cookie`, straight after the worker's `Set-Cookie`. That makes the cookie script-set again, so Safari's 7-day cap applies to it until the next sync re-sets it from the server (with `extend: true`, the next visit after `SID_SYNC_CACHE_SECONDS`). The `HttpOnly` recovery copy (`_pubcid_sv`) isn't affected, so if Safari clears the cookie in the meantime, the next sync restores the original ID. The same rewrite also puts back a cookie the worker deleted for GPC, COPPA or denied consent, until the next sync deletes it again. On those versions, no configuration avoids the rewrite.

@@ -329,6 +329,18 @@ describe('storing click IDs', () => {
     expect(clickCookies(hostOnly)[0]).not.toContain('Domain=');
   });
 
+  it('uses the domain Prebid.js reports with "domain": "auto", else host-only', async () => {
+    const env = { SID_COOKIE_DOMAIN: 'example.com' };
+    const auto = await handler({ domain: 'auto' }, env)(request({ path: v1('https://www.example.com/?gclid=abc').replace('/_sid/v1?', '/_sid/v1?cookie_domain=www.example.com&') }));
+    expect(clickCookies(auto)[0]).toContain('; Domain=www.example.com;');
+    const fallback = await handler({ domain: 'auto' }, env)(request({ path: v1('https://www.example.com/?gclid=abc') }));
+    expect(clickCookies(fallback)[0]).not.toContain('Domain=');
+  });
+
+  it('accepts "domain": "auto"', () => {
+    expect(clickIdModuleConfig({ domain: 'auto' }).domain).toBe('auto');
+  });
+
   it('stores custom parameters, under renamed cookies, and skips switched-off ones', async () => {
     const config = { params: [{ name: 'li_fat_id', cookie: 'li_click' }, { name: 'gclid', cookie: 'my_gclid' }, { name: 'fbclid', enabled: false }] };
     const response = await handler(config)(request({ path: v1('https://www.example.com/?li_fat_id=abc-123&gclid=g1&fbclid=f1') }));

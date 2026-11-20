@@ -23,7 +23,7 @@ Implementations read these settings, normally as environment variables. Defaults
 | --- | --- | --- |
 | `SID_BASE_PATH` | [`/_sid`] | Path prefix for all routes. |
 | `SID_COOKIE_NAME` | [`_pubcid`] | The SharedID cookie; must match `storage.name` in Prebid.js. |
-| `SID_COOKIE_DOMAIN` | **required** | The domain Prebid.js writes the SharedID cookie on, which is the `Domain` attribute: normally the registrable domain, `example.com`. `host-only` for no `Domain` attribute. |
+| `SID_COOKIE_DOMAIN` | **required** | The domain Prebid.js writes the SharedID cookie on, which is the `Domain` attribute: normally the registrable domain, `example.com`. `host-only` for no `Domain` attribute. `auto` for the domain Prebid.js reports per request; see [Cookie domain `auto`](#cookie-domain-auto). |
 | `SID_MAX_AGE_DAYS` | [`365`] | Cookie lifetime in days, 1 to 400. |
 | `SID_CREATE` | [`true`] | Mint an ID when the request has none. |
 | `SID_RECOVERY_COOKIE` | [`_pubcid_sv`] | Name of the `HttpOnly` recovery copy; `none` disables it. |
@@ -128,7 +128,20 @@ When an ID is chosen, the response sets:
 
 `Secure` is set on https requests, and on plain http requests for a public hostname: a public site seen over http means TLS ended in front of the implementation (a proxy or load balancer), and the visitor is on https. It MUST be omitted only for plain http in local development, where browsers would drop a `Secure` cookie: the host is `localhost`, an IP address, or a name under a suffix reserved for local or private use (`.localhost`, `.test`, `.local`, `.internal`, `.example`, `.invalid`), ignoring a trailing dot (`app.test.` is local). This applies to module cookies too.
 
-When storage isn't allowed, no ID cookie is set and existing ID cookies MUST be deleted: each is overwritten with an empty value, `Max-Age=0` and `Expires=Thu, 01 Jan 1970 00:00:00 GMT`, with the same `Path` and `Domain` it was set with. With `SID_COOKIE_DOMAIN`, a host-only copy (no `Domain`) is deleted too, since Prebid.js may have written one.
+When storage isn't allowed, no ID cookie is set and existing ID cookies MUST be deleted: each is overwritten with an empty value, `Max-Age=0` and `Expires=Thu, 01 Jan 1970 00:00:00 GMT`, with the same `Path` and `Domain` it was set with. With `SID_COOKIE_DOMAIN`, a host-only copy (no `Domain`) is deleted too, since Prebid.js may have written one. With `auto`, they're deleted on every domain they could be on (below).
+
+### Cookie domain `auto`
+
+`SID_COOKIE_DOMAIN=auto` takes the domain from Prebid.js, for a deployment serving many sites (one Worker on many routes, a hosting company, an upstream operator) that can't name one. With `pixelCookieDomain: true` (Prebid.js 11.53.0 or later), `sharedIdSystem` adds `cookie_domain` to its `pixelUrl` request: the domain it writes `_pubcid` on, which it finds by probing which domains the browser lets it set a cookie on, so it is the registrable domain (`example.com` on `www.example.com`) without a Public Suffix List.
+
+- **Setting cookies** (`/sync`, and `/v1`, which a page may call with the same parameter): the cookies' `Domain` is `cookie_domain` when it's valid for the request's host, else none (host-only). Valid means: a hostname of two labels or more, with no scheme, port or path and not an IP address, that compared case-insensitively and without a trailing dot is the host itself or a parent of it at a label boundary (`example.com` for `www.example.com`; not `ample.com`, and not `www.example.com` for `example.com`). An IP address host is always host-only. The `Domain` is the normalized value.
+- **The host** is the one the implementation already uses for the request's URL: in trusted-upstream mode, the forwarded host, read only after the secret check (`cookie_domain` is checked against the publisher's site, not the endpoint's own host); otherwise the request's own host, never a forwarding header the implementation doesn't already trust.
+- **Deleting cookies, and opt-out:** `/optout` and `/optin` have no `cookie_domain`, and a deletion must reach a cookie set on an earlier request. With `auto`, the opt-out cookie, the ID cookies' deletions (opt-out, and storage not allowed on `/sync` or `/v1`) and `/optin`'s deletion of the opt-out cookie go to the host (no `Domain`) and to the host and each domain above it short of the top-level one (`www.example.com`, `example.com`). A browser refuses a `Domain` that's a public suffix (`co.uk`), so those are no-ops.
+- **The duplicate rule** (above) applies when `auto` resolves to a domain.
+- **Diagnostics:** with `auto`, `/sync` and `/v1` responses have `X-SharedID-Cookie-Domain`: the domain chosen, `host-only: no cookie_domain`, or `host-only: cookie_domain not this host or a parent`.
+- **A module cookie** with `Domain` `auto` (from a module setting such as `"domain": "auto"`) gets the same domain, whatever `SID_COOKIE_DOMAIN` is; its deletions go everywhere, as above, and so do the deletions of module cookies without their own `Domain` under `SID_COOKIE_DOMAIN=auto`: on opt-out, and on `/sync` and `/v1` (when storage isn't allowed, say). A deletion the module marks host-only stays host-only.
+
+A forged `cookie_domain` can't reach another site: it must match the host, and a browser refuses a `Set-Cookie` whose `Domain` doesn't domain-match the page's host or is a public suffix, so the worst a forged value does is what host-only would. Sites that share a parent domain with unrelated sites (a multi-tenant host whose parent isn't on the Public Suffix List) MUST use a fixed domain, since Prebid.js's probe would find the shared parent.
 
 ## Opt-out and consent
 
@@ -255,7 +268,7 @@ The module's configuration and secrets are read-only, all the way down: implemen
 
 The context also has the worker's **storage decision** for the request, `storage`: `{ allowed: true }`, or `{ allowed: false, reason }` with the same reason as `X-SharedID-Status` (`opt-out`, `gpc`, `coppa`, a consent provider's `<module>: …` or `tcf: …`; see [Opt-out and consent](#opt-out-and-consent)). A module that stores or extends an identifier SHOULD do so only when `storage.allowed` is true.
 
-A module's `cookies` are set on the response (of `/v1`, or `/sync`) with `Path=/`, `SameSite=Lax`, `Secure` as for the ID cookies (above), the module's `Domain` (else `SID_COOKIE_DOMAIN`; none when the module marks the cookie host-only), `Max-Age` (0 deletes) and `HttpOnly` as given. A module MUST NOT set the worker's own cookie names; a malformed or reserved cookie makes the module an `error`, and none of its output is used. A module that returns only cookies reports `empty`.
+A module's `cookies` are set on the response (of `/v1`, or `/sync`) with `Path=/`, `SameSite=Lax`, `Secure` as for the ID cookies (above), the module's `Domain` (else `SID_COOKIE_DOMAIN`; none when the module marks the cookie host-only; for `auto`, [the request's](#cookie-domain-auto)), `Max-Age` (0 deletes) and `HttpOnly` as given. A module MUST NOT set the worker's own cookie names; a malformed or reserved cookie makes the module an `error`, and none of its output is used. A module that returns only cookies reports `empty`.
 
 A module that sets cookies SHOULD also declare the deletions for opt-out. `{basePath}/optout` deletes the ones the browser sent along with the ID cookies, for every installed module (whether or not it's in `SID_MODULES`), so an opt-out takes effect at once and not only on the next `/v1` call.
 

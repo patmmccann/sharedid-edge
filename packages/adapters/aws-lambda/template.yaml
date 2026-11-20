@@ -57,9 +57,9 @@ Parameters:
     Description: SID_COOKIE_NAME (default _pubcid); must match storage.name in Prebid.js.
   SidCookieDomain:
     Type: String
-    AllowedPattern: '^(host-only|\.?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+)$'
-    ConstraintDescription: your registrable domain, like example.com, or host-only
-    Description: SID_COOKIE_DOMAIN (required), the domain Prebid.js writes the SharedID cookie on, normally your registrable domain (example.com); host-only for cookies without a Domain.
+    AllowedPattern: '^(host-only|auto|\.?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+)$'
+    ConstraintDescription: your registrable domain, like example.com, host-only or auto
+    Description: SID_COOKIE_DOMAIN (required), the domain Prebid.js writes the SharedID cookie on, normally your registrable domain (example.com); host-only for cookies without a Domain; auto for the domain Prebid.js reports (pixelCookieDomain, Prebid.js 11.53.0 or later).
   SidMaxAgeDays:
     Type: String
     Default: ''

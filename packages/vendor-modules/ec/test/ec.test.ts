@@ -105,6 +105,7 @@ describe('settings', () => {
     expect(ecModuleConfig({})).toEqual({ domain: undefined });
     expect(ecModuleConfig({ domain: 'example.com' })).toEqual({ domain: 'example.com' });
     expect(() => ecModuleConfig({ domain: '.example.com' })).toThrow(TypeError);
+    expect(ecModuleConfig({ domain: 'auto' })).toEqual({ domain: 'auto' });
     expect(ecPassphrase({ passphrase: PASSPHRASE })).toBe(PASSPHRASE);
     expect(() => ecPassphrase({ passphrase: 'short' })).toThrow(TypeError);
     expect(() => ecPassphrase({})).toThrow(TypeError);
@@ -156,6 +157,11 @@ describe('the ec module in the handler', () => {
     expect(id).toMatch(/^7ef915764608ef290d564ff779c8d166ba4aa91189fe6c5c4368ffad938398dc\.[A-Za-z0-9]{6}$/);
     expect(ec).toMatch(new RegExp(`^ts-ec=${id.replace('.', '\\.')}; Max-Age=31536000; Expires=[^;]+; Path=/; Domain=\\.example\\.com; SameSite=Lax; Secure; HttpOnly$`));
     expect(body.ext.modules['ec']?.status).toBe('ok');
+  });
+  it('sets ts-ec on the domain Prebid.js reports with "domain": "auto", else host-only', async () => {
+    const auto = { SID_MODULE_CONFIG: '{"ec":{"domain":"auto"}}', SID_COOKIE_DOMAIN: 'host-only' };
+    expect((await call('/_sid/v1?cookie_domain=example.com', { clientIp: '192.0.2.77' }, {}, auto)).ec).toContain('; Domain=example.com;');
+    expect((await call('/_sid/v1?cookie_domain=example.org', { clientIp: '192.0.2.77' }, {}, auto)).ec).not.toContain('Domain=');
   });
   it('gives clients behind the same address the same prefix and different suffixes', async () => {
     const a = ecId((await call('/_sid/v1', { clientIp: '192.0.2.77' })).body);

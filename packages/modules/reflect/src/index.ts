@@ -149,10 +149,12 @@ function ageDays(value: unknown): number {
 
 /** `domain` value for a cookie without a `Domain` attribute, whatever `SID_COOKIE_DOMAIN` says. */
 const HOST_ONLY = 'host-only';
+/** `domain` value for the domain Prebid.js reports on each request (`cookie_domain`), which core checks; else host-only. */
+const AUTO = 'auto';
 
 function optionalDomain(value: unknown): string | undefined {
-  if (value !== undefined && value !== HOST_ONLY && (typeof value !== 'string' || !DOMAIN.test(value))) {
-    throw new TypeError('reflect: "domain" must be a domain like example.com, or host-only');
+  if (value !== undefined && value !== HOST_ONLY && value !== AUTO && (typeof value !== 'string' || !DOMAIN.test(value))) {
+    throw new TypeError('reflect: "domain" must be a domain like example.com, host-only or auto');
   }
   return value;
 }
@@ -360,7 +362,7 @@ export function decodeKeeper(raw: string | undefined): Map<string, string> {
 /** The `ModuleCookie` fields for a `domain` setting: none (core applies `SID_COOKIE_DOMAIN`), host-only, or a domain. */
 function domainFields(domain: string | undefined): Pick<ModuleCookie, 'domain' | 'hostOnly'> {
   if (domain === undefined) return {};
-  return domain === HOST_ONLY ? { hostOnly: true } : { domain: `.${domain}` };
+  return domain === HOST_ONLY ? { hostOnly: true } : { domain: domain === AUTO ? AUTO : `.${domain}` };
 }
 
 function moduleCookie(cookie: ReflectedCookie, value: string, maxAgeSeconds: number): ModuleCookie {
@@ -404,9 +406,9 @@ function savedValues(header: string | null, restorable: readonly ReflectedCookie
  * The `Domain` a cookie with this `domain` setting is set with: its own, else `SID_COOKIE_DOMAIN`; undefined when it's
  * host-only.
  */
-function effectiveDomain(domain: string | undefined, cookieDomain: string | undefined): string | undefined {
+function effectiveDomain(domain: string | undefined, cookieDomain: string | undefined, autoCookieDomain: string | undefined): string | undefined {
   if (domain === HOST_ONLY) return undefined;
-  return domain ?? cookieDomain;
+  return domain === AUTO ? autoCookieDomain : domain ?? cookieDomain;
 }
 
 /**
@@ -425,7 +427,7 @@ function hostOnlyDuplicate(header: string | null, name: string, httpOnly: boolea
   return [{ name, value: '', maxAgeSeconds: 0, httpOnly, hostOnly: true }];
 }
 
-function run({ request, storage, config, cookieDomain }: ModuleContext): ModuleResult | undefined {
+function run({ request, storage, config, cookieDomain, autoCookieDomain }: ModuleContext): ModuleResult | undefined {
   const { cookies: configured, keeper } = reflectModuleConfig(config);
   const header = request.headers.get('Cookie');
   const kept = rawCookieValue(header, keeper.cookie);
@@ -453,12 +455,12 @@ function run({ request, storage, config, cookieDomain }: ModuleContext): ModuleR
       // Missing (Safari deleted or expired it), or present but `prefer` picks the backup (the page re-minted it):
       // restored from the keeper byte for byte, and kept there.
       cookies.push(moduleCookie(cookie, stored, cookie.maxAgeDays * 86_400));
-      cookies.push(...hostOnlyDuplicate(header, cookie.name, cookie.httpOnly, effectiveDomain(cookie.domain, cookieDomain), true));
+      cookies.push(...hostOnlyDuplicate(header, cookie.name, cookie.httpOnly, effectiveDomain(cookie.domain, cookieDomain, autoCookieDomain), true));
       save.push([cookie.name, stored]);
     } else if (isReflectable(value)) {
       // With duplicates, the first value (browsers list the older first) is the one reflected.
       cookies.push(moduleCookie(cookie, value, cookie.maxAgeDays * 86_400));
-      cookies.push(...hostOnlyDuplicate(header, cookie.name, cookie.httpOnly, effectiveDomain(cookie.domain, cookieDomain), true));
+      cookies.push(...hostOnlyDuplicate(header, cookie.name, cookie.httpOnly, effectiveDomain(cookie.domain, cookieDomain, autoCookieDomain), true));
       if (cookie.restore) save.push([cookie.name, value]);
     }
     // Present but not reflectable: left alone, and its saved value is dropped so an outdated one is never restored.
@@ -471,7 +473,7 @@ function run({ request, storage, config, cookieDomain }: ModuleContext): ModuleR
       const value = cookie.restore ? values.get(cookie.name) : undefined;
       if (value !== undefined) {
         cookies.push(backupCookie(cookie, keeper, value, keeper.maxAgeDays * 86_400));
-        cookies.push(...hostOnlyDuplicate(header, backupName(cookie, keeper), true, effectiveDomain(backupDomainSetting(cookie, keeper), cookieDomain), false));
+        cookies.push(...hostOnlyDuplicate(header, backupName(cookie, keeper), true, effectiveDomain(backupDomainSetting(cookie, keeper), cookieDomain, autoCookieDomain), false));
       } else if (sentBackups.includes(cookie)) {
         cookies.push(backupCookie(cookie, keeper, '', 0));
       }
@@ -484,7 +486,7 @@ function run({ request, storage, config, cookieDomain }: ModuleContext): ModuleR
   const encoded = restoring ? encodeKeeper(save, MAX_KEEPER_COOKIE_BYTES - keeper.cookie.length) : '';
   if (encoded !== '') {
     cookies.push(keeperCookie(keeper, encoded, keeper.maxAgeDays * 86_400));
-    cookies.push(...hostOnlyDuplicate(header, keeper.cookie, true, effectiveDomain(keeper.domain, cookieDomain), false));
+    cookies.push(...hostOnlyDuplicate(header, keeper.cookie, true, effectiveDomain(keeper.domain, cookieDomain, autoCookieDomain), false));
   }
   else if (kept !== undefined) cookies.push(keeperCookie(keeper, '', 0));
   // A per-cookie backup goes once its value is in the keeper. One whose value didn't fit (the keeper's 4096 bytes are

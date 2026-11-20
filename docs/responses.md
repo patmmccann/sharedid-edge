@@ -229,5 +229,6 @@ Plain text or no body, `Cache-Control: no-store`, no cookies, and nothing from t
 
 - `X-SharedID-Source`: where the ID came from: `cookie`, `recovery` (restored from the `HttpOnly` copy), `param` (adopted from Prebid.js's `?id=`) or `minted`.
 - `X-SharedID-Status: denied: <reason>`: why no ID was set. The reason is `opt-out`, `gpc`, `coppa` or `tcf: …`.
+- `X-SharedID-Cookie-Domain` (on `/sync` and `/v1`, with [`SID_COOKIE_DOMAIN=auto`](configuration.md#cookie-domain-auto) only): the domain the cookies were set on, from the request's `cookie_domain`, or why they're host-only: `host-only: no cookie_domain` or `host-only: cookie_domain not this host or a parent`.
 - `X-SharedID-Status: skipped: bot`: [`SID_SKIP_BOTS`](modules.md#no-sharedid-for-bots) ruled the ID out. Nothing was set, and nothing deleted.
 - `X-SharedID-Modules` (on `/sync` only): each module that ran there, with its status, as in `ext.modules`: `reflect=empty, ec=ok, bot=ok`. Never cookie names, values or error details. `empty` is the normal status for a module that only sets cookies; `bot` is `ok` when it reported something to the traffic signal, which on `/sync` counts only towards `SID_SKIP_BOTS`.

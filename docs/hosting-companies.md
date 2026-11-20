@@ -49,15 +49,18 @@ How to choose:
 
 ## One deployment for many sites
 
-`SID_HOSTS` gives each site the settings that differ, on top of the deployment's own ([Several sites from one deployment](configuration.md#several-sites-from-one-deployment)):
+`SID_HOSTS` gives each site the settings that differ, on top of the deployment's own ([Several sites from one deployment](configuration.md#several-sites-from-one-deployment)). With `SID_COOKIE_DOMAIN=auto` for the deployment (recommended, below), most sites need no settings of their own:
 
 ```json
 {
-  "www.pub-a.example": { "SID_COOKIE_DOMAIN": "pub-a.example" },
-  "pub-a.example": { "SID_COOKIE_DOMAIN": "pub-a.example" },
-  "www.pub-b.example": { "SID_COOKIE_DOMAIN": "pub-b.example", "SID_MODULES": "geo" }
+  "www.pub-a.example": {},
+  "pub-a.example": {},
+  "www.pub-b.example": { "SID_MODULES": "geo" },
+  "www.pub-c.example": { "SID_COOKIE_DOMAIN": "pub-c.example" }
 }
 ```
+
+Here `pub-c.example` is on a Prebid.js older than 11.53.0, so its domain is set by hand.
 
 The essentials:
 
@@ -126,6 +129,8 @@ These are estimates from the platforms' published limits. Past them, split the s
 Each site needs, at least:
 
 - **`SID_COOKIE_DOMAIN`:** the domain Prebid.js writes `_pubcid` on, normally the registrable domain (`pub-a.example` for `www.pub-a.example`). Get it wrong and the browser ends up with two `_pubcid` cookies ([Configure Prebid.js](prebid.md)). `host-only` for a site whose Prebid.js writes host-only cookies.
+  - **Recommended: `auto`, once for the whole deployment.** With Prebid.js 11.53.0 or later and `pixelCookieDomain: true` on the publisher's pages, Prebid.js sends the domain it writes `_pubcid` on with every sync, and the deployment uses it when it's the site's hostname or a parent of it (else host-only). It's checked against the hostname the request is for, the site's own, which is also what picks the site in `SID_HOSTS`. See [Cookie domain `auto`](configuration.md#cookie-domain-auto).
+  - **Set it per site** for a publisher on an older Prebid.js (its cookies would otherwise be host-only), and for sites that share a parent domain with unrelated sites, such as `site-a.yourhost.example` and `site-b.yourhost.example` where `yourhost.example` isn't on the Public Suffix List: there Prebid.js would report `yourhost.example`, so give each its own hostname or `host-only`. A site's own value wins over the deployment's `auto`.
 
 and may set any other core setting: `SID_MODULES` (among those built in), `SID_MODULE_CONFIG`, `SID_ALLOWED_ORIGINS` (if another of the publisher's origins reads `/_sid/v1` from script), `SID_VENDOR_ID`, `SID_SKIP_BOTS`, `SID_SYNC_CACHE_SECONDS`. The [Configuration reference](configuration.md) lists them.
 
@@ -140,14 +145,14 @@ Who does what: you run the deployment and keep it on the site's hostname; the pu
 
 ## Onboarding a publisher
 
-1. **Collect:** every hostname the site answers on, the domain Prebid.js writes `_pubcid` on (check the cookie's Domain in the browser's developer tools on a page with Prebid.js), whether they use a CMP with TCF, and which modules they want (`ip`, `geo`, `ua` and the rest: [Modules](modules.md)).
+1. **Collect:** every hostname the site answers on, their Prebid.js version (with 11.53.0 or later, [`auto`](#per-publisher-settings-and-consent) finds the domain; otherwise, the domain Prebid.js writes `_pubcid` on: check the cookie's Domain in the browser's developer tools on a page with Prebid.js), whether they use a CMP with TCF, and which modules they want (`ip`, `geo`, `ua` and the rest: [Modules](modules.md)).
 2. **Add the site's settings:**
-   - Cloudflare with metadata: `PATCH` the custom hostname's `custom_metadata` with `{"sharedid": {"SID_COOKIE_DOMAIN": "…"}}` ([above](#cloudflare-for-saas-custom-hostname-metadata)); no deploy.
+   - Cloudflare with metadata: `PATCH` the custom hostname's `custom_metadata` with `{"sharedid": {}}`, or `{"sharedid": {"SID_COOKIE_DOMAIN": "…"}}` when not `auto` ([above](#cloudflare-for-saas-custom-hostname-metadata)); no deploy.
    - Workers for Platforms: deploy a Worker for them into the namespace, and map their hostname to it ([Cloudflare](../packages/adapters/cloudflare/README.md#hosting-companies)).
    - Everywhere else: add their hostnames to `SID_HOSTS`, check the change ([Deploying changes](#deploying-changes)) and deploy.
 3. **Make sure `/_sid/*` reaches the deployment** on their hostnames: a wildcard route or behaviour already covers new sites on most platforms; add a route, domain or Request Routing rule where it doesn't.
 4. **Verify** from outside: `npm run verify-deployment -- --site https://www.pub-a.example` ([Verifying](#verifying)).
-5. **Turn it on in Prebid.js** on the publisher's pages, or have them do it: `sharedIdSystem` with `pixelUrl: '/_sid/sync'` and `extend: true`, and cookie storage named `_pubcid` ([Configure Prebid.js](prebid.md)). Until then, nothing changes on their pages.
+5. **Turn it on in Prebid.js** on the publisher's pages, or have them do it: `sharedIdSystem` with `pixelUrl: '/_sid/sync'`, `extend: true` and `pixelCookieDomain: true`, and cookie storage named `_pubcid` ([Configure Prebid.js](prebid.md)). Until then, nothing changes on their pages.
 6. **Tell the publisher** the opt-out URL, the debugging headers ([Troubleshooting](troubleshooting.md)) and what the `/_sid/v1` modules return, if they use them.
 
 **Offboarding:** remove the site's metadata, `SID_HOSTS` entries or Worker, and deploy. Its `/_sid/*` then gets a 404 and no cookies. Existing `_pubcid` cookies stay in browsers and keep working with Prebid.js on its own; ask the publisher to remove `pixelUrl`, or each page view makes a request that only gets a 404.

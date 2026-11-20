@@ -90,7 +90,7 @@ Set-Cookie: uid1=<same value>; Max-Age=31536000; Expires=…; Path=/; Domain=.ex
 ```
 
 - **`Max-Age`:** `maxAgeDays` × 86400, refreshed on every call.
-- **`Domain`:** `.{domain}` from the cookie's `domain` setting, or none with `"domain": "host-only"`. Without a `domain` setting, `SID_COOKIE_DOMAIN`.
+- **`Domain`:** `.{domain}` from the cookie's `domain` setting, or none with `"domain": "host-only"`. `"domain": "auto"` gives the domain Prebid.js reports on the request (`cookie_domain`, sent with `pixelCookieDomain: true`), checked against the host as [`SID_COOKIE_DOMAIN=auto`](../../../docs/configuration.md#cookie-domain-auto) is, else none (host-only). Without a `domain` setting, `SID_COOKIE_DOMAIN`.
 - **`HttpOnly`:** only with `"httpOnly": true`. The default is `false`, because the script that wrote the cookie usually needs to read it.
 - **`Path=/`** and **`SameSite=Lax`:** always. Cookies set at another path, or with `SameSite=None` or `Strict`, aren't a good fit for this module.
 - **`Secure`:** over https.
@@ -424,7 +424,7 @@ All in `SID_MODULE_CONFIG.reflect`. Unknown keys, wrong types and out-of-range v
 | `cookies` | required | 1 to 10 entries, below. |
 | `cookies[].name` | required | The cookie's name, exactly (names are case-sensitive). At most 64 characters, no spaces or `=`. Listed once. |
 | `cookies[].maxAgeDays` | required | The new lifetime in days, a whole number from 1 to 400 (Chrome caps cookies at 400). |
-| `cookies[].domain` | optional | Your registrable domain, such as `example.com`, without a leading dot (the cookie gets `Domain=.example.com`), or `host-only` for a cookie without a `Domain`. Default: `SID_COOKIE_DOMAIN`. |
+| `cookies[].domain` | optional | Your registrable domain, such as `example.com`, without a leading dot (the cookie gets `Domain=.example.com`), `host-only` for a cookie without a `Domain`, or `auto` for the domain Prebid.js reports (`cookie_domain`), else host-only. Default: `SID_COOKIE_DOMAIN`. |
 | `cookies[].httpOnly` | optional | `true` adds `HttpOnly`. Default `false`. |
 | `cookies[].deleteOnOptOut` | optional | `true` deletes the cookie on `/_sid/optout`. Default `false`. |
 | `cookies[].restore` | optional | `true` saves the cookie in the keeper and restores it when the browser no longer has it. Default `false`. |

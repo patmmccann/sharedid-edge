@@ -1,0 +1,168 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "SID_COOKIE_DOMAIN=auto: the ID cookies go on the cookie_domain Prebid.js sends to /sync (pixelCookieDomain: true) when it is the request's host or a parent of it, else host-only, and X-SharedID-Cookie-Domain says which. The targets answer on 127.0.0.1, an IP address, which never takes a Domain, so every case here falls back to host-only; the hostname cases (a parent, the host itself, another site, a suffix that is not at a label boundary, case and a trailing dot) are in cookie-domain-auto-upstream.json, through a forwarded host.",
+  "config": {
+    "SID_COOKIE_DOMAIN": "auto"
+  },
+  "cases": [
+    {
+      "name": "without cookie_domain, host-only",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d"
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "x-sharedid-cookie-domain": "host-only: no cookie_domain"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": ""
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "an IP address host is host-only, even when cookie_domain names it",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=127.0.0.1"
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "x-sharedid-cookie-domain": "host-only: cookie_domain not this host or a parent"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": ""
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "a cookie_domain with a port is refused",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=127.0.0.1%3A80"
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "x-sharedid-cookie-domain": "host-only: cookie_domain not this host or a parent"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": ""
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "a cookie_domain with a scheme is refused",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=https%3A%2F%2Fexample.com"
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "x-sharedid-cookie-domain": "host-only: cookie_domain not this host or a parent"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": ""
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "an empty cookie_domain is refused",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain="
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "x-sharedid-cookie-domain": "host-only: cookie_domain not this host or a parent"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": ""
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "opt-out on an IP address host sets and deletes host-only cookies only",
+      "request": {
+        "path": "/_sid/optout"
+      },
+      "expect": {
+        "status": 204,
+        "cookies": [
+          {
+            "name": "_pubcid_optout",
+            "value": "1",
+            "domain": ""
+          },
+          {
+            "name": "_pubcid",
+            "value": "",
+            "maxAge": 0,
+            "domain": ""
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "",
+            "maxAge": 0,
+            "domain": ""
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    }
+  ]
+}

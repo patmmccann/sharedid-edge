@@ -7,7 +7,7 @@ Name `reflect`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODU
 - **Settings,** `SID_MODULE_CONFIG.reflect`: `{ "cookies": [ … ], "keeper": { … } }`. `cookies` has 1 to 10 entries, each:
   - `name` (required): a cookie name (an RFC 6265 token, at most 64 characters). It MUST NOT be `_pubcid`, `_pubcid_sv`, `_pubcid_optout`, `ts-ec` or `euconsent-v2`, nor the worker's configured cookie names, and MUST NOT repeat;
   - `maxAgeDays` (required): an integer from 1 to 400;
-  - `domain` (optional): a registrable domain without a leading dot, such as `example.com`, and the cookie gets `Domain=.<domain>`; or `host-only`, and the cookie gets no `Domain` attribute whatever `SID_COOKIE_DOMAIN` says. Without it, `SID_COOKIE_DOMAIN` applies;
+  - `domain` (optional): a registrable domain without a leading dot, such as `example.com`, and the cookie gets `Domain=.<domain>`; or `host-only`, and the cookie gets no `Domain` attribute whatever `SID_COOKIE_DOMAIN` says; or `auto`, and it gets the domain Prebid.js reports on the request (`cookie_domain`, checked against the host as for [`SID_COOKIE_DOMAIN=auto`](../SPEC.md#cookie-domain-auto)), else no `Domain`, whatever `SID_COOKIE_DOMAIN` says; a deletion (on opt-out, or when storage isn't allowed) goes to the host and every domain above it. Without it, `SID_COOKIE_DOMAIN` applies;
   - `httpOnly` (optional, default `false`);
   - `deleteOnOptOut` (optional, default `false`);
   - `restore` (optional, default `false`): save the cookie in the keeper cookie and restore it from there (below);

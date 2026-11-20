@@ -94,14 +94,17 @@ export function ecDecision(consent: ConsentContext, optedOut: boolean): EcDecisi
 
 /** Settings from `SID_MODULE_CONFIG.ec`. */
 export interface EcModuleConfig {
-  /** The publisher's domain, e.g. `example.com`: the cookie gets `Domain=.example.com`, as Trusted Server sets it. */
+  /**
+   * The publisher's domain, e.g. `example.com`: the cookie gets `Domain=.example.com`, as Trusted Server sets it. `auto`:
+   * the domain Prebid.js reports on the request (`cookie_domain`), which core checks, else host-only.
+   */
   readonly domain: string | undefined;
 }
 
 export function ecModuleConfig(config: Readonly<Record<string, unknown>>): EcModuleConfig {
   const domain = config['domain'];
   if (domain === undefined) return { domain: undefined };
-  if (typeof domain !== 'string' || !DOMAIN.test(domain)) throw new TypeError('ec: "domain" must be a domain like example.com');
+  if (domain !== 'auto' && (typeof domain !== 'string' || !DOMAIN.test(domain))) throw new TypeError('ec: "domain" must be a domain like example.com, or auto');
   return { domain };
 }
 
@@ -160,7 +163,7 @@ function ecOutput(id: string): Pick<ModuleResult, 'eids' | 'ortb2'> {
 }
 
 function ecCookie(value: string, maxAgeSeconds: number, settings: EcModuleConfig): ModuleCookie {
-  return { name: EC_COOKIE, value, maxAgeSeconds, httpOnly: true, ...(settings.domain === undefined ? {} : { domain: `.${settings.domain}` }) };
+  return { name: EC_COOKIE, value, maxAgeSeconds, httpOnly: true, ...(settings.domain === undefined ? {} : { domain: settings.domain === 'auto' ? 'auto' : `.${settings.domain}` }) };
 }
 
 async function run({ platform, consent, cookies, optedOut, config, secrets }: ModuleContext): Promise<ModuleResult | undefined> {

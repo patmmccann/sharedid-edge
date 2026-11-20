@@ -1,0 +1,35 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "A fixed SID_COOKIE_DOMAIN ignores the cookie_domain Prebid.js sends with pixelCookieDomain: true, and sends no X-SharedID-Cookie-Domain.",
+  "config": {
+    "SID_COOKIE_DOMAIN": "example.com"
+  },
+  "cases": [
+    {
+      "name": "the fixed domain wins over cookie_domain",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=127.0.0.1"
+      },
+      "expect": {
+        "status": 200,
+        "absentHeaders": [
+          "x-sharedid-cookie-domain"
+        ],
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.com"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.com",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    }
+  ]
+}

@@ -21,8 +21,12 @@
         userIds: [{
           name: 'sharedId',
           // pixelConsent (Prebid.js 11.53+) sends the page's consent to pixelUrl; ?pixelConsent=off leaves it out, so the
-          // endpoint reads the TC string from euconsent-v2 only, as with earlier Prebid.js versions.
-          params: { pixelUrl: '/_sid/sync', extend: true, pixelConsent: new URLSearchParams(location.search).get('pixelConsent') !== 'off' },
+          // endpoint reads the TC string from euconsent-v2 only, as with earlier Prebid.js versions. ?pixelCookieDomain=1
+          // adds pixelCookieDomain (Prebid.js 11.53+), for SID_COOKIE_DOMAIN=auto (tests/cookie-domain-auto.spec.ts).
+          params: Object.assign(
+            { pixelUrl: '/_sid/sync', extend: true, pixelConsent: new URLSearchParams(location.search).get('pixelConsent') !== 'off' },
+            new URLSearchParams(location.search).get('pixelCookieDomain') === '1' ? { pixelCookieDomain: true } : {}
+          ),
           storage: { type: 'cookie', name: '_pubcid', expires: 365 }
         }]
       }
