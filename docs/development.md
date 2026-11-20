@@ -76,7 +76,7 @@ Every package in `packages/adapters/` and `packages/modules/` (and `packages/ven
   "summary": "What it adds to the payload, in one line (Markdown).",
   "settings": "`precision`: `precise` (default) or `coarse`",   // a short list, or "none"
   "routes": ["v1"],                    // the module's routes: "v1", and "sync" if it runs there
-  "forwards": ["api.example.com"],     // vendor modules only, if it sends data to another service
+  "forwards": ["*.fps.goog"],         // a forwarding module's hosts, as in its code; its README starts with the disclosure box
   "optIn": true,                       // project modules only: not built in; added at build time like a vendor module
   "export": "exampleModule",           // vendor and opt-in modules only, required: the module's export, for <package>#<export>
   "network": "none",                   // vendor modules only, required: "none", or the hosts it may reach
@@ -122,7 +122,7 @@ export const continent = defineModule({
 });
 ```
 
-Publish it as its own package like [`packages/modules/ip`](../packages/modules/ip), add it to `builtInModules` in [`packages/modules/all`](../packages/modules/all/README.md) (every adapter imports that list), and enable it with `SID_MODULES=continent`. A module that only maintains cookies can also run on `/_sid/sync` with `routes: ['v1', 'sync']`; there only its cookies are used. Modules make no network calls, and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/modules/AGENTS.md`](../packages/modules/AGENTS.md). A module from a vendor goes in [`packages/vendor-modules/`](../packages/vendor-modules/README.md) instead, and isn't built in.
+Publish it as its own package like [`packages/modules/ip`](../packages/modules/ip), add it to `builtInModules` in [`packages/modules/all`](../packages/modules/all/README.md) (every adapter imports that list), and enable it with `SID_MODULES=continent`. A module that only maintains cookies can also run on `/_sid/sync` with `routes: ['v1', 'sync']`; there only its cookies are used. Modules make no network calls (a [forwarding module](../packages/modules/AGENTS.md#forwarding-modules) passes requests on to its declared hosts through core), and a module that throws or runs past its time limit is left out without affecting the rest of the response. See [`packages/modules/AGENTS.md`](../packages/modules/AGENTS.md). A module from a vendor goes in [`packages/vendor-modules/`](../packages/vendor-modules/README.md) instead, and isn't built in.
 
 Its docs are its own: a `README.md` (with its response examples), `spec/modules/<name>.md`, and the `sharedidEdge` block. Then run `node scripts/docs.mjs --write`; don't edit the root README.
 

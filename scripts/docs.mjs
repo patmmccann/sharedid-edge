@@ -50,8 +50,10 @@ function packages() {
         const declared = declaredRoutes(join(root, folder, 'src'));
         if (declared.join() !== [...routes].sort().join()) problems.push(`${where}: sharedidEdge.routes is ${routes.join(', ')}, but the module's routes are ${declared.join(', ')}`);
       }
-      if (meta.forwards !== undefined && (!Array.isArray(meta.forwards) || meta.forwards.some(host => typeof host !== 'string'))) {
+      if (meta.forwards !== undefined && (!Array.isArray(meta.forwards) || meta.forwards.length === 0 || meta.forwards.some(host => typeof host !== 'string'))) {
         problems.push(`${where}: sharedidEdge.forwards must be a list of host names`);
+      } else if (Array.isArray(meta.forwards)) {
+        problems.push(...forwardingProblems(folder, meta.forwards, parent === 'modules' ? join(root, folder, 'src') : undefined));
       }
       if (meta.optIn !== undefined && (meta.optIn !== true || parent !== 'modules')) {
         problems.push(`${where}: sharedidEdge.optIn is true or left out, and only for project modules (vendor modules are always opt-in)`);
@@ -84,6 +86,31 @@ function packages() {
     result.push({ folder, parent, dir, meta });
   }
   return result;
+}
+
+/** The box a forwarding module's README starts with: a blockquote whose first line begins with this. */
+const FORWARDING_BOX = '> **⚠ This module forwards data to';
+
+/**
+ * A forwarding module (`forwards` in its metadata) discloses it at the top of its README: before the first `##`
+ * section, a blockquote starting with FORWARDING_BOX that names every host, in backticks. For a project module (whose
+ * source `src` is given), every host is also in its code, where core enforces the list (`forwarding.hosts`).
+ */
+function forwardingProblems(folder, forwards, src) {
+  const problems = [];
+  const readme = join(root, folder, 'README.md');
+  if (existsSync(readme)) {
+    const top = readFileSync(readme, 'utf8').split(/^## /m)[0];
+    const start = top.indexOf(FORWARDING_BOX);
+    const box = start < 0 ? '' : top.slice(start).split(/\n(?!>)/)[0];
+    if (box === '') problems.push(`${folder}/README.md: a module that forwards data needs a box at the top of its README, before the first section, starting "${FORWARDING_BOX}" (see packages/vendor-modules/AGENTS.md#forwarding-requests-or-data)`);
+    for (const host of forwards) if (box !== '' && !box.includes(`\`${host}\``)) problems.push(`${folder}/README.md: the forwarding box must name \`${host}\``);
+  }
+  if (src !== undefined) {
+    const code = readdirSync(src).filter(name => name.endsWith('.ts')).map(name => readFileSync(join(src, name), 'utf8')).join('\n');
+    for (const host of forwards) if (!code.includes(`'${host}'`)) problems.push(`${folder}/package.json: sharedidEdge.forwards lists ${host}, which the module's code doesn't declare`);
+  }
+  return problems;
 }
 
 /** The `routes` a module's `defineModule` call declares (read from its source), sorted; `v1` when it declares none. */

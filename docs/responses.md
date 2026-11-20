@@ -201,9 +201,13 @@ With the opt-in [`encrypted-ip` module](../packages/modules/encrypted-ip/README.
 | `eids` | OpenRTB `user.ext.eids`: the SharedID as `pubcid.org` (`atype` 1), then any IDs from modules. `[]` when there are none. |
 | `ortb2` | An OpenRTB 2.x first-party data fragment, merged from every module's output in `SID_MODULES` order, plus the traffic signal in `device.ext.traffic` (which the worker writes from every module's report and, on Cloudflare with Bot Management, the platform's verdict). Absent when there's nothing to return. Pass it to `pbjs.mergeConfig({ ortb2 })`. |
 | `eip` | The client IP encrypted per recipient, from the [`encrypted-ip`](../packages/modules/encrypted-ip/README.md) module: `google`, and `pbs` keyed by Prebid Server host (experimental), each `{ value, kid, stale? }`. Absent when there's none. Pass each value to its recipient only, never in `ortb2`. |
-| `ext.modules` | One entry per module in `SID_MODULES`: `ms` (time taken) and `status`: `ok` (it returned data), `empty` (nothing to add, for example consent rules out the IP), `skipped` (with a `reason`, such as `not installed` for a name the worker doesn't have), `error` or `timeout`. An optional `stale: true` flag marks missing or old reference data; usable last-good output may still contribute. Error details are never returned. See [Scheduled data updates](data-updates.md). |
+| `ext.modules` | One entry per module in `SID_MODULES`: `ms` (time taken) and `status`: `ok` (it returned data), `empty` (nothing to add, for example consent rules out the IP), `skipped` (with a `reason`, such as `not installed` for a name the worker doesn't have), `error` or `timeout`. An optional `stale: true` flag marks missing or old reference data; usable last-good output may still contribute. A [forwarding module](modules.md#modules-that-forward-data) (`tag-gateway`) adds `forwards`: whether this visitor's requests to its paths are passed on, `true` or `false`, and nothing about them. Error details are never returned. See [Scheduled data updates](data-updates.md). |
 
 To read `/v1` from a page on another origin, list that origin in `SID_ALLOWED_ORIGINS` and fetch with `credentials: 'include'`. The response then carries `Access-Control-Allow-Origin: <origin>` and `Access-Control-Allow-Credentials: true`; it never carries `*`.
+
+## A forwarding module's paths
+
+With a [forwarding module](modules.md#modules-that-forward-data) on (the opt-in [`tag-gateway`](../packages/modules/tag-gateway/README.md) module), the paths it owns outside `/_sid` (`/metrics/*`, say) answer with the other service's response, passed on, or with the module's own when privacy signals rule forwarding out (for `tag-gateway`, an empty script or a `204`). Either way they set no SharedID cookie, have `Cache-Control` (`no-store` unless the module allows more), never `Access-Control-*`, and carry `X-SharedID-Forwarding` ([below](#debugging-headers)). The module's README shows its responses.
 
 ## `GET /_sid/optout` and `GET /_sid/optin`
 
@@ -221,7 +225,9 @@ Plain text or no body, `Cache-Control: no-store`, no cookies, and nothing from t
 | `431` | none | `/sync` or `/v1` with a `Cookie` header over 16384 bytes. A server whose own header limit is lower answers first, with its own response. |
 | `429` | `Too many requests` | `/sync` or `/v1` refused by the Worker's opt-in [rate limiting bindings](../packages/adapters/cloudflare/README.md#rate-limiting). A platform's own rate limiting rule answers with its own response. |
 | `403`, `400` | `Forbidden`, `Bad request` | [Trusted-upstream mode](configuration.md#trusted-upstream-behind-a-publishers-cdn): no secret, or an `X-Forwarded-Host` that isn't one hostname. |
-| `500` | `SharedID Edge is misconfigured`, or `Internal error` | Invalid settings (the platform's log names the setting), or a failure. |
+| `411`, `413` | none | A `POST` to a forwarding module's path without `Content-Length`, or with a body over 64 KiB. |
+| `502` | `Bad gateway` | A forwarding module's service didn't answer (within 10 seconds), with `X-SharedID-Forwarding: error`. |
+| `500` | `SharedID Edge is misconfigured`, or `Internal error` | Invalid settings (the platform's log names the setting), including a forwarding module's path overlapping `SID_BASE_PATH`, or one on a platform that can't forward; or a failure. |
 
 `/optout` and `/optin` never get a `414`, `431` or `429`. See [Abuse protection and cost control](abuse-protection.md).
 
@@ -231,4 +237,5 @@ Plain text or no body, `Cache-Control: no-store`, no cookies, and nothing from t
 - `X-SharedID-Status: denied: <reason>`: why no ID was set. The reason is `opt-out`, `gpc`, `coppa` or `tcf: …`.
 - `X-SharedID-Cookie-Domain` (on `/sync` and `/v1`, with [`SID_COOKIE_DOMAIN=auto`](configuration.md#cookie-domain-auto) only): the domain the cookies were set on, from the request's `cookie_domain`, or why they're host-only: `host-only: no cookie_domain` or `host-only: cookie_domain not this host or a parent`.
 - `X-SharedID-Status: skipped: bot`: [`SID_SKIP_BOTS`](modules.md#no-sharedid-for-bots) ruled the ID out. Nothing was set, and nothing deleted.
+- `X-SharedID-Forwarding` (on a forwarding module's paths only): `forwarded`, `anonymous` (Global Privacy Control, with the module set to forward without the client IP or location), `blocked: <reason>` (`opt-out`, `coppa`, `gpc`, `tcf: …`, or a consent provider's) or `error`. Never anything about the request.
 - `X-SharedID-Modules` (on `/sync` only): each module that ran there, with its status, as in `ext.modules`: `reflect=empty, ec=ok, bot=ok`. Never cookie names, values or error details. `empty` is the normal status for a module that only sets cookies; `bot` is `ok` when it reported something to the traffic signal, which on `/sync` counts only towards `SID_SKIP_BOTS`.
