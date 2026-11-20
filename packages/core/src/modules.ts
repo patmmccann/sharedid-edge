@@ -22,6 +22,11 @@ export interface ModuleContext {
    */
   readonly cookieDomain: string | undefined;
   /**
+   * The domain a cookie on `auto` gets on this request: the `cookie_domain` Prebid.js sent, when it's the request's host
+   * or a parent of it; undefined (host-only) otherwise. With `SID_COOKIE_DOMAIN=auto`, `cookieDomain` is the same.
+   */
+  readonly autoCookieDomain?: string | undefined;
+  /**
    * Whether the worker may store the SharedID for this request: `{ allowed: false, reason }` on opt-out, GPC, COPPA or
    * denied TCF consent, with the reason `X-SharedID-Status` gives. Modules that store or extend an identifier should
    * follow it.
@@ -99,7 +104,10 @@ export interface ModuleCookie {
   readonly value: string;
   readonly maxAgeSeconds: number;
   readonly httpOnly: boolean;
-  /** The `Domain` attribute; `SID_COOKIE_DOMAIN` when omitted, host-only when that's `host-only`. */
+  /**
+   * The `Domain` attribute; `SID_COOKIE_DOMAIN` when omitted, host-only when that's `host-only`. `auto`: the request's
+   * `autoCookieDomain`, else host-only; on opt-out, deleted on the host and every domain above it.
+   */
   readonly domain?: string;
   /** `true`: no `Domain` attribute, whatever `SID_COOKIE_DOMAIN` says (for re-setting a host-only cookie). */
   readonly hostOnly?: boolean;
@@ -419,7 +427,7 @@ function checkModuleCookie(cookie: ModuleCookie, config: SharedIdEdgeConfig): vo
   if (!Number.isInteger(cookie.maxAgeSeconds) || cookie.maxAgeSeconds < 0 || cookie.maxAgeSeconds > 400 * 86_400) {
     throw new TypeError('invalid module cookie lifetime');
   }
-  if (cookie.domain !== undefined && !COOKIE_DOMAIN.test(cookie.domain)) throw new TypeError('invalid module cookie domain');
+  if (cookie.domain !== undefined && cookie.domain !== 'auto' && !COOKIE_DOMAIN.test(cookie.domain)) throw new TypeError('invalid module cookie domain');
 }
 
 /**

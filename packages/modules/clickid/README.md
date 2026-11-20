@@ -70,7 +70,7 @@ The module is built into every adapter. It does nothing until you list it in `SI
 - **Value:** `<click time>.<id>`: the time the worker saw the click, in Unix seconds, a dot, and the click ID exactly as it came, after one round of URL decoding. For example `_sid_gclid=1794447131.EAIaIQobChMIexample_BwE`.
 - **Only safe values are stored:** letters, digits and `.`, `_`, `~`, `-`, at most 512 characters. Anything else (a value still percent-encoded, with spaces, or too long) is ignored, never rewritten. When a parameter appears twice in the URL, the first is used.
 - **Lifetime:** `maxAgeDays`, 90 days by default, counted from the click. That's the longest click-through conversion window Google Ads allows (the default is 30 days), the retention Microsoft suggests for `msclkid`, and the lifetime of Google's `_gcl_aw` and Meta's `_fbc` cookies; Meta's and TikTok's attribution windows are shorter (see [Who uses the click IDs](#who-uses-the-click-ids)). Later visits **don't** extend it. The same click ID seen again (a reload, a bookmarked landing URL) leaves the cookie as it is; a different click ID for the same parameter replaces it.
-- **Attributes:** `Path=/`, `SameSite=Lax`, `Secure` (over https), `Domain` from the module's `domain` (else `SID_COOKIE_DOMAIN`, else host-only), and `HttpOnly` only if you set `httpOnly: true`. They're readable by page scripts by default, since the usual consumer is a conversion tag.
+- **Attributes:** `Path=/`, `SameSite=Lax`, `Secure` (over https), `Domain` from the module's `domain` (else `SID_COOKIE_DOMAIN`, else host-only; `"domain": "auto"` gives the domain Prebid.js reports on the request (`cookie_domain`, sent with `pixelCookieDomain: true`), checked against the host as [`SID_COOKIE_DOMAIN=auto`](../../../docs/configuration.md#cookie-domain-auto) is, else none (host-only)), and `HttpOnly` only if you set `httpOnly: true`. They're readable by page scripts by default, since the usual consumer is a conversion tag.
 - Cookies of other parameters are left alone: a `fbclid` landing doesn't touch `_sid_gclid`.
 
 ## Reading a click ID
@@ -197,7 +197,7 @@ All optional, in `SID_MODULE_CONFIG`:
 | --- | --- | --- |
 | `params` | the seven above | Entries `{ "name", "cookie"?, "enabled"? }`. One naming a default parameter changes it (`enabled: false` turns it off; `cookie` renames its cookie); any other adds a parameter, kept in `cookie` (default `_sid_<name>`). Names start with a letter, then letters, digits, `_` or `-` (at most 64), and match case-sensitively (`ScCid` isn't `sccid`). At most 20 parameters in all. |
 | `maxAgeDays` | `90` | The cookies' lifetime from the click, 1 to 400 days. |
-| `domain` | `SID_COOKIE_DOMAIN` | `example.com` for `Domain=.example.com`, or `host-only` for no `Domain`. |
+| `domain` | `SID_COOKIE_DOMAIN` | `example.com` for `Domain=.example.com`, `host-only` for no `Domain`, or `auto` for the domain Prebid.js reports on the request (`cookie_domain`), else no `Domain`. |
 | `httpOnly` | `false` | `true` hides the cookies from page scripts, for server-side consumers only. |
 | `hosts` | none | Other hostnames (lower case, up to 20) whose URLs count as landing pages, for a landing page on one host whose `/_sid/v1` call goes to another. The request's own host always counts. Only hosts on the same site (registrable domain) as the worker work from a browser, which marks a call from another site `Sec-Fetch-Site: cross-site`. |
 

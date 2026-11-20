@@ -133,8 +133,8 @@ export function clickIdModuleConfig(config: Readonly<Record<string, unknown>>): 
   const age = config['maxAgeDays'] ?? DEFAULT_CLICK_AGE_DAYS;
   if (typeof age !== 'number' || !Number.isInteger(age) || age < 1 || age > 400) fail('"maxAgeDays" must be a whole number from 1 to 400');
   const domain = config['domain'];
-  if (domain !== undefined && domain !== HOST_ONLY && (typeof domain !== 'string' || !HOST.test(domain.toLowerCase()))) {
-    fail('"domain" must be a domain like example.com, or host-only');
+  if (domain !== undefined && domain !== HOST_ONLY && domain !== 'auto' && (typeof domain !== 'string' || !HOST.test(domain.toLowerCase()))) {
+    fail('"domain" must be a domain like example.com, host-only or auto');
   }
   return {
     ...paramSettings(config['params']),
@@ -206,7 +206,8 @@ export function storedClickId(value: string | undefined): string | undefined {
 
 function clickCookie(settings: ClickIdModuleConfig, name: string, value: string, maxAgeSeconds: number): ModuleCookie {
   const { domain } = settings;
-  const where = domain === undefined ? {} : domain === HOST_ONLY ? { hostOnly: true } : { domain: `.${domain.toLowerCase()}` };
+  // `auto` is resolved by core, per request.
+  const where = domain === undefined ? {} : domain === HOST_ONLY ? { hostOnly: true } : { domain: domain === 'auto' ? domain : `.${domain.toLowerCase()}` };
   return { name, value, maxAgeSeconds, httpOnly: settings.httpOnly, ...where };
 }
 

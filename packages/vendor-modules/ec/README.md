@@ -122,7 +122,7 @@ Set-Cookie: ts-ec=<id>; Max-Age=31536000; Expires=…; Path=/; Domain=.example.c
 
 - **`HttpOnly`:** page scripts can't read it, so it reaches the page only through the `/_sid/v1` payload.
 - **One year,** not refreshed on later visits (as in Trusted Server).
-- **`Domain`:** `.{domain}` from the module's `domain` setting. Otherwise `SID_COOKIE_DOMAIN`, otherwise host-only.
+- **`Domain`:** `.{domain}` from the module's `domain` setting. `"domain": "auto"` gives the domain Prebid.js reports on the request (`cookie_domain`, sent with `pixelCookieDomain: true`), checked against the host as [`SID_COOKIE_DOMAIN=auto`](../../../docs/configuration.md#cookie-domain-auto) is, else none (host-only). Otherwise `SID_COOKIE_DOMAIN`, otherwise host-only.
 - **`Secure`:** only over https, so plain-http local development still works.
 - **Deletion:** the same attributes, an empty value, `Max-Age=0` and an `Expires` in 1970.
 
@@ -195,7 +195,7 @@ Trusted Server's rules, applied to the signals SharedID Edge has.
 | `SID_MODULE_SECRETS` | `ec.passphrase` | required | The HMAC key, at least 32 bytes and random. Set it as a platform secret. Changing it changes the prefix of new ECs only. |
 
 **Placeholder passphrases are refused,** ignoring case, as Trusted Server refuses them: an `error` status, as for a short one, and the setting is named but the value never shown. The list is Trusted Server's (`secret-key`, `secret_key`, `trusted-server`, `trusted-server-placeholder-secret`, `replace-with-random-ec-passphrase`) and this project's examples (`a-local-passphrase-of-at-least-32-characters`, from the Fastly adapter's local `fastly.toml`; `<openssl rand -hex 32>`; `<your passphrase>`). The test vectors' passphrase above is public too: don't deploy it.
-| `SID_MODULE_CONFIG` | `ec.domain` | optional | Your registrable domain, such as `example.com`, without a leading dot. The cookie gets `Domain=.example.com`. |
+| `SID_MODULE_CONFIG` | `ec.domain` | optional | Your registrable domain, such as `example.com`, without a leading dot. The cookie gets `Domain=.example.com`. Or `auto`, for the domain Prebid.js reports on each request, else host-only. |
 
 ## Differences from Trusted Server
 

@@ -1,0 +1,437 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "SID_COOKIE_DOMAIN=auto in trusted-upstream mode, an upstream operator's endpoint serving several publishers: cookie_domain is checked against the publisher's site, the forwarded host (X-Forwarded-Host), never the endpoint's own, and only on requests with the secret. Each site in SID_HOSTS gets its own domain; a site's fixed SID_COOKIE_DOMAIN wins over the deployment's auto. The reflect module's uid1 is on \"domain\": \"auto\" too. Targets that don't support trusted-upstream mode list this file as a limitation, as they do trusted-upstream.json.",
+  "config": {
+    "SID_UPSTREAM_SECRETS": "[\"conformance-upstream-0123456789abcdef0123456789abcdef\"]",
+    "SID_LOCATION_HEADERS": "{\"country\":\"x-sid-country\"}",
+    "SID_COOKIE_DOMAIN": "auto",
+    "SID_MODULES": "reflect",
+    "SID_MODULE_CONFIG": "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":30,\"domain\":\"auto\",\"httpOnly\":false}]}}",
+    "SID_HOSTS": "{\"www.example.com\":{},\"news.example.org\":{},\"a.b.example.co.uk\":{},\"www.example.net\":{\"SID_COOKIE_DOMAIN\":\"example.net\"}}"
+  },
+  "cases": [
+    {
+      "name": "a parent of the forwarded site",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=example.com",
+        "headers": {
+          "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef",
+          "x-forwarded-host": "www.example.com",
+          "x-sid-country": "US"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "x-sharedid-cookie-domain": "example.com"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.com"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.com",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "the forwarded site itself",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=www.example.com",
+        "headers": {
+          "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef",
+          "x-forwarded-host": "www.example.com",
+          "x-sid-country": "US"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "x-sharedid-cookie-domain": "www.example.com"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "www.example.com"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "www.example.com",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "another publisher through the same deployment gets its own domain",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=example.org",
+        "headers": {
+          "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef",
+          "x-forwarded-host": "news.example.org",
+          "x-sid-country": "US"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "x-sharedid-cookie-domain": "example.org"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.org"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.org",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "a parent two levels up, under a two-label public suffix",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=example.co.uk",
+        "headers": {
+          "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef",
+          "x-forwarded-host": "a.b.example.co.uk",
+          "x-sid-country": "US"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.co.uk"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.co.uk",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "upper case and a trailing dot are normalized",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=EXAMPLE.com.",
+        "headers": {
+          "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef",
+          "x-forwarded-host": "www.example.com",
+          "x-sid-country": "US"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "x-sharedid-cookie-domain": "example.com"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.com"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.com",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "another publisher's domain is host-only",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=example.org",
+        "headers": {
+          "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef",
+          "x-forwarded-host": "www.example.com",
+          "x-sid-country": "US"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "x-sharedid-cookie-domain": "host-only: cookie_domain not this host or a parent"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": ""
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "a suffix that is not at a label boundary is host-only",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=ample.com",
+        "headers": {
+          "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef",
+          "x-forwarded-host": "www.example.com",
+          "x-sid-country": "US"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "x-sharedid-cookie-domain": "host-only: cookie_domain not this host or a parent"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": ""
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "the endpoint's own host is not the site: its domain is host-only",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=127.0.0.1",
+        "headers": {
+          "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef",
+          "x-forwarded-host": "www.example.com",
+          "x-sid-country": "US"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "x-sharedid-cookie-domain": "host-only: cookie_domain not this host or a parent"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": ""
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "without cookie_domain, host-only",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d",
+        "headers": {
+          "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef",
+          "x-forwarded-host": "www.example.com",
+          "x-sid-country": "US"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": {
+          "x-sharedid-cookie-domain": "host-only: no cookie_domain"
+        },
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": ""
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "a site's fixed domain wins over the deployment's auto",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=www.example.net",
+        "headers": {
+          "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef",
+          "x-forwarded-host": "www.example.net",
+          "x-sid-country": "US"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "absentHeaders": [
+          "x-sharedid-cookie-domain"
+        ],
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.net"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.net",
+            "httpOnly": true
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "a module cookie on \"domain\": \"auto\" follows cookie_domain",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=example.com",
+        "headers": {
+          "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef",
+          "x-forwarded-host": "www.example.com",
+          "x-sid-country": "US",
+          "cookie": "uid1=abc"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "cookies": [
+          {
+            "name": "_pubcid",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.com"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "c29cb2ae-769d-42f6-891a-f53cadee823d",
+            "domain": "example.com",
+            "httpOnly": true
+          },
+          {
+            "name": "uid1",
+            "value": "abc",
+            "domain": "example.com",
+            "httpOnly": false
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "without the secret: still a 403 and no cookies",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%3Ac29cb2ae-769d-42f6-891a-f53cadee823d&cookie_domain=example.com",
+        "headers": {
+          "x-forwarded-host": "www.example.com",
+          "x-sid-country": "US"
+        }
+      },
+      "expect": {
+        "status": 403,
+        "noCookies": true
+      }
+    },
+    {
+      "name": "opt-out deletes the ID cookies on the site and every domain above it",
+      "request": {
+        "path": "/_sid/optout",
+        "headers": {
+          "x-sid-upstream-auth": "conformance-upstream-0123456789abcdef0123456789abcdef",
+          "x-forwarded-host": "www.example.com"
+        }
+      },
+      "expect": {
+        "status": 204,
+        "cookies": [
+          {
+            "name": "_pubcid_optout",
+            "value": "1",
+            "domain": ""
+          },
+          {
+            "name": "_pubcid",
+            "value": "",
+            "maxAge": 0,
+            "domain": ""
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "",
+            "maxAge": 0,
+            "domain": ""
+          },
+          {
+            "name": "_pubcid_optout",
+            "value": "1",
+            "domain": "www.example.com"
+          },
+          {
+            "name": "_pubcid",
+            "value": "",
+            "maxAge": 0,
+            "domain": "www.example.com"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "",
+            "maxAge": 0,
+            "domain": "www.example.com"
+          },
+          {
+            "name": "_pubcid_optout",
+            "value": "1",
+            "domain": "example.com"
+          },
+          {
+            "name": "_pubcid",
+            "value": "",
+            "maxAge": 0,
+            "domain": "example.com"
+          },
+          {
+            "name": "_pubcid_sv",
+            "value": "",
+            "maxAge": 0,
+            "domain": "example.com"
+          }
+        ],
+        "onlyListedCookies": true
+      }
+    }
+  ]
+}

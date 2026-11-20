@@ -161,7 +161,7 @@ An upstream operator with three publishers:
 | --- | --- | --- | --- | --- |
 | A | `www.pub-a.example`, `pub-a.example` | `pub-a.example` | Amazon CloudFront | `ip` and `geo` |
 | B | `www.pub-b.example` | `pub-b.example` | Fastly (VCL) | `/_sid/v1` read from `https://m.pub-b.example` too |
-| C | `news.pub-c.example` | `pub-c.example` | Akamai | Only the SharedID, no modules; Prebid.js writes host-only cookies |
+| C | `news.pub-c.example` | host-only | Akamai | Only the SharedID, no modules; Prebid.js writes host-only cookies |
 
 ### 1. The endpoint
 
@@ -175,20 +175,28 @@ The settings are the same `SID_*` variables on every endpoint platform:
 | `SID_UPSTREAM_AUTH_HEADER`, `SID_UPSTREAM_HOST_HEADER` | unset (`x-sid-upstream-auth`, `x-forwarded-host`) | The defaults |
 | `SID_MODULES` | `ip,geo` | The modules publishers may use; each site can narrow it |
 | `SID_HOSTS` | below | Each publisher's hostnames and settings |
-| `SID_COOKIE_DOMAIN` | unset | Every site sets its own in `SID_HOSTS` |
+| `SID_COOKIE_DOMAIN` | `auto` | Each site's cookies go on the domain Prebid.js reports, checked against the site's hostname ([below](#the-cookie-domain-auto)); a site can set its own in `SID_HOSTS` |
 
 `SID_HOSTS`, keyed by the hostname each publisher's CDN sends in `X-Forwarded-Host`:
 
 ```json
 {
-  "www.pub-a.example": { "SID_COOKIE_DOMAIN": "pub-a.example" },
-  "pub-a.example": { "SID_COOKIE_DOMAIN": "pub-a.example" },
-  "www.pub-b.example": { "SID_COOKIE_DOMAIN": "pub-b.example", "SID_ALLOWED_ORIGINS": "https://m.pub-b.example" },
+  "www.pub-a.example": {},
+  "pub-a.example": {},
+  "www.pub-b.example": { "SID_ALLOWED_ORIGINS": "https://m.pub-b.example" },
   "news.pub-c.example": { "SID_COOKIE_DOMAIN": "host-only", "SID_MODULES": "" }
 }
 ```
 
 A hostname that isn't listed gets a 404 and no cookies, and so does a request without `X-Forwarded-Host` (it keeps the endpoint's own hostname). Every site's settings are validated when the endpoint starts: one mistake fails every request, naming the hostname, so check changes first ([Deploys and rollbacks](#deploys-and-rollbacks)). Settings that can't vary per site: `SID_BASE_PATH`, `SID_MODULE_SECRETS`, and all the trusted-upstream settings above.
+
+#### The cookie domain: `auto`
+
+`SID_COOKIE_DOMAIN=auto` is the setting for an upstream operator: one endpoint can't have one domain, and with `auto` you don't have to find and list each publisher's. It needs Prebid.js 11.53.0 or later on the publishers' pages, with `pixelCookieDomain: true` ([Prebid.js](#4-prebidjs-on-the-publishers-pages)), which makes the sync request carry `cookie_domain`, the domain Prebid.js writes `_pubcid` on (`pub-a.example`).
+
+- **Checked against the publisher's site,** the hostname in `X-Forwarded-Host`, never your endpoint's own (`sid.upstream.example`), and only on requests with a valid secret (others get the 403 before anything is read). `cookie_domain` must be that hostname or a parent of it (`pub-a.example` for `www.pub-a.example`, not `upstream.example` or `other-pub.example`); otherwise the cookies are host-only. Configuration reference: [Cookie domain `auto`](configuration.md#cookie-domain-auto).
+- **A publisher's own domain wins.** A site with `SID_COOKIE_DOMAIN` in its `SID_HOSTS` entry keeps it (publisher C's `host-only` above). Use that for a publisher on Prebid.js before 11.53.0, which sends no `cookie_domain` (its cookies would otherwise be host-only), and for sites under a shared parent domain that isn't a public suffix.
+- **Check it** with `X-SharedID-Cookie-Domain` on `/_sid/sync`: the domain chosen, or why it's host-only ([Verify](#3-verify)).
 
 #### On a Cloudflare Worker (the example)
 
@@ -205,7 +213,8 @@ The Worker runs at the edge, near every publisher CDN ([Where to run](#where-to-
     "SID_MODULES": "ip,geo",
     "SID_CLIENT_IP_HEADER": "x-sid-client-ip",
     "SID_LOCATION_HEADERS": "{\"country\":\"x-sid-country\",\"regionCode\":\"x-sid-region\"}",
-    "SID_HOSTS": "{\"www.pub-a.example\":{\"SID_COOKIE_DOMAIN\":\"pub-a.example\"},\"pub-a.example\":{\"SID_COOKIE_DOMAIN\":\"pub-a.example\"},\"www.pub-b.example\":{\"SID_COOKIE_DOMAIN\":\"pub-b.example\",\"SID_ALLOWED_ORIGINS\":\"https://m.pub-b.example\"},\"news.pub-c.example\":{\"SID_COOKIE_DOMAIN\":\"host-only\",\"SID_MODULES\":\"\"}}"
+    "SID_COOKIE_DOMAIN": "auto",
+    "SID_HOSTS": "{\"www.pub-a.example\":{},\"pub-a.example\":{},\"www.pub-b.example\":{\"SID_ALLOWED_ORIGINS\":\"https://m.pub-b.example\"},\"news.pub-c.example\":{\"SID_COOKIE_DOMAIN\":\"host-only\",\"SID_MODULES\":\"\"}}"
     // … the other settings as in the file
   }
 }
@@ -231,7 +240,8 @@ sam deploy --parameter-overrides CreateDistribution=true \
   SidClientIpHeader=x-sid-client-ip \
   'SidLocationHeaders={"country":"x-sid-country","regionCode":"x-sid-region"}' \
   SidModules=ip,geo \
-  'SidHosts={"www.pub-a.example":{"SID_COOKIE_DOMAIN":"pub-a.example"}, …}' \
+  SidCookieDomain=auto \
+  'SidHosts={"www.pub-a.example":{}, …}' \
   Aliases=sid.upstream.example AcmCertificateArn=<us-east-1 certificate>
 ```
 
@@ -246,6 +256,7 @@ SID_UPSTREAM_SECRETS="$(your-secret-manager get sharedid-upstream)" \
 SID_CLIENT_IP_HEADER=x-sid-client-ip \
 SID_LOCATION_HEADERS='{"country":"x-sid-country","regionCode":"x-sid-region"}' \
 SID_MODULES=ip,geo \
+SID_COOKIE_DOMAIN=auto \
 SID_HOSTS="$(cat sid-hosts.json)" \
 HOST=0.0.0.0 PORT=8787 node packages/adapters/node/dist/cli.js
 ```
@@ -291,8 +302,8 @@ npm run verify-deployment -- --site https://www.pub-a.example
 It checks that `/_sid/*` answers from the same IP addresses as the site (the publisher's CDN, not your endpoint), that `/_sid/sync` sets `Secure`, long-lived, script-readable `_pubcid` and its `HttpOnly` recovery copy, that nothing was served from a shared cache, and that `/_sid/v1` answers. Then:
 
 ```sh
-# The publisher's settings: the cookies' Domain is pub-a.example
-curl -sI 'https://www.pub-a.example/_sid/sync?id=pubcid:test-id' | grep -i set-cookie
+# The publisher's settings: the cookies' Domain is pub-a.example, from cookie_domain (auto)
+curl -sI 'https://www.pub-a.example/_sid/sync?id=pubcid:test-id&cookie_domain=pub-a.example' | grep -i -e set-cookie -e x-sharedid-cookie-domain
 # The visitor's real address and country, not forged ones (with the ip and geo modules)
 curl -s -H 'X-SID-Client-IP: 192.0.2.1' -H 'X-SID-Country: US' -H 'X-Forwarded-Host: www.pub-b.example' \
   https://www.pub-a.example/_sid/v1 | jq '.ortb2.device'
@@ -309,14 +320,19 @@ pbjs.setConfig({
   userSync: {
     userIds: [{
       name: 'sharedId',
-      params: { pixelUrl: '/_sid/sync', extend: true, pixelConsent: true },   // the publisher's host, never sid.upstream.example; pixelConsent: Prebid.js 11.53+
+      params: {
+        pixelUrl: '/_sid/sync',     // the publisher's host, never sid.upstream.example
+        extend: true,
+        pixelConsent: true,         // Prebid.js 11.53+: the page's consent with the sync
+        pixelCookieDomain: true     // Prebid.js 11.53+: the cookie's domain, for SID_COOKIE_DOMAIN=auto
+      },
       storage: { type: 'cookie', name: '_pubcid', expires: 365 }
     }]
   }
 });
 ```
 
-`storage.name` must match `SID_COOKIE_NAME` (`_pubcid` by default), and the domain Prebid.js writes it on must be the site's `SID_COOKIE_DOMAIN`. To pass the modules' output (`ip`, `geo`) to the auction, the page fetches `/_sid/v1`, also on its own host ([Module output](prebid.md#module-output-_sidv1)). If you manage the publishers' Prebid.js builds or wrappers, this is one configuration for all of them.
+`storage.name` must match `SID_COOKIE_NAME` (`_pubcid` by default). With `auto`, `pixelCookieDomain: true` keeps the domain in step; a site with its own `SID_COOKIE_DOMAIN` must name the domain Prebid.js writes `_pubcid` on. To pass the modules' output (`ip`, `geo`) to the auction, the page fetches `/_sid/v1`, also on its own host ([Module output](prebid.md#module-output-_sidv1)). If you manage the publishers' Prebid.js builds or wrappers, this is one configuration for all of them.
 
 ## Publisher CDN recipes
 
@@ -480,13 +496,13 @@ While a CDN sends a secret the endpoint doesn't accept, `/_sid/*` answers `403` 
 
 **Onboarding checklist:**
 
-1. **Collect:** every hostname the site answers on; the domain Prebid.js writes `_pubcid` on (the cookie's Domain in the browser's developer tools, normally the registrable domain, or `host-only`); their CDN; other origins that read `/_sid/v1` from script, if any; which modules they want; whether their CMP stores the TC string in the `euconsent-v2` cookie.
-2. **Add their `SID_HOSTS` entries** (every hostname, with `SID_COOKIE_DOMAIN`, and any per-site `SID_MODULES` or `SID_ALLOWED_ORIGINS`), check the change ([Deploys and rollbacks](#deploys-and-rollbacks)).
+1. **Collect:** every hostname the site answers on; their Prebid.js version (11.53.0 or later for [`auto`](#the-cookie-domain-auto); otherwise the domain Prebid.js writes `_pubcid` on, the cookie's Domain in the browser's developer tools, normally the registrable domain, or `host-only`); their CDN; other origins that read `/_sid/v1` from script, if any; which modules they want; whether their CMP stores the TC string in the `euconsent-v2` cookie.
+2. **Add their `SID_HOSTS` entries** (every hostname, with `SID_COOKIE_DOMAIN` only when not `auto`, and any per-site `SID_MODULES` or `SID_ALLOWED_ORIGINS`), check the change ([Deploys and rollbacks](#deploys-and-rollbacks)).
 3. **Issue a secret:** `openssl rand -hex 32`, add it to `SID_UPSTREAM_SECRETS`, record which publisher has it, and deploy.
 4. **Send the publisher** their secret, the [recipe](#publisher-cdn-recipes) for their CDN with your endpoint's hostname filled in, and the five requirements in [Each publisher's CDN](#2-each-publishers-cdn).
 5. **They deploy the CDN rule,** on a staging hostname first if they have one (add it to `SID_HOSTS` too).
 6. **Verify** from their host: `npm run verify-deployment -- --site https://www.pub-a.example`, the forged-header check and the GDPR-country check ([Verify](#3-verify)).
-7. **Turn on Prebid.js** on their pages: `pixelUrl: '/_sid/sync'` ([Prebid.js](#4-prebidjs-on-the-publishers-pages)).
+7. **Turn on Prebid.js** on their pages: `pixelUrl: '/_sid/sync'` and `pixelCookieDomain: true` ([Prebid.js](#4-prebidjs-on-the-publishers-pages)); check `X-SharedID-Cookie-Domain` on their `/_sid/sync`.
 8. **Give them** the opt-out URL for their privacy page (`https://www.pub-a.example/_sid/optout`) and the debugging headers ([Troubleshooting](troubleshooting.md)).
 
 **Offboarding:** ask the publisher to remove `pixelUrl` and their CDN rule, then remove their secret from `SID_UPSTREAM_SECRETS` and their entries from `SID_HOSTS`, and deploy. In the other order, their `/_sid/*` answers `403` (or `404`) until they remove the rule, which is harmless. Their visitors' `_pubcid` cookies stay and keep working with Prebid.js alone.
@@ -567,7 +583,7 @@ A Worker or Fastly Compute service needs nothing more: it runs everywhere. A Lam
 | `400 Bad Request` | `X-Forwarded-Host` is a list (`www.pub-a.example, …`) or not a hostname: the CDN appends rather than sets it, or a proxy in front added one | Set, not append |
 | `404` with no cookies | `X-Forwarded-Host` is missing (the endpoint's own host is used), or names a hostname that isn't in `SID_HOSTS` | Add the header, or the hostname (every one the site answers on) |
 | `500 SharedID Edge is misconfigured` | An invalid setting; one bad `SID_HOSTS` entry fails every publisher | The platform's log names it; roll back, fix, check before deploying |
-| Two `_pubcid` cookies, or the ID changes between page and server | The site's `SID_COOKIE_DOMAIN` isn't the domain Prebid.js writes `_pubcid` on | Fix it in `SID_HOSTS` ([Configure Prebid.js](prebid.md)) |
+| Two `_pubcid` cookies, or the ID changes between page and server | The site's `SID_COOKIE_DOMAIN` isn't the domain Prebid.js writes `_pubcid` on; with `auto`, `X-SharedID-Cookie-Domain` says `host-only` (no `pixelCookieDomain: true`, or Prebid.js before 11.53.0) | Turn on `pixelCookieDomain`, or set the site's domain in `SID_HOSTS` ([Configure Prebid.js](prebid.md)) |
 | Cookies set but gone after 7 days in Safari; `verify-deployment` says the IPs differ | The publisher used a CNAME or a subdomain pointing at your endpoint, not a path on their own CDN | Route `/_sid/*` on the site's own hostname through their CDN |
 | Visitors share an ID, or get each other's cookies | The publisher's CDN caches `/_sid/*` | Caching off for `/_sid/*` (the responses are `private` or `no-store`, but some CDNs cache regardless) |
 | `ortb2.device.ip` is a CDN address, or `geo` shows a CDN location | The CDN puts its own upstream's or a proxy's address in `X-SID-Client-IP`: shielding (Fastly's later hop), or the publisher's CDN sits behind another CDN | Take the address on the first edge hop, from the outermost CDN ([Security model](#security-model)) |

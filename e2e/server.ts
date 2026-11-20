@@ -4,7 +4,7 @@ import { createReadStream, existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { connect } from 'node:net';
 import { join, normalize, sep } from 'node:path';
-import { createHandler, resolveConfig } from '../packages/core/dist/index.js';
+import { createHandler, resolveConfig, settingsFromEnv, trustedUpstreamFromEnv, withTrustedUpstream, type SharedIdEdgeHandler } from '../packages/core/dist/index.js';
 import { clickIdModule } from '../packages/modules/clickid/dist/index.js';
 import { gppModule } from '../packages/modules/gpp/dist/index.js';
 import { reflectModule } from '../packages/modules/reflect/dist/index.js';
@@ -30,6 +30,42 @@ const handler = createHandler({
   }),
   modules: [reflectModule, clickIdModule, gppModule]
 });
+
+// SID_COOKIE_DOMAIN=auto and the fixed settings beside it (tests/cookie-domain-auto.spec.ts), each on its own site, local
+// runs only. The page adds pixelCookieDomain: true with ?pixelCookieDomain=1.
+const sites = new Map<string, SharedIdEdgeHandler>([
+  ['auto.sharedid.test', createHandler({ config: resolveConfig({ SID_COOKIE_DOMAIN: 'auto', SID_SYNC_CACHE_SECONDS: '0' }) })],
+  ['fixed.sharedid.test', createHandler({ config: resolveConfig({ SID_COOKIE_DOMAIN: 'fixed.sharedid.test', SID_SYNC_CACHE_SECONDS: '0' }) })],
+  ['hostonly.sharedid.test', createHandler({ config: resolveConfig({ SID_COOKIE_DOMAIN: 'host-only', SID_SYNC_CACHE_SECONDS: '0' }) })]
+]);
+
+// An upstream operator's endpoint (sid.upstream.test) in trusted-upstream mode with SID_COOKIE_DOMAIN=auto, serving the
+// publisher sites www.pub-a.test and www.pub-b.test. For those, this server is also the publisher's CDN: it forwards
+// /_sid/* to the endpoint with the shared secret and the site in X-Forwarded-Host, as docs/upstream-operators.md says.
+const UPSTREAM_SECRET = 'e2e-upstream-0123456789abcdef0123456789abcdef';
+const upstreamEnv = {
+  SID_UPSTREAM_SECRETS: JSON.stringify([UPSTREAM_SECRET]),
+  SID_LOCATION_HEADERS: JSON.stringify({ country: 'x-sid-country' }),
+  SID_COOKIE_DOMAIN: 'auto',
+  SID_SYNC_CACHE_SECONDS: '0',
+  SID_HOSTS: JSON.stringify({ 'www.pub-a.test': {}, 'www.pub-b.test': {} })
+};
+const upstream = withTrustedUpstream(createHandler(settingsFromEnv(upstreamEnv, { requireCookieDomain: true })), trustedUpstreamFromEnv(upstreamEnv));
+
+/** The handler for a site, and the request it gets: as sent, or through the publisher's CDN to the upstream endpoint. */
+function route(url: URL, headers: Headers): [SharedIdEdgeHandler, Request] {
+  const site = sites.get(url.hostname);
+  if (site !== undefined) return [site, new Request(url, { headers })];
+  if (url.hostname === 'www.pub-a.test' || url.hostname === 'www.pub-b.test') {
+    for (const name of ['x-sid-upstream-auth', 'x-forwarded-host', 'x-sid-country']) headers.delete(name);
+    headers.set('x-sid-upstream-auth', UPSTREAM_SECRET);
+    headers.set('x-forwarded-host', url.hostname);
+    headers.set('x-sid-country', 'US');
+    return [upstream, new Request(new URL(url.pathname + url.search, 'http://sid.upstream.test'), { headers })];
+  }
+  return [handler, new Request(url, { headers })];
+}
+
 // The same page the live test site (site/) serves.
 const PAGE = readFileSync(join(import.meta.dirname, 'site', 'public', 'index.html'), 'utf8');
 
@@ -42,7 +78,8 @@ const server = createServer((req, res) => {
     for (const [name, value] of Object.entries(req.headers)) {
       if (typeof value === 'string') headers.set(name, value);
     }
-    void handler(new Request(url, { headers })).then(async response => {
+    const [siteHandler, request] = route(url, headers);
+    void siteHandler(request).then(async response => {
       const out: Record<string, string | string[]> = {};
       response.headers.forEach((value, key) => { if (key !== 'set-cookie') out[key] = value; });
       out['set-cookie'] = response.headers.getSetCookie();

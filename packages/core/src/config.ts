@@ -7,7 +7,10 @@ export interface SharedIdEdgeConfig {
   readonly basePath: string;
   /** The SharedID cookie name; must match `storage.name` in Prebid.js. */
   readonly cookieName: string;
-  /** `Domain` attribute for the cookies, or undefined for a host-only cookie. */
+  /**
+   * `Domain` attribute for the cookies, or undefined for a host-only cookie. `auto` (`AUTO_COOKIE_DOMAIN`): per request,
+   * the `cookie_domain` Prebid.js sends when it's the request's host or a parent of it, else host-only.
+   */
   readonly cookieDomain: string | undefined;
   /** Cookie lifetime in days, at most 400. */
   readonly maxAgeDays: number;
@@ -89,7 +92,7 @@ export interface ConfigSetting {
 export const SETTINGS: readonly ConfigSetting[] = [
   { name: 'SID_BASE_PATH', default: '`/_sid`', description: 'Path prefix the worker answers under. Must match your route.' },
   { name: 'SID_COOKIE_NAME', default: '`_pubcid`', description: 'The SharedID cookie; must match `storage.name` in Prebid.js.' },
-  { name: 'SID_COOKIE_DOMAIN', default: '**required**', description: 'The domain Prebid.js writes the SharedID cookie on, which the worker\'s cookies must match: normally your registrable domain, `example.com` (Prebid.js picks the highest domain it can set a cookie on). `host-only` for cookies without a `Domain`, when Prebid.js writes them that way (a site served from an IP address, say). Unset, every request gets a 500.' },
+  { name: 'SID_COOKIE_DOMAIN', default: '**required**', description: 'The domain Prebid.js writes the SharedID cookie on, which the worker\'s cookies must match: normally your registrable domain, `example.com` (Prebid.js picks the highest domain it can set a cookie on). `host-only` for cookies without a `Domain`, when Prebid.js writes them that way (a site served from an IP address, say). `auto` for the domain Prebid.js reports on each sync (`pixelCookieDomain: true`, Prebid.js 11.53.0 or later) when it\'s the request\'s host or a parent of it, else host-only: for one deployment serving many sites. See [Cookie domain `auto`](#cookie-domain-auto). Unset, every request gets a 500.' },
   { name: 'SID_MAX_AGE_DAYS', default: '`365`', description: 'Cookie lifetime in days, 1 to 400 (browsers cap at 400).' },
   { name: 'SID_CREATE', default: '`true`', description: 'Mint an ID when the request has none. With Prebid.js it always sends one, so this rarely matters.' },
   { name: 'SID_RECOVERY_COOKIE', default: '`_pubcid_sv`', description: 'Name of the `HttpOnly` recovery copy; `none` to disable it.' },
@@ -164,6 +167,8 @@ function list(env: Env, key: string): string[] {
 
 /** `SID_COOKIE_DOMAIN` value for cookies without a `Domain` attribute. */
 const HOST_ONLY = 'host-only';
+/** `SID_COOKIE_DOMAIN` value for the domain Prebid.js reports per request (`cookie_domain`), checked against the host. */
+export const AUTO_COOKIE_DOMAIN = 'auto';
 
 export interface ResolveConfigOptions {
   /**
@@ -190,11 +195,11 @@ export function resolveConfig(env: Env, options: ResolveConfigOptions = {}): Sha
   const cookieDomainSetting = str(env, 'SID_COOKIE_DOMAIN');
   if (cookieDomainSetting === undefined && options.requireCookieDomain === true) {
     throw new ConfigError(
-      'SID_COOKIE_DOMAIN is required: set it to the domain Prebid.js writes the SharedID cookie on, normally your registrable domain (example.com), or to host-only'
+      'SID_COOKIE_DOMAIN is required: set it to the domain Prebid.js writes the SharedID cookie on, normally your registrable domain (example.com), or to host-only or auto'
     );
   }
   const cookieDomain = cookieDomainSetting === HOST_ONLY ? undefined : cookieDomainSetting;
-  if (cookieDomain !== undefined && !DOMAIN.test(cookieDomain)) {
+  if (cookieDomain !== undefined && cookieDomain !== AUTO_COOKIE_DOMAIN && !DOMAIN.test(cookieDomain)) {
     throw new ConfigError(`SID_COOKIE_DOMAIN is not a valid domain: "${cookieDomain}"`);
   }
 

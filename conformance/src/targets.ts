@@ -285,6 +285,20 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
       "no forwarded client IP means none, not the edge's",
       "the forwarded host picks another publisher's settings and cookie domain"
     ]),
+    ...limited('cookie-domain-auto-upstream.json', "AWS Emulator's function URL doesn't pass on a single X-Forwarded-Host as the client sent it, so the function sees another host (SID_HOSTS then answers 404)", [
+      'a parent of the forwarded site',
+      'the forwarded site itself',
+      'another publisher through the same deployment gets its own domain',
+      'a parent two levels up, under a two-label public suffix',
+      'upper case and a trailing dot are normalized',
+      "another publisher's domain is host-only",
+      'a suffix that is not at a label boundary is host-only',
+      "the endpoint's own host is not the site: its domain is host-only",
+      'without cookie_domain, host-only',
+      "a site's fixed domain wins over the deployment's auto",
+      'a module cookie on "domain": "auto" follows cookie_domain',
+      'opt-out deletes the ID cookies on the site and every domain above it'
+    ]),
     ...limited('forwarded-headers-untrusted.json', NO_LOCATION, [
       "a forged country doesn't override the platform's EU country",
       "the payload has the platform's location, not the forged one"
@@ -292,16 +306,17 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
   ]),
   // Trusted-upstream mode is refused on these adapters (SID_UPSTREAM_SECRETS is a configuration error, so every request
   // gets a 500); see their READMEs.
-  'lambda-edge': { 'trusted-upstream.json': NO_UPSTREAM },
+  'lambda-edge': { 'trusted-upstream.json': NO_UPSTREAM, 'cookie-domain-auto-upstream.json': NO_UPSTREAM },
   'lambda-edge-viewer': Object.fromEntries([
     ...gdprByLocation(VIEWER_NO_LOCATION),
     ...['forwarded-headers-untrusted.json', 'module-dbip.json', 'module-dbip-replace.json', 'module-geo.json', 'module-geo-coarse.json', 'module-geo-invalid-config.json', 'module-ip2location.json', 'module-ip2location-replace.json', 'module-maxmind.json', 'module-maxmind-replace.json', 'module-sync-modules.json'].map((file): [string, string] => [file, VIEWER_NO_GEO]),
-    ['trusted-upstream.json', NO_UPSTREAM]
+    ['trusted-upstream.json', NO_UPSTREAM],
+    ['cookie-domain-auto-upstream.json', NO_UPSTREAM]
   ]),
-  vercel: { 'trusted-upstream.json': NO_UPSTREAM },
-  azure: { 'trusted-upstream.json': NO_UPSTREAM },
-  gcp: { 'trusted-upstream.json': NO_UPSTREAM },
-  akamai: Object.fromEntries([['trusted-upstream.json', NO_UPSTREAM], ...encryptedIpCases(NO_X25519)]),
+  vercel: { 'trusted-upstream.json': NO_UPSTREAM, 'cookie-domain-auto-upstream.json': NO_UPSTREAM },
+  azure: { 'trusted-upstream.json': NO_UPSTREAM, 'cookie-domain-auto-upstream.json': NO_UPSTREAM },
+  gcp: { 'trusted-upstream.json': NO_UPSTREAM, 'cookie-domain-auto-upstream.json': NO_UPSTREAM },
+  akamai: Object.fromEntries([['trusted-upstream.json', NO_UPSTREAM], ['cookie-domain-auto-upstream.json', NO_UPSTREAM], ...encryptedIpCases(NO_X25519)]),
   fastly: Object.fromEntries(encryptedIpCases(NO_X25519))
 };
 

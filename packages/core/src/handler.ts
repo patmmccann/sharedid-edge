@@ -1,5 +1,5 @@
-import { DEFAULT_CONFIG, type SharedIdEdgeConfig } from './config.js';
-import { hostKey } from './hosts.js';
+import { AUTO_COOKIE_DOMAIN, DEFAULT_CONFIG, type SharedIdEdgeConfig } from './config.js';
+import { HOSTNAME, hostKey } from './hosts.js';
 import { readConsent, storageDecision, storageDecisionWith, type StorageDecision } from './consent.js';
 import { cookieValues, parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
 import { idFromSyncParam, isValidId, mintId } from './id.js';
@@ -134,16 +134,16 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
 }
 
 /** The handler for one configuration. */
-function configuredHandler(options: HandlerOptions, config: SharedIdEdgeConfig, registry: ModuleRegistry): SharedIdEdgeHandler {
+function configuredHandler(options: HandlerOptions, base: SharedIdEdgeConfig, registry: ModuleRegistry): SharedIdEdgeHandler {
   const now = options.now ?? ((): Date => new Date());
   const newId = options.mintId ?? mintId;
 
   return async (request: Request, platform: PlatformInfo = {}): Promise<Response> => {
     const url = new URL(request.url);
-    const route = routeOf(url.pathname, config.basePath);
+    const route = routeOf(url.pathname, base.basePath);
     if (route === undefined) return text(404, 'Not found');
 
-    if (request.method === 'OPTIONS' && route === ROUTES.v1) return preflight(request, config);
+    if (request.method === 'OPTIONS' && route === ROUTES.v1) return preflight(request, base);
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       return new Response(null, { status: 405, headers: { Allow: route === ROUTES.v1 ? 'GET, HEAD, OPTIONS' : 'GET, HEAD', ...NO_STORE } });
     }
@@ -159,21 +159,35 @@ function configuredHandler(options: HandlerOptions, config: SharedIdEdgeConfig, 
     const cookies = parseCookies(cookieHeader);
     const secure = secureCookies(url);
     const date = now();
+    // SID_COOKIE_DOMAIN=auto: the domain Prebid.js reports (`cookie_domain`) when it's this host or a parent of it, else
+    // host-only. The host is the URL's: in trusted-upstream mode, the forwarded one, set only after the secret check.
+    const host = hostKey(url);
+    const cookieDomainParam = url.searchParams.get('cookie_domain');
+    const autoDomain = autoCookieDomain(host, cookieDomainParam);
+    const auto = base.cookieDomain === AUTO_COOKIE_DOMAIN;
+    const config = auto ? { ...base, cookieDomain: autoDomain } : base;
+    // Where deletions go. With auto, a cookie may be on the host or any domain above it (a browser refuses the public
+    // suffixes among them), so they go to each.
+    const sweep = [undefined, ...hostDomains(host)];
+    const domains = auto ? sweep : config.cookieDomain === undefined ? [undefined] : [config.cookieDomain, undefined];
 
     switch (route) {
       case ROUTES.optout:
         return withCookies(new Response(null, { status: 204, headers: NO_STORE }), [
-          serializeCookie(config.optOutCookieName, '1', cookieOptions(config, secure, false), date),
-          ...expireIdCookies(config, secure, date),
-          // Only cookies the browser sent: nothing to delete otherwise.
-          ...optOutCookies(registry, config).filter(cookie => cookies.has(cookie.name)).map(cookie => serializeModuleCookie(cookie, config, secure, date))
+          // With auto, the opt-out cookie goes wherever an ID cookie could be, as the deletions do.
+          ...(auto ? sweep : [config.cookieDomain]).map(domain => serializeCookie(config.optOutCookieName, '1', { ...cookieOptions(config, secure, false), domain }, date)),
+          ...expireIdCookies(config, domains, secure, date),
+          // Only cookies the browser sent: nothing to delete otherwise. A module cookie on `auto` (its own, or core's) is
+          // deleted everywhere it could be.
+          ...optOutCookies(registry, config).filter(cookie => cookies.has(cookie.name)).flatMap(cookie =>
+            cookie.hostOnly !== true && (cookie.domain === AUTO_COOKIE_DOMAIN || (auto && cookie.domain === undefined))
+              ? sweep.map(domain => serializeModuleCookie(domain === undefined ? { ...cookie, hostOnly: true } : { ...cookie, domain }, config, secure, date, undefined))
+              : [serializeModuleCookie(cookie, config, secure, date, undefined)])
         ]);
-      case ROUTES.optin: {
-        const domains = config.cookieDomain === undefined ? [undefined] : [config.cookieDomain, undefined];
+      case ROUTES.optin:
         return withCookies(new Response(null, { status: 204, headers: NO_STORE }), domains.map(domain =>
           serializeCookie(config.optOutCookieName, '', { ...cookieOptions(config, secure, false), maxAgeSeconds: 0, domain }, date)
         ));
-      }
       case ROUTES.sync:
       case ROUTES.v1: {
         // A request the rate limiter refuses (429) gets no further: no consent, ID or module.
@@ -199,7 +213,7 @@ function configuredHandler(options: HandlerOptions, config: SharedIdEdgeConfig, 
 
         // Modules run on both routes (on /sync, those configured for it). Their traffic reports join the platform's, so
         // SID_SKIP_BOTS sees the same merged verdict on /sync as on /v1.
-        const context = { request, url, platform, sharedId: state.id, consent, cookies, optedOut, cookieDomain: config.cookieDomain, storage: decision };
+        const context = { request, url, platform, sharedId: state.id, consent, cookies, optedOut, cookieDomain: config.cookieDomain, autoCookieDomain: autoDomain, storage: decision };
         const modules = await runModules(registry, config, context, () => now().getTime(), route === ROUTES.sync ? 'sync' : 'v1');
         const traffic = mergeTraffic([...platformTraffic, ...modules.traffic]);
         if (decision.allowed && !skipped && skipsBot(config, traffic)) {
@@ -212,12 +226,14 @@ function configuredHandler(options: HandlerOptions, config: SharedIdEdgeConfig, 
         if (state.id !== undefined) {
           setCookies.push(...idCookies(config, state.id, secure, date), ...hostOnlyDuplicates(config, cookieHeader, secure, date));
         } else if (!decision.allowed && (cookies.has(config.cookieName) || (config.recoveryCookieName !== undefined && cookies.has(config.recoveryCookieName)))) {
-          setCookies.push(...expireIdCookies(config, secure, date));
+          setCookies.push(...expireIdCookies(config, domains, secure, date));
         }
 
         const response = route === ROUTES.sync
-          ? syncResponse({ modules, state, allowed: decision.allowed, config, secure, date })
-          : payloadResponse({ request, modules, traffic, state, config, secure, date });
+          ? syncResponse({ modules, state, allowed: decision.allowed, config, secure, date, autoDomain })
+          : payloadResponse({ request, modules, traffic, state, config, secure, date, autoDomain });
+        // Which domain auto chose, or why it fell back to host-only.
+        if (auto) response.headers.set('X-SharedID-Cookie-Domain', autoDomain ?? (cookieDomainParam !== null ? 'host-only: cookie_domain not this host or a parent' : 'host-only: no cookie_domain'));
         if (!decision.allowed) response.headers.set('X-SharedID-Status', `denied: ${decision.reason}`);
         else if (skipped) response.headers.set('X-SharedID-Status', 'skipped: bot');
         if (state.source !== undefined) response.headers.set('X-SharedID-Source', state.source);
@@ -265,9 +281,27 @@ function resolveId(config: SharedIdEdgeConfig, cookies: ReadonlyMap<string, stri
   return { id: undefined, source: undefined };
 }
 
+const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+
+/**
+ * `cookie_domain` for `auto`: a hostname of two labels or more (no port, scheme or IP address) that is `host` or a
+ * parent of it at a label boundary, in lower case without a trailing dot; otherwise undefined.
+ */
+function autoCookieDomain(host: string, value: string | null): string | undefined {
+  const domain = value?.toLowerCase().replace(/\.$/, '');
+  if (domain === undefined || !domain.includes('.') || !HOSTNAME.test(domain) || IPV4.test(host)) return undefined;
+  return host === domain || host.endsWith('.' + domain) ? domain : undefined;
+}
+
+/** The host and each domain above it, short of the top level: `www.example.com`, `example.com`. None for an IP address. */
+function hostDomains(host: string): string[] {
+  if (IPV4.test(host) || host.startsWith('[')) return [];
+  const labels = host.split('.');
+  return labels.slice(0, -1).map((_, i) => labels.slice(i).join('.'));
+}
+
 /** Names reserved for local and private use (RFC 6761, RFC 6762, and ICANN's .internal), never a public site. */
 const LOCAL_SUFFIXES = ['.localhost', '.test', '.local', '.internal', '.example', '.invalid'];
-const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
 /**
  * Whether cookies get `Secure`. On https, always. On plain http only local development omits it (a browser drops a
@@ -314,8 +348,7 @@ function hostOnlyDuplicates(config: SharedIdEdgeConfig, cookieHeader: string | n
  * Deletes the ID cookies: an empty value, `Max-Age=0` and an `Expires` in the past. With `SID_COOKIE_DOMAIN`, a
  * host-only copy is deleted too, since Prebid.js may have written one before the worker was configured.
  */
-function expireIdCookies(config: SharedIdEdgeConfig, secure: boolean, date: Date): string[] {
-  const domains = config.cookieDomain === undefined ? [undefined] : [config.cookieDomain, undefined];
+function expireIdCookies(config: SharedIdEdgeConfig, domains: readonly (string | undefined)[], secure: boolean, date: Date): string[] {
   const cookies: string[] = [];
   for (const domain of domains) {
     const expired = { ...cookieOptions(config, secure, false), maxAgeSeconds: 0, domain };
@@ -344,10 +377,12 @@ interface SyncInputs {
   readonly config: SharedIdEdgeConfig;
   readonly secure: boolean;
   readonly date: Date;
+  /** The request's `auto` domain, for module cookies on `auto`. */
+  readonly autoDomain: string | undefined;
 }
 
 function syncResponse(inputs: SyncInputs): Response {
-  const { modules, state, allowed, config, secure, date } = inputs;
+  const { modules, state, allowed, config, secure, date, autoDomain } = inputs;
   // A module that must see every sync (`noStore`) keeps it out of the browser's cache.
   const cacheable = allowed && state.id !== undefined && config.syncCacheSeconds > 0 && !modules.noStore;
   const response = new Response(PIXEL, {
@@ -362,7 +397,7 @@ function syncResponse(inputs: SyncInputs): Response {
   const statuses = Object.entries(modules.reports).map(([name, report]) => `${name}=${report.status}`);
   if (statuses.length > 0) response.headers.set('X-SharedID-Modules', statuses.join(', '));
   // Cookies only: there's no payload for eids, ortb2 or the traffic signal.
-  for (const cookie of modules.cookies) response.headers.append('Set-Cookie', serializeModuleCookie(cookie, config, secure, date));
+  for (const cookie of modules.cookies) response.headers.append('Set-Cookie', serializeModuleCookie(cookie, config, secure, date, autoDomain));
   return response;
 }
 
@@ -375,10 +410,11 @@ interface PayloadInputs {
   readonly config: SharedIdEdgeConfig;
   readonly secure: boolean;
   readonly date: Date;
+  readonly autoDomain: string | undefined;
 }
 
 function payloadResponse(inputs: PayloadInputs): Response {
-  const { request, modules, traffic, state, config, secure, date } = inputs;
+  const { request, modules, traffic, state, config, secure, date, autoDomain } = inputs;
   const eids: Eid[] = state.id === undefined ? [] : [{ source: 'pubcid.org', uids: [{ id: state.id, atype: 1 }] }];
   eids.push(...modules.eids);
   // Written by core from the merged signal, after the modules' fragments, so no module's output can replace it.
@@ -396,14 +432,15 @@ function payloadResponse(inputs: PayloadInputs): Response {
     headers: { 'Content-Type': 'application/json; charset=utf-8', ...NO_STORE, 'X-Robots-Tag': 'noindex' }
   });
   applyCors(request, config, response.headers);
-  for (const cookie of modules.cookies) response.headers.append('Set-Cookie', serializeModuleCookie(cookie, config, secure, date));
+  for (const cookie of modules.cookies) response.headers.append('Set-Cookie', serializeModuleCookie(cookie, config, secure, date, autoDomain));
   return response;
 }
 
-function serializeModuleCookie(cookie: ModuleCookie, config: SharedIdEdgeConfig, secure: boolean, date: Date): string {
+/** A module cookie's `Set-Cookie`. A `domain` of `auto` is the request's `auto` domain, or host-only. */
+function serializeModuleCookie(cookie: ModuleCookie, config: SharedIdEdgeConfig, secure: boolean, date: Date, autoDomain: string | undefined): string {
   const options: CookieOptions = {
     maxAgeSeconds: cookie.maxAgeSeconds,
-    domain: cookie.hostOnly === true ? undefined : (cookie.domain ?? config.cookieDomain),
+    domain: cookie.hostOnly === true ? undefined : cookie.domain === AUTO_COOKIE_DOMAIN ? autoDomain : (cookie.domain ?? config.cookieDomain),
     secure,
     httpOnly: cookie.httpOnly,
     sameSite: 'Lax'

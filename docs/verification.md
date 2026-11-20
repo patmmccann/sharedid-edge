@@ -302,6 +302,8 @@ The contract every implementation passes ([`conformance/`](../conformance/AGENTS
 - the `reflect` module refreshes and restores a vendor's `uid1` and `_ga` (four tests), and `clickid` keeps a landing page's `gclid` for 90 days;
 - after an opt-out, the endpoint sets no ID cookies.
 
+[`e2e/tests/cookie-domain-auto.spec.ts`](../e2e/tests/cookie-domain-auto.spec.ts) checks [`SID_COOKIE_DOMAIN=auto`](configuration.md#cookie-domain-auto) with Prebid.js's `pixelCookieDomain` (11.53.0 and later), locally only, since each case is a site of its own on the local server: with `auto`, the sync carries `cookie_domain=sharedid.test` from a page on `auto.sharedid.test` and the cookies go on that parent; without `pixelCookieDomain` they're host-only; a fixed domain and `host-only` ignore `cookie_domain`; and an upstream operator's endpoint in trusted-upstream mode with `auto` gives two publishers (`www.pub-a.test`, `www.pub-b.test`, forwarded by the local server playing their CDN) each their own domain.
+
 WebKit isn't Safari: it doesn't apply Safari's 7-day cap on script-set cookies, so the tests clear the cookie to simulate one. [`e2e/safari/safari.test.ts`](../e2e/safari/safari.test.ts) runs five of the core tests in real Safari ([Real Safari](../e2e/AGENTS.md#real-safari)), in CI against the local server only.
 
 ## Not verified yet
