@@ -18,7 +18,7 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { gzipSync } from 'node:zlib';
 import { build } from 'esbuild';
-import { ConfigError, settingsFromEnv } from '@sharedid-edge/core';
+import { ConfigError, forwardingPaths, settingsFromEnv } from '@sharedid-edge/core';
 import { readSettingsFile, SettingsFileError } from '../../../../scripts/settings-file.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -38,7 +38,9 @@ const MODULES = {
   clickid: ['@sharedid-edge/module-clickid', 'clickIdModule', 'clickIdModuleConfig'],
   // Opt-in elsewhere, but a Snippet bundles only the modules SID_MODULES lists anyway.
   cmp: ['@sharedid-edge/module-cmp', 'cmpModule', 'cmpSettings'],
-  gpp: ['@sharedid-edge/module-gpp', 'gppModule']
+  gpp: ['@sharedid-edge/module-gpp', 'gppModule'],
+  // A forwarding module: Snippets can make subrequests, as Google's own Snippet for the tag gateway does.
+  'tag-gateway': ['@sharedid-edge/module-tag-gateway', 'tagGatewayModule', 'tagGatewaySettings']
 };
 /**
  * The build-time flag, `true` in the Snippet: its settings are validated here, when it's built, so the bundle ships
@@ -123,10 +125,14 @@ const parserLine = !moduleNames.includes('ua') ? 'none (no ua module)'
 // parser would, so the opt-out leaves that module's cookies out in both.
 // Loading the modules here also checks their definitions (core's defineModule), which the Snippet then leaves out.
 let consentHooks = false;
+let forwarding = false;
+const loadedModules = [];
 const parsers = Object.fromEntries(await Promise.all(moduleNames.map(async name => {
   const loaded = await import(moduleSource(name)[0]);
   if (loaded[moduleSource(name)[1]] === undefined) fail(`${moduleSource(name)[0]} has no ${moduleSource(name)[1]}.`);
   if (loaded[moduleSource(name)[1]].consent !== undefined) consentHooks = true;
+  if (loaded[moduleSource(name)[1]].forwarding !== undefined) forwarding = true;
+  loadedModules.push(loaded[moduleSource(name)[1]]);
   return [name, MODULES[name][2] === undefined ? undefined : loaded[MODULES[name][2]]];
 })).then(entries => entries.filter(([, parse]) => parse !== undefined)));
 function parsedSettings(siteConfig, where) {
@@ -161,8 +167,9 @@ const unused = {
 };
 // Without a module that has a consent hook, core's code that runs them compiles away (NO_CONSENT_HOOKS in core's modules.ts).
 // A Snippet has no bindings, so no rate limiter: core's check for one compiles away too (NO_RATE_LIMIT in handler.ts).
-// With --no-tcf, core's TCF decoder compiles away (NO_TCF in consent.ts).
-const define = { [PREVALIDATED]: 'true', 'globalThis.__SID_NO_CONSENT_HOOKS__': String(!consentHooks), 'globalThis.__SID_NO_RATE_LIMIT__': 'true', 'globalThis.__SID_NO_TCF__': String(noTcf), ...Object.fromEntries(Object.entries(unused).map(([name, value]) => [`globalThis.__SID_UNUSED_${name}__`, String(value)])) };
+// With --no-tcf, core's TCF decoder compiles away (NO_TCF in consent.ts). Without a forwarding module (tag-gateway), core's
+// forwarding code compiles away (NO_FORWARDING in handler.ts).
+const define = { [PREVALIDATED]: 'true', 'globalThis.__SID_NO_CONSENT_HOOKS__': String(!consentHooks), 'globalThis.__SID_NO_FORWARDING__': String(!forwarding), 'globalThis.__SID_NO_RATE_LIMIT__': 'true', 'globalThis.__SID_NO_TCF__': String(noTcf), ...Object.fromEntries(Object.entries(unused).map(([name, value]) => [`globalThis.__SID_UNUSED_${name}__`, String(value)])) };
 
 /** `value` as a JavaScript expression: JSON, with `undefined` and Maps, which the settings have. */
 function literal(value) {
@@ -318,19 +325,25 @@ const p50 = timed[150] ?? 0;
 const p99 = timed[297] ?? 0;
 const CPU_LIMIT_MS = 5;
 
-writeFileSync(ruleFile, `${snippetRule(config.basePath)}\n`);
+// A forwarding module's paths (tag-gateway's /metrics) need the rule too, for every site the Snippet serves.
+const forwardedPaths = [...new Set(configs.flatMap(c => forwardingPaths(c, loadedModules)))];
+writeFileSync(ruleFile, `${snippetRule(config.basePath, forwardedPaths)}\n`);
 console.log(`  Headroom: ${kb(SNIPPET_LIMIT - size)}
   Smoke test: ok (a first sync sets ${config.cookieName}; /v1 answers${moduleNames.length > 0 ? ' with no module errors' : ''})
   Time per request (on this machine, an estimate of CPU time): median ${ms(p50)}, 99th percentile ${ms(p99)}, of Snippets' ${String(CPU_LIMIT_MS)} ms CPU limit${p99 > CPU_LIMIT_MS / 2 ? `
   WARNING: the 99th percentile is over half the ${String(CPU_LIMIT_MS)} ms limit here. Cloudflare's CPUs differ from this machine,
   but at this rate some requests may hit the limit, and a Snippet over it fails. Fewer modules, or the Worker, avoid it.` : ''}
   Snippet rule (also in ${show(ruleFile)}): add your hostname with http.host
-    ${snippetRule(config.basePath)}
+    ${snippetRule(config.basePath, forwardedPaths)}
 
 ${TRADE_OFFS}`);
 
-/** The Snippet rule expression for the base path: core's routes only with the root path, as the Worker's routes are. */
-function snippetRule(basePath) {
-  if (basePath === '/') return '(http.request.uri.path in {"/sync" "/v1" "/optout" "/optin"})';
-  return `(starts_with(http.request.uri.path, "${basePath}/"))`;
+/**
+ * The Snippet rule expression for the base path (core's routes only with the root path, as the Worker's routes are),
+ * and for each forwarding module's path: the path itself and everything under it.
+ */
+function snippetRule(basePath, forwarded = []) {
+  const base = basePath === '/' ? 'http.request.uri.path in {"/sync" "/v1" "/optout" "/optin"}' : `starts_with(http.request.uri.path, "${basePath}/")`;
+  const paths = forwarded.map(path => `http.request.uri.path eq "${path}" or starts_with(http.request.uri.path, "${path}/")`);
+  return `(${[base, ...paths].join(' or ')})`;
 }

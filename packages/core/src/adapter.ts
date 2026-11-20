@@ -155,9 +155,21 @@ export function withPublicOrigin(request: Request, publicOrigin: string | undefi
 }
 
 /**
- * A copy of `request` at `url` with `headers` and the same method, without its body: no route reads one, so a large
- * one sent with another method is never read into memory before its `405`.
+ * A copy of `request` at `url` with `headers` and the same method. A `POST` keeps its body as the stream it is, unread,
+ * for a forwarding module's path (which reads it only when it forwards, within its limit); any other method's body is
+ * left out: no other route reads one, so a large one is never read into memory before its `405`.
  */
 export function copyRequest(request: Request, url: URL, headers: Headers): Request {
-  return new Request(url, { method: request.method, headers });
+  const body = request.method === 'POST' ? request.body : null;
+  // `duplex` (Node.js needs it for a stream body) isn't in the WebWorker library's RequestInit yet.
+  const init: RequestInit & { readonly duplex?: 'half' } = { method: request.method, headers, ...(body === null ? {} : { body, duplex: 'half' }) };
+  return new Request(url, init);
+}
+
+/**
+ * The `forwardFetch` of an adapter whose platform has the Fetch API's `fetch` for requests to other hosts (core's
+ * `HandlerOptions.forwardFetch`). It looks `fetch` up on each call.
+ */
+export function fetchForward(request: Request): Promise<Response> {
+  return fetch(request);
 }

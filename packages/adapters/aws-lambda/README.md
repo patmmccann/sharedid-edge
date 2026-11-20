@@ -77,6 +77,8 @@ npm run bundle -w @sharedid-edge/aws-lambda -- --module @sharedid-edge/module-ec
 
 Then list it in `SID_MODULES`, with its settings and secrets (the [`ec` README](../../vendor-modules/ec/README.md#turning-it-on)). Without `--module`, `SID_MODULES=ec` reports `ec` as `skipped` (`not installed`) and sets no `ts-ec`. `ec` used to be built in: if you deploy it, add `--module` to your build before you next bundle. The bundle's size is reported but the 32 KB budget isn't enforced with opt-in modules; `--bowser` and `--module` can be combined.
 
+**Forwarding modules (opt-in).** [`tag-gateway`](../../modules/tag-gateway/README.md) serves Google's tag gateway from a path on your site, forwarding to Google (its README starts with what it sends, and when). It works here: add it with `--module @sharedid-edge/module-tag-gateway#tagGatewayModule`, and add a CloudFront behaviour for its path (`/metrics/*`) to the function URL's origin, like the `/_sid/*` one: caching disabled, every viewer header and cookie forwarded. A `POST` hit's body reaches it unread, and is read only when it's forwarded. See its [Platforms](../../modules/tag-gateway/README.md#platforms) table.
+
 **Bowser (opt-in).** The `ua` module's [full `User-Agent` parsing](../../modules/ua/README.md#full-parsing-with-bowser) fills `device` (`sua`, `devicetype`, `make`, `model`, `os`, `osv`) for Safari, Firefox, TVs and other browsers that send no Client Hints. It isn't in the default bundle, to keep it small. `npm run bundle:bowser -w @sharedid-edge/aws-lambda` (in place of `bundle`; same `deploy/lambda.mjs`, so `sam deploy` is unchanged) builds it in, then `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` turns it on. The cost, minified and gzipped, against the budgets CI checks (32 KB for the default build; 40 KB for the opt-in Bowser build, which adds full User-Agent parsing):
 
 | Bundle | Default (no Bowser) | With Bowser |
@@ -556,6 +558,8 @@ The bundle goes to `packages/adapters/aws-lambda/deploy-edge/edge.mjs`, alone in
 5. smoke-tests the bundle with a CloudFront event of that type: a first sync must set the ID and `/v1` must report no module errors, within the event's response limit. A bundle that fails is removed.
 
 `--bowser` and `--module <package>#<export>` work as for the [regional bundle](#build). The bundle reads its settings once, when it starts; should they be invalid anyway, every request gets `500 SharedID Edge is misconfigured`, with the reason in the function's logs.
+
+**Forwarding modules** such as [`tag-gateway`](../../modules/tag-gateway/README.md) (Google's tag gateway) aren't supported: a generated response is at most 40 KB on viewer-request and 1 MB on origin-request, and the Lambda@Edge adapter doesn't send requests. Listing one in `SID_MODULES` gives every request a 500, rather than being ignored. CloudFront can route the gateway's path to Google itself, as [Google's setup guide](https://developers.google.com/tag-platform/tag-manager/gateway/setup-guide?setup=manual) shows.
 
 ### Deploy (Lambda@Edge)
 

@@ -1,4 +1,4 @@
-import { ConfigError, booleanFromEnv, handlerOrMisconfigured, publicOriginFromEnv, refuseTrustedUpstream, resolveConfig, settingsFromEnv, type EdgeModule } from '@sharedid-edge/core';
+import { ConfigError, booleanFromEnv, forwardingPaths, handlerOrMisconfigured, publicOriginFromEnv, refuseTrustedUpstream, resolveConfig, settingsFromEnv, type EdgeModule } from '@sharedid-edge/core';
 import { builtInModules } from '@sharedid-edge/modules';
 import { createVercelHandler, internalError, middleware, type VercelHandler, type VercelMiddleware } from './handler.js';
 
@@ -26,20 +26,28 @@ export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtI
 }
 
 /**
- * Builds middleware from environment variables, like `handlerFromEnv`: requests under `SID_BASE_PATH` (`/_sid`)
- * get the handler's response, any other request `undefined`. A misconfiguration answers the base path with a 500
+ * Builds middleware from environment variables, like `handlerFromEnv`: requests under `SID_BASE_PATH` (`/_sid`),
+ * and under a forwarding module's paths, get the handler's response, any other request `undefined`. A misconfiguration answers the base path with a 500
  * and leaves the rest of the site alone.
  */
 export function middlewareFromEnv(env: Env, modules: readonly EdgeModule[] = builtInModules): VercelMiddleware {
   const basePath = env['SID_BASE_PATH'];
   let path = '/_sid';
-  if (basePath !== undefined && basePath !== '') {
-    try {
-      path = resolveConfig({ SID_BASE_PATH: basePath }).basePath;
-    } catch (error) {
-      if (!(error instanceof ConfigError)) throw error;
-      // handlerFromEnv logs it; keep the default path so the 500 shows up where the endpoint is expected.
+  let forwarding: string[] = [];
+  try {
+    const config = resolveConfig(env);
+    path = config.basePath;
+    forwarding = forwardingPaths(config, modules);
+  } catch (error) {
+    if (!(error instanceof ConfigError)) throw error;
+    // handlerFromEnv logs it; keep the base path when it's valid, so the 500 shows up where the endpoint is expected.
+    if (basePath !== undefined && basePath !== '') {
+      try {
+        path = resolveConfig({ SID_BASE_PATH: basePath }).basePath;
+      } catch (inner) {
+        if (!(inner instanceof ConfigError)) throw inner;
+      }
     }
   }
-  return middleware(handlerFromEnv(env, modules), path);
+  return middleware(handlerFromEnv(env, modules), path, forwarding);
 }

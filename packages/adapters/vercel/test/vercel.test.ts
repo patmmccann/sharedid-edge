@@ -313,3 +313,25 @@ describe('the example', () => {
     for (const method of ['GET', 'HEAD', 'OPTIONS']) expect(route).toMatch(new RegExp(`^export const ${method} = `, 'm'));
   });
 });
+
+describe('forwarding modules', () => {
+  const relay = defineModule({
+    name: 'relay',
+    run: () => undefined,
+    forwarding: {
+      hosts: ['upstream.example'],
+      paths: () => ['/metrics'],
+      serve: context => context.forward(`https://upstream.example${context.url.pathname}`)
+    }
+  });
+
+  it("answers the module's paths in the middleware when it's on, and passes everything else to the site", async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('upstream'))));
+    const on = middlewareFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_MODULES: 'relay' }, [relay]);
+    expect(await (await on(vercelRequest({ path: '/metrics/g/collect' })))?.text()).toBe('upstream');
+    expect(await on(vercelRequest({ path: '/metricsx' }))).toBeUndefined();
+    const off = middlewareFromEnv({ SID_COOKIE_DOMAIN: 'host-only' }, [relay]);
+    expect(await off(vercelRequest({ path: '/metrics/g/collect' }))).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+});

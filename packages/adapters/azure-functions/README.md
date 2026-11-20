@@ -91,6 +91,8 @@ npm run bundle -w @sharedid-edge/azure-functions -- --module @sharedid-edge/modu
 
 Then list it in `SID_MODULES`, with its settings and secrets (the [`ec` README](../../vendor-modules/ec/README.md#turning-it-on)). Without `--module`, `SID_MODULES=ec` reports `ec` as `skipped` (`not installed`) and sets no `ts-ec`. `ec` used to be built in: if you deploy it, add `--module` to your build before you next bundle. The bundle's size is reported but the 32 KB budget isn't enforced with opt-in modules; `--bowser` and `--module` can be combined.
 
+**Forwarding modules** such as [`tag-gateway`](../../modules/tag-gateway/README.md) (Google's tag gateway) aren't supported: the function's route template covers only `SID_BASE_PATH`. Listing one in `SID_MODULES` gives every request a 500, rather than being ignored. Front Door can route the gateway's path to Google itself ("Other" in [Google's setup guide](https://developers.google.com/tag-platform/tag-manager/gateway/setup-guide?setup=manual)).
+
 **Bowser (opt-in).** The `ua` module's [full `User-Agent` parsing](../../modules/ua/README.md#full-parsing-with-bowser) fills `device` (`sua`, `devicetype`, `make`, `model`, `os`, `osv`) for Safari, Firefox, TVs and other browsers that send no Client Hints. It isn't in the default bundle, to keep it small. `npm run bundle:bowser -w @sharedid-edge/azure-functions` (in place of `bundle`; the same `deploy/` function app) builds it in, then `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` turns it on. The cost, minified and gzipped, against the budgets CI checks (32 KB for the default build; 40 KB for the opt-in Bowser build, which adds full User-Agent parsing):
 
 | Bundle | Default (no Bowser) | With Bowser |

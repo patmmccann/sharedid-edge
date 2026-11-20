@@ -136,6 +136,8 @@ The CLI builds in `ip`, `geo`, `reflect`, `bot`, `ua` and `clickid`, from the li
 
 The server isn't bundled, so its `ua` module always has [Bowser](../../modules/ua/README.md#full-parsing-with-bowser) (from `@sharedid-edge/modules/bowser`): `SID_MODULE_CONFIG={"ua":{"parser":"bowser"}}` turns on full `User-Agent` parsing with no build step.
 
+**Forwarding modules (opt-in).** [`tag-gateway`](../../modules/tag-gateway/README.md) serves Google's tag gateway from a path on your site, forwarding to Google (its README starts with what it sends, and when). It works here: add it with `SID_MODULE_PACKAGES=@sharedid-edge/module-tag-gateway#tagGatewayModule`, and have your proxy send its path (`/metrics/`) to the server as it does `/_sid/`. With `SID_TRUST_PROXY`, the client IP and location it sends Google come from your proxy's headers, as for the `ip` and `geo` modules. See its [Platforms](../../modules/tag-gateway/README.md#platforms) table.
+
 ## Using it as a library
 
 ```ts

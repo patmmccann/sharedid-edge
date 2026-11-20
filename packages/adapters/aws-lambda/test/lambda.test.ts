@@ -336,3 +336,35 @@ describe('trusted upstream (an upstream operator behind publishers\' CDNs)', () 
     expect(us.cookies.find(c => c.startsWith('_pubcid='))).toMatch(/Domain=example\.com;.*Secure/);
   });
 });
+
+describe('forwarding modules', () => {
+  // A forwarding module that passes requests on to a stubbed upstream, echoing the method and body it got.
+  const relay = defineModule({
+    name: 'relay',
+    run: () => undefined,
+    forwarding: {
+      hosts: ['upstream.example'],
+      paths: () => ['/metrics'],
+      serve: context => context.forward(`https://upstream.example${context.url.pathname}`, { method: context.request.method, ...(context.body === undefined ? {} : { body: context.body }) })
+    }
+  });
+
+  it('passes a POST body, decoded from base64, to the module, and forwards with fetch', async () => {
+    const fetch = vi.fn((request: Request) => request.text().then(body => new Response(`${request.method} ${body}`)));
+    vi.stubGlobal('fetch', fetch);
+    const handler = createLambdaHandler({ config: resolveConfig({ SID_MODULES: 'relay' }), modules: [relay] });
+    const event = { ...cloudFrontEvent({ path: '/metrics/g/collect', method: 'POST', headers: { 'content-length': '3' } }), body: 'YT0x', isBase64Encoded: true };
+    const result = await handler(event);
+    expect(result.statusCode).toBe(200);
+    expect(result.body).toBe('POST a=1');
+    expect(result.headers['x-sharedid-forwarding']).toBe('forwarded');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it('never decodes a body for the SharedID routes', async () => {
+    const handler = createLambdaHandler({ config: resolveConfig({}) });
+    const result = await handler({ ...cloudFrontEvent({ path: '/_sid/v1', method: 'POST' }), body: '%%%not base64', isBase64Encoded: true });
+    expect(result.statusCode).toBe(405);
+  });
+});

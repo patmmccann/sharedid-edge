@@ -1,4 +1,4 @@
-import { createHandler, DEFAULT_CONFIG, logRequestFailure, type HandlerOptions, ROUTES, withPublicOrigin } from '@sharedid-edge/core';
+import { createHandler, DEFAULT_CONFIG, fetchForward, forwardingPaths, logRequestFailure, type HandlerOptions, ROUTES, withPublicOrigin } from '@sharedid-edge/core';
 import { platformInfo, type PlatformOptions } from './platform.js';
 
 export interface VercelHandlerOptions extends HandlerOptions, PlatformOptions {
@@ -24,7 +24,7 @@ export type VercelMiddleware = (request: Request) => Promise<Response | undefine
 
 /** Builds a handler around the core SharedID Edge handler. It answers every request it gets. */
 export function createVercelHandler(options: VercelHandlerOptions = {}): VercelHandler {
-  const handler = createHandler(options);
+  const handler = createHandler({ forwardFetch: fetchForward, ...options });
   return async request => {
     try {
       return await handler(await withPublicOrigin(request, options.publicOrigin), platformInfo(request.headers, options));
@@ -40,15 +40,17 @@ export function createVercelHandler(options: VercelHandlerOptions = {}): VercelH
  * other request `undefined`, so a matcher that's broader than the base path doesn't take over the site.
  */
 export function createVercelMiddleware(options: VercelHandlerOptions = {}): VercelMiddleware {
-  return middleware(createVercelHandler(options), options.config?.basePath ?? DEFAULT_CONFIG.basePath);
+  const config = options.config ?? DEFAULT_CONFIG;
+  return middleware(createVercelHandler(options), config.basePath, forwardingPaths(config, options.modules ?? []));
 }
 
 /**
- * Wraps a handler so it answers only requests under `basePath`. With the root base path (`/`), that's exactly
+ * Wraps a handler so it answers only requests under `basePath`, and under `forwarding`, the paths of the forwarding
+ * modules in `SID_MODULES` (such as `tag-gateway`'s `/metrics`). With the root base path (`/`), that's exactly
  * core's routes (`/sync`, `/v1`, `/optout`, `/optin`, with an optional trailing slash): anything else is the
  * site's, so the middleware passes it on.
  */
-export function middleware(handler: VercelHandler, basePath: string): VercelMiddleware {
+export function middleware(handler: VercelHandler, basePath: string, forwarding: readonly string[] = []): VercelMiddleware {
   return async request => {
     let pathname: string;
     try {
@@ -56,7 +58,7 @@ export function middleware(handler: VercelHandler, basePath: string): VercelMidd
     } catch {
       return undefined;
     }
-    return ownsPath(pathname, basePath) ? handler(request) : undefined;
+    return ownsPath(pathname, basePath) || forwarding.some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`)) ? handler(request) : undefined;
   };
 }
 

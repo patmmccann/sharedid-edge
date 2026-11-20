@@ -81,6 +81,8 @@ npm run wasm -w @sharedid-edge/fastly
 
 Then list it in `SID_MODULES`, with its settings and secrets (the [`ec` README](../../vendor-modules/ec/README.md#turning-it-on), and [Secrets](#secrets) below). Without `--module`, `SID_MODULES=ec` reports `ec` as `skipped` (`not installed`). The bundle's size is reported but the 32 KB budget isn't enforced with opt-in modules.
 
+**Forwarding modules** such as [`tag-gateway`](../../modules/tag-gateway/README.md) (Google's tag gateway) aren't supported: Compute sends requests only to backends declared in the service, and the adapter declares none. Listing one in `SID_MODULES` gives every request a 500, rather than being ignored. Use Fastly's [Ad Tag Gateway](https://www.fastly.com/documentation/guides/integrations/non-fastly-services/fastly-ad-tag-gateway/), or the VCL in [Google's setup guide](https://developers.google.com/tag-platform/tag-manager/gateway/setup-guide?setup=manual).
+
 **Reusable sandboxes (opt-in, experimental).** `npm run bundle:reusable -w @sharedid-edge/fastly` in place of `bundle` builds the service so one sandbox answers several requests; see [Reusable sandboxes](#reusable-sandboxes-experimental).
 
 **Bowser (opt-in).** The `ua` module's [full `User-Agent` parsing](../../modules/ua/README.md#full-parsing-with-bowser) fills `device` for Safari, Firefox, TVs and other browsers that send no Client Hints. `npm run bundle:bowser -w @sharedid-edge/fastly` (in place of `bundle`; same `deploy/` folder, then `npm run wasm`) builds it in, and the `SID_MODULE_CONFIG` key `{"ua":{"parser":"bowser"}}` turns it on. `--bowser` and `--module` can be combined.

@@ -1,9 +1,10 @@
 import { AUTO_COOKIE_DOMAIN, DEFAULT_CONFIG, type SharedIdEdgeConfig } from './config.js';
 import { HOSTNAME, hostKey } from './hosts.js';
-import { readConsent, storageDecision, storageDecisionWith, type StorageDecision } from './consent.js';
+import { readConsent, storageDecision, storageDecisionWith, unreadableTcString, type ConsentContext, type ConsentSignal, type StorageDecision } from './consent.js';
 import { cookieValues, parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
+import { forwardDecision, forwardedResponse, forwarder, MAX_FORWARD_BODY_BYTES, ownedPaths, ownerOf, type ForwardDecision, type ForwardFetch, type OwnedPath } from './forwarding.js';
 import { idFromSyncParam, isValidId, mintId } from './id.js';
-import { consentSignal, deepMerge, ModuleRegistry, optOutCookies, runModules, type EdgeModule, type ModuleCookie, type ModuleRunOutput } from './modules.js';
+import { consentDenial, consentSignal, deepMerge, ModuleRegistry, optOutCookies, runModules, type EdgeModule, type ModuleCookie, type ModuleRunOutput } from './modules.js';
 import { trimEnd } from './text.js';
 import { mergeTraffic, skipsBot, trafficReport, type TrafficEntry, type TrafficSignal } from './traffic.js';
 import type { Eid, PayloadV1, PlatformInfo } from './types.js';
@@ -61,6 +62,12 @@ export interface HandlerOptions {
    * pass one leave its code out (NO_RATE_LIMIT, below).
    */
   readonly rateLimit?: RateLimiter;
+  /**
+   * Sends a forwarding module's requests (normally `request => fetch(request)`). An adapter whose platform can't send
+   * requests to other hosts leaves it out: a forwarding module in `SID_MODULES` is then a configuration error. Builds
+   * whose modules don't forward leave the forwarding code out (NO_FORWARDING, below).
+   */
+  readonly forwardFetch?: ForwardFetch;
   /** Clock, for tests. */
   readonly now?: () => Date;
   /** ID generator, for tests. */
@@ -71,13 +78,16 @@ export interface HandlerOptions {
  * Build-time flags: the Cloudflare Snippet's (see createHandler), NO_CONSENT_HOOKS (see modules.ts) and
  * NO_RATE_LIMIT: `globalThis.__SID_NO_RATE_LIMIT__`, set to `true` with esbuild's `define` by builds that never pass
  * `rateLimit` (the bundled adapters, the Snippet, and the Worker's npm scripts other than `deploy:rate-limit`), so the
- * rate-limit check compiles away. Unset everywhere else.
+ * rate-limit check compiles away. NO_FORWARDING: `globalThis.__SID_NO_FORWARDING__`, set to `true` by the builds whose
+ * module list has no forwarding module (the same builds as NO_CONSENT_HOOKS, and a Snippet without one), so the
+ * forwarding code (forwarding.ts) compiles away. Unset everywhere else.
  */
 interface SnippetFlags {
   readonly __SID_PREVALIDATED__?: boolean;
   readonly __SID_UNUSED_HOSTS__?: boolean;
   readonly __SID_NO_CONSENT_HOOKS__?: boolean;
   readonly __SID_NO_RATE_LIMIT__?: boolean;
+  readonly __SID_NO_FORWARDING__?: boolean;
 }
 
 export type SharedIdEdgeHandler = (request: Request, platform?: PlatformInfo) => Promise<Response>;
@@ -104,7 +114,8 @@ function platformTrafficEntries(platform: PlatformInfo): TrafficEntry[] {
 
 /**
  * Creates the request handler. Platform adapters call it with the request and what the platform knows about it.
- * It answers every route under `config.basePath` itself and never forwards a request to the origin.
+ * It answers every route under `config.basePath` itself and never forwards a request to the origin. The only requests it
+ * sends anywhere are a forwarding module's, under that module's own paths, to the hosts it declares.
  */
 export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler {
   const registry = new ModuleRegistry(options.modules ?? []);
@@ -137,11 +148,22 @@ export function createHandler(options: HandlerOptions = {}): SharedIdEdgeHandler
 function configuredHandler(options: HandlerOptions, base: SharedIdEdgeConfig, registry: ModuleRegistry): SharedIdEdgeHandler {
   const now = options.now ?? ((): Date => new Date());
   const newId = options.mintId ?? mintId;
+  // The forwarding modules' paths, checked once per configuration: an overlap, or a forwarding module on an adapter
+  // that can't forward, throws a ConfigError here, which the adapters answer with a 500.
+  const owned: readonly OwnedPath[] = (globalThis as SnippetFlags).__SID_NO_FORWARDING__ === true ? []
+    : ownedPaths(base.modules.flatMap(name => registry.get(name) ?? []), base, base.basePath === '/' ? ROUTE_LIST : [base.basePath], options.forwardFetch !== undefined);
 
   return async (request: Request, platform: PlatformInfo = {}): Promise<Response> => {
     const url = new URL(request.url);
     const route = routeOf(url.pathname, base.basePath);
-    if (route === undefined) return text(404, 'Not found');
+    if (route === undefined) {
+      // A forwarding module's path (builds without one leave this out: NO_FORWARDING).
+      if ((globalThis as SnippetFlags).__SID_NO_FORWARDING__ !== true && options.forwardFetch !== undefined) {
+        const owner = ownerOf(url.pathname, owned);
+        if (owner !== undefined) return forwardRoute({ request, url, platform, owner, config: base, registry, send: options.forwardFetch });
+      }
+      return text(404, 'Not found');
+    }
 
     if (request.method === 'OPTIONS' && route === ROUTES.v1) return preflight(request, base);
     if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -149,12 +171,11 @@ function configuredHandler(options: HandlerOptions, base: SharedIdEdgeConfig, re
     }
 
     const cookieHeader = request.headers.get('Cookie');
-    // Oversized requests to the routes that run modules and mint IDs get no further, not even the cookie parsing: 414 for
-    // the path and query (measured on `request.url`, which every runtime has), 431 for the Cookie header. Opt-out and
-    // opt-in are never refused, so they always work.
+    // Oversized requests to the routes that run modules and mint IDs get no further, not even the cookie parsing. Opt-out
+    // and opt-in are never refused, so they always work.
     if (route === ROUTES.sync || route === ROUTES.v1) {
-      const tooLarge = request.url.length - url.origin.length > MAX_URL_BYTES ? 414 : (cookieHeader?.length ?? 0) > MAX_COOKIE_BYTES ? 431 : 0;
-      if (tooLarge !== 0) return new Response(null, { status: tooLarge, headers: NO_STORE });
+      const refused = tooLarge(request, url, cookieHeader);
+      if (refused !== undefined) return refused;
     }
     const cookies = parseCookies(cookieHeader);
     const secure = secureCookies(url);
@@ -198,13 +219,10 @@ function configuredHandler(options: HandlerOptions, base: SharedIdEdgeConfig, re
           && !await allows(options.rateLimit, { route: route === ROUTES.sync ? 'sync' : 'v1', host: hostKey(url), clientIp: platform.clientIp })) {
           return text(429, 'Too many requests');
         }
-        const consent = readConsent(url, request.headers, cookies, platform);
-        const optedOut = cookies.has(config.optOutCookieName);
-        // Consent providers (modules' `consent` hooks) give their signal first. A build whose modules have none leaves
-        // them out (see NO_CONSENT_HOOKS in modules.ts).
+        const { consent, optedOut, signal } = privacySignals(request, url, platform, cookies, config, registry);
         const decision: StorageDecision = optedOut ? { allowed: false, reason: 'opt-out' }
           : (globalThis as SnippetFlags).__SID_NO_CONSENT_HOOKS__ === true ? storageDecision(config, consent)
-            : storageDecisionWith(config, consent, consentSignal(registry, config, { request, url, platform, consent, cookies }));
+            : storageDecisionWith(config, consent, signal);
 
         // The platform's verdict is known before anything runs: with SID_SKIP_BOTS it can rule the ID out up front.
         const platformTraffic = platformTrafficEntries(platform);
@@ -218,6 +236,14 @@ function configuredHandler(options: HandlerOptions, base: SharedIdEdgeConfig, re
         // SID_SKIP_BOTS sees the same merged verdict on /sync as on /v1.
         const context = { request, url, platform, sharedId: state.id, consent, cookies, optedOut, cookieDomain: config.cookieDomain, autoCookieDomain: autoDomain, storage: decision };
         const modules = await runModules(registry, config, context, () => now().getTime(), route === ROUTES.sync ? 'sync' : 'v1');
+        // A forwarding module's report says whether this visitor's requests to its paths are passed on, and nothing else.
+        if ((globalThis as SnippetFlags).__SID_NO_FORWARDING__ !== true) {
+          for (const { module } of owned) {
+            const report = modules.reports[module.name];
+            if (report === undefined || (report.status !== 'ok' && report.status !== 'empty')) continue;
+            modules.reports[module.name] = { ...report, forwards: decisionFor(module, config, consent, optedOut, signal).forward };
+          }
+        }
         const traffic = mergeTraffic([...platformTraffic, ...modules.traffic]);
         if (decision.allowed && !skipped && skipsBot(config, traffic)) {
           // SID_SKIP_BOTS: set and return no ID, but delete nothing, so a misclassified visitor keeps theirs.
@@ -244,6 +270,87 @@ function configuredHandler(options: HandlerOptions, base: SharedIdEdgeConfig, re
       }
     }
   };
+}
+
+/**
+ * The `/sync` and `/v1` request limits, which forwarding paths share: a `414` for a path and query over
+ * `MAX_URL_BYTES` (measured on `request.url`, which every runtime has), a `431` for a Cookie header over
+ * `MAX_COOKIE_BYTES`; undefined when the request is within both.
+ */
+function tooLarge(request: Request, url: URL, cookieHeader: string | null): Response | undefined {
+  const status = request.url.length - url.origin.length > MAX_URL_BYTES ? 414 : (cookieHeader?.length ?? 0) > MAX_COOKIE_BYTES ? 431 : 0;
+  return status === 0 ? undefined : new Response(null, { status, headers: NO_STORE });
+}
+
+/**
+ * A request's consent signals, whether the browser opted out, and the consent providers' signal (modules' `consent`
+ * hooks), which they give first. Not asked on opt-out, which is denied anyway; a build whose modules have no hook
+ * leaves them out (see NO_CONSENT_HOOKS in modules.ts).
+ */
+function privacySignals(request: Request, url: URL, platform: PlatformInfo, cookies: ReadonlyMap<string, string>, config: SharedIdEdgeConfig, registry: ModuleRegistry): { readonly consent: ConsentContext; readonly optedOut: boolean; readonly signal: ConsentSignal | undefined } {
+  const consent = readConsent(url, request.headers, cookies, platform);
+  const optedOut = cookies.has(config.optOutCookieName);
+  const signal = optedOut || (globalThis as SnippetFlags).__SID_NO_CONSENT_HOOKS__ === true ? undefined : consentSignal(registry, config, { request, url, platform, consent, cookies });
+  return { consent, optedOut, signal };
+}
+
+/** A forwarding module's decision for a request (forwarding.ts), with the module's purposes checked where GDPR applies. */
+function decisionFor(module: OwnedPath['module'], config: SharedIdEdgeConfig, consent: ConsentContext, optedOut: boolean, signal: ConsentSignal | undefined): ForwardDecision {
+  return forwardDecision(module.forwarding, config.moduleConfig[module.name] ?? {}, consent, optedOut, signal, consentDenial(module, consent), unreadableTcString());
+}
+
+interface ForwardRouteInputs {
+  readonly request: Request;
+  readonly url: URL;
+  readonly platform: PlatformInfo;
+  readonly owner: OwnedPath;
+  readonly config: SharedIdEdgeConfig;
+  readonly registry: ModuleRegistry;
+  readonly send: ForwardFetch;
+}
+
+/** A `POST` body for a forwarding module, within `MAX_FORWARD_BODY_BYTES`, or the response refusing it (`411`, `413`). */
+async function forwardBody(request: Request): Promise<Uint8Array<ArrayBuffer> | Response> {
+  const length = request.headers.get('Content-Length')?.trim();
+  if (length === undefined) return new Response(null, { status: 411, headers: NO_STORE });
+  if (!/^\d{1,6}$/.test(length) || Number(length) > MAX_FORWARD_BODY_BYTES) return new Response(null, { status: 413, headers: NO_STORE });
+  const body = new Uint8Array(await request.arrayBuffer());
+  return body.byteLength > MAX_FORWARD_BODY_BYTES ? new Response(null, { status: 413, headers: NO_STORE }) : body;
+}
+
+/**
+ * A request under a forwarding module's path (spec: "Forwarding modules"): the method and size checks, the forwarding
+ * decision, the body of a `POST` (read only when the decision forwards), then the module's answer. No SharedID is
+ * chosen and no cookie of the worker's is set. A module that throws, or whose outbound request fails, gives a `502`.
+ */
+async function forwardRoute(inputs: ForwardRouteInputs): Promise<Response> {
+  const { request, url, platform, owner, config, registry, send } = inputs;
+  const { method } = request;
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'GET, HEAD, POST', ...NO_STORE } });
+  const cookieHeader = request.headers.get('Cookie');
+  const refused = tooLarge(request, url, cookieHeader);
+  if (refused !== undefined) return refused;
+  const cookies = parseCookies(cookieHeader);
+  const { consent, optedOut, signal } = privacySignals(request, url, platform, cookies, config, registry);
+  const { module, prefix } = owner;
+  const decision = decisionFor(module, config, consent, optedOut, signal);
+  const body = decision.forward && method === 'POST' ? await forwardBody(request) : undefined;
+  if (body instanceof Response) return body;
+  let response: Response;
+  try {
+    response = await module.forwarding.serve({
+      request, url, platform, consent, cookies, optedOut, prefix, decision, body,
+      config: config.moduleConfig[module.name] ?? {},
+      secrets: config.moduleSecrets[module.name] ?? {},
+      forward: forwarder(module.forwarding.hosts, decision, send)
+    });
+  } catch {
+    // Nothing about the failure is returned or logged: it may contain request data.
+    const failed = text(502, 'Bad gateway');
+    failed.headers.set('X-SharedID-Forwarding', 'error');
+    return failed;
+  }
+  return forwardedResponse(response, decision, method === 'HEAD');
 }
 
 /** Whether `limiter` lets the request through. It does when the limiter fails, so a platform outage refuses nobody. */

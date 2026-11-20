@@ -14,6 +14,7 @@ SharedID Edge as a **Cloudflare Worker**: the `/_sid/*` routes on your own site,
 - [Rate limiting](#rate-limiting)
 - [Platform data: what the Worker knows about each request](#platform-data-what-the-worker-knows-about-each-request)
 - [Built-in modules](#built-in-modules)
+- [Google's tag gateway on the same zone](#googles-tag-gateway-on-the-same-zone)
 - [Verify](#verify)
 - [Local development and tests](#local-development-and-tests)
 - [Live tests](#live-tests)
@@ -66,6 +67,8 @@ The size limit is checked on the minified file, before gzip (the bytes you deplo
 | `ip,geo,reflect,bot,clickid` | about 31 KB | Yes, with little room to spare | Yes |
 | `ua` with Bowser (`"parser": "bowser"`) | about 61 KB | No: Bowser alone is about 33 KB. Use the default parser, or the Worker |
 | `ip,geo,reflect,bot,ua,clickid` | about 39 KB | No: drop `ua`, or use the Worker |
+| [`tag-gateway`](../../modules/tag-gateway/README.md) (Google's tag gateway; a forwarding module) | about 28 KB | Yes |
+| `reflect,tag-gateway` | about 32 KB | Just: no room for another module. Use the Worker, or [Cloudflare's built-in integration](../../modules/tag-gateway/README.md#on-cloudflare-prefer-the-built-in-integration) for the tag gateway |
 
 The Snippet ships its settings already validated. The build checks them as the Worker checks its variables (core's settings and each module's `SID_MODULE_CONFIG` entry, with the same error messages), and bundles the result rather than the code that checks it, so the Snippet doesn't carry the validators, their patterns or their error messages. It also leaves out code your settings can't reach: the per-site handling without `SID_HOSTS`, `reflect`'s per-cookie backups and `prefer` comparisons when no cookie uses them, and core's consent-provider code without a module that has one (`cmp`). So the sizes above depend a little on the settings, and the build prints yours. An invalid setting therefore fails the build, never a live request: the build is the only place a Snippet's settings are checked. `npm run test:snippet` (in CI) builds Snippets for the conformance cases' configurations and others, checks each answers exactly as the Worker with the same settings, and checks that invalid settings fail the build with the Worker's message.
 
@@ -360,7 +363,15 @@ Core's `locationInfo` validates every location value the same way for all adapte
 
 ## Built-in modules
 
-The Worker builds in `ip`, `geo`, `reflect`, `bot`, `ua` and `clickid`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the [Modules](../../../docs/modules.md) and each module's README. To add your own, an opt-in module ([`cmp`](../../modules/cmp/README.md)) or a vendor module, generate an entry point with `node ../../../scripts/module-list.mjs .sharedid-modules --worker --module <package>#<export>` and deploy it with `npx wrangler deploy .sharedid-modules/worker.ts`. Don't import it in `src/index.ts` for `npm run deploy`: the npm scripts build the built-in modules only, and define `globalThis.__SID_NO_CONSENT_HOOKS__` so core's consent-provider code is left out, which would ignore a module like `cmp`.
+The Worker builds in `ip`, `geo`, `reflect`, `bot`, `ua` and `clickid`, from the list every adapter shares ([`@sharedid-edge/modules`](../../modules/all/README.md)). They do nothing until listed in `SID_MODULES`. See the [Modules](../../../docs/modules.md) and each module's README. To add your own, an opt-in module ([`cmp`](../../modules/cmp/README.md)) or a vendor module, generate an entry point with `node ../../../scripts/module-list.mjs .sharedid-modules --worker --module <package>#<export>` and deploy it with `npx wrangler deploy .sharedid-modules/worker.ts`. Don't import it in `src/index.ts` for `npm run deploy`: the npm scripts build the built-in modules only, and define `globalThis.__SID_NO_CONSENT_HOOKS__` so core's consent-provider code is left out, which would ignore a module like `cmp`. They also define `globalThis.__SID_NO_FORWARDING__`, which leaves out core's code for forwarding modules such as [`tag-gateway`](../../modules/tag-gateway/README.md).
+
+## Google's tag gateway on the same zone
+
+Google's [tag gateway for advertisers](https://developers.google.com/tag-platform/tag-manager/gateway) (formerly "first-party mode") serves the Google tag and its measurement requests from a path on your site, such as `/metrics`. On Cloudflare, use **Cloudflare's built-in integration** (in the zone's dashboard, or set up from Google Tag Manager; see [Cloudflare's announcement](https://blog.cloudflare.com/google-tag-gateway-for-advertisers/)) or the Snippet in [Google's setup guide](https://developers.google.com/tag-platform/tag-manager/gateway/setup-guide?setup=manual). Nothing in this Worker changes: the two run side by side on the same zone, both on your own domain.
+
+**Keep the routes apart.** The gateway's path and the Worker's route must not overlap: `example.com/_sid/*` for the Worker, `/metrics` for the gateway, never a gateway path under `/_sid`, nor a Worker route like `example.com/*` that covers the gateway's path.
+
+If you want SharedID Edge's consent handling in front of the tag (nothing forwarded on opt-out, COPPA, GPC or missing TCF consent), the opt-in [`tag-gateway`](../../modules/tag-gateway/README.md) module serves the gateway from this Worker or Snippet instead: build it in as above, add a route for its path (`example.com/metrics/*`) next to `example.com/_sid/*` (the Snippet build prints a rule that covers both), and turn Cloudflare's integration off for that path. Its README has the details, and the disclosure of what it sends to Google.
 
 ## Verify
 
