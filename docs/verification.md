@@ -291,17 +291,18 @@ The contract every implementation passes ([`conformance/`](../conformance/AGENTS
 
 ### The browser tests
 
-[`e2e/tests/prebid-sharedid.spec.ts`](../e2e/tests/prebid-sharedid.spec.ts): 14 Playwright tests, each run in Chromium, Firefox and WebKit (so "42 of 42" is all of them in all three), with unmodified Prebid.js (a bundle of a typical publisher setup at the version `e2e/package.json` pins) and a static TCF consent string. They read requests and cookies from the browser's side, so the same tests run locally and against a live site (`E2E_BASE_URL`, `E2E_COOKIE_DOMAIN`). They check:
+[`e2e/tests/prebid-sharedid.spec.ts`](../e2e/tests/prebid-sharedid.spec.ts): 20 Playwright tests, each run in Chromium, Firefox and WebKit (so "60 of 60" is all of them in all three), with unmodified Prebid.js (a bundle of a typical publisher setup at the version `e2e/package.json` pins, with `pixelConsent: true`) and static TCF and GPP consent data. Two need the opt-in `gpp` module, which the live deployments don't build, so they run locally only (18 run live). They read requests and cookies from the browser's side, so the same tests run locally and against a live site (`E2E_BASE_URL`, `E2E_COOKIE_DOMAIN`). They check:
 
 - a first visit's ID, minted by Prebid.js and sent to `pixelUrl`, comes back as a server-set `_pubcid` lasting more than 360 days, with an `HttpOnly` `_pubcid_sv`, and Prebid.js reads it; a second visit keeps it;
 - there's one `_pubcid`, on the expected domain;
 - with consent, GDPR applies and both cookies are set; without purpose 1 consent, neither Prebid.js nor the endpoint stores an ID, and the endpoint deletes what an earlier visit left (`denied: tcf: no publisher consent for purpose 1`); where GDPR doesn't apply, everything works;
+- with `pixelConsent`, the sync's query string is exactly `id`, then the consent Prebid.js has (`gdpr=1&gdpr_consent=…`, `gdpr=0`, or `gpp=…&gpp_sid=7` from a GPP-only CMP); with no `euconsent-v2` cookie, the endpoint sets or denies the ID as `gdpr_consent` says, and `gdpr_consent` wins over a cookie that allows storage; a US National opt-out of sale in `gpp` makes the endpoint delete the ID cookies (locally, with the `gpp` module); without `pixelConsent`, the endpoint still reads `euconsent-v2`;
 - a cleared script cookie is restored from the recovery copy;
 - `pbjs.getUserIdsAsync()` resolves on a later visit;
 - the `reflect` module refreshes and restores a vendor's `uid1` and `_ga` (four tests), and `clickid` keeps a landing page's `gclid` for 90 days;
 - after an opt-out, the endpoint sets no ID cookies.
 
-WebKit isn't Safari: it doesn't apply Safari's 7-day cap on script-set cookies, so the tests clear the cookie to simulate one. [`e2e/safari/safari.test.ts`](../e2e/safari/safari.test.ts) runs four of the core tests in real Safari ([Real Safari](../e2e/AGENTS.md#real-safari)), in CI against the local server only.
+WebKit isn't Safari: it doesn't apply Safari's 7-day cap on script-set cookies, so the tests clear the cookie to simulate one. [`e2e/safari/safari.test.ts`](../e2e/safari/safari.test.ts) runs five of the core tests in real Safari ([Real Safari](../e2e/AGENTS.md#real-safari)), in CI against the local server only.
 
 ## Not verified yet
 

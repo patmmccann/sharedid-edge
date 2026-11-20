@@ -11,7 +11,8 @@ pbjs.setConfig({
       name: 'sharedId',
       params: {
         pixelUrl: '/_sid/sync',   // same host as the page
-        extend: true              // re-sync on later visits to refresh the cookie
+        extend: true,             // re-sync on later visits to refresh the cookie
+        pixelConsent: true        // send the page's consent with it (Prebid.js 11.53+)
       },
       storage: {
         type: 'cookie',
@@ -24,6 +25,8 @@ pbjs.setConfig({
 ```
 
 - **`extend: true`** makes Prebid.js call `pixelUrl` on later visits too, which refreshes the cookie's lifetime. The response is cached privately by the browser for a day (`SID_SYNC_CACHE_SECONDS`), so a frequent visitor triggers at most about one request a day. Cookie-only modules such as `reflect` and `ec` also run on these calls; see [Modules on `/_sid/sync`](modules.md#modules-on-_sidsync).
+- **`pixelConsent: true`** (Prebid.js 11.53.0 and later, [prebid/Prebid.js#16233](https://github.com/prebid/Prebid.js/pull/16233)) adds the consent Prebid.js has to each `pixelUrl` call, after `id`: `gdpr` (`1` or `0`, when your CMP says whether GDPR applies), `gdpr_consent` (the TC string), `us_privacy`, `gpp` and `gpp_sid`, each only when it has a value. The worker then decides with exactly the consent Prebid.js used, from the same consent management modules: a CMP that keeps the TC string out of cookies works, a GPP-only CMP reaches the opt-in [`gpp` module](../packages/modules/gpp/README.md), and `gdprApplies` from your CMP overrides the visitor's location (`gdpr=0` outside GDPR, `gdpr=1` inside). A `gdpr_consent` parameter wins over the `euconsent-v2` cookie. **We recommend it.** Without it, or on older Prebid.js versions, the sync carries no consent and the worker reads only the `euconsent-v2` cookie and the visitor's location (see [Consent and opt-out](consent.md)). Turn on Prebid.js's consent management module for your CMP (`consentManagementTcf`, `consentManagementGpp`, `consentManagementUsp`), or there's nothing to send.
+- **`pixelCookieDomain: true`** (also 11.53.0) adds `cookie_domain`, the domain Prebid.js writes `_pubcid` on. It's sent but not used yet: the worker still uses `SID_COOKIE_DOMAIN` (see [#24](https://github.com/patmmccann/sharedid-edge/issues/24)).
 - **`storage.type` must be `cookie`**, so the page and the worker share the ID. `html5` (localStorage) won't pick up the server's cookie.
 - **The cookie's name and domain must match on both sides.** `SID_COOKIE_NAME` is `storage.name` (`_pubcid` here). `SID_COOKIE_DOMAIN` (required) is the domain Prebid.js writes the cookie on. `sharedIdSystem` picks the highest domain it can set a cookie on, so that's normally your registrable domain: `example.com` for a site on `www.example.com`. To check, look at `_pubcid`'s Domain in your browser's developer tools on a page without the worker. With a different domain, the browser keeps two `_pubcid` cookies, and Prebid.js and the worker each read their own (see [Troubleshooting](troubleshooting.md)).
 - **With `storageControl` in Prebid.js 11.48.0 or earlier** (fixed in 11.49.0), `sharedIdSystem` can't find the registrable domain: `storageControl` blocks the probe cookie it uses (`_gd…_sharedId`), which those releases don't disclose, so it writes `_pubcid` host-only. Prebid.js [#16156](https://github.com/prebid/Prebid.js/pull/16156), in 11.49.0, fixes that. On older versions, either leave `storageControl` out or set its `enforcement` to `off`, or set `SID_COOKIE_DOMAIN=host-only` to match.

@@ -30,7 +30,7 @@ The module reads the request's `gpp` (the string) and `gpp_sid` (the sections th
   });
   ```
 
-- **Prebid.js's SharedID pixel** (`pixelUrl`, the `/_sid/sync` call) sends no consent parameters today. An option to add `gdpr`, `gdpr_consent`, `us_privacy`, `gpp` and `gpp_sid` to it is proposed in [prebid/Prebid.js#16157](https://github.com/prebid/Prebid.js/issues/16157); once it's released and turned on, the sync carries the GPP string with no page code.
+- **Prebid.js's SharedID pixel** (`pixelUrl`, the `/_sid/sync` call) with `pixelConsent: true`, in Prebid.js 11.53.0 and later: it adds `gpp` and `gpp_sid` (and `gdpr`, `gdpr_consent` and `us_privacy`) from Prebid.js's consent management, so with `consentManagementGpp` the sync carries the GPP string with no page code. See [Configure Prebid.js](../../../docs/prebid.md). Without `pixelConsent`, the sync carries none.
 
 There's **no standard cookie** to read instead: the GPP specification leaves storage to the CMP ("The storage mechanism used for GPP Strings is up to a CMP"), and many keep the string in local storage only.
 

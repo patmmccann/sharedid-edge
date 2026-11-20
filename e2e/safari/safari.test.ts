@@ -73,12 +73,24 @@ function syncs(): Promise<number> {
   );
 }
 
-/** The id Prebid.js minted and sent to pixelUrl on this page view (`/_sid/sync?id=pubcid:<id>`), from resource timing. */
-async function mintedId(): Promise<string | undefined> {
+/** This page view's /_sid/sync query parameters, in order, as sent (still percent-encoded), from resource timing. */
+async function syncParams(): Promise<[string, string][] | undefined> {
   const url = await driver.executeScript<string | null>(
     "const e = performance.getEntriesByType('resource').find(e => new URL(e.name).pathname === '/_sid/sync'); return e ? e.name : null;"
   );
-  return url === null ? undefined : decodeURIComponent(decodeURIComponent(url)).split('pubcid:')[1];
+  if (url === null) return undefined;
+  const query = url.split('?')[1] ?? '';
+  return query === '' ? [] : query.split('&').map(pair => {
+    const at = pair.indexOf('=');
+    return at < 0 ? [pair, ''] : [pair.slice(0, at), pair.slice(at + 1)];
+  });
+}
+
+/** The id Prebid.js minted and sent to pixelUrl on this page view (`/_sid/sync?id=pubcid:<id>`), from resource timing. */
+async function mintedId(): Promise<string | undefined> {
+  const raw = (await syncParams())?.find(([name]) => name === 'id')?.[1];
+  const value = raw === undefined ? undefined : decodeURIComponent(decodeURIComponent(raw));
+  return value?.startsWith('pubcid:') === true ? value.slice('pubcid:'.length) : undefined;
 }
 
 /** Loads the page (with a consent scenario from site/public/tcf.js: ?consent=denied, say) and waits for the sync. */
@@ -222,6 +234,26 @@ test('without purpose 1 consent, neither Prebid.js nor the endpoint stores an id
   assert.equal(status, '200 denied: tcf: no publisher consent for purpose 1');
   assert.equal(await cookie('_pubcid'), undefined);
   assert.equal(await cookie('_pubcid_sv'), undefined);
+});
+
+test('with pixelConsent and no euconsent-v2 cookie, the endpoint decides with the TC string the sync carries', async () => {
+  // The CMP keeps the TC string out of cookies; Prebid.js sends it with the sync, after id.
+  await visit('/?tcfCookie=none');
+  assert.equal(await cookie('euconsent-v2'), undefined);
+  const given = await syncParams();
+  assert.deepEqual(given?.map(([name]) => name), ['id', 'gdpr', 'gdpr_consent']);
+  assert.equal(given?.[1]?.[1], '1');
+  assert.match(given?.[2]?.[1] ?? '', /^CQ/);
+  assert.equal((await poll(() => cookie('_pubcid_sv'), c => c !== undefined))?.httpOnly, true);
+
+  // A TC string without publisher consent for any of purposes 2-10: Prebid.js still syncs, and the endpoint deletes
+  // the ID cookies, with no euconsent-v2 cookie to read.
+  await visit('/?consent=purpose1Only&tcfCookie=none');
+  const denied = await syncParams();
+  assert.equal(denied?.[1]?.[1], '1');
+  assert.notEqual(denied?.[2]?.[1], given?.[2]?.[1]);
+  assert.equal(await poll(() => cookie('_pubcid_sv'), c => c === undefined), undefined);
+  assert.equal(await poll(() => cookie('_pubcid'), c => c === undefined), undefined);
 });
 
 test('where GDPR doesn\'t apply (static consent data, no TC string), everything works', async () => {

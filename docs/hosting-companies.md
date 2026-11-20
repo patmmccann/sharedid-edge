@@ -132,7 +132,7 @@ and may set any other core setting: `SID_MODULES` (among those built in), `SID_M
 **Consent** is decided per request, the same on every site, and needs no per-site work beyond the publisher's CMP ([Consent and opt-out](consent.md)):
 
 - **Opt-out, Global Privacy Control (`Sec-GPC: 1`) and COPPA** always delete the ID cookies and set none.
-- **TCF:** with a TC string, the publisher's own consent (the TC string's publisher segment) decides, by default. The publisher's CMP must ask for publisher consent for Purpose 1 and one of Purposes 2 to 10, and store the TC string in the `euconsent-v2` cookie, which is all the sync route sees. Set `SID_VENDOR_ID` for a site only if its SharedID is collected under a TCF vendor's consent instead.
+- **TCF:** with a TC string, the publisher's own consent (the TC string's publisher segment) decides, by default. The publisher's CMP must ask for publisher consent for Purpose 1 and one of Purposes 2 to 10, and either Prebid.js sends the consent with the sync (`pixelConsent: true`, Prebid.js 11.53.0 and later; see [Configure Prebid.js](prebid.md)) or the CMP stores the TC string in the `euconsent-v2` cookie, all the sync route sees otherwise. Set `SID_VENDOR_ID` for a site only if its SharedID is collected under a TCF vendor's consent instead.
 - **GDPR without a TC string** follows the visitor's country, from your platform's own location data (Cloudflare's `request.cf`, CloudFront's viewer country, and so on). That's why a Workers for Platforms namespace must be trusted, and why a deployment must not read location from headers a visitor can send.
 - **The publisher's privacy page** links to `https://www.pub-a.example/_sid/optout` (and `/_sid/optin`), on their own hostname.
 

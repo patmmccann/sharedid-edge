@@ -309,7 +309,7 @@ pbjs.setConfig({
   userSync: {
     userIds: [{
       name: 'sharedId',
-      params: { pixelUrl: '/_sid/sync', extend: true },   // the publisher's host, never sid.upstream.example
+      params: { pixelUrl: '/_sid/sync', extend: true, pixelConsent: true },   // the publisher's host, never sid.upstream.example; pixelConsent: Prebid.js 11.53+
       storage: { type: 'cookie', name: '_pubcid', expires: 365 }
     }]
   }
@@ -501,7 +501,7 @@ The endpoint decides consent on every request, the same way for every publisher 
 
 | Who | Responsible for |
 | --- | --- |
-| **The publisher** | Their CMP: asking for **publisher** consent for Purpose 1 and at least one of Purposes 2 to 10, and storing the TC string in the `euconsent-v2` cookie, the only place the sync route sees it. Their privacy policy and the opt-out link (`/_sid/optout` on their host). Their CDN rule, kept as your recipe says. |
+| **The publisher** | Their CMP: asking for **publisher** consent for Purpose 1 and at least one of Purposes 2 to 10, and either `pixelConsent: true` in Prebid.js (11.53.0 and later), which sends it with the sync, or the TC string stored in the `euconsent-v2` cookie, the only place the sync route sees it otherwise. Their privacy policy and the opt-out link (`/_sid/optout` on their host). Their CDN rule, kept as your recipe says. |
 | **You, the upstream operator** | The endpoint: its settings per publisher, its secrets, and keeping it current. That the recipes you give send the visitor's real country: a missing country means GDPR's scope is unknown, and a visitor from a GDPR country without a TC string would get an ID. Not logging request data on your platform beyond what you've disclosed. |
 | **Both** | Agreeing, in your contract, who controls the SharedID (it's the publisher's first-party ID) and how it's used in bid requests. |
 
