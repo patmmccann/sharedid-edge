@@ -1,7 +1,8 @@
 // The live test workflows' issue: a failing run on main opens it, or comments on the open one; a passing run closes
 // it. Run by .github/actions/live-issue (each live workflow's report job), with the GITHUB_TOKEN and `gh`:
 //
-//   NEEDS     the report job's `toJSON(needs)`: each test job's result
+//   NEEDS     the report job's `toJSON(needs)`: each test job's result, and its `infrastructure` output, which a browser
+//             job sets when its install failed on an apt outage (.github/actions/install-browser)
 //   REQUIRED  the jobs, by id, that must have passed for the run to count as passing (space-separated); the other
 //             needed jobs may also have been skipped, as optional parts that aren't set up are
 //   TITLE     the issue's title, which identifies it with its author, github-actions[bot]
@@ -30,6 +31,15 @@ export function outcome(needs, required) {
   return passed ? 'success' : 'none';
 }
 
+/**
+ * Why the run failed outside the code under test: each needed job's `infrastructure` output, such as "apt outage
+ * (webkit is missing libevent-2.1.so.7)", without repeats. Empty when no job set one.
+ */
+export function infrastructure(needs) {
+  const reasons = Object.values(needs).map((job) => job.outputs?.infrastructure ?? '');
+  return [...new Set(reasons.filter((reason) => reason !== ''))];
+}
+
 /** The open issues with this title that the workflows opened, oldest first. */
 export function openIssues(gh, title) {
   const listed = JSON.parse(gh(['issue', 'list', '--state', 'open', '--search', `"${title}" in:title`, '--json', 'number,title,author', '--limit', '100']));
@@ -50,12 +60,17 @@ export function report(env, gh) {
       // On-demand runs are someone watching; only merges and the nightly run report.
       if (env.EVENT_NAME === 'workflow_dispatch') return 'Failed on demand: no issue.';
       const event = env.EVENT_NAME === 'push' ? `after ${env.SHA}` : 'nightly';
+      // So an apt outage isn't taken for a regression.
+      const reasons = infrastructure(JSON.parse(env.NEEDS));
+      const note = reasons.length === 0
+        ? ''
+        : `\n\nInfrastructure: ${reasons.join('; ')}, not a regression. A browser job couldn't install its system packages from the Ubuntu mirrors; re-run the failed jobs once they're back. Other jobs' failures, if any, are in the run.`;
       const [number] = openIssues(gh, env.TITLE);
       if (number === undefined) {
-        gh(['issue', 'create', '--title', env.TITLE, '--body', `${env.SUMMARY} (${event}${attempt}): ${env.RUN_URL}`]);
+        gh(['issue', 'create', '--title', env.TITLE, '--body', `${env.SUMMARY} (${event}${attempt}): ${env.RUN_URL}${note}`]);
         return `Failed: opened "${env.TITLE}".`;
       }
-      gh(['issue', 'comment', String(number), '--body', `Still failing (${event}${attempt}): ${env.RUN_URL}`]);
+      gh(['issue', 'comment', String(number), '--body', `Still failing (${event}${attempt}): ${env.RUN_URL}${note}`]);
       return `Failed: commented on #${number}.`;
     }
     case 'success': {

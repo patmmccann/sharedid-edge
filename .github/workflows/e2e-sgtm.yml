@@ -53,6 +53,9 @@ jobs:
     needs: config
     if: needs.config.outputs.configured == 'true'
     runs-on: ubuntu-latest
+    # Set when its install failed on an apt outage, for the report job's issue (.github/actions/live-issue).
+    outputs:
+      infrastructure: ${{ steps.browser.outputs.infrastructure }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -68,14 +71,11 @@ jobs:
         run: |
           npm ci
           npm run bundle-prebid
-      - name: Cache the Playwright browser
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-chromium-${{ hashFiles('e2e/package-lock.json') }}
       - name: Install the browser and its system dependencies
-        working-directory: e2e
-        run: ./install-browser.sh chromium
+        id: browser
+        uses: ./.github/actions/install-browser
+        with:
+          browser: chromium
       # Only the compose commands get the container config.
       - name: Start the stack
         working-directory: e2e/sgtm
