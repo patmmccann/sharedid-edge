@@ -2,5 +2,5 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": "src", "outDir": "dist", "tsBuildInfoFile": "dist/.tsbuildinfo", "types": ["node"] },
   "include": ["src"],
-  "references": [{ "path": "../core" }, { "path": "../ip-ranges" }]
+  "references": [{ "path": "../core" }, { "path": "../ip-ranges" }, { "path": "../modules/encrypted-ip" }]
 }

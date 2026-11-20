@@ -66,13 +66,28 @@ function log(level: string): (format: string, ...values: unknown[]) => void {
   return (format, ...values) => { console.error(`edgeworker ${level}: ${formatWithOptions({ colors: false }, format, ...values)}`); };
 }
 
+/** `crypto.subtle` with only the methods EdgeWorkers documents. */
+function documentedSubtle(): Pick<typeof webcrypto.subtle, 'importKey' | 'encrypt' | 'decrypt' | 'sign' | 'verify' | 'digest'> {
+  const subtle = webcrypto.subtle;
+  return {
+    importKey: subtle.importKey.bind(subtle),
+    encrypt: subtle.encrypt.bind(subtle),
+    decrypt: subtle.decrypt.bind(subtle),
+    sign: subtle.sign.bind(subtle),
+    verify: subtle.verify.bind(subtle),
+    digest: subtle.digest.bind(subtle)
+  };
+}
+
 /** The built-in modules the EdgeWorker may import, by name, with the exports the documentation describes. */
 const BUILT_IN_MODULES: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   'create-response': { createResponse },
   streams: { ReadableStream },
   encoding: { TextEncoder, TextDecoder, atob, btoa },
-  // Web Crypto's getRandomValues and subtle; EdgeWorkers documents no randomUUID, so there is none.
-  crypto: { crypto: { getRandomValues: webcrypto.getRandomValues.bind(webcrypto), subtle: webcrypto.subtle } },
+  // Web Crypto's getRandomValues and subtle; EdgeWorkers documents no randomUUID, so there is none, and only these
+  // subtle methods (https://techdocs.akamai.com/edgeworkers/docs/crypto): no generateKey, deriveBits, deriveKey or
+  // exportKey, and so no X25519 for the encrypted-ip module.
+  crypto: { crypto: { getRandomValues: webcrypto.getRandomValues.bind(webcrypto), subtle: documentedSubtle() } },
   log: { logger: { log: log('log'), debug: log('debug'), info: log('info'), warn: log('warn'), error: log('error'), trace: log('trace') } }
 };
 

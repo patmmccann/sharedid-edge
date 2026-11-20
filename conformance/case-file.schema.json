@@ -48,6 +48,7 @@
               "bodyLength": { "type": "integer" },
               "json": {},
               "jsonIncludes": { "description": "The JSON body contains these values: objects match on the listed keys only, recursively; arrays and scalars exactly" },
+              "jsonPatterns": { "type": "object", "additionalProperties": { "type": "string" }, "description": "Dot-separated paths to strings in the JSON body, each with a regular expression the whole string must match, for values that differ on every request, e.g. {\"gpt.ipAddress\": \"^[A-Za-z0-9_-]{76}$\"}" },
               "jsonAbsent": { "type": "array", "items": { "type": "string" }, "description": "Dot-separated paths of object keys the JSON body must not have, e.g. ortb2.device.geo.lat" },
               "onlyListedCookies": { "type": "boolean" },
               "noCookies": { "type": "boolean" },

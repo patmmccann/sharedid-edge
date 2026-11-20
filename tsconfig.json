@@ -34,6 +34,8 @@
     { "path": "packages/modules/clickid/test" },
     { "path": "packages/modules/cmp" },
     { "path": "packages/modules/cmp/test" },
+    { "path": "packages/modules/encrypted-ip" },
+    { "path": "packages/modules/encrypted-ip/test" },
     { "path": "packages/modules/geo" },
     { "path": "packages/modules/geo/test" },
     { "path": "packages/modules/gpp" },

@@ -1,73 +1,13 @@
 import { buildCountryData } from '@sharedid-edge/ip-ranges/build';
 import { validateCountrySnapshot, type CountrySnapshot } from './country-data.js';
+import { bytes, checkNotModified, downloaded, get, requireOk } from './download.js';
 import { hexDigest } from './snapshot.js';
-import type { Download, DownloadContext, UpdateSource } from './update.js';
+import type { UpdateSource } from './update.js';
 
 export interface CountrySourceOptions {
   /** Pass the vendor module's attribution constant; it is retained in the private snapshot. */
   readonly attribution: string;
   readonly ipv4Only?: boolean;
-}
-
-/** Bound response bodies, including chunked downloads. fetch's AbortSignal also covers reading the body. */
-async function bytes(response: Response, limit = 64 * 1024 * 1024): Promise<Uint8Array> {
-  const reader = response.body?.getReader();
-  if (reader === undefined) throw new TypeError('Missing download body');
-  const chunks: Uint8Array[] = [];
-  let length = 0;
-  try {
-    for (;;) {
-      const next = await reader.read();
-      if (next.done) break;
-      const chunk: unknown = next.value;
-      if (!(chunk instanceof Uint8Array)) throw new TypeError('Invalid download stream');
-      length += chunk.byteLength;
-      if (length > limit) throw new RangeError('Download is too large');
-      chunks.push(chunk);
-    }
-  } finally { await reader.cancel(); }
-  const result = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.byteLength; }
-  return result;
-}
-
-async function get(url: string, context: DownloadContext, authorization?: string): Promise<Response> {
-  const headers = new Headers();
-  if (authorization !== undefined) headers.set('Authorization', authorization);
-  if (context.previous?.url === url && context.previous.etag !== undefined) headers.set('If-None-Match', context.previous.etag);
-  let current = new URL(url);
-  for (let redirects = 0; redirects <= 5; redirects++) {
-    context.signal.throwIfAborted();
-    const response = await context.fetch(current.href, { headers: new Headers(headers), signal: context.signal, redirect: 'manual' });
-    if (![301, 302, 303, 307, 308].includes(response.status)) return response;
-    const location = response.headers.get('Location');
-    await response.body?.cancel();
-    if (location === null) throw new TypeError('Database redirect has no location');
-    const next = new URL(location, current);
-    if (next.protocol !== 'https:' || next.username !== '' || next.password !== '') throw new TypeError('Invalid database redirect');
-    // Workers and other Fetch implementations differ in automatic header forwarding: enforce the boundary here.
-    if (next.origin !== current.origin) headers.delete('Authorization');
-    current = next;
-  }
-  throw new TypeError('Too many database redirects');
-}
-
-/** Release the connection before failing on an error status, as the redirect and 404 paths do. */
-async function requireOk(response: Response, message: string): Promise<void> {
-  if (response.ok) return;
-  await response.body?.cancel();
-  throw new Error(message);
-}
-
-async function downloaded(response: Response, url: string): Promise<Download> {
-  await requireOk(response, 'Database download failed');
-  const etag = response.headers.get('ETag');
-  return { bytes: await bytes(response), url, ...(etag === null ? {} : { etag }) };
-}
-
-function checkNotModified(url: string, context: DownloadContext): void {
-  if (context.previous?.url !== url || context.previous.etag === undefined) throw new TypeError('Unexpected conditional response');
 }
 
 export function dbipSource(options: CountrySourceOptions): UpdateSource<CountrySnapshot> {

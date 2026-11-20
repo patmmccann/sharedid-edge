@@ -47,3 +47,33 @@ fetch('/_sid/v1', { credentials: 'include' })
 ```
 
 To read `/_sid/v1` from a page on another origin, list that origin in `SID_ALLOWED_ORIGINS` (see [Responses](responses.md#get-_sidv1-the-id-and-the-modules-output)).
+
+## Encrypted client IP: Google Publisher Tag and Prebid Server
+
+The opt-in [`encrypted-ip` module](../packages/modules/encrypted-ip/README.md) returns the visitor's IP address encrypted (HPKE, [RFC 9180](https://www.rfc-editor.org/rfc/rfc9180)) to each recipient you configure, in the payload's `eip`, not in `ortb2`: every bidder gets `ortb2`, and each value is for one recipient only.
+
+**Google Publisher Tag** takes `eip.google.value` as its [publisher-provided IP address](https://developers.google.com/publisher-tag/guides/unmasked-ip/publisher-provided#encrypt_ip_address) (encrypted to [Google's key](https://www.gstatic.com/real-ip/ip_enc_key.json)). Call `googletag.setConfig({ ipAddress })` before `enableServices`, `display` or `refresh`: it only affects later ad requests. With Prebid.js and GPT on the same page, one `/_sid/v1` request serves both: start it early, apply its `ortb2` to Prebid.js and its `eip.google` to GPT, and hold the first ad request until it answers or a short timeout passes:
+
+```js
+const sid = Promise.race([
+  fetch('/_sid/v1', { credentials: 'include' }).then(response => response.json()),
+  new Promise(resolve => setTimeout(resolve, 300, {}))
+]).catch(() => ({}));
+
+pbjs.que.push(async () => {
+  const payload = await sid;
+  if (payload.ortb2) pbjs.mergeConfig({ ortb2: payload.ortb2 });
+  // … pbjs.requestBids(…), then googletag.pubads().refresh() as usual
+});
+
+googletag.cmd.push(async () => {
+  const payload = await sid;
+  const ipAddress = payload.eip?.google?.value;
+  if (ipAddress) googletag.setConfig({ ipAddress });   // before enableServices, display and refresh
+  googletag.enableServices();
+});
+```
+
+To check, filter the browser's Network tab for `/gampad/ads`: its `ips` parameter carries the value, URL-encoded.
+
+**Prebid Server (experimental)** would take `eip.pbs[<host>].value` as `device.ext.prebid.eip`, decrypt it with its own key into `device.ip` or `device.ipv6`, and mask it under its usual privacy rules ([prebid/prebid-server#5106](https://github.com/prebid/prebid-server/issues/5106)). Values are keyed by the host of each `s2sConfig` endpoint, so a page with several Prebid Server hosts sends each its own. Prebid.js doesn't send it yet: [prebid/Prebid.js#16281](https://github.com/prebid/Prebid.js/issues/16281) proposes that the `sharedIdEdge` RTD module read `eip.pbs` from `/_sid/v1` and send each value to its Prebid Server host only, never to client-side bidders. Until then, don't put it in `pbjs.mergeConfig({ ortb2 })`, which every bidder would get. Neither proposal has shipped; the field name may change.

@@ -388,6 +388,7 @@ function payloadResponse(inputs: PayloadInputs): Response {
     ...(state.id === undefined ? {} : { sharedid: state.id }),
     eids,
     ...(ortb2 === undefined ? {} : { ortb2 }),
+    ...(modules.eip === undefined ? {} : { eip: modules.eip }),
     ext: { modules: modules.reports }
   };
   const response = new Response(JSON.stringify(payload), {

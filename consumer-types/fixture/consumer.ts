@@ -59,6 +59,7 @@ import {
   withPublicOrigin,
   type BotKind,
   type EdgeModule,
+  type EncryptedIp,
   type LocationSource,
   type ModuleContext,
   type ModuleResult,
@@ -78,6 +79,10 @@ import {
 
 export const staleResult: ModuleResult = { stale: true };
 export const staleReport: ModuleReport = { ms: 0, status: 'empty', stale: true };
+// The client IP encrypted per recipient (Google Publisher Tag, Prebid Server hosts by name), outside ortb2.
+const eip: EncryptedIp = { google: { value: 'A'.repeat(76), kid: 'k1' }, pbs: { 'pbs.example.com': { value: 'B'.repeat(76), stale: true } } };
+export const eipResult: ModuleResult = { eip };
+export const pbsValue = (body: PayloadV1, host: string): string | undefined => body.eip?.pbs?.[host]?.value;
 
 const geo: EdgeModule = defineModule({
   name: 'geo',

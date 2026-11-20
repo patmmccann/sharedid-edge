@@ -85,7 +85,7 @@ export async function runCase(
   if (expect.bodyLength !== undefined && method !== 'HEAD' && body.byteLength !== expect.bodyLength) {
     failures.push(`body is ${String(body.byteLength)} bytes, expected ${String(expect.bodyLength)}`);
   }
-  if (expect.json !== undefined || expect.jsonIncludes !== undefined || expect.jsonAbsent !== undefined) {
+  if (expect.json !== undefined || expect.jsonIncludes !== undefined || expect.jsonAbsent !== undefined || expect.jsonPatterns !== undefined) {
     let json: unknown;
     try {
       json = JSON.parse(new TextDecoder().decode(body));
@@ -100,6 +100,10 @@ export async function runCase(
     }
     for (const path of json === undefined ? [] : expect.jsonAbsent ?? []) {
       if (hasPath(json, path.split('.'))) failures.push(`json ${JSON.stringify(json)} should not have ${path}`);
+    }
+    for (const [path, pattern] of json === undefined ? [] : Object.entries(expect.jsonPatterns ?? {})) {
+      const value = valueAt(json, path.split('.'));
+      if (typeof value !== 'string' || !new RegExp(pattern).test(value)) failures.push(`json ${path}: ${JSON.stringify(value)} doesn't match /${pattern}/`);
     }
   }
 
@@ -174,6 +178,13 @@ function hasPath(value: unknown, path: readonly string[]): boolean {
   const [key, ...rest] = path;
   if (key === undefined) return true;
   return isPlainObject(value) && Object.hasOwn(value, key) && hasPath(value[key], rest);
+}
+
+/** The value at a path of nested object keys, or undefined. */
+function valueAt(value: unknown, path: readonly string[]): unknown {
+  const [key, ...rest] = path;
+  if (key === undefined) return value;
+  return isPlainObject(value) && Object.hasOwn(value, key) ? valueAt(value[key], rest) : undefined;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

@@ -1,0 +1,38 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The encrypted-ip module installed (opt-in build) and configured for Google and a Prebid Server host, but not listed in SID_MODULES (SID_MODULES=ip): no eip field, and no report for it.",
+  "build": [
+    "vendor-modules"
+  ],
+  "config": {
+    "SID_MODULES": "ip",
+    "SID_MODULE_CONFIG": "{\"encrypted-ip\":{\"google\":{\"key\":{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"X25519\",\"kid\":\"google-test\",\"x\":\"Qw9LmFlmUUWmsbonQCRIe9ZvA6LdV313U8aNfX0AwAw\"}]}},\"pbs\":{\"pbs-a\":{\"key\":{\"keys\":[{\"kty\":\"OKP\",\"crv\":\"X25519\",\"kid\":\"pbs-test\",\"x\":\"OUjP4K0d22ldeA5ZB3GV2mxWUGsCcyl5SrAryoCBXE0\"}]}}}}}",
+    "SID_TRUST_PROXY": "true"
+  },
+  "cases": [
+    {
+      "name": "adds no eip field unless listed in SID_MODULES",
+      "request": {
+        "path": "/_sid/v1",
+        "headers": {
+          "x-forwarded-for": "192.0.2.77",
+          "cf-connecting-ip": "192.0.2.77"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": {
+          "ortb2": {
+            "device": {
+              "ip": "192.0.2.77"
+            }
+          }
+        },
+        "jsonAbsent": [
+          "eip",
+          "ext.modules.encrypted-ip"
+        ]
+      }
+    }
+  ]
+}

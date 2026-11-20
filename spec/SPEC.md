@@ -189,6 +189,7 @@ A response where storage was denied SHOULD carry `X-SharedID-Status: denied: <re
 - `sharedid` and its `pubcid.org` eid are present only when storage is allowed and an ID was chosen.
 - `eids` follows OpenRTB `user.ext.eids`. Module eids follow the SharedID's, in module order.
 - `ortb2` is the deep merge of the modules' OpenRTB fragments, in module order, plus the [traffic signal](#traffic-signal) as `ortb2.device.ext.traffic`; absent when there's neither.
+- `eip` is the client's IP address encrypted for each configured recipient (the opt-in [`encrypted-ip`](modules/encrypted-ip.md) module): `google`, for Google Publisher Tag's `googletag.setConfig({ ipAddress })`, and `pbs`, an object keyed by Prebid Server host name (lower case, with `:port` when not the default), for Prebid Server's proposed `device.ext.prebid.eip` (experimental). Each value is `{ value, kid?, stale? }`: `value` is unpadded base64url of 67 to 124 characters, `kid` the ID of the recipient key it was encrypted to, `stale: true` when that key is past its refresh time (a key over 24 hours old gives no value). It's kept out of `ortb2`, which pages pass to every bidder, so that each value goes to its recipient alone; absent when there's no value. A module's `eip` with any other field, a value or `kid` of the wrong form, or a host name that isn't one, makes the module an `error`, and none of its output is used. A later module's value for a recipient replaces an earlier one's.
 - `ext.modules` reports each configured module: `status` is `ok`, `empty`, `skipped` (with a `reason`), `error` or `timeout`. An optional `stale: true` flag marks missing or old reference data; usable previous data MAY still contribute. Error details MUST NOT be returned, since they may contain request data.
 
 ### Traffic signal
@@ -246,7 +247,7 @@ A module has:
 - optionally `purposes` (TCF purposes it needs publisher consent for when GDPR applies) and `gvlid` (its IAB vendor ID);
 - optionally `routes`, the routes it runs on: a non-empty list of `v1` and `sync` without repeats, defaulting to `v1` only (see [Modules on `/sync`](#modules-on-sync));
 - optionally a `consent(context)` hook, which makes it a [consent provider](#consent-providers);
-- a `run(context)` function returning `{ eids?, ortb2?, cookies?, traffic?, noStore?, stale? }` or nothing (`traffic`: see [Traffic signal](#traffic-signal); `noStore`: see [Modules on `/sync`](#modules-on-sync); `stale`: see [Scheduled data updates](#scheduled-data-updates)).
+- a `run(context)` function returning `{ eids?, ortb2?, eip?, cookies?, traffic?, noStore?, stale? }` or nothing (`eip`: see [Payload v1](#payload-v1); `traffic`: see [Traffic signal](#traffic-signal); `noStore`: see [Modules on `/sync`](#modules-on-sync); `stale`: see [Scheduled data updates](#scheduled-data-updates)).
 
 The context has the request, its URL and cookies, the platform information (see [Platform information](#platform-information)), the SharedID (when storage is allowed), whether the browser opted out, the consent signals, and the module's configuration and secrets.
 
@@ -271,7 +272,7 @@ Prebid.js calls `/sync` (its `pixelUrl`) on page views without any page code, so
 
 - **Which modules:** without `SID_SYNC_MODULES`, every installed module in `SID_MODULES` whose `routes` include `sync`. With it, the modules it lists, which MUST all be in `SID_MODULES` (otherwise the configuration is invalid); `none` runs none. A listed module that isn't installed, or whose `routes` leave out `sync`, is reported `skipped` and doesn't run. Modules run in `SID_MODULES` order, whatever the order in `SID_SYNC_MODULES`.
 - **The same context as on `/v1`:** the request, its cookies, the platform information, the SharedID, whether the browser opted out, the consent signals, the storage decision, and the module's configuration and secrets. Consent skips, the time limit and failure isolation work as on `/v1`.
-- **Cookies and traffic reports only:** the cookies of each module that succeeded are set, after the same checks as on `/v1`, and its traffic report joins the platform's verdict for [Skipping bots](#skipping-bots); its `eids` and `ortb2` (apart from a traffic report in `ortb2.device.ext.traffic`) are ignored, and the merged signal isn't returned. A module that fails, times out or returns a bad cookie or report sets and reports nothing.
+- **Cookies and traffic reports only:** the cookies of each module that succeeded are set, after the same checks as on `/v1`, and its traffic report joins the platform's verdict for [Skipping bots](#skipping-bots); its `eids`, `ortb2` (apart from a traffic report in `ortb2.device.ext.traffic`) and `eip` are ignored, and the merged signal isn't returned. A module that fails, times out or returns a bad cookie or report sets and reports nothing.
 - **Otherwise the response is unchanged:** status `200`, the GIF, and the same headers and `Cache-Control`, plus the module cookies and, when any module was selected to run, `X-SharedID-Modules`: each module's name and status (as in `ext.modules`, without reasons), in order, such as `X-SharedID-Modules: reflect=empty, ec=ok, bot=empty`. It MUST NOT contain cookie names, values or error details.
 - **Caching:** a successful sync that set an ID is still cached privately for `SID_SYNC_CACHE_SECONDS` (one day by default), so from `/sync` a browser runs these modules about once per cache lifetime at most. A response served from the browser's cache sets no cookies. A lower `SID_SYNC_CACHE_SECONDS` runs them more often, for more requests; `0` runs them on every call.
 - **`noStore`:** a module whose result has `noStore: true` needs to see every sync (the [`clickid`](modules/clickid.md) module reads the landing page from the `Referer`, and a browser reuses a cached sync for any page). When a module that succeeded on `/sync` returns it, the response MUST be `Cache-Control: no-store`; its status, body and other headers are unchanged. It's ignored from a module that fails, times out or returns a bad cookie or report, and on other routes, whose responses are `no-store` already. A `noStore` that isn't a boolean makes the module an `error`.
@@ -316,6 +317,7 @@ Each module's behaviour is specified in its own file under [`modules/`](modules)
   - [The `bot` module](modules/bot.md)
   - [The `clickid` module](modules/clickid.md)
   - [The `cmp` module](modules/cmp.md)
+  - [The `encrypted-ip` module](modules/encrypted-ip.md)
   - [The `geo` module](modules/geo.md)
   - [The `gpp` module](modules/gpp.md)
   - [The `ip` module](modules/ip.md)

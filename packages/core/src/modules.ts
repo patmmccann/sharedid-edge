@@ -1,7 +1,7 @@
 import { isRecord, type SharedIdEdgeConfig } from './config.js';
 import type { ConsentContext, ConsentSignal, StorageDecision } from './consent.js';
 import { trafficReport, type TrafficEntry, type TrafficReport } from './traffic.js';
-import type { Eid, ModuleReport, PlatformInfo } from './types.js';
+import type { EncryptedIp, EncryptedIpValue, Eid, ModuleReport, PlatformInfo } from './types.js';
 
 /** What a module gets for one request. Modules see the request but must not modify it. */
 export interface ModuleContext {
@@ -112,6 +112,13 @@ export interface ModuleResult {
   readonly eids?: readonly Eid[];
   /** An OpenRTB 2.x fragment, deep-merged into the payload's `ortb2`. */
   readonly ortb2?: Readonly<Record<string, unknown>>;
+  /**
+   * The client's IP address encrypted per recipient, returned as the payload's `eip` (not merged into `ortb2`,
+   * which pages pass to every bidder). Checked: a value that isn't unpadded base64url of 67 to 124 characters, a bad
+   * `kid`, host name or field makes the module an `error`. A later module's value for a recipient replaces an earlier
+   * one's. Ignored on `/sync`.
+   */
+  readonly eip?: EncryptedIp;
   /** Cookies to set (or delete) on the response. */
   readonly cookies?: readonly ModuleCookie[];
   /**
@@ -257,6 +264,7 @@ export interface ModuleRunOutput {
   readonly eids: Eid[];
   readonly cookies: ModuleCookie[];
   readonly ortb2: Record<string, unknown> | undefined;
+  readonly eip: EncryptedIp | undefined;
   /** Each module's traffic report, checked, in module order, for core to merge with the platform's. */
   readonly traffic: TrafficEntry[];
   readonly reports: Record<string, ModuleReport>;
@@ -279,6 +287,7 @@ export async function runModules(
   const eids: Eid[] = [];
   const cookies: ModuleCookie[] = [];
   let ortb2: Record<string, unknown> | undefined;
+  let eip: EncryptedIp | undefined;
   const traffic: TrafficEntry[] = [];
   const reports: Record<string, ModuleReport> = {};
   let noStore = false;
@@ -315,28 +324,72 @@ export async function runModules(
       for (const value of [flag, stale]) {
         if (value !== undefined && typeof value !== 'boolean') throw new TypeError();
       }
-      if (result === undefined || (result.eids === undefined && result.ortb2 === undefined && result.cookies === undefined && result.traffic === undefined)) {
+      if (result === undefined || (result.eids === undefined && result.ortb2 === undefined && result.eip === undefined && result.cookies === undefined && result.traffic === undefined)) {
         if (flag === true) noStore = true;
         reports[name] = { ms, status: 'empty', ...(stale === true ? { stale: true } : {}) };
         continue;
       }
       // Checked before anything from this module is used, so a bad cookie leaves the whole result out.
       for (const cookie of result.cookies ?? []) checkModuleCookie(cookie, config);
+      const encrypted = result.eip === undefined ? undefined : checkEncryptedIp(result.eip);
       const split = result.ortb2 === undefined ? { rest: undefined, traffic: undefined } : takeTraffic(result.ortb2);
       const reported = [result.traffic, split.traffic].flatMap(value => (value === undefined ? [] : [{ source: name, report: trafficReport(value) }]));
       if (result.cookies !== undefined) cookies.push(...result.cookies);
       if (result.eids !== undefined) eids.push(...result.eids);
       if (split.rest !== undefined) ortb2 = deepMerge(ortb2 ?? {}, split.rest);
+      if (encrypted !== undefined) eip = mergeEncryptedIp(eip, encrypted);
       traffic.push(...reported);
       if (flag === true) noStore = true;
-      const added = result.eids !== undefined || split.rest !== undefined || reported.some(entry => Object.keys(entry.report).length > 0);
+      const added = result.eids !== undefined || split.rest !== undefined || encrypted !== undefined || reported.some(entry => Object.keys(entry.report).length > 0);
       reports[name] = { ms, status: added ? 'ok' : 'empty', ...(stale === true ? { stale: true } : {}) };
     } catch {
       // The error isn't reported to the page: it may contain request data.
       reports[name] = { ms: Math.round(now() - start), status: 'error' };
     }
   }
-  return { eids, cookies, ortb2, traffic, reports, noStore };
+  return { eids, cookies, ortb2, eip, traffic, reports, noStore };
+}
+
+/** The format Google Publisher Tag accepts, as the payload sends it: unpadded base64url, 67 to 124 characters. */
+const ENCRYPTED_IP = /^[A-Za-z0-9_-]{67,124}$/;
+/** A JWK `kid`: printable ASCII without spaces, at most 256 characters. */
+const KEY_ID = /^[!-~]{1,256}$/;
+/** A Prebid Server host's name: a lower-case host name, optionally with a port. */
+const HOST = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*(?::\d{1,5})?$/;
+
+function encryptedIpValue(value: unknown): EncryptedIpValue {
+  if (!isRecord(value) || Object.keys(value).some(key => key !== 'value' && key !== 'kid' && key !== 'stale')) throw new TypeError('invalid eip entry');
+  const { value: text, kid, stale } = value;
+  if (typeof text !== 'string' || !ENCRYPTED_IP.test(text)) throw new TypeError('invalid eip value');
+  if (kid !== undefined && (typeof kid !== 'string' || !KEY_ID.test(kid))) throw new TypeError('invalid eip kid');
+  if (stale !== undefined && stale !== true) throw new TypeError('invalid eip stale');
+  return { value: text, ...(kid === undefined ? {} : { kid }), ...(stale === undefined ? {} : { stale }) };
+}
+
+/**
+ * A module's `eip`, checked and copied: only `google` and `pbs` (by host name). Throws otherwise;
+ * undefined when it has no value at all.
+ */
+function checkEncryptedIp(value: unknown): EncryptedIp | undefined {
+  if (!isRecord(value) || Object.keys(value).some(key => key !== 'google' && key !== 'pbs')) throw new TypeError('invalid eip');
+  const { google, pbs } = value;
+  if (pbs !== undefined && !isRecord(pbs)) throw new TypeError('invalid eip pbs');
+  const hosts = Object.entries(pbs ?? {}).map(([host, entry]): [string, EncryptedIpValue] => {
+    if (!HOST.test(host)) throw new TypeError('invalid eip host');
+    return [host, encryptedIpValue(entry)];
+  });
+  if (google === undefined && hosts.length === 0) return undefined;
+  return {
+    ...(google === undefined ? {} : { google: encryptedIpValue(google) }),
+    ...(hosts.length === 0 ? {} : { pbs: Object.fromEntries(hosts) })
+  };
+}
+
+/** A later module's value for a recipient replaces an earlier one's. */
+function mergeEncryptedIp(earlier: EncryptedIp | undefined, later: EncryptedIp): EncryptedIp {
+  const google = later.google ?? earlier?.google;
+  const pbs = earlier?.pbs === undefined ? later.pbs : { ...earlier.pbs, ...later.pbs };
+  return { ...(google === undefined ? {} : { google }), ...(pbs === undefined ? {} : { pbs }) };
 }
 
 /**
