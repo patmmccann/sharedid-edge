@@ -218,6 +218,9 @@ jobs:
     needs: [cloudflare, cloudfront]
     if: ${{ !cancelled() && needs.cloudflare.result == 'success' }}
     runs-on: ubuntu-latest
+    # Set when its install failed on an apt outage, for the report job's issue (.github/actions/live-issue).
+    outputs:
+      infrastructure: ${{ steps.browser.outputs.infrastructure }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -236,14 +239,11 @@ jobs:
       - name: Install e2e dependencies
         working-directory: e2e
         run: npm ci
-      - name: Cache the Playwright browser
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ matrix.browser }}-${{ hashFiles('e2e/package-lock.json') }}
       - name: Install the browser and its system dependencies
-        working-directory: e2e
-        run: ./install-browser.sh ${{ matrix.browser }}
+        id: browser
+        uses: ./.github/actions/install-browser
+        with:
+          browser: ${{ matrix.browser }}
       - name: Unmodified Prebid.js against https://${{ matrix.site.host }} (${{ matrix.browser }})
         working-directory: e2e
         env:

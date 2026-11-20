@@ -86,6 +86,21 @@ describe('report', () => {
     assert.deepEqual(calls, [['issue', 'comment', '161', '--body', `Still failing (nightly): ${RUN_URL}`]]);
   });
 
+  it('says when a browser job failed on an apt outage', () => {
+    // #197, #200: WebKit couldn't install its system packages. Matrix jobs share one set of outputs.
+    const failed = JSON.stringify({
+      deploy: { result: 'success', outputs: {} },
+      browsers: { result: 'failure', outputs: { infrastructure: 'apt outage (webkit is missing libevent-2.1.so.7)' } }
+    });
+    const note = "\n\nInfrastructure: apt outage (webkit is missing libevent-2.1.so.7), not a regression. A browser job couldn't install its system packages from the Ubuntu mirrors; re-run the failed jobs once they're back. Other jobs' failures, if any, are in the run.";
+    const opened = mockGh([]);
+    report(env({ NEEDS: failed }), opened.gh);
+    assert.deepEqual(opened.calls, [['issue', 'create', '--title', TITLE, '--body', `The live tests on sharedid.dev failed (after ${SHA}): ${RUN_URL}${note}`]]);
+    const commented = mockGh(OPEN);
+    report(env({ NEEDS: failed, EVENT_NAME: 'schedule' }), commented.gh);
+    assert.deepEqual(commented.calls, [['issue', 'comment', '161', '--body', `Still failing (nightly): ${RUN_URL}${note}`]]);
+  });
+
   it('reports nothing for a failing on-demand run', () => {
     const { gh, calls } = mockGh(OPEN);
     report(env({ NEEDS: DEPLOY_FAILED, EVENT_NAME: 'workflow_dispatch' }), gh);

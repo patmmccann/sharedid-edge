@@ -1,0 +1,59 @@
+name: Install a Playwright browser
+description: >-
+  Every browser job's install step: the Playwright browser, cached by e2e/package-lock.json, and its system packages,
+  through e2e/install-browser.sh. The .deb files apt downloads for them are cached by runner image (ImageOS,
+  ImageVersion), browser and e2e/package-lock.json, so an Ubuntu apt mirror outage doesn't stop the job once a run on
+  that image has cached them. The job checks out the repository and runs `npm ci` in e2e/ first.
+inputs:
+  browser:
+    description: chromium, firefox or webkit.
+    required: true
+outputs:
+  infrastructure:
+    description: >-
+      Set when the step failed because apt was unavailable and the browser is missing libraries ("apt outage: ...");
+      the live workflows' report job words its issue with it.
+    value: ${{ steps.install.outputs.infrastructure }}
+runs:
+  using: composite
+  steps:
+    - name: Cache the Playwright browser
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ inputs.browser }}-${{ hashFiles('e2e/package-lock.json') }}
+    # ImageOS and ImageVersion are the runner's environment variables, not in the env context.
+    - name: The system packages' cache key
+      id: key
+      shell: bash
+      env:
+        BROWSER: ${{ inputs.browser }}
+        LOCK: ${{ hashFiles('e2e/package-lock.json') }}
+      run: |
+        echo "prefix=browser-debs-$BROWSER-$ImageOS-" >> "$GITHUB_OUTPUT"
+        echo "key=browser-debs-$BROWSER-$ImageOS-$ImageVersion-$LOCK" >> "$GITHUB_OUTPUT"
+    # A cache from an earlier image (the prefix) is used only when apt is unavailable; see install-browser.sh.
+    - name: Restore the system packages
+      id: restore
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ runner.temp }}/browser-debs
+        key: ${{ steps.key.outputs.key }}
+        restore-keys: ${{ steps.key.outputs.prefix }}
+    - name: Install the browser and its system packages (e2e/install-browser.sh)
+      id: install
+      shell: bash
+      working-directory: e2e
+      env:
+        BROWSER: ${{ inputs.browser }}
+        BROWSER_DEBS: ${{ runner.temp }}/browser-debs
+        BROWSER_DEBS_KEY: ${{ steps.key.outputs.key }}
+      run: ./install-browser.sh "$BROWSER"
+    # Saved now rather than at the end of the job, so failing tests don't stop it. install-browser.sh sets
+    # `complete` when it installed through apt on this image.
+    - name: Save the system packages
+      if: steps.install.outputs.complete == 'true' && steps.restore.outputs.cache-matched-key != steps.key.outputs.key
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ runner.temp }}/browser-debs
+        key: ${{ steps.key.outputs.key }}
