@@ -368,3 +368,13 @@ describe('forwarding modules', () => {
     expect(result.statusCode).toBe(405);
   });
 });
+
+describe('the POST body', () => {
+  it("isn't decoded unless something reads it", async () => {
+    const from = vi.spyOn(Buffer, 'from');
+    const handler = createLambdaHandler({ config: resolveConfig({}) });
+    const result = await handler({ ...cloudFrontEvent({ path: '/_sid/v1', method: 'POST' }), body: 'YT0x', isBase64Encoded: true });
+    expect(result.statusCode).toBe(405);
+    expect(from.mock.calls.some(([value]) => value === 'YT0x')).toBe(false);
+  });
+});

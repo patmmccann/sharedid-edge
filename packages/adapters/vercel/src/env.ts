@@ -1,6 +1,6 @@
-import { ConfigError, booleanFromEnv, forwardingPaths, handlerOrMisconfigured, publicOriginFromEnv, refuseTrustedUpstream, resolveConfig, settingsFromEnv, type EdgeModule } from '@sharedid-edge/core';
+import { ConfigError, booleanFromEnv, handlerOrMisconfigured, publicOriginFromEnv, refuseTrustedUpstream, resolveConfig, settingsFromEnv, type EdgeModule } from '@sharedid-edge/core';
 import { builtInModules } from '@sharedid-edge/modules';
-import { createVercelHandler, internalError, middleware, type VercelHandler, type VercelMiddleware } from './handler.js';
+import { createVercelHandler, forwardingPathsFor, internalError, middleware, type ForwardingPathsFor, type VercelHandler, type VercelMiddleware } from './handler.js';
 
 /** Environment variables, as `process.env` has them. */
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -27,17 +27,18 @@ export function handlerFromEnv(env: Env, modules: readonly EdgeModule[] = builtI
 
 /**
  * Builds middleware from environment variables, like `handlerFromEnv`: requests under `SID_BASE_PATH` (`/_sid`),
- * and under a forwarding module's paths, get the handler's response, any other request `undefined`. A misconfiguration answers the base path with a 500
- * and leaves the rest of the site alone.
+ * and under the paths of the forwarding modules in the request's site's settings (`SID_HOSTS`), get the handler's
+ * response, any other request `undefined`. A misconfiguration answers the base path with a 500 and leaves the rest of
+ * the site alone.
  */
 export function middlewareFromEnv(env: Env, modules: readonly EdgeModule[] = builtInModules): VercelMiddleware {
   const basePath = env['SID_BASE_PATH'];
   let path = '/_sid';
-  let forwarding: string[] = [];
+  let forwarding: ForwardingPathsFor = () => [];
   try {
-    const config = resolveConfig(env);
+    const { config, hosts } = settingsFromEnv(refuseTrustedUpstream(env));
     path = config.basePath;
-    forwarding = forwardingPaths(config, modules);
+    forwarding = forwardingPathsFor(config, hosts, modules, publicOriginFromEnv(env).publicOrigin);
   } catch (error) {
     if (!(error instanceof ConfigError)) throw error;
     // handlerFromEnv logs it; keep the base path when it's valid, so the 500 shows up where the endpoint is expected.

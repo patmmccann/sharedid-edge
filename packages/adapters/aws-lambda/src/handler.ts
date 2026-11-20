@@ -69,12 +69,13 @@ function toRequest(event: LambdaEventV2, publicOrigin: string | undefined): Requ
   // reads it only when a forwarding module forwards, so no other route decodes it before its 405.
   const { body } = event;
   if (method !== 'POST' || body === undefined || body === '') return new Request(url, { method, headers });
+  // A high-water mark of 0, so the stream doesn't pull (and decode) before anything reads it.
   const stream = new ReadableStream<Uint8Array>({
     pull(controller) {
       controller.enqueue(event.isBase64Encoded === true ? Buffer.from(body, 'base64') : new TextEncoder().encode(body));
       controller.close();
     }
-  });
+  }, { highWaterMark: 0 });
   // `duplex` (Node.js needs it for a stream body) isn't in the DOM library's RequestInit.
   const init: RequestInit & { readonly duplex: 'half' } = { method, headers, body: stream, duplex: 'half' };
   return new Request(url, init);

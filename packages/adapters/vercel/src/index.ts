@@ -1,9 +1,11 @@
 export {
   createVercelHandler,
   createVercelMiddleware,
+  forwardingPathsFor,
   internalError,
   middleware,
   ownsPath,
+  type ForwardingPathsFor,
   type VercelHandler,
   type VercelHandlerOptions,
   type VercelMiddleware

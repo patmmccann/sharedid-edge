@@ -1,4 +1,4 @@
-import { createHandler, DEFAULT_CONFIG, fetchForward, forwardingPaths, logRequestFailure, type HandlerOptions, ROUTES, withPublicOrigin } from '@sharedid-edge/core';
+import { createHandler, DEFAULT_CONFIG, fetchForward, forwardingPaths, hostKey, logRequestFailure, type EdgeModule, type HandlerOptions, ROUTES, type SharedIdEdgeConfig, withPublicOrigin } from '@sharedid-edge/core';
 import { platformInfo, type PlatformOptions } from './platform.js';
 
 export interface VercelHandlerOptions extends HandlerOptions, PlatformOptions {
@@ -41,16 +41,39 @@ export function createVercelHandler(options: VercelHandlerOptions = {}): VercelH
  */
 export function createVercelMiddleware(options: VercelHandlerOptions = {}): VercelMiddleware {
   const config = options.config ?? DEFAULT_CONFIG;
-  return middleware(createVercelHandler(options), config.basePath, forwardingPaths(config, options.modules ?? []));
+  return middleware(createVercelHandler(options), config.basePath, forwardingPathsFor(config, options.hosts, options.modules ?? [], options.publicOrigin));
+}
+
+/** The forwarding paths a request may be under: see `forwardingPathsFor`. */
+export type ForwardingPathsFor = (request: Request) => readonly string[];
+
+/**
+ * The paths of the forwarding modules (such as `tag-gateway`'s `/metrics`) for a request: those of its site's
+ * settings, picked as the handler picks them (`SID_HOSTS` by the request's host, on `publicOrigin` when it's set),
+ * else the deployment's; none for a host `SID_HOSTS` doesn't list. Worked out once per configuration.
+ */
+export function forwardingPathsFor(config: SharedIdEdgeConfig, hosts: ReadonlyMap<string, SharedIdEdgeConfig> | undefined, modules: Iterable<EdgeModule>, publicOrigin?: string): ForwardingPathsFor {
+  const list = [...modules];
+  const known = new WeakMap<SharedIdEdgeConfig, readonly string[]>();
+  return request => {
+    const site = hosts === undefined ? config : hosts.get(hostKey(new URL(publicOrigin ?? request.url)));
+    if (site === undefined) return [];
+    let paths = known.get(site);
+    if (paths === undefined) {
+      paths = forwardingPaths(site, list);
+      known.set(site, paths);
+    }
+    return paths;
+  };
 }
 
 /**
- * Wraps a handler so it answers only requests under `basePath`, and under `forwarding`, the paths of the forwarding
- * modules in `SID_MODULES` (such as `tag-gateway`'s `/metrics`). With the root base path (`/`), that's exactly
+ * Wraps a handler so it answers only requests under `basePath`, and under the paths `forwarding` gives for the
+ * request, those of the forwarding modules in its site's `SID_MODULES` (such as `tag-gateway`'s `/metrics`). With the root base path (`/`), that's exactly
  * core's routes (`/sync`, `/v1`, `/optout`, `/optin`, with an optional trailing slash): anything else is the
  * site's, so the middleware passes it on.
  */
-export function middleware(handler: VercelHandler, basePath: string, forwarding: readonly string[] = []): VercelMiddleware {
+export function middleware(handler: VercelHandler, basePath: string, forwarding: ForwardingPathsFor = () => []): VercelMiddleware {
   return async request => {
     let pathname: string;
     try {
@@ -58,7 +81,7 @@ export function middleware(handler: VercelHandler, basePath: string, forwarding:
     } catch {
       return undefined;
     }
-    return ownsPath(pathname, basePath) || forwarding.some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`)) ? handler(request) : undefined;
+    return ownsPath(pathname, basePath) || forwarding(request).some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`)) ? handler(request) : undefined;
   };
 }
 
