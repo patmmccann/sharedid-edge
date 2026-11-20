@@ -1,0 +1,18 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The tag-gateway module with invalid settings (a tag ID that is not one): the module owns no path, so requests to it get 404 and nothing is forwarded, and it reports error on /v1.",
+  "build": ["vendor-modules"],
+  "config": { "SID_MODULES": "tag-gateway", "SID_MODULE_CONFIG": "{\"tag-gateway\":{\"tags\":[{\"id\":\"not a tag\",\"path\":\"/metrics\"}]}}" },
+  "cases": [
+    {
+      "name": "owns no path",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view"},
+      "expect": {"status":404,"noCookies":true}
+    },
+    {
+      "name": "reports error on /v1",
+      "request": {"path":"/_sid/v1"},
+      "expect": {"status":200,"jsonIncludes":{"ext":{"modules":{"tag-gateway":{"status":"error"}}}}}
+    }
+  ]
+}

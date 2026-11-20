@@ -52,6 +52,7 @@ Generated from each module's `package.json` (its `sharedidEdge` block) by `node 
 | [`gpp`](../packages/modules/gpp/README.md) (opt-in build) | Nothing in the payload: a consent provider that decodes the US National and US state sections of the `gpp` string that `gpp_sid` names. An opt-out of sale, sharing or targeted advertising, or a known child without consent, denies the SharedID and deletes it, like GPC; a string it can't read for those sections denies too | none | no | [spec](../spec/modules/gpp.md) |
 | [`ip`](../packages/modules/ip/README.md) | `ortb2.device.ip` or `ortb2.device.ipv6`: the visitor's full IP address, or nothing when consent rules it out | none | no | [spec](../spec/modules/ip.md) |
 | [`reflect`](../packages/modules/reflect/README.md) | Nothing in the payload: re-sets first-party cookies other scripts wrote (such as `uid1` or `_ga`) with the same value and a new expiry, so Safari doesn't cap them, and with `restore`, sets them again from an `HttpOnly` keeper cookie after Safari deletes them | `cookies`, `keeper` | yes | [spec](../spec/modules/reflect.md) |
+| [`tag-gateway`](../packages/modules/tag-gateway/README.md) (opt-in build; ⚠ forwards data to `*.fps.goog`) | Nothing in the payload but its `forwards` report: serves the Google tag and its measurement requests from a path on your site (`/metrics`), forwarding them to Google's tag gateway (`<tag ID>.fps.goog`), with the client IP and location only when consent allows, and nothing on opt-out, COPPA, GPC (by default) or without TCF purposes 1 and 7 where GDPR applies | `tags` (each `id` and `path`, **required**), `gpc` (`block` or `forward-anonymous`) | no | [spec](../spec/modules/tag-gateway.md) |
 | [`ua`](../packages/modules/ua/README.md) | `ortb2.device` from User-Agent Client Hints (`sua`, `devicetype`, `os`, `osv`, `model`), and `device.ext.traffic` with `bot: true` for crawlers that identify themselves | `ua`: also send `device.ua`; `parser`: `bowser`, in a build with Bowser, parses the `User-Agent` too | no | [spec](../spec/modules/ua.md) |
 | [`dbip`](../packages/vendor-modules/dbip/README.md) (vendor module, offline) | `ortb2.device.geo.country` from DB-IP's free IP to Country Lite database, built in at build time (CC BY 4.0) | `mode`: `fill` (default) or `replace`; optional `maxAgeDays` | no | [spec](../spec/modules/dbip.md) |
 | [`ec`](../packages/vendor-modules/ec/README.md) (vendor module, offline; ⚠ IP-derived ID) | Trusted Server Edge Cookies: sets `ts-ec` and returns it as an EID. Off unless you turn it on | `domain`; secret `passphrase` | yes | [spec](../spec/modules/ec.md) |
@@ -59,7 +60,19 @@ Generated from each module's `package.json` (its `sharedidEdge` block) by `node 
 | [`maxmind`](../packages/vendor-modules/maxmind/README.md) (vendor module, offline; needs `MAXMIND_ACCOUNT_ID`, `MAXMIND_LICENSE_KEY` at build time) | `ortb2.device.geo.country` (with `ipservice` 3) from MaxMind's GeoLite2 Country database, downloaded with your licence key and built in at build time | `mode`: `fill` (default) or `replace`; optional `maxAgeDays`; build-time `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY` | no | [spec](../spec/modules/maxmind.md) |
 <!-- generated:module-index:end -->
 
-To build your own, see [Adding a module](development.md#adding-a-module). Modules from vendors (in [`packages/vendor-modules/`](../packages/vendor-modules/README.md); none yet) aren't built in: you add them to your build, and any that forwards data to another service says so at the top of its README and is marked "⚠ forwards data to `<host>`" in the index.
+To build your own, see [Adding a module](development.md#adding-a-module). Modules from vendors (in [`packages/vendor-modules/`](../packages/vendor-modules/README.md)) aren't built in: you add them to your build.
+
+### Modules that forward data
+
+Modules only work from what the worker already has, and send nothing anywhere, with one exception: a **forwarding module**, such as [`tag-gateway`](../packages/modules/tag-gateway/README.md), owns paths on your site outside `/_sid` and answers them by passing requests on to a service it names. Such a module:
+
+- is **off by default:** it's an opt-in build, does nothing until it's in `SID_MODULES` and configured, and reaches only the hosts declared in its code, which core enforces (never an open proxy);
+- is **marked** "⚠ forwards data to `<host>`" in the index above, and says at the **top** of its README, in a box, what it sends, to which host, when, and under which consent conditions;
+- **still follows the privacy rules:** core sends nothing on opt-out, COPPA, a consent provider's denial or missing TCF consent where GDPR applies, nor with Global Privacy Control unless the module's setting forwards anonymously then, without any client IP or location; the full IP and precise location only go where the [`ip`](../packages/modules/ip/README.md) and [`geo`](../packages/modules/geo/README.md) modules would send them;
+- reports on `/_sid/v1` whether this visitor's requests are forwarded (`ext.modules.<name>.forwards`), and nothing about them;
+- needs a platform that can send requests to other hosts: the Cloudflare Worker and Snippet, Node.js, AWS Lambda, Vercel and Google Cloud. Elsewhere (Lambda@Edge, Azure, Akamai, Fastly) a configuration that lists one gets a 500 rather than being ignored.
+
+See [Forwarding modules](../spec/SPEC.md#forwarding-modules) in the specification.
 
 ## The traffic signal
 

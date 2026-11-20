@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
-import { clientIpFromHeader as coreClientIpFromHeader, ConfigError, createHandler, forwardedPlatformInfo, isHeaderName, logRequestFailure, splitHeaders, utf8Header, withTrustedUpstream, type HandlerOptions, type LocationHeaders, type PlatformInfo, type SharedIdEdgeHandler, type TrustedUpstream } from '@sharedid-edge/core';
+import { clientIpFromHeader as coreClientIpFromHeader, ConfigError, createHandler, fetchForward, forwardedPlatformInfo, isHeaderName, logRequestFailure, splitHeaders, utf8Header, withTrustedUpstream, type HandlerOptions, type LocationHeaders, type PlatformInfo, type SharedIdEdgeHandler, type TrustedUpstream } from '@sharedid-edge/core';
 
 /** Cloudflare's visitor location headers ("Add visitor location headers"): the default. */
 export const CLOUDFLARE_LOCATION_HEADERS: LocationHeaders = {
@@ -51,7 +51,7 @@ export interface NodeServerOptions extends HandlerOptions {
 
 /** An HTTP server that answers every request with the SharedID Edge handler. */
 export function createNodeServer(options: NodeServerOptions = {}): Server {
-  const handler = withTrustedUpstream(createHandler(options), options.upstream);
+  const handler = withTrustedUpstream(createHandler({ forwardFetch: fetchForward, ...options }), options.upstream);
   const trust = trustedHeaders(options);
   return createServer((req, res) => {
     handle(handler, options.publicOrigin, trust, req, res).catch((error: unknown) => {

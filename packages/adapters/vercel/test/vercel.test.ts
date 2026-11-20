@@ -313,3 +313,51 @@ describe('the example', () => {
     for (const method of ['GET', 'HEAD', 'OPTIONS']) expect(route).toMatch(new RegExp(`^export const ${method} = `, 'm'));
   });
 });
+
+describe('forwarding modules', () => {
+  const relay = defineModule({
+    name: 'relay',
+    run: () => undefined,
+    forwarding: {
+      hosts: ['upstream.example'],
+      paths: () => ['/metrics'],
+      serve: context => context.forward(`https://upstream.example${context.url.pathname}`)
+    }
+  });
+
+  it("answers the module's paths in the middleware when it's on, and passes everything else to the site", async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('upstream'))));
+    const on = middlewareFromEnv({ SID_COOKIE_DOMAIN: 'host-only', SID_MODULES: 'relay' }, [relay]);
+    expect(await (await on(vercelRequest({ path: '/metrics/g/collect' })))?.text()).toBe('upstream');
+    expect(await on(vercelRequest({ path: '/metricsx' }))).toBeUndefined();
+    const off = middlewareFromEnv({ SID_COOKIE_DOMAIN: 'host-only' }, [relay]);
+    expect(await off(vercelRequest({ path: '/metrics/g/collect' }))).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('forwarding modules with several sites', () => {
+  const relay = defineModule({
+    name: 'relay',
+    run: () => undefined,
+    forwarding: {
+      hosts: ['upstream.example'],
+      paths: config => [typeof config['path'] === 'string' ? config['path'] : '/metrics'],
+      serve: context => context.forward(`https://upstream.example${context.url.pathname}`)
+    }
+  });
+
+  it("answers each site's own forwarding paths, from SID_HOSTS", async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('upstream'))));
+    const sites = JSON.stringify({
+      'www.example.com': { SID_COOKIE_DOMAIN: 'example.com', SID_MODULES: 'relay', SID_MODULE_CONFIG: { relay: { path: '/collect' } } },
+      'other.example': { SID_COOKIE_DOMAIN: 'other.example' }
+    });
+    const handle = middlewareFromEnv({ SID_HOSTS: sites }, [relay]);
+    expect(await (await handle(new Request('https://www.example.com/collect/x')))?.text()).toBe('upstream');
+    expect(await handle(new Request('https://www.example.com/metrics/x'))).toBeUndefined();
+    expect(await handle(new Request('https://other.example/collect/x'))).toBeUndefined();
+    expect(await handle(new Request('https://unlisted.example/collect/x'))).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
+});

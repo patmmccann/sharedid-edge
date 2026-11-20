@@ -78,6 +78,8 @@ npm run bundle -w @sharedid-edge/akamai -- --module @sharedid-edge/module-ec#ecM
 
 Then list it in `PMUSER_SID_MODULES`, with its settings and secrets (the [`ec` README](../../vendor-modules/ec/README.md#turning-it-on), and [Secrets](#secrets) below). Without `--module`, `SID_MODULES=ec` reports `ec` as `skipped` (`not installed`). The bundle's size is reported but the 32 KB budget isn't enforced with opt-in modules; EdgeWorkers' own limit is [512 KB compressed and 1 MB uncompressed](https://techdocs.akamai.com/edgeworkers/docs/limitations). `--bowser` and `--module` can be combined.
 
+**Forwarding modules** such as [`tag-gateway`](../../modules/tag-gateway/README.md) (Google's tag gateway) aren't supported: EdgeWorkers has no `fetch`, and the adapter doesn't use its own `httpRequest` sub-requests. Listing one in `SID_MODULES` gives every request a 500, rather than being ignored. Property Manager can route the gateway's path to Google itself, as [Google's setup guide](https://developers.google.com/tag-platform/tag-manager/gateway/setup-guide?setup=manual) shows.
+
 **Bowser (opt-in).** The `ua` module's [full `User-Agent` parsing](../../modules/ua/README.md#full-parsing-with-bowser) fills `device` for Safari, Firefox, TVs and other browsers that send no Client Hints. `npm run bundle:bowser -w @sharedid-edge/akamai` (in place of `bundle`; same `deploy/` folder) builds it in, then `PMUSER_SID_MODULE_CONFIG` `{"ua":{"parser":"bowser"}}` turns it on. The cost, minified and gzipped, against the budgets CI checks (32 KB for the default build; 40 KB for the opt-in Bowser build, which adds full User-Agent parsing):
 
 | Bundle | Default (no Bowser) | With Bowser |

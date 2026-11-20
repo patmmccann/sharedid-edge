@@ -95,7 +95,9 @@ export async function bundleAdapter({ root, entry, file, label, options = {}, ar
     // No bundled adapter wires a rate limiter (`rateLimit`): core's check for one compiles away (NO_RATE_LIMIT in
     // packages/core/src/handler.ts).
     // The TCF decoder is in unless --no-tcf leaves it out (NO_TCF in packages/core/src/consent.ts).
-    define: { 'globalThis.__SID_PREVALIDATED__': 'false', 'globalThis.__SID_NO_CONSENT_HOOKS__': String(extra.length === 0), 'globalThis.__SID_NO_RATE_LIMIT__': 'true', 'globalThis.__SID_NO_TCF__': String(args['no-tcf']), ...options.define, ...chosen.options?.define },
+    // Nor does any built-in module forward requests: without --module, core's forwarding code compiles away
+    // (NO_FORWARDING in packages/core/src/handler.ts).
+    define: { 'globalThis.__SID_PREVALIDATED__': 'false', 'globalThis.__SID_NO_CONSENT_HOOKS__': String(extra.length === 0), 'globalThis.__SID_NO_FORWARDING__': String(extra.length === 0), 'globalThis.__SID_NO_RATE_LIMIT__': 'true', 'globalThis.__SID_NO_TCF__': String(args['no-tcf']), ...options.define, ...chosen.options?.define },
     ...moduleAlias(root, args.bowser, extra)
   });
   const labelled = `${label}${chosen.label === undefined ? '' : ` ${chosen.label}`}${args.bowser ? ' with Bowser' : ''}${extra.length > 0 ? ` with ${extra.map(spec => spec.slice(0, spec.indexOf('#'))).join(', ')}` : ''}${args['no-tcf'] ? ' without TCF' : ''}`;

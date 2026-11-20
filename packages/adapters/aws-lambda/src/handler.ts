@@ -1,4 +1,4 @@
-import { createHandler, logRequestFailure, splitHeaders, withTrustedUpstream, type HandlerOptions, type TrustedUpstream } from '@sharedid-edge/core';
+import { createHandler, fetchForward, logRequestFailure, splitHeaders, withTrustedUpstream, type HandlerOptions, type TrustedUpstream } from '@sharedid-edge/core';
 import { encodeBody, nonEmpty } from './body.js';
 import type { LambdaEventV2, LambdaResultV2 } from './event.js';
 import { platformInfo, type PlatformOptions } from './platform.js';
@@ -23,7 +23,7 @@ export type LambdaHandler = (event: LambdaEventV2) => Promise<LambdaResultV2>;
 
 /** Builds a Lambda handler around the core SharedID Edge handler. */
 export function createLambdaHandler(options: LambdaHandlerOptions = {}): LambdaHandler {
-  const handler = withTrustedUpstream(createHandler(options), options.upstream);
+  const handler = withTrustedUpstream(createHandler({ forwardFetch: fetchForward, ...options }), options.upstream);
   return async event => {
     try {
       const request = toRequest(event, options.publicOrigin);
@@ -64,8 +64,21 @@ function toRequest(event: LambdaEventV2, publicOrigin: string | undefined): Requ
   const origin = publicOrigin ?? `https://${host}`;
   const query = event.rawQueryString ?? '';
   const url = new URL(`${event.rawPath}${query === '' ? '' : `?${query}`}`, origin);
-  // Without the body: no route reads one, so it is never decoded before its 405.
-  return new Request(url, { method: event.requestContext.http.method.toUpperCase(), headers });
+  const method = event.requestContext.http.method.toUpperCase();
+  // Only a POST keeps its body (a forwarding module's path reads one), as a stream decoded when it's first read: core
+  // reads it only when a forwarding module forwards, so no other route decodes it before its 405.
+  const { body } = event;
+  if (method !== 'POST' || body === undefined || body === '') return new Request(url, { method, headers });
+  // A high-water mark of 0, so the stream doesn't pull (and decode) before anything reads it.
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(event.isBase64Encoded === true ? Buffer.from(body, 'base64') : new TextEncoder().encode(body));
+      controller.close();
+    }
+  }, { highWaterMark: 0 });
+  // `duplex` (Node.js needs it for a stream body) isn't in the DOM library's RequestInit.
+  const init: RequestInit & { readonly duplex: 'half' } = { method, headers, body: stream, duplex: 'half' };
+  return new Request(url, init);
 }
 
 async function toResult(response: Response, method: string): Promise<LambdaResultV2> {

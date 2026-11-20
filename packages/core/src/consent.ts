@@ -100,12 +100,17 @@ export function storageDecisionWith(config: Pick<SharedIdEdgeConfig, 'vendorId'>
  * Whether the SharedID cookie may be set or refreshed, without consent providers: {@link storageDecisionWith}'s steps 1,
  * 3, 5 and 6. Builds without consent hooks call it directly (see the handler), so they don't carry the rest.
  */
+/** Why a TC string that couldn't be decoded denies: it's invalid, or (NO_TCF) this build doesn't decode TC strings. */
+export function unreadableTcString(): string {
+  return (globalThis as TcfFlag).__SID_NO_TCF__ === true ? TCF_NOT_DECODED : 'tcf: invalid TC string';
+}
+
 export function storageDecision(config: Pick<SharedIdEdgeConfig, 'vendorId'>, consent: ConsentContext): StorageDecision {
   if (consent.gpc) return { allowed: false, reason: 'gpc' };
   if (consent.coppa) return { allowed: false, reason: 'coppa' };
   if (consent.tcString !== undefined) {
     const tcf = consent.tcf;
-    if (tcf === undefined) return { allowed: false, reason: (globalThis as TcfFlag).__SID_NO_TCF__ === true ? TCF_NOT_DECODED : 'tcf: invalid TC string' };
+    if (tcf === undefined) return { allowed: false, reason: unreadableTcString() };
     if (config.vendorId !== undefined) {
       if (!tcf.vendorConsent(config.vendorId)) return { allowed: false, reason: `tcf: no consent for vendor ${String(config.vendorId)}` };
       return purposeDecision(tcf.purposeConsents, tcf.purposeLegitimateInterests, 'vendor');

@@ -23,6 +23,9 @@ import { cmpSettings } from '@sharedid-edge/module-cmp';
 const ROOT = resolve(import.meta.dirname, '..');
 // The conformance runner's case loader (built by `npm run build`).
 const { loadCaseFiles } = await import(pathToFileURL(resolve(ROOT, '../../../conformance/dist/cases.js')).href);
+// The conformance suite's stand-in for the hosts forwarding modules reach (Google's tag gateway): the Snippet and the
+// Worker run in this process, and their forwarded requests get its answer, never the internet's.
+await import(pathToFileURL(resolve(ROOT, '../../../conformance/dist/upstream-preload.js')).href);
 const BUILD = join(ROOT, 'scripts', 'build-snippet.mjs');
 const temp = mkdtempSync(join(tmpdir(), 'sid-snippet-test-'));
 const ID = 'c29cb2ae-769d-42f6-891a-f53cadee823d';
@@ -36,7 +39,8 @@ const MODULES = {
   ua: ['@sharedid-edge/module-ua', 'uaModule'],
   clickid: ['@sharedid-edge/module-clickid', 'clickIdModule'],
   cmp: ['@sharedid-edge/module-cmp', 'cmpModule'],
-  gpp: ['@sharedid-edge/module-gpp', 'gppModule']
+  gpp: ['@sharedid-edge/module-gpp', 'gppModule'],
+  'tag-gateway': ['@sharedid-edge/module-tag-gateway', 'tagGatewayModule']
 };
 /** Settings a Snippet refuses (secrets, trusted upstream): case files with them aren't Snippet configurations. */
 const NOT_SNIPPET = /^SID_(MODULE_SECRETS|UPSTREAM_|CLIENT_IP_HEADER$|LOCATION_HEADERS$)/;

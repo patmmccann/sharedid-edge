@@ -512,18 +512,21 @@ describe('settings read per request', () => {
     expect(build).toHaveBeenCalledTimes(3);
   });
 
-  it('withPublicOrigin moves the request to the public origin, keeping the path, query, method and headers, not the body', async () => {
+  it('withPublicOrigin moves the request to the public origin, keeping the path, query, method and headers, and only a POST body, unread', async () => {
     const request = new Request('http://10.0.0.5:8080/_sid/v1?gdpr=1', { headers: { cookie: 'a=1' } });
     expect(await withPublicOrigin(request, undefined)).toBe(request);
     const moved = await withPublicOrigin(request, 'https://www.example.com');
     expect(moved.url).toBe('https://www.example.com/_sid/v1?gdpr=1');
     expect(moved.headers.get('cookie')).toBe('a=1');
-    // No route reads a body, so it's neither copied nor read: a large one costs nothing before its 405.
-    const original = new Request('http://10.0.0.5/_sid/v1', { method: 'POST', body: 'x' });
+    // A POST keeps its body as a stream, unread: only a forwarding module's path reads one, and only when it forwards.
+    const original = new Request('http://10.0.0.5/metrics/g/collect', { method: 'POST', body: 'x' });
     const posted = await withPublicOrigin(original, 'https://www.example.com');
     expect(posted.method).toBe('POST');
-    expect(posted.body).toBeNull();
     expect(original.bodyUsed).toBe(false);
+    expect(await posted.text()).toBe('x');
+    // No other method's body is copied: no route reads one, so a large one costs nothing before its 405.
+    const put = await withPublicOrigin(new Request('http://10.0.0.5/_sid/v1', { method: 'PUT', body: 'x' }), 'https://www.example.com');
+    expect(put.body).toBeNull();
   });
 });
 

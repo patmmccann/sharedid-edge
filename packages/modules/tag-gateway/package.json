@@ -1,0 +1,49 @@
+{
+  "name": "@sharedid-edge/module-tag-gateway",
+  "version": "0.1.0",
+  "description": "SharedID Edge module (opt-in): serves Google's tag gateway for advertisers from a path on the site, forwarding to *.fps.goog only when privacy signals allow",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.tsbuildinfo"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "attw": "attw --pack . --profile esm-only --quiet || attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "@sharedid-edge/core": "0.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patmmccann/sharedid-edge.git",
+    "directory": "packages/modules/tag-gateway"
+  },
+  "sharedidEdge": {
+    "kind": "module",
+    "name": "tag-gateway",
+    "title": "Google's tag gateway for advertisers on your own path",
+    "summary": "Nothing in the payload but its `forwards` report: serves the Google tag and its measurement requests from a path on your site (`/metrics`), forwarding them to Google's tag gateway (`<tag ID>.fps.goog`), with the client IP and location only when consent allows, and nothing on opt-out, COPPA, GPC (by default) or without TCF purposes 1 and 7 where GDPR applies",
+    "export": "tagGatewayModule",
+    "optIn": true,
+    "forwards": [
+      "*.fps.goog"
+    ],
+    "settings": "`tags` (each `id` and `path`, **required**), `gpc` (`block` or `forward-anonymous`)",
+    "routes": [
+      "v1"
+    ]
+  }
+}

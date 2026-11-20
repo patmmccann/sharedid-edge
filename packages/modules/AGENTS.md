@@ -5,7 +5,7 @@ The modules this project maintains, listed in the [module index](../../docs/modu
 - **Project modules are built in,** unless they're [opt-in](#opt-in-modules). Every adapter bundles them through `builtInModules` (`all/src/index.ts`); a new module is added there, never to an adapter. Being built in doesn't turn a module on: it does nothing until listed in `SID_MODULES`.
 - **A package per module,** depending only on `@sharedid-edge/core`'s public API (and, where it saves duplicating code, another project module's exports, as the `ec` vendor module uses `ip`'s parser). Core never depends on a module.
 - **Platform-neutral**, like core: `lib: ["ES2023", "WebWorker"]`, no Node or DOM types, no runtime dependencies besides core (the exception is `ua`, which bundles `isbot`, and `bowser` in opt-in builds; see its `AGENTS.md`). Platform data comes through `PlatformInfo`, never `request.cf` or headers read directly; add new fields to `PlatformInfo` in core and to the adapters.
-- **No network calls,** and no data updates during requests.
+- **No network calls,** and no data updates during requests. The one exception is a [forwarding module](#forwarding-modules), which passes requests on to the hosts it declares, through core's `forward`, never `fetch` itself.
 - **Scheduled reference data** uses the opt-in [updater](../data-updates/README.md). Adapter setup/background work loads validated snapshots from private storage; a module's `run` reads only the in-memory copy. Downloads and conversion run on the scheduler or administrative command. `stale: true` reports missing or old data while usable last-good output may still contribute; an expiry may drop it. Never give an updater request context or cache visitor data with the reference data.
 - **Nothing from a request outlives it.** A module object, and anything at a module's top level, can serve many visitors in turn: adapters keep a handler for as long as the settings don't change, and the Fastly adapter's reusable-sandbox build keeps the whole JavaScript instance from one request to the next. So keep no request data (IP, cookies, consent, IDs, headers, location, User-Agent) in module-level variables, closures made at setup, or caches; derive everything from the context on each run. Caches of constants or of configuration are fine. Don't write to `config` or `secrets` (they're frozen: the write throws and the module reports `error`), and don't use a module-level regular expression with the `g` or `y` flag, whose `lastIndex` carries over between calls.
 
@@ -53,6 +53,34 @@ consent({ cookies, config }) {   // synchronous; the request, URL, cookies, plat
 ## Opt-in modules
 
 A project module that most deployments don't need, or that would make every build bigger, is opt-in: `"optIn": true` and `"export"` in its `sharedidEdge` block, and not in `builtInModules`. Deployers add it as `<package>#<export>` like a vendor module (see [Opt-in project modules](../../docs/development.md#opt-in-project-modules)). `node scripts/docs.mjs` checks the built-in list against the flag. Its conformance cases use `"build": ["vendor-modules"]`, the opt-in build, which adds the opt-in project modules too. List it in the Snippet build's `MODULES` if it fits there: a Snippet bundles only the modules `SID_MODULES` names. [`cmp`](cmp/README.md), [`gpp`](gpp/README.md) and [`encrypted-ip`](encrypted-ip/README.md) are three.
+
+## Forwarding modules
+
+A module can own paths on the site, outside the base path, and answer them by forwarding requests to a service it names: [`tag-gateway`](tag-gateway/README.md) serves Google's tag gateway from `/metrics` this way. Spec: [Forwarding modules](../../spec/SPEC.md#forwarding-modules).
+
+```ts
+forwarding: {
+  hosts: ['*.example-service.com'],             // declared in code, and as "forwards" in its sharedidEdge block
+  paths: config => settings(config).paths,      // the prefixes it owns, from its settings; throw on invalid ones
+  anonymousOnGpc: config => settings(config).gpc === 'forward-anonymous',   // optional; default: GPC blocks
+  async serve({ decision, forward, request, url, platform, consent, cookies, body }) {
+    if (!decision.forward) return new Response(null, { status: 204 });      // answer without sending anything
+    return forward(`https://a.example-service.com${url.pathname}`, { method: request.method, headers });
+  }
+}
+```
+
+The rules, from the maintainer's decision on forwarding (#28, 2026-11-10), which every forwarding module, project or vendor, follows:
+
+- **Off by default, with an explicit host list.** A forwarding module is an [opt-in module](#opt-in-modules) (`"optIn": true`; vendor modules always are): it isn't in `builtInModules`, owns no path until it's in `SID_MODULES` and configured, and reaches only `forwarding.hosts`, which core enforces on every request (`forward` refuses any other host, `http`, other ports and credentials, and doesn't follow redirects). Never an open proxy: no setting may name the host, and the URL is built from the configuration, never from the request's `Host` or forwarding headers. The default builds define `__SID_NO_FORWARDING__`, so a forwarding module added to `builtInModules` would be ignored there.
+- **Disclosed prominently.** The README starts, before its first section, with a box (a blockquote beginning `> **⚠ This module forwards data to`, naming every host in backticks) stating **what** is sent, to **which host**, **when**, and under **which consent conditions**. List the hosts as `forwards` in the `sharedidEdge` block: the generated module index marks the row "⚠ forwards data to `<host>`". `npm run check:docs` fails without the box, or when a host in `forwards` isn't in the box or the module's code.
+- **Report, without values.** Core adds `forwards` (whether this visitor's requests are forwarded) to the module's `ext.modules` report on `/v1`, and `X-SharedID-Forwarding` to its responses. Never put request data in either, or anywhere else.
+- **Co-located where possible.** Prefer a service on the same platform and network as the worker (a Cloudflare service binding, a container on the same host or VPC, server-side GTM behind the same load balancer). Forwarding to a distant third party over the public internet is the exception, and the README justifies it (`tag-gateway`: Google's gateway exists only there, and Cloudflare's built-in integration is the preferred option on Cloudflare).
+- **Still subject to the privacy lines.** Core decides before the module runs: nothing is sent on opt-out, COPPA, a consent provider's denial, an unreadable TC string, or where GDPR applies without a TC string or without the module's `purposes` in its publisher segment; with GPC, nothing unless `anonymousOnGpc` says so, and then core strips every client address header. Pick `purposes` for what the service does with the data, and document them. Send the full IP and precise location only when `preciseLocationDenial(consent)` allows, from `PlatformInfo`, in full or not at all. Never copy the request's own `X-Forwarded-*`, client IP or CDN location headers: pass on an allow-list of request headers and cookies, not everything but a deny-list.
+- **Harmless when blocked.** A blocked request still gets the module's answer, which mustn't break the page (an empty script, a `204`) and carries nothing from the other service.
+- **Bounded.** Core reads a `POST` body (at most 64 KiB) only when the decision forwards, and gives it as `body`; never read `request.body` yourself. `forward` gives up after 10 seconds; a failure is a `502`. Don't cache visitor requests or responses; set `Cache-Control` to what the service's documentation allows.
+- **Platforms.** Adapters that can send requests pass `forwardFetch` (core's `fetchForward`); the others refuse a forwarding module in `SID_MODULES` (a 500, not ignored). Say in the README which platforms work, and why the others don't.
+- **Tests never reach the service:** unit tests pass a stub as `forwardFetch`; conformance cases run against the local stand-in in `conformance/src/upstream-stand-in.ts` (add the service's hosts there).
 
 ## Reporting traffic: bots, proxies, internal visitors
 

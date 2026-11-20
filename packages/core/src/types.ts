@@ -85,4 +85,9 @@ export interface ModuleReport {
   readonly stale?: true;
   /** Why the module was skipped, for example missing consent. */
   readonly reason?: string;
+  /**
+   * A forwarding module's: whether this visitor's requests to its paths are passed on (anonymously included). Nothing
+   * about the requests themselves.
+   */
+  readonly forwards?: boolean;
 }

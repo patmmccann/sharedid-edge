@@ -100,6 +100,8 @@ npm run bundle -w @sharedid-edge/gcp-functions -- --module @sharedid-edge/module
 
 Then list it in `SID_MODULES`, with its settings and secrets (the [`ec` README](../../vendor-modules/ec/README.md#turning-it-on)). Without `--module`, `SID_MODULES=ec` reports `ec` as `skipped` (`not installed`) and sets no `ts-ec`. `ec` used to be built in: if you deploy it, add `--module` to your build before you next bundle. The bundle's size is reported but the 32 KB budget isn't enforced with opt-in modules; `--bowser` and `--module` can be combined.
 
+**Forwarding modules (opt-in).** [`tag-gateway`](../../modules/tag-gateway/README.md) serves Google's tag gateway from a path on your site, forwarding to Google (its README starts with what it sends, and when). It works here: add it with `--module @sharedid-edge/module-tag-gateway#tagGatewayModule`, and add a path rule for its path (`/metrics/*`) to the URL map, to the function's backend, like the `/_sid/*` one. A `POST` hit's body reaches it unread, and is read only when it's forwarded. See its [Platforms](../../modules/tag-gateway/README.md#platforms) table.
+
 To parse User-Agents fully with Bowser in the `ua` module, bundle with `npm run bundle:bowser -w @sharedid-edge/gcp-functions` instead (see the [`ua` module](../../modules/ua/README.md)). Rebuild and bundle after updating the code.
 
 ## Deploy with Terraform

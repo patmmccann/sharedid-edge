@@ -1,5 +1,6 @@
 import { isRecord, type SharedIdEdgeConfig } from './config.js';
 import type { ConsentContext, ConsentSignal, StorageDecision } from './consent.js';
+import { checkForwarding, type ModuleForwarding } from './forwarding.js';
 import { trafficReport, type TrafficEntry, type TrafficReport } from './traffic.js';
 import type { EncryptedIp, EncryptedIpValue, Eid, ModuleReport, PlatformInfo } from './types.js';
 
@@ -146,7 +147,8 @@ export interface ModuleResult {
 
 /**
  * A module adds IDs or signals to the `{basePath}/v1` payload. Modules work only from what the worker already has
- * (the request, platform data, consent, configuration, bundled data); they make no network calls.
+ * (the request, platform data, consent, configuration, bundled data); they make no network calls. A forwarding module
+ * (`forwarding`) also passes requests on to the hosts it declares, through core.
  */
 export interface EdgeModule {
   /** Unique name; also the key in `SID_MODULES` and `SID_MODULE_CONFIG`. Lowercase letters, digits and `-`. */
@@ -178,6 +180,12 @@ export interface EdgeModule {
    * been turned off are cleaned up too. Only cookies the browser sent are deleted. Each must have `maxAgeSeconds: 0`.
    */
   optOutCookies?(config: Readonly<Record<string, unknown>>): readonly ModuleCookie[];
+  /**
+   * Makes it a forwarding module: it owns the paths its settings name, outside the base path, and answers requests
+   * under them by passing them on to the hosts it declares, through core (spec: "Forwarding modules"). Off unless it's in
+   * `SID_MODULES` and configured; the adapter must support forwarding (`HandlerOptions.forwardFetch`).
+   */
+  readonly forwarding?: ModuleForwarding;
 }
 
 const MODULE_NAME = /^[a-z][a-z0-9-]{0,63}$/;
@@ -195,6 +203,8 @@ export function defineModule(module: EdgeModule): EdgeModule {
     if (routes !== undefined && (routes.length === 0 || new Set(routes).size !== routes.length || !routes.every(r => r === 'v1' || r === 'sync'))) {
       throw new TypeError(`Module ${module.name}: routes must be a non-empty list of "v1" and "sync" without repeats`);
     }
+    // Builds without a forwarding module leave the check out (NO_FORWARDING in handler.ts).
+    if ((globalThis as { __SID_NO_FORWARDING__?: boolean }).__SID_NO_FORWARDING__ !== true && module.forwarding !== undefined) checkForwarding(module.name, module.forwarding);
   }
   if (module.routes !== undefined) return Object.freeze({ ...module, routes: Object.freeze([...module.routes]) });
   return Object.freeze({ ...module });
@@ -435,7 +445,7 @@ function checkModuleCookie(cookie: ModuleCookie, config: SharedIdEdgeConfig): vo
  * must all have publisher consent (modules without a `gvlid` act for the publisher). Vendor consent isn't decoded yet,
  * so a module with a `gvlid` doesn't run when GDPR applies.
  */
-function consentDenial(module: EdgeModule, consent: ConsentContext): string | undefined {
+export function consentDenial(module: EdgeModule, consent: ConsentContext): string | undefined {
   if (consent.gdprApplies !== true) return undefined;
   if (module.gvlid !== undefined) return 'tcf: vendor consent is not checked yet';
   const purposes = module.purposes ?? [];

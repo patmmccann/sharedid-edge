@@ -1,0 +1,23 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The tag-gateway module built in and configured, but not listed in SID_MODULES: it owns no path, so nothing is forwarded, and the SharedID routes are unchanged.",
+  "build": ["vendor-modules"],
+  "config": { "SID_MODULE_CONFIG": "{\"tag-gateway\":{\"tags\":[{\"id\":\"G-12345\",\"path\":\"/metrics\"}]}}" },
+  "cases": [
+    {
+      "name": "a hit gets 404",
+      "request": {"path":"/metrics/g/collect?v=2&tid=G-12345&en=page_view"},
+      "expect": {"status":404,"noCookies":true,"absentHeaders":["x-sharedid-forwarding"]}
+    },
+    {
+      "name": "the script gets 404",
+      "request": {"path":"/metrics/","headers":{"sec-fetch-dest":"script"}},
+      "expect": {"status":404,"noCookies":true}
+    },
+    {
+      "name": "/v1 is unchanged and reports nothing for the module",
+      "request": {"path":"/_sid/v1"},
+      "expect": {"status":200,"cookies":[{"name":"_pubcid"}],"jsonAbsent":["ext.modules.tag-gateway"]}
+    }
+  ]
+}

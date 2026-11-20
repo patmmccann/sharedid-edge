@@ -1,5 +1,5 @@
 export { createHandler, MAX_COOKIE_BYTES, MAX_URL_BYTES, ROUTES, type HandlerOptions, type RateLimiter, type RateLimitRequest, type SharedIdEdgeHandler } from './handler.js';
-export { booleanFromEnv, cachedByEnv, handlerOrMisconfigured, headerValue, isHeaderName, logRequestFailure, parseHeaderMap, parseViewerAddress, publicOriginFromEnv, SETTING_NAMES, splitHeaders, withPublicOrigin, type SplitHeaders } from './adapter.js';
+export { booleanFromEnv, cachedByEnv, fetchForward, handlerOrMisconfigured, headerValue, isHeaderName, logRequestFailure, parseHeaderMap, parseViewerAddress, publicOriginFromEnv, SETTING_NAMES, splitHeaders, withPublicOrigin, type SplitHeaders } from './adapter.js';
 export { configForHost, hostKey, hostOverrides, resolveHosts, settingsFromEnv, type EnvSettings } from './hosts.js';
 export {
   clientIpFromHeader,
@@ -56,6 +56,17 @@ export {
   type ModuleRoute,
   type ModuleRunOutput
 } from './modules.js';
+export {
+  declaredHost,
+  FORWARD_TIMEOUT_MS,
+  forwardingPaths,
+  MAX_FORWARD_BODY_BYTES,
+  type ForwardContext,
+  type ForwardDecision,
+  type ForwardFetch,
+  type ForwardInit,
+  type ModuleForwarding
+} from './forwarding.js';
 export {
   BOT_KINDS,
   mergeTraffic,

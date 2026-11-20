@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createHandler, logRequestFailure, type HandlerOptions } from '@sharedid-edge/core';
+import { createHandler, fetchForward, logRequestFailure, type HandlerOptions } from '@sharedid-edge/core';
 import { sendWebResponse, toWebRequest } from '@sharedid-edge/node';
 import { platformInfo, type PlatformOptions } from './platform.js';
 
@@ -20,7 +20,7 @@ export type GcpHandler = (req: IncomingMessage, res: ServerResponse) => Promise<
 
 /** Builds an HTTP function around the core SharedID Edge handler, with `@sharedid-edge/node`'s conversion. */
 export function createGcpHandler(options: GcpHandlerOptions = {}): GcpHandler {
-  const handler = createHandler(options);
+  const handler = createHandler({ forwardFetch: fetchForward, ...options });
   return async (req, res) => {
     try {
       const origin = options.publicOrigin ?? `https://${req.headers.host ?? 'localhost'}`;
