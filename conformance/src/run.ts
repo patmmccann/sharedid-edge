@@ -5,7 +5,7 @@ import { startTarget, type TargetName } from './targets.js';
 
 const USAGE = `Usage:
   conformance --target node|docker|wrangler|lambda|lambda-aws-emulator|lambda-edge|lambda-edge-viewer|vercel|azure|gcp|akamai|fastly  start each configuration locally and run every case
-  conformance --base-url https://...                                                             run the default-configuration cases against a deployment`;
+  conformance --base-url https://.../_sid                                                        run the default-configuration cases against a deployment, under its base path`;
 
 interface FileResult {
   readonly failed: number;
@@ -59,6 +59,16 @@ async function runFile(baseUrl: string, file: CaseFile, adaptHeaders?: HeaderAda
   return { failed, limited };
 }
 
+/**
+ * The cases' paths are under the default base path, `/_sid`. A `--base-url` with another base path
+ * (`https://www.example.com/node-upstream/_sid`) moves them under it; with `/_sid`, or none, they stay as they are.
+ */
+function underBasePath(file: CaseFile, baseUrl: string): CaseFile {
+  const base = new URL(baseUrl).pathname.replace(/\/+$/, '');
+  if (base === '' || base === '/_sid') return file;
+  return { ...file, cases: file.cases.map(testCase => ({ ...testCase, request: { ...testCase.request, path: testCase.request.path.replace(/^\/_sid(?=[/?]|$)/, base) } })) };
+}
+
 async function main(): Promise<number> {
   const { values } = parseArgs({ options: { target: { type: 'string' }, 'base-url': { type: 'string' } } });
   const files = await loadCaseFiles();
@@ -71,7 +81,7 @@ async function main(): Promise<number> {
     // itself (`live: false`).
     for (const file of files.filter(f => Object.keys(f.config).length === 0 && f.build.length === 0 && f.live)) {
       total += file.cases.length;
-      failed += (await runFile(values['base-url'], file)).failed;
+      failed += (await runFile(values['base-url'], underBasePath(file, values['base-url']))).failed;
     }
   } else if (values.target === 'node' || values.target === 'docker' || values.target === 'wrangler' || values.target === 'lambda' || values.target === 'lambda-aws-emulator' || values.target === 'lambda-edge' || values.target === 'lambda-edge-viewer' || values.target === 'vercel' || values.target === 'azure' || values.target === 'gcp' || values.target === 'akamai' || values.target === 'fastly') {
     const target: TargetName = values.target;
