@@ -322,6 +322,160 @@ jobs:
         env:
           WRANGLER_SEND_METRICS: 'false'
 
+  # The Node.js server's container image (packages/adapters/node/Dockerfile), built from the commit and never pushed:
+  # no registry, no credentials. The release workflow (container.yml) publishes it, on release tags only. Its layers are
+  # cached in GitHub Actions' cache, shared with container-e2e.
+  container:
+    name: Container image (build, smoke tests, conformance behind nginx)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMAGE: sharedid-edge-node:conformance
+      # Uncompressed, as `docker image inspect` reports it: the node:24-alpine base and the server's files. Raise it
+      # deliberately, saying why (README.md, Run in a container).
+      SIZE_BUDGET_MB: 200
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the image (linux/amd64, not pushed)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: packages/adapters/node/Dockerfile
+          tags: ${{ env.IMAGE }}
+          load: true
+          build-args: |
+            VERSION=ci
+            REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=node-image
+          cache-to: type=gha,scope=node-image,mode=max
+      - name: Size budget, non-root user, labels
+        run: |
+          size=$(docker image inspect -f '{{.Size}}' "$IMAGE")
+          echo "Image size: $((size / 1024 / 1024)) MB (budget $SIZE_BUDGET_MB MB)"
+          [ "$size" -le $((SIZE_BUDGET_MB * 1024 * 1024)) ] || { echo "::error::The image is over its $SIZE_BUDGET_MB MB budget"; exit 1; }
+          user=$(docker image inspect -f '{{.Config.User}}' "$IMAGE")
+          [ "$user" = 1000:1000 ] || { echo "::error::The image runs as '$user', not 1000:1000"; exit 1; }
+          [ "$(docker run --rm --entrypoint id "$IMAGE" -u)" = 1000 ]
+          docker image inspect -f '{{json .Config.Labels}}' "$IMAGE"
+          [ "$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.licenses"}}' "$IMAGE")" = Apache-2.0 ]
+          [ "$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")" = "$GITHUB_SHA" ]
+      # A misconfigured container must stop at once, before it listens: exit code 1 and "Configuration error: …".
+      - name: Invalid configuration stops the container at start-up
+        run: |
+          expect_config_error() {
+            set +e; out=$(docker run --rm "$@" "$IMAGE" 2>&1); code=$?; set -e
+            echo "$out"
+            [ "$code" -eq 1 ] && echo "$out" | grep -q '^Configuration error: ' || { echo "::error::Expected exit code 1 and a configuration error, got $code"; exit 1; }
+          }
+          expect_config_error                                                           # no SID_COOKIE_DOMAIN
+          expect_config_error -e SID_COOKIE_DOMAIN=host-only -e SID_MODULES=nope        # an unknown module
+          expect_config_error -e SID_COOKIE_DOMAIN=host-only -e SID_MODULE_SECRETS_FILE=/run/secrets/missing
+      # The image's HEALTHCHECK (GET /healthz on HEALTH_PORT) turns healthy; the public port answers only SharedID
+      # Edge's routes; a secret file mounted as Docker does is read; and SIGTERM stops it at once, with exit code 0.
+      - name: Health check, secret file, SIGTERM
+        run: |
+          secrets="$RUNNER_TEMP/module-secrets.json"
+          echo '{}' > "$secrets"
+          docker run -d --name sid --health-interval 1s -p 127.0.0.1:8787:8787 \
+            -e SID_COOKIE_DOMAIN=host-only -e SID_MODULE_SECRETS_FILE=/run/secrets/sid -v "$secrets:/run/secrets/sid:ro" "$IMAGE"
+          for _ in $(seq 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' sid)" = healthy ] && break
+            sleep 1
+          done
+          docker inspect -f '{{.State.Health.Status}}' sid | grep -qx healthy || { docker logs sid; exit 1; }
+          curl -fsS http://127.0.0.1:8787/_sid/v1
+          [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8787/healthz)" = 404 ]
+          start=$(date +%s)
+          docker stop sid
+          [ $(( $(date +%s) - start )) -lt 5 ] || { echo "::error::SIGTERM didn't stop the server promptly"; exit 1; }
+          [ "$(docker inspect -f '{{.State.ExitCode}}' sid)" = 0 ]
+          docker logs sid
+          docker rm sid
+      # As in the conformance-fastly job: nginx overwrites X-Forwarded-For with the connecting address, so the relay
+      # (conformance/src/docker-nginx.ts) sends each request from the case's client IP, which must be local.
+      - name: Make the cases' client IP ranges local
+        run: |
+          sudo sysctl -q -w net.ipv4.ip_nonlocal_bind=1 net.ipv6.ip_nonlocal_bind=1
+          for range in 192.0.2.0/24 198.51.100.0/24 203.0.113.0/24 203.0.114.0/24; do sudo ip route add local "$range" dev lo; done
+          sudo ip -6 route add local 2001:db8::/32 dev lo
+      - run: npm ci
+      - run: npm run build
+      - name: Conformance suite against the image behind nginx (the README's snippet)
+        run: npm run conformance:docker -w @sharedid-edge/conformance
+
+  # The docker-compose example (packages/adapters/node/examples), started as written, with the browser tests' settings
+  # (e2e/container/compose.e2e.yml) and their page as the site: nginx serves the page and sends /_sid/ to the image,
+  # on one hostname. Unmodified Prebid.js in each browser, against http://www.sharedid.test:8080.
+  container-e2e:
+    name: Prebid.js end to end, container behind nginx (${{ matrix.browser }})
+    needs: container
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    env:
+      SHAREDID_IMAGE: sharedid-edge-node:e2e
+      SID_COOKIE_DOMAIN: sharedid.test
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - uses: docker/setup-buildx-action@v4
+      - name: Build the image (from the container job's cache)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: packages/adapters/node/Dockerfile
+          tags: ${{ env.SHAREDID_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=node-image
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: npm ci
+      - name: The page's Prebid.js bundle
+        run: npm run bundle-prebid --prefix e2e
+      - name: Start the compose example
+        env:
+          SITE_ROOT: ${{ github.workspace }}/e2e/site/public
+        run: |
+          echo "127.0.0.1 www.sharedid.test" | sudo tee -a /etc/hosts
+          docker compose -f packages/adapters/node/examples/docker-compose.yml -f e2e/container/compose.e2e.yml up -d --wait
+          curl -fsS http://www.sharedid.test:8080/_sid/v1
+      - name: Install the browser and its system dependencies
+        uses: ./.github/actions/install-browser
+        with:
+          browser: ${{ matrix.browser }}
+      - name: Unmodified Prebid.js against the container behind nginx (${{ matrix.browser }})
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: http://www.sharedid.test:8080
+          E2E_COOKIE_DOMAIN: sharedid.test
+        run: npx playwright test --project=${{ matrix.browser }}
+      - name: The stack's logs
+        if: failure()
+        run: docker compose -f packages/adapters/node/examples/docker-compose.yml -f e2e/container/compose.e2e.yml logs
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-container-${{ matrix.browser }}
+          path: e2e/test-results
+          retention-days: 7
+
   # The browser tests run per browser. Chromium goes first; Firefox and WebKit start only once it passes, so a
   # change that breaks the Prebid.js contract fails fast in one job instead of three.
   e2e-chromium:

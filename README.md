@@ -38,7 +38,7 @@ Deploy on the platform that serves your site. Each guide works on its own, from 
 | [Cloudflare Workers](packages/adapters/cloudflare/README.md) | A Worker on a route of your proxied Cloudflare zone (`www.example.com/_sid/*`). |
 | [Fastly Compute](packages/adapters/fastly/README.md) | A Fastly Compute (JavaScript) service on your site's `/_sid/*` path. |
 | [Google Cloud (Cloud Run functions and Load Balancing)](packages/adapters/gcp-functions/README.md) | A Cloud Run function behind a `/_sid/*` path rule of your site's external Application Load Balancer. |
-| [Node.js (self-hosted)](packages/adapters/node/README.md) | A Node.js server behind the web server or load balancer that serves your site. |
+| [Node.js (self-hosted)](packages/adapters/node/README.md) | A Node.js server, or its container image, behind the web server or load balancer that serves your site. |
 | [Vercel](packages/adapters/vercel/README.md) | A Next.js route handler, or Routing Middleware, in your site's Vercel project. |
 <!-- generated:platforms:end -->
 

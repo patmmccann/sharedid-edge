@@ -34,3 +34,13 @@ updates:
     directory: /
     schedule:
       interval: monthly
+
+  # The Node.js server's container image: its node:24-alpine base (packages/adapters/node/Dockerfile). Stay on Node.js
+  # 24, the version engines and .nvmrc require: bump the major with them.
+  - package-ecosystem: docker
+    directory: /packages/adapters/node
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: node
+        update-types: ['version-update:semver-major']

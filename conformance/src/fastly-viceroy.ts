@@ -27,7 +27,7 @@ import { request as httpRequest, type IncomingHttpHeaders, type IncomingMessage 
 import { isIPv6 } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { caseClientIp, caseLocation, freePort, readBody, serve, type CaseLocationHeader } from './emulator.js';
+import { caseClientIp, caseLocation, forwardFrom, freePort, readBody, serveRelay, type CaseLocationHeader, type Relayed } from './emulator.js';
 
 /** The case location headers, as Fastly's geolocation fields. Fastly has no IANA time zone, so `cf-timezone` has none. */
 const GEO_FIELDS: Readonly<Partial<Record<CaseLocationHeader, string>>> = {
@@ -67,13 +67,6 @@ function geoEntry(location: readonly (readonly [field: string, value: string])[]
     }
   }
   return lines.sort();
-}
-
-interface Relayed {
-  readonly status: number;
-  /** Raw headers: name, value, name, value… */
-  readonly headers: string[];
-  readonly body: Buffer;
 }
 
 /** One Viceroy, for IPv4 (on 127.0.0.1) or IPv6 (on [::1]), with its geolocation entries. */
@@ -160,24 +153,7 @@ class Viceroy {
 
   /** Sends a request to Viceroy from the address `from`. */
   forward(method: string, path: string, from: string, headers: readonly string[], body: Buffer): Promise<Relayed> {
-    return new Promise((resolve, reject) => {
-      const upstream = httpRequest({ host: this.#host, port: this.#port, localAddress: from, method, path, headers: [...headers] }, res => {
-        readBody(res).then(bytes => {
-          const out: string[] = [];
-          for (let i = 0; i + 1 < res.rawHeaders.length; i += 2) {
-            const name = res.rawHeaders[i] ?? '';
-            if (!/^(transfer-encoding|connection|keep-alive)$/i.test(name)) out.push(name, res.rawHeaders[i + 1] ?? '');
-          }
-          resolve({ status: res.statusCode ?? 502, headers: out, body: bytes });
-        }, reject);
-      });
-      upstream.on('error', (error: NodeJS.ErrnoException) => {
-        reject(error.code === 'EADDRNOTAVAIL'
-          ? new Error(`the case's client IP ${from} isn't an address of this machine (on Linux: sudo ip route add local ${from} dev lo)`)
-          : error);
-      });
-      upstream.end(body);
-    });
+    return forwardFrom(this.#host, this.#port, from, method, path, headers, body);
   }
 }
 
@@ -292,17 +268,10 @@ export async function startFastlyTarget(options: FastlyTargetOptions): Promise<(
   };
 
   // One request at a time, since one may restart Viceroy.
-  let queue: Promise<unknown> = Promise.resolve();
-  const server = serve(options.port, 'Viceroy relay failed', async (req, res) => {
-    const result = queue.then(() => relay(req));
-    queue = result.catch(() => undefined);
-    const { status, headers, body } = await result;
-    res.writeHead(status, headers);
-    res.end(req.method === 'HEAD' ? undefined : body);
-  });
+  const closeRelay = serveRelay(options.port, 'Viceroy relay failed', relay, true);
 
   return async () => {
-    await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
+    await closeRelay();
     await stopAll();
   };
 }

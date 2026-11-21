@@ -1,0 +1,13 @@
+# The browser tests' settings for the container example (packages/adapters/node/examples/docker-compose.yml), as on
+# e2e.sharedid.dev: no pixel caching, reflect with uid1 and _ga, and clickid. CI (ci.yml, the container-e2e job) runs
+#
+#   docker compose -f packages/adapters/node/examples/docker-compose.yml -f e2e/container/compose.e2e.yml up -d --wait
+#
+# with SHAREDID_IMAGE (the image built from the commit), SID_COOKIE_DOMAIN=sharedid.test and SITE_ROOT (e2e's page),
+# then the Playwright tests against http://www.sharedid.test:8080.
+services:
+  sharedid:
+    environment:
+      SID_SYNC_CACHE_SECONDS: "0"
+      SID_MODULES: reflect,clickid
+      SID_MODULE_CONFIG: '{"reflect":{"cookies":[{"name":"uid1","maxAgeDays":365,"domain":"${SID_COOKIE_DOMAIN}","httpOnly":false,"restore":true},{"name":"_ga","maxAgeDays":400,"restore":true}]}}'
