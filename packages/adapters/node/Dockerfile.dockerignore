@@ -1,0 +1,14 @@
+# The image installs and builds from the lockfile and the sources (Dockerfile); paths are from the repository's root.
+.git
+.github
+**/node_modules
+**/dist
+**/.tsbuild
+**/.wrangler
+**/.sharedid-modules
+**/deploy*
+**/.jscpd-report
+e2e
+website
+docs
+templates

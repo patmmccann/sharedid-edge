@@ -150,3 +150,4 @@ export function utf8(latin1: string): string {
   return utf8Header(latin1);
 }
 export { loadModulePackages } from './module-packages.js';
+export { createHealthServer, HEALTH_PATH } from './health.js';
