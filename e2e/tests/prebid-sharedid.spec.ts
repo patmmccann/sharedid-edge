@@ -22,7 +22,7 @@ const test = base.extend<{ sid: SidLog }>({
   sid: async ({ page }, use) => {
     const seen: Request[] = [];
     page.on('request', request => {
-      if (new URL(request.url()).pathname.startsWith('/_sid/')) seen.push(request);
+      if (new URL(request.url()).pathname.startsWith(`${SID}/`)) seen.push(request);
     });
     await use({
       requests: () => Promise.all(seen.map(async request => {
@@ -47,6 +47,19 @@ const DAY = 86_400;
  */
 const COOKIE_DOMAIN = process.env['E2E_COOKIE_DOMAIN'];
 
+/**
+ * The site's path prefix (E2E_PATH, like `/node-upstream`), for a live setup that shares its hostname with another:
+ * the page is at `<prefix>/` and the endpoint at `<prefix>/_sid`. Empty by default: the page at `/`, the endpoint at
+ * `/_sid`. The page builds its pixelUrl from its own path (site/public/index.html).
+ */
+const PREFIX = (process.env['E2E_PATH'] ?? '').replace(/\/+$/, '');
+const SID = `${PREFIX}/_sid`;
+
+/** A page path (`/?consent=denied`) under the prefix. */
+function at(path: string): string {
+  return `${PREFIX}${path}`;
+}
+
 /** Where a test's own cookie goes: on the cookie domain, as a script on the site would write it, or host-only. */
 function cookieScope(baseURL: string | undefined): { domain: string; path: string } | { url: string } {
   return COOKIE_DOMAIN === undefined ? { url: String(baseURL) } : { domain: `.${COOKIE_DOMAIN}`, path: '/' };
@@ -61,8 +74,8 @@ function cookieScope(baseURL: string | undefined): { domain: string; path: strin
  */
 /** Loads the page (with a consent scenario from site/public/tcf.js: ?consent=denied, say) and waits for the sync. */
 async function visit(page: Page, path = '/'): Promise<Response> {
-  const sync = page.waitForResponse(response => new URL(response.url()).pathname === '/_sid/sync', { timeout: 15_000 });
-  await page.goto(path);
+  const sync = page.waitForResponse(response => new URL(response.url()).pathname === `${SID}/sync`, { timeout: 15_000 });
+  await page.goto(at(path));
   const response = await sync;
   expect(response.status()).toBe(200);
   return response;
@@ -108,7 +121,7 @@ function tcString(scenario: string): string {
 
 /** The sync of the page view: the one /_sid/sync request the page sent since the log was reset. */
 async function onlySync(sid: SidLog): Promise<SidRequest | undefined> {
-  const syncs = (await sid.requests()).filter(r => r.path.startsWith('/_sid/sync'));
+  const syncs = (await sid.requests()).filter(r => r.path.startsWith(`${SID}/sync`));
   expect(syncs).toHaveLength(1);
   return syncs[0];
 }
@@ -120,7 +133,7 @@ test('unmodified Prebid.js sharedIdSystem with pixelUrl gets a long-lived server
   // First visit: Prebid.js mints an id and sends it to pixelUrl before writing its own cookie.
   await visit(page);
   const [firstSync] = await sid.requests();
-  expect(firstSync?.path).toMatch(/^\/_sid\/sync\?id=pubcid(%253A|%3A|:)/);
+  expect(firstSync?.path).toMatch(new RegExp(`^${SID}/sync\\?id=pubcid(%253A|%3A|:)`));
   const first = syncedId(firstSync);
   expect(first).toMatch(/^[0-9a-f-]{36}$/);
 
@@ -187,16 +200,16 @@ test('without purpose 1 consent, neither Prebid.js nor the endpoint stores an id
   sid.reset();
 
   // The visitor withdraws purpose 1 consent (vendors and publisher): the denied scenario's TC string.
-  await page.goto('/?consent=denied');
+  await page.goto(at('/?consent=denied'));
   await expect.poll(() => gdprMeta(page)).toMatchObject({ gdprApplies: true });
   await page.waitForTimeout(1_500);
   // tcfControl stops sharedIdSystem: it writes no id and doesn't call pixelUrl.
   expect(await cookie(context, '_pubcid')).toBeUndefined();
-  expect((await sid.requests()).filter(r => r.path.startsWith('/_sid/sync'))).toEqual([]);
+  expect((await sid.requests()).filter(r => r.path.startsWith(`${SID}/sync`))).toEqual([]);
 
   // The endpoint reads the same TC string from euconsent-v2: it sets no id and deletes the recovery copy left from before.
   expect(await cookie(context, '_pubcid_sv')).toBeDefined();
-  const response = await page.request.get('/_sid/sync');
+  const response = await page.request.get(`${SID}/sync`);
   expect(response.status()).toBe(200);
   expect(response.headers()['x-sharedid-status']).toBe('denied: tcf: no publisher consent for purpose 1');
   expect(await cookie(context, '_pubcid')).toBeUndefined();
@@ -359,7 +372,7 @@ test('Prebid.js\'s own pixel call, with no /v1 fetch, refreshes a reflected cook
   await visit(page);
 
   const log = await sid.requests();
-  expect(log.map(r => new URL(r.path, 'http://x').pathname)).toEqual(['/_sid/sync']);
+  expect(log.map(r => new URL(r.path, 'http://x').pathname)).toEqual([`${SID}/sync`]);
   expect(log[0]?.cookie).toContain('uid1=AbC%2Fx+y/z==.v1');
   const uid1 = await cookie(context, 'uid1');
   expect(uid1?.value).toBe('AbC%2Fx+y/z==.v1');
@@ -444,7 +457,7 @@ test('a landing page\'s gclid is kept in a server-set _sid_gclid for 90 days, re
   await visit(page, `/?utm_source=e2e&gclid=${gclid}`);
   const log = await sid.requests();
   // No page code calls /_sid/v1: the click ID reached the worker through the pixel call alone.
-  expect(log.map(r => new URL(r.path, 'http://x').pathname)).toEqual(['/_sid/sync']);
+  expect(log.map(r => new URL(r.path, 'http://x').pathname)).toEqual([`${SID}/sync`]);
   const kept = await cookie(context, '_sid_gclid');
   expect(kept?.value).toMatch(new RegExp(`^[0-9]{10}\\.${gclid.replace('.', '\\.')}$`));
   expect(kept?.httpOnly).toBe(false);
@@ -459,10 +472,10 @@ test('a landing page\'s gclid is kept in a server-set _sid_gclid for 90 days, re
 });
 
 test('an opted-out user gets no id cookies from the endpoint', async ({ page, context }) => {
-  const optout = await page.request.get('/_sid/optout');
+  const optout = await page.request.get(`${SID}/optout`);
   expect(optout.status()).toBe(204);
   expect((await cookie(context, '_pubcid_optout'))?.value).toBe('1');
-  await page.goto('/');
+  await page.goto(at('/'));
   await page.waitForTimeout(1_500);
   // Prebid.js also checks _pubcid_optout, so it neither writes the id nor calls pixelUrl.
   expect(await cookie(context, '_pubcid')).toBeUndefined();
