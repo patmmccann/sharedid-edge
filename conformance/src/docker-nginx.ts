@@ -1,6 +1,7 @@
 // Runs the conformance suite against the Node.js server's container image (packages/adapters/node/Dockerfile) behind a
 // real nginx, configured with the README's snippet (packages/adapters/node/README.md, "Deploy behind your proxy"):
-// the base path to the server, `Host` passed on, `X-Forwarded-For` overwritten with the connecting address, no cache.
+// room for URLs over 8 KB, the base path to the server, `Host` passed on, `X-Forwarded-For` overwritten with the
+// connecting address, no cache.
 // No account: Docker on this machine (CI's ubuntu runners have it).
 //
 // Per case file, two containers on the host's network:
@@ -60,6 +61,7 @@ export function nginxConfig(basePath: string, listenPort: number, upstreamPort: 
     'server {',
     `    listen 127.0.0.1:${String(listenPort)};`,
     `    listen [::1]:${String(listenPort)};`,
+    '    large_client_header_buffers 4 16k;',
     ...(base === '' ? [] : [`    location ${base}/ {`, ...proxy, '    }']),
     '    # The site\'s application, in a real deployment; here the same server, for the cases outside the base path.',
     '    location / {',
