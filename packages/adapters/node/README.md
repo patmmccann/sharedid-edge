@@ -42,6 +42,10 @@ PORT=8787 SID_COOKIE_DOMAIN=example.com SID_PUBLIC_ORIGIN=https://www.example.co
 Forward `/_sid/` to the server, and make sure nothing caches it. With nginx:
 
 ```nginx
+# In the server block: nginx refuses a URL over 8 KB itself by default; let SharedID Edge answer it (an opt-out is
+# never refused for size).
+large_client_header_buffers 4 16k;
+
 location /_sid/ {
     proxy_pass http://127.0.0.1:8787;
     proxy_set_header Host $host;
@@ -52,6 +56,7 @@ location /_sid/ {
 
 - **Overwrite `X-Forwarded-For`:** use `$remote_addr`, not `$proxy_add_x_forwarded_for`. Appending keeps whatever the visitor sent first, and that's the entry the server trusts.
 - **Or name the CDN's client-IP header.** CDNs such as CloudFront append the connecting address to `X-Forwarded-For` rather than overwrite it, so its first entry is whatever the visitor sent. Set `SID_CLIENT_IP_HEADER` to the CDN's own client-IP header instead (see [Per CDN](#per-cdn)); the server then ignores `X-Forwarded-For`. The client IP feeds the `ip` module and IP-based vendor modules such as `ec`, not consent.
+- **Long URLs:** `large_client_header_buffers 4 16k;` in the `server` block lets SharedID Edge answer requests up to its own limits ([Request limits](../../../spec/SPEC.md#request-limits)): nginx's default, `4 8k`, answers a URL over 8 KB with its own `414`, opt-out included.
 - **No shared cache:** neither a CDN nor `proxy_cache` may store `/_sid/` responses; they carry per-visitor cookies.
 - **Pass the visitor's country on.** Without a `gdpr` signal, GDPR applies when the visitor is in the EU, the rest of the EEA, the UK or Turkey, and the server knows that only from its location headers. With no country, GDPR's scope is unknown and storage is allowed, so such a visitor without a TC string would get cookies ([Consent](../../../docs/consent.md)). It also feeds the `geo` module.
   - **Behind Cloudflare,** with an origin running this server: enable Cloudflare's **"Add visitor location headers"** managed transform. Cloudflare sends `cf-ipcountry`, `cf-ipcity` and the rest, which the server reads with `SID_TRUST_PROXY` by default.
