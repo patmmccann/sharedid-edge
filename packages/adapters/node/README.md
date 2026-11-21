@@ -129,7 +129,7 @@ What the image does:
 | **User** | The official Node.js image's `node` user, `1000:1000`, not root. The server writes nothing, so a read-only root filesystem works (`--read-only`, `readOnlyRootFilesystem: true`), as do `--cap-drop ALL` and `no-new-privileges`. |
 | **Stopping** | `SIGTERM` (`docker stop`, a Kubernetes rollout) closes the listeners and exits with 0 once requests in flight finish, within 10 seconds. |
 | **Modules** | The built-in modules, with Bowser, and every opt-in module this project ships: `ec`, `cmp`, `gpp`, `encrypted-ip`, `tag-gateway` and the vendor modules `dbip`, `ip2location` and `maxmind`, each off until listed in `SID_MODULE_PACKAGES` and `SID_MODULES` ([Configuration and secrets](#configuration-and-secrets)). A module from elsewhere needs an image of your own: `FROM ghcr.io/patmmccann/sharedid-edge-node`, then install it in `/app` with npm. |
-| **Size** | About 160 MB uncompressed, almost all of it the `node:24-alpine` base; the server and its modules are about 2.5 MB. CI fails the build over 200 MB. |
+| **Size** | About 60 MB uncompressed, almost all of it the `node:24-alpine` base; the server and its modules are about 2.5 MB. CI fails the build over 100 MB. |
 | **Not included** | The [`sharedid-edge-update` command](../../../docs/data-updates.md#nodejs-cron-or-a-systemd-timer) for scheduled data updates, which needs the AWS SDK: run it from its own job. |
 | **Labels** | OCI labels with the source repository, version, commit, build date and licence (`Apache-2.0`). |
 

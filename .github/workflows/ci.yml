@@ -333,7 +333,7 @@ jobs:
       IMAGE: sharedid-edge-node:conformance
       # Uncompressed, as `docker image inspect` reports it: the node:24-alpine base and the server's files. Raise it
       # deliberately, saying why (README.md, Run in a container).
-      SIZE_BUDGET_MB: 200
+      SIZE_BUDGET_MB: 100
     steps:
       - uses: actions/checkout@v7
         with:
@@ -370,12 +370,12 @@ jobs:
       - name: Invalid configuration stops the container at start-up
         run: |
           expect_config_error() {
-            set +e; out=$(docker run --rm "$@" "$IMAGE" 2>&1); code=$?; set -e
+            set +e; out=$(timeout 30 docker run --rm "$@" "$IMAGE" 2>&1); code=$?; set -e
             echo "$out"
             [ "$code" -eq 1 ] && echo "$out" | grep -q '^Configuration error: ' || { echo "::error::Expected exit code 1 and a configuration error, got $code"; exit 1; }
           }
           expect_config_error                                                           # no SID_COOKIE_DOMAIN
-          expect_config_error -e SID_COOKIE_DOMAIN=host-only -e SID_MODULES=nope        # an unknown module
+          expect_config_error -e SID_COOKIE_DOMAIN=host-only -e SID_BASE_PATH=nope      # an invalid base path
           expect_config_error -e SID_COOKIE_DOMAIN=host-only -e SID_MODULE_SECRETS_FILE=/run/secrets/missing
       # The image's HEALTHCHECK (GET /healthz on HEALTH_PORT) turns healthy; the public port answers only SharedID
       # Edge's routes; a secret file mounted as Docker does is read; and SIGTERM stops it at once, with exit code 0.
