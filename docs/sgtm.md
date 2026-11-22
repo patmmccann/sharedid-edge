@@ -196,6 +196,7 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;   # overwrite, don't append
         proxy_cache off;
+        access_log off;                                  # its URLs carry the ID and consent strings
     }
 
     location /metrics/ {

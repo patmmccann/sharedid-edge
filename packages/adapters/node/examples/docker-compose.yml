@@ -1,0 +1,40 @@
+# SharedID Edge's container behind nginx, on your site's hostname: /_sid/ goes to SharedID Edge, everything else to
+# your site (here, the static files in ./site). README.md, "Run in a container", explains each setting.
+#
+#   SID_COOKIE_DOMAIN=example.com docker compose up -d
+#   curl -s http://localhost:8080/_sid/v1
+#
+# Put TLS in front of nginx (or in it) as for the rest of your site. SharedID Edge must answer on the site's own
+# hostname and IP addresses, so it goes behind the proxy that serves your pages, never on a hostname of its own.
+name: sharedid-edge
+
+services:
+  sharedid:
+    # The released image, or one you built (SHAREDID_IMAGE=sharedid-edge-node after docker build; README.md).
+    image: ${SHAREDID_IMAGE:-ghcr.io/patmmccann/sharedid-edge-node:latest}
+    environment:
+      SID_COOKIE_DOMAIN: ${SID_COOKIE_DOMAIN:?Set SID_COOKIE_DOMAIN to the domain Prebid.js writes _pubcid on, like example.com}
+      # nginx overwrites X-Forwarded-For with the visitor's address (nginx.conf), and only nginx reaches the server.
+      SID_TRUST_PROXY: "true"
+      # Every other SID_* setting goes here too, like SID_MODULES: ip,geo (docs/configuration.md).
+    # Module secrets (SID_MODULE_SECRETS), from a file rather than the environment:
+    #   secrets: [sid_module_secrets]
+    #   environment: { SID_MODULE_SECRETS_FILE: /run/secrets/sid_module_secrets }
+    # and, at the top level: secrets: { sid_module_secrets: { file: ./module-secrets.json } }
+    # Not published: only nginx reaches it, on the compose network.
+    expose: ["8787"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  proxy:
+    image: nginx:1.29-alpine
+    ports: ["${HTTP_PORT:-8080}:80"]
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${SITE_ROOT:-./site}:/usr/share/nginx/html:ro
+    depends_on:
+      # The image's health check (GET /healthz on HEALTH_PORT, 8788), so nginx starts once SharedID Edge is up.
+      sharedid: { condition: service_healthy }
+    restart: unless-stopped

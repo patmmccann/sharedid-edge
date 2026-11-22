@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { EU_COUNTRY_CODES } from '@sharedid-edge/core';
 import type { BuildOption } from './cases.js';
 import { freePort } from './emulator.js';
+import { startDockerTarget } from './docker-nginx.js';
 import { startFastlyTarget } from './fastly-viceroy.js';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -35,7 +36,7 @@ export interface RunningTarget {
   stop(): Promise<void>;
 }
 
-export type TargetName = 'node' | 'wrangler' | 'lambda' | 'lambda-aws-emulator' | 'lambda-edge' | 'lambda-edge-viewer' | 'vercel' | 'azure' | 'gcp' | 'akamai' | 'fastly';
+export type TargetName = 'node' | 'docker' | 'wrangler' | 'lambda' | 'lambda-aws-emulator' | 'lambda-edge' | 'lambda-edge-viewer' | 'vercel' | 'azure' | 'gcp' | 'akamai' | 'fastly';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -126,6 +127,7 @@ function asRequestCf(headers: Readonly<Record<string, string>>): Record<string, 
 /** What each target's platform doesn't report; see `RunningTarget.unavailable`. */
 const UNAVAILABLE: Readonly<Record<TargetName, readonly string[]>> = {
   node: [],
+  docker: [],
   wrangler: [],
   lambda: [],
   // No location at all, so the cases that need one are limitations instead (see LIMITATIONS).
@@ -446,6 +448,20 @@ export async function startTarget(
   const vendorPackages = vendor ? { SID_MODULE_PACKAGES: moduleList('--print-vendor-modules') } : {};
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${String(port)}`;
+  if (target === 'docker') {
+    // The server's container image behind a real nginx configured as the README says (docker-nginx.ts), with a relay
+    // that sends each request from the case's client IP, since nginx overwrites X-Forwarded-For. The image runs core
+    // unbundled with every opt-in module, as the Node.js target does: SID_MODULE_PACKAGES for vendor-modules, and the
+    // no-tcf preload. Plain http on a local address, so cookies aren't Secure.
+    const stop = await startDockerTarget({
+      port,
+      env: { ...vendorPackages, ...config },
+      image: process.env['SID_DOCKER_IMAGE'] ?? 'sharedid-edge-node:conformance',
+      conformanceDir: join(ROOT, 'conformance'),
+      preload: ['upstream-preload.js', ...(noTcf ? ['no-tcf.js'] : [])]
+    });
+    return { baseUrl, publicOrigin: caseConfig['SID_PUBLIC_ORIGIN'] ?? baseUrl, stop, requestHeaders: headers => ({ ...headers }), unavailable: UNAVAILABLE[target], limitations: LIMITATIONS[target] ?? {} };
+  }
   if (target === 'fastly') {
     // The real Compute package (deploy*/main.wasm) in Viceroy, Fastly's local runtime, behind a relay that sends each
     // request from the case's client IP and gives that address the case's location (fastly-viceroy.ts). It runs in

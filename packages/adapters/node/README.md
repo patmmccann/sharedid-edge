@@ -7,6 +7,7 @@ SharedID Edge as a **Node.js HTTP server**, for self-hosting behind the web serv
 - [Architecture](#architecture)
 - [Build and run](#build-and-run)
 - [Deploy behind your proxy](#deploy-behind-your-proxy)
+- [Run in a container](#run-in-a-container)
 - [Configuration and secrets](#configuration-and-secrets)
 - [Platform data: what the server knows about each request](#platform-data-what-the-server-knows-about-each-request)
 - [Built-in modules](#built-in-modules)
@@ -41,16 +42,23 @@ PORT=8787 SID_COOKIE_DOMAIN=example.com SID_PUBLIC_ORIGIN=https://www.example.co
 Forward `/_sid/` to the server, and make sure nothing caches it. With nginx:
 
 ```nginx
+# In the server block: nginx refuses a URL over 8 KB itself by default; let SharedID Edge answer it (an opt-out is
+# never refused for size).
+large_client_header_buffers 4 16k;
+
 location /_sid/ {
     proxy_pass http://127.0.0.1:8787;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $remote_addr;   # overwrite, don't append: the server takes the first entry
     proxy_cache off;
+    access_log off;                                  # its URLs carry the ID and consent strings
 }
 ```
 
 - **Overwrite `X-Forwarded-For`:** use `$remote_addr`, not `$proxy_add_x_forwarded_for`. Appending keeps whatever the visitor sent first, and that's the entry the server trusts.
 - **Or name the CDN's client-IP header.** CDNs such as CloudFront append the connecting address to `X-Forwarded-For` rather than overwrite it, so its first entry is whatever the visitor sent. Set `SID_CLIENT_IP_HEADER` to the CDN's own client-IP header instead (see [Per CDN](#per-cdn)); the server then ignores `X-Forwarded-For`. The client IP feeds the `ip` module and IP-based vendor modules such as `ec`, not consent.
+- **Long URLs:** `large_client_header_buffers 4 16k;` in the `server` block lets SharedID Edge answer requests up to its own limits ([Request limits](../../../spec/SPEC.md#request-limits)): nginx's default, `4 8k`, answers a URL over 8 KB with its own `414`, opt-out included.
+- **No access log:** `access_log off;` for `/_sid/`. nginx's default log records each request's full URL, with the SharedID and consent strings, beside the visitor's IP address and User-Agent; SharedID Edge itself logs nothing about requests.
 - **No shared cache:** neither a CDN nor `proxy_cache` may store `/_sid/` responses; they carry per-visitor cookies.
 - **Pass the visitor's country on.** Without a `gdpr` signal, GDPR applies when the visitor is in the EU, the rest of the EEA, the UK or Turkey, and the server knows that only from its location headers. With no country, GDPR's scope is unknown and storage is allowed, so such a visitor without a TC string would get cookies ([Consent](../../../docs/consent.md)). It also feeds the `geo` module.
   - **Behind Cloudflare,** with an origin running this server: enable Cloudflare's **"Add visitor location headers"** managed transform. Cloudflare sends `cf-ipcountry`, `cf-ipcity` and the rest, which the server reads with `SID_TRUST_PROXY` by default.
@@ -90,8 +98,49 @@ HOST=0.0.0.0 node packages/adapters/node/dist/cli.js
 - `SID_TRUST_PROXY` isn't needed, and doesn't change anything for requests with the secret.
 - Keep the secrets in your secret manager, not a committed file. Put TLS in front of the server: the secret travels in a header.
 
-- **Process management:** run it under systemd, in a container, or with another process manager, like any Node.js service. It needs Node.js 24 or later.
+- **Process management:** run it under systemd, in a container ([Run in a container](#run-in-a-container)), or with another process manager, like any Node.js service. It needs Node.js 24 or later.
 - **Beside server-side Google Tag Manager:** the server and Google's tagging server image can run side by side behind the same proxy; see the [docker-compose example](../../../docs/sgtm.md#both-in-containers-with-docker-compose).
+
+## Run in a container
+
+The image `ghcr.io/patmmccann/sharedid-edge-node` runs this server, for Docker, Kubernetes, Amazon ECS, Google Cloud Run or a VM. It's published for `linux/amd64` and `linux/arm64` on every release, tagged with the version (`1.2.3`, `1.2`, `latest`), with signed build provenance (`gh attestation verify oci://ghcr.io/patmmccann/sharedid-edge-node:<tag> -R patmmccann/sharedid-edge`). Or build it from a checkout:
+
+```sh
+docker build -f packages/adapters/node/Dockerfile -t sharedid-edge-node .
+```
+
+The same rules apply as outside a container: it answers on your site's own hostname and IP addresses, behind the proxy that serves your pages, which overwrites `X-Forwarded-For` and caches nothing under `/_sid/` ([Deploy behind your proxy](#deploy-behind-your-proxy)). Never publish its port to the internet on a hostname of its own, except as an upstream operator's endpoint in [trusted-upstream mode](#trusted-upstream), with TLS in front.
+
+```sh
+docker run -d --name sharedid-edge --restart unless-stopped \
+  -p 127.0.0.1:8787:8787 \
+  -e SID_COOKIE_DOMAIN=example.com \
+  -e SID_PUBLIC_ORIGIN=https://www.example.com \
+  -e SID_TRUST_PROXY=true \
+  ghcr.io/patmmccann/sharedid-edge-node:latest
+```
+
+and nginx on the same machine with the snippet above (`proxy_pass http://127.0.0.1:8787;`).
+
+**With docker compose**, [`examples/docker-compose.yml`](examples/docker-compose.yml) runs the image behind nginx on one hostname: [`examples/nginx.conf`](examples/nginx.conf) is the snippet above with the container's name, and everything outside `/_sid/` is your site (static files in `examples/site/` there). `SID_COOKIE_DOMAIN=example.com docker compose up -d` in `examples/`, then `curl -s http://localhost:8080/_sid/v1`. Put TLS in front of nginx, or in it, as for the rest of your site.
+
+What the image does:
+
+| | |
+| --- | --- |
+| **Listening** | `HOST=0.0.0.0` (every interface of the container, unlike the CLI's `127.0.0.1`), `PORT=8787`. Publish it only to your proxy: `-p 127.0.0.1:8787:8787`, a private network, or the compose network. |
+| **Settings** | Every `SID_*` setting from the environment, as above ([Configuration and secrets](#configuration-and-secrets)). |
+| **Secrets** | `SID_MODULE_SECRETS_FILE` and `SID_UPSTREAM_SECRETS_FILE` name files holding `SID_MODULE_SECRETS` and `SID_UPSTREAM_SECRETS`, for Docker and Kubernetes secrets (`/run/secrets/<name>`); a trailing newline is dropped. Prefer them to the plain variables, which show in `docker inspect`. |
+| **Fails fast** | Invalid settings, or a secret file that can't be read or is blank, stop the container at start-up with `Configuration error: …` on stderr and exit code 1, before it listens, so a misconfigured deployment never serves cookies. A restart policy keeps restarting it; `docker logs` shows why. |
+| **Health check** | `GET /healthz` on its own port, `HEALTH_PORT=8788`, answers `200 ok` once the server has started (so its settings were valid), and the image's `HEALTHCHECK` calls it. The public port stays exactly SharedID Edge's routes: `/healthz` there is a 404, and a probe never mints an ID. Point Kubernetes' liveness and readiness probes at `httpGet: { path: /healthz, port: 8788 }`; don't route it through your proxy. `HEALTH_PORT=` (empty) turns it off; then run with `--no-healthcheck`. |
+| **User** | The official Node.js image's `node` user, `1000:1000`, not root. The server writes nothing, so a read-only root filesystem works (`--read-only`, `readOnlyRootFilesystem: true`), as do `--cap-drop ALL` and `no-new-privileges`. |
+| **Stopping** | `SIGTERM` (`docker stop`, a Kubernetes rollout) closes the listeners and exits with 0 once requests in flight finish, within 10 seconds. |
+| **Modules** | The built-in modules, with Bowser, and every opt-in module this project ships: `ec`, `cmp`, `gpp`, `encrypted-ip`, `tag-gateway` and the vendor modules `dbip`, `ip2location` and `maxmind`, each off until listed in `SID_MODULE_PACKAGES` and `SID_MODULES` ([Configuration and secrets](#configuration-and-secrets)). A module from elsewhere needs an image of your own: `FROM ghcr.io/patmmccann/sharedid-edge-node`, then install it in `/app` with npm. |
+| **Size** | About 60 MB uncompressed, almost all of it the `node:24-alpine` base; the server and its modules are about 2.5 MB. CI fails the build over 100 MB. |
+| **Not included** | The [`sharedid-edge-update` command](../../../docs/data-updates.md#nodejs-cron-or-a-systemd-timer) for scheduled data updates, which needs the AWS SDK: run it from its own job. |
+| **Labels** | OCI labels with the source repository, version, commit, build date and licence (`Apache-2.0`). |
+
+**Tested:** CI builds the image on every pull request, checks its size, user, start-up failure, health check and `SIGTERM`, runs the whole conformance suite against it behind a real nginx configured with the snippet above (`npm run conformance:docker`, which needs Docker), and runs the browser tests in Chromium, Firefox and WebKit against [`examples/docker-compose.yml`](examples/docker-compose.yml) as written, with nginx serving the test page. See [How SharedID Edge is verified](../../../docs/verification.md).
 
 ## Configuration and secrets
 
@@ -100,7 +149,8 @@ From the environment:
 | Variable | Default | |
 | --- | --- | --- |
 | `PORT` | `8787` | Listening port. |
-| `HOST` | `127.0.0.1` | Listening address. Keep it local behind a proxy. |
+| `HOST` | `127.0.0.1` (`0.0.0.0` in the container image) | Listening address. Keep it local behind a proxy. |
+| `HEALTH_PORT` | unset (`8788` in the container image) | A second listener answering only `GET /healthz` with `200 ok`, for health checks and probes ([Run in a container](#run-in-a-container)). Must differ from `PORT`. |
 | `SID_PUBLIC_ORIGIN` | `http://<Host header>` | Your public origin, for example `https://www.example.com`. TLS ends at your proxy, so the server sees http; cookies are `Secure` anyway for a public hostname (see [Secure cookies](../../../docs/configuration.md#secure-cookies)), so this is optional. Set it to make request URLs, and so what modules see, match the visitor's. |
 | `SID_TRUST_PROXY` | `false` | Trust the proxy's headers: the client IP from the first `X-Forwarded-For` entry (or `SID_CLIENT_IP_HEADER`), and the location from `SID_LOCATION_HEADERS`. Only behind a proxy that overwrites them. |
 | `SID_CLIENT_IP_HEADER` | unset (`X-Forwarded-For`) | The proxy's own client-IP header, used instead of `X-Forwarded-For` behind a CDN that appends to it: `cloudfront-viewer-address` (read as `ip:port`), `fastly-client-ip`, `true-client-ip`, `cf-connecting-ip`. Its value must be an IP address; a missing or invalid one gives no client IP. Needs `SID_TRUST_PROXY=true` (see [Per CDN](#per-cdn)) or `SID_UPSTREAM_SECRETS` (see [Trusted upstream](#trusted-upstream)). |
@@ -110,6 +160,7 @@ From the environment:
 | `SID_*` | | Every other core setting, as in the [Configuration reference](../../../docs/configuration.md). |
 | `SID_MODULE_PACKAGES` | none | Opt-in modules to add to the built-in ones, comma-separated, each `<package>#<export>`, like `@sharedid-edge/module-ec#ecModule`: `ec`, [`cmp`](../../modules/cmp/README.md) (`@sharedid-edge/module-cmp#cmpModule`) and [vendor modules](../../vendor-modules/README.md). Each package must be installed next to the server. A missing package or export stops the server at start-up. |
 | `SID_MODULE_SECRETS` | `{}` | Module secrets, such as the `ec` passphrase. Supply it from your secret store (systemd `LoadCredential`, a container secret, and so on), not a committed file. |
+| `SID_MODULE_SECRETS_FILE`, `SID_UPSTREAM_SECRETS_FILE` | unset | A file holding `SID_MODULE_SECRETS` or `SID_UPSTREAM_SECRETS` instead, such as a mounted Docker or Kubernetes secret; a trailing newline is dropped. Setting both a variable and its `_FILE`, or naming a file that can't be read or is blank, stops the server at start-up. |
 
 Invalid settings stop the server at start-up with `Configuration error: …`.
 
@@ -183,3 +234,5 @@ Locally, `npm run conformance` runs the whole conformance suite against this ser
 | Every request gets `403 Forbidden` | `SID_UPSTREAM_SECRETS` is set, and the request doesn't carry one of its secrets in `X-SID-Upstream-Auth`. |
 | Visitors share one ID or one cookie | Something caches `/_sid/` responses. Turn caching off for that path. |
 | `verify-deployment` says the IPs differ | `/_sid/` is served from a different host or IP than your pages. Route it through the same proxy. |
+| The container exits at once, or keeps restarting | Its settings are invalid: `docker logs` shows `Configuration error: …` (a missing `SID_COOKIE_DOMAIN`, an unreadable `SID_MODULE_SECRETS_FILE`, …). |
+| The container stays `unhealthy` | The health check calls `http://127.0.0.1:$HEALTH_PORT/healthz` inside the container: with `HOST` set to one address, or `HEALTH_PORT` empty, it can't. Keep `HOST=0.0.0.0`, or run with `--no-healthcheck`. |

@@ -1,7 +1,7 @@
 // What the local platform stand-ins (lambda-emulator.ts, vercel-emulator.ts, …, and fastly-viceroy.ts) share: loading the adapter's bundle,
 // serving it, and turning the cases' client IP and Cloudflare location headers into what the platform would send.
 // Each emulator keeps only its platform's own header names and request and response shapes.
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer, request as httpRequest, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { pathToFileURL } from 'node:url';
 
@@ -123,4 +123,56 @@ export async function freePort(host = '127.0.0.1'): Promise<number> {
       server.close(() => { resolve(port); });
     });
   });
+}
+
+/** A relayed response. */
+export interface Relayed {
+  readonly status: number;
+  /** Raw headers, without hop-by-hop ones: name, value, name, value… */
+  readonly headers: string[];
+  readonly body: Buffer;
+}
+
+/**
+ * Sends a request to `host`:`port` from the local address `from`, for the relays that make a case's client IP the
+ * connection's (fastly-viceroy.ts, docker-nginx.ts). `from` must be an address of this machine: on Linux,
+ * `sudo ip route add local 192.0.2.0/24 dev lo` makes a whole range local, as CI does for the cases' ranges.
+ */
+export function forwardFrom(host: string, port: number, from: string, method: string, path: string, headers: readonly string[], body: Buffer): Promise<Relayed> {
+  return new Promise((resolve, reject) => {
+    const upstream = httpRequest({ host, port, localAddress: from, method, path, headers: [...headers] }, res => {
+      readBody(res).then(bytes => {
+        const out: string[] = [];
+        for (let i = 0; i + 1 < res.rawHeaders.length; i += 2) {
+          const name = res.rawHeaders[i] ?? '';
+          if (!/^(transfer-encoding|connection|keep-alive)$/i.test(name)) out.push(name, res.rawHeaders[i + 1] ?? '');
+        }
+        resolve({ status: res.statusCode ?? 502, headers: out, body: bytes });
+      }, reject);
+    });
+    upstream.on('error', (error: NodeJS.ErrnoException) => {
+      reject(error.code === 'EADDRNOTAVAIL'
+        ? new Error(`the case's client IP ${from} isn't an address of this machine (on Linux: sudo ip route add local ${from} dev lo)`)
+        : error);
+    });
+    upstream.end(body);
+  });
+}
+
+/**
+ * Serves `relay`'s answers on 127.0.0.1:`port` (HEAD without a body), for the relays in front of a real runtime
+ * (fastly-viceroy.ts, docker-nginx.ts). With `serial`, one request at a time. Returns a function that closes it.
+ */
+export function serveRelay(port: number, failure: string, relay: (req: IncomingMessage) => Promise<Relayed>, serial = false): () => Promise<void> {
+  let queue: Promise<unknown> = Promise.resolve();
+  const server = serve(port, failure, async (req, res) => {
+    const result = serial ? queue.then(() => relay(req)) : relay(req);
+    if (serial) queue = result.catch(() => undefined);
+    const { status, headers, body } = await result;
+    res.writeHead(status, headers);
+    res.end(req.method === 'HEAD' ? undefined : body);
+  });
+  return async () => {
+    await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
+  };
 }
