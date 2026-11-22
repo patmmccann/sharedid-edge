@@ -6,8 +6,8 @@ export const FILE_SETTINGS: readonly string[] = ['SID_MODULE_SECRETS', 'SID_UPST
 
 /**
  * `env` with each of `FILE_SETTINGS` read from the file its `_FILE` variable names (`SID_MODULE_SECRETS_FILE=/run/secrets/sid`),
- * the trailing newline dropped. Setting both a variable and its `_FILE`, a blank `_FILE`, or a file that can't be read
- * is a configuration error, so a container whose secret isn't mounted stops at start-up.
+ * the trailing newline dropped. Setting both a variable and its `_FILE`, a blank `_FILE`, a file that can't be read, or
+ * a blank file is a configuration error, so a container whose secret isn't mounted stops at start-up.
  */
 export function withSecretFiles(env: NodeJS.ProcessEnv, read: (path: string) => string = path => readFileSync(path, 'utf8')): NodeJS.ProcessEnv {
   const fileVariables = new Set(FILE_SETTINGS.map(name => `${name}_FILE`));
@@ -23,7 +23,11 @@ export function withSecretFiles(env: NodeJS.ProcessEnv, read: (path: string) => 
     } catch {
       throw new ConfigError(`${name}_FILE: can't read ${path}`);
     }
-    out[name] = value.replace(/\r?\n$/, '');
+    const content = value.replace(/\r?\n$/, '');
+    // A blank file would read as the setting unset: for SID_UPSTREAM_SECRETS, an endpoint that stops checking the
+    // secret. Refuse it, as a missing file is refused.
+    if (content.trim() === '') throw new ConfigError(`${name}_FILE: ${path} is empty`);
+    out[name] = content;
   }
   return out;
 }

@@ -96,6 +96,7 @@ location /_sid/ {
     limit_req zone=sid burst=100 nodelay;
     limit_req_status 429;
     proxy_pass http://127.0.0.1:8787;
+    access_log off;
 }
 ```
 

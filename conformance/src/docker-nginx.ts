@@ -54,7 +54,8 @@ export function nginxConfig(basePath: string, listenPort: number, upstreamPort: 
     `        proxy_pass http://127.0.0.1:${String(upstreamPort)};`,
     '        proxy_set_header Host $host;',
     '        proxy_set_header X-Forwarded-For $remote_addr;   # overwrite, don\'t append: the server takes the first entry',
-    '        proxy_cache off;'
+    '        proxy_cache off;',
+    '        access_log off;                                  # its URLs carry the ID and consent strings'
   ];
   const base = basePath.replace(/\/+$/, '');
   return [

@@ -429,6 +429,7 @@ Without a Worker: a *Request Header Transform Rule* for `/_sid/*` setting `X-SID
 ```nginx
 location /_sid/ {
     proxy_pass https://sid.upstream.example;
+    access_log off;                                              # its URLs carry the ID and consent strings
     proxy_ssl_server_name on;
     proxy_ssl_verify on;                                         # the secret travels in a header: check the certificate
     proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
