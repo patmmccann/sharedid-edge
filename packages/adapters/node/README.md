@@ -51,12 +51,14 @@ location /_sid/ {
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $remote_addr;   # overwrite, don't append: the server takes the first entry
     proxy_cache off;
+    access_log off;                                  # its URLs carry the ID and consent strings
 }
 ```
 
 - **Overwrite `X-Forwarded-For`:** use `$remote_addr`, not `$proxy_add_x_forwarded_for`. Appending keeps whatever the visitor sent first, and that's the entry the server trusts.
 - **Or name the CDN's client-IP header.** CDNs such as CloudFront append the connecting address to `X-Forwarded-For` rather than overwrite it, so its first entry is whatever the visitor sent. Set `SID_CLIENT_IP_HEADER` to the CDN's own client-IP header instead (see [Per CDN](#per-cdn)); the server then ignores `X-Forwarded-For`. The client IP feeds the `ip` module and IP-based vendor modules such as `ec`, not consent.
 - **Long URLs:** `large_client_header_buffers 4 16k;` in the `server` block lets SharedID Edge answer requests up to its own limits ([Request limits](../../../spec/SPEC.md#request-limits)): nginx's default, `4 8k`, answers a URL over 8 KB with its own `414`, opt-out included.
+- **No access log:** `access_log off;` for `/_sid/`. nginx's default log records each request's full URL, with the SharedID and consent strings, beside the visitor's IP address and User-Agent; SharedID Edge itself logs nothing about requests.
 - **No shared cache:** neither a CDN nor `proxy_cache` may store `/_sid/` responses; they carry per-visitor cookies.
 - **Pass the visitor's country on.** Without a `gdpr` signal, GDPR applies when the visitor is in the EU, the rest of the EEA, the UK or Turkey, and the server knows that only from its location headers. With no country, GDPR's scope is unknown and storage is allowed, so such a visitor without a TC string would get cookies ([Consent](../../../docs/consent.md)). It also feeds the `geo` module.
   - **Behind Cloudflare,** with an origin running this server: enable Cloudflare's **"Add visitor location headers"** managed transform. Cloudflare sends `cf-ipcountry`, `cf-ipcity` and the rest, which the server reads with `SID_TRUST_PROXY` by default.
@@ -129,7 +131,7 @@ What the image does:
 | **Listening** | `HOST=0.0.0.0` (every interface of the container, unlike the CLI's `127.0.0.1`), `PORT=8787`. Publish it only to your proxy: `-p 127.0.0.1:8787:8787`, a private network, or the compose network. |
 | **Settings** | Every `SID_*` setting from the environment, as above ([Configuration and secrets](#configuration-and-secrets)). |
 | **Secrets** | `SID_MODULE_SECRETS_FILE` and `SID_UPSTREAM_SECRETS_FILE` name files holding `SID_MODULE_SECRETS` and `SID_UPSTREAM_SECRETS`, for Docker and Kubernetes secrets (`/run/secrets/<name>`); a trailing newline is dropped. Prefer them to the plain variables, which show in `docker inspect`. |
-| **Fails fast** | Invalid settings, or a secret file that can't be read, stop the container at start-up with `Configuration error: …` on stderr and exit code 1, before it listens, so a misconfigured deployment never serves cookies. A restart policy keeps restarting it; `docker logs` shows why. |
+| **Fails fast** | Invalid settings, or a secret file that can't be read or is blank, stop the container at start-up with `Configuration error: …` on stderr and exit code 1, before it listens, so a misconfigured deployment never serves cookies. A restart policy keeps restarting it; `docker logs` shows why. |
 | **Health check** | `GET /healthz` on its own port, `HEALTH_PORT=8788`, answers `200 ok` once the server has started (so its settings were valid), and the image's `HEALTHCHECK` calls it. The public port stays exactly SharedID Edge's routes: `/healthz` there is a 404, and a probe never mints an ID. Point Kubernetes' liveness and readiness probes at `httpGet: { path: /healthz, port: 8788 }`; don't route it through your proxy. `HEALTH_PORT=` (empty) turns it off; then run with `--no-healthcheck`. |
 | **User** | The official Node.js image's `node` user, `1000:1000`, not root. The server writes nothing, so a read-only root filesystem works (`--read-only`, `readOnlyRootFilesystem: true`), as do `--cap-drop ALL` and `no-new-privileges`. |
 | **Stopping** | `SIGTERM` (`docker stop`, a Kubernetes rollout) closes the listeners and exits with 0 once requests in flight finish, within 10 seconds. |
@@ -158,7 +160,7 @@ From the environment:
 | `SID_*` | | Every other core setting, as in the [Configuration reference](../../../docs/configuration.md). |
 | `SID_MODULE_PACKAGES` | none | Opt-in modules to add to the built-in ones, comma-separated, each `<package>#<export>`, like `@sharedid-edge/module-ec#ecModule`: `ec`, [`cmp`](../../modules/cmp/README.md) (`@sharedid-edge/module-cmp#cmpModule`) and [vendor modules](../../vendor-modules/README.md). Each package must be installed next to the server. A missing package or export stops the server at start-up. |
 | `SID_MODULE_SECRETS` | `{}` | Module secrets, such as the `ec` passphrase. Supply it from your secret store (systemd `LoadCredential`, a container secret, and so on), not a committed file. |
-| `SID_MODULE_SECRETS_FILE`, `SID_UPSTREAM_SECRETS_FILE` | unset | A file holding `SID_MODULE_SECRETS` or `SID_UPSTREAM_SECRETS` instead, such as a mounted Docker or Kubernetes secret; a trailing newline is dropped. Setting both a variable and its `_FILE`, or naming a file that can't be read, stops the server at start-up. |
+| `SID_MODULE_SECRETS_FILE`, `SID_UPSTREAM_SECRETS_FILE` | unset | A file holding `SID_MODULE_SECRETS` or `SID_UPSTREAM_SECRETS` instead, such as a mounted Docker or Kubernetes secret; a trailing newline is dropped. Setting both a variable and its `_FILE`, or naming a file that can't be read or is blank, stops the server at start-up. |
 
 Invalid settings stop the server at start-up with `Configuration error: …`.
 
