@@ -37,6 +37,14 @@ describe('withSecretFiles', () => {
     expect(() => withSecretFiles({ SID_UPSTREAM_SECRETS_FILE: ' ' }, read)).toThrow(/SID_UPSTREAM_SECRETS_FILE is empty/);
     expect(() => withSecretFiles({ SID_MODULE_SECRETS_FILE: '/run/secrets/missing' }, read)).toThrow(/can't read \/run\/secrets\/missing/);
   });
+
+  it('refuses a blank file, which would otherwise turn trusted-upstream authentication off', () => {
+    for (const contents of ['', '\n', '  \n']) {
+      const blank = (): string => contents;
+      expect(() => withSecretFiles({ SID_UPSTREAM_SECRETS_FILE: '/run/secrets/upstream' }, blank)).toThrow(/SID_UPSTREAM_SECRETS_FILE: \/run\/secrets\/upstream is empty/);
+      expect(() => withSecretFiles({ SID_MODULE_SECRETS_FILE: '/run/secrets/modules' }, blank)).toThrow(ConfigError);
+    }
+  });
 });
 
 describe('healthPortFromEnv', () => {
