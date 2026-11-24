@@ -143,7 +143,7 @@ if (kind === 'upstream') {
 } else if (kind === 'platform') {
   // The live demo's platform-modules deployment (.github/workflows/e2e-cloudflare.yml): a second SharedID Edge Worker
   // on <site><prefix>/_sid/*, with the e2e settings plus the modules that read the request (ip, geo, ua and bot, with
-  // bot's missingHeaders, and SID_SKIP_BOTS=declared: a client that names itself as a bot gets no SharedID), and the e2e
+  // bot's missingHeaders, and SID_SKIP_BOTS=declared: a client that names itself as a bot gets none from /_sid/v1), and the e2e
   // test page as static assets at <site><prefix>/, so the main e2e environment (wrangler.jsonc, env.e2e) keeps its
   // settings. The more specific route wins: <prefix>/_sid/* over <prefix>/* over the test site's /*.
   const site = need('PLATFORM_SITE');

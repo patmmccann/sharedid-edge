@@ -88,7 +88,7 @@ configure() {
       # As the Cloudflare e2e environment (packages/adapters/cloudflare/wrangler.jsonc, env.e2e): no pixel caching,
       # reflect with uid1 (on the cookie domain) and _ga, and clickid; plus ip and geo, which check-live-site reads, and
       # ua and bot (with missingHeaders) for the live demo's device and bot rows, with SID_SKIP_BOTS=declared: a client
-      # that names itself as a bot gets no SharedID (the e2e tests check it, with E2E_MODULES=ua,bot).
+      # that names itself as a bot gets none from /_sid/v1 (the e2e tests check it, with E2E_MODULES=ua,bot).
       local uid1_domain=''
       if [ -n "$2" ]; then uid1_domain="\"domain\":\"$2\","; fi
       set_env SID_COOKIE_DOMAIN "${2:-host-only}"

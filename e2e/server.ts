@@ -23,7 +23,8 @@ const port = Number(process.env['PORT'] ?? 4310);
 // parameters Prebid.js adds to the pixel call with pixelConsent: true. The live deployments don't build it, so the
 // tests that need it run locally only. ua and bot (with missingHeaders) answer /_sid/v1's device data and traffic
 // signal, as on the live platform-module deployments, with SID_SKIP_BOTS=declared: a client that names itself as a bot
-// gets no SharedID, and the tests check the browsers aren't taken for one.
+// gets no SharedID from /_sid/v1 (ua, which declares it, runs there only), and the tests check the browsers aren't taken
+// for one.
 // The id5 vendor module, against a stub of ID5's fetch endpoint in this process: the handler's forwardFetch, as in the
 // module's unit tests, so the server's request to ID5 never leaves this process and the browser never sees it. Core
 // still applies its checks (ID5's declared hosts, https) before calling it. The stub answers with one EID,

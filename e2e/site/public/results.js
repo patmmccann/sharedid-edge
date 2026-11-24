@@ -334,11 +334,18 @@
   // The ua and bot modules, from the worker's /_sid/v1 answer: the device data ua reads from the User-Agent and Client
   // Hints (ortb2.device), and the traffic signal both report into (ortb2.device.ext.traffic). Green when the module
   // answered, grey when it isn't on this deployment.
+  /** Whether a module ran: ok or empty, not error, timeout or skipped (not installed, or not on this route). */
+  function moduleAnswered(status) { return status.status === 'ok' || status.status === 'empty'; }
+
   var DEVICE_TYPES = { 1: 'mobile or tablet', 2: 'computer', 3: 'connected TV', 4: 'phone', 5: 'tablet', 6: 'connected device', 7: 'set-top box' };
 
   function deviceCheck(body) {
     var device = (body.ortb2 && body.ortb2.device) || {};
     var statuses = (body.ext && body.ext.modules) || {};
+    if (statuses.ua && !moduleAnswered(statuses.ua)) {
+      report('device', statuses.ua.status === 'skipped' ? 'info' : 'fail', 'The ua module didn\u2019t answer: ' + statuses.ua.status, ['It\u2019s listed in ', code('SID_MODULES'), ' but reported ', code(statuses.ua.status), '.']);
+      return;
+    }
     if (!statuses.ua) {
       report('device', 'info', 'No ua module on this deployment', ['The ', code('ua'), ' module turns the browser\u2019s User-Agent and Client Hints into OpenRTB device data (',
         code('ortb2.device.sua'), ', ', code('os'), ', ', code('devicetype'), '\u2026), before any script runs. It isn\u2019t on here.']);
@@ -368,6 +375,13 @@
     var statuses = (body.ext && body.ext.modules) || {};
     var traffic = (device.ext && device.ext.traffic) || {};
     var on = ['bot', 'ua'].filter(function (name) { return statuses[name]; });
+    var failed = on.filter(function (name) { return !moduleAnswered(statuses[name]); });
+    if (failed.length > 0) {
+      var broken = failed.some(function (name) { return statuses[name].status !== 'skipped'; });
+      report('bot', broken ? 'fail' : 'info', 'The bot verdict is incomplete', ['Listed in ', code('SID_MODULES'), ' but not answering: ',
+        code(failed.map(function (name) { return name + '=' + statuses[name].status; }).join(', ')), '.']);
+      return;
+    }
     if (on.length === 0) {
       report('bot', 'info', 'No bot or ua module on this deployment', ['The ', code('bot'), ' and ', code('ua'), ' modules report automated traffic in ',
         code('ortb2.device.ext.traffic'), ', so the page can skip or flag the auction. They aren\u2019t on here.']);
