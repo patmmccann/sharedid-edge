@@ -603,6 +603,49 @@ test('with Global Privacy Control, there\'s no ID5 ID, and an existing cache is 
   expect(id5Eid(payload)).toBeUndefined();
   expect(await cookie(context, ID5_COOKIE)).toBeUndefined();
   await expect(page.locator('[data-check="id5"]')).toHaveAttribute('data-status', 'info');
+
+/** Loads the page with a click on the panel (a button or link that reloads it), and waits for the sync. */
+async function reloadWith(page: Page, click: () => Promise<void>): Promise<void> {
+  const sync = page.waitForResponse(response => new URL(response.url()).pathname === `${SID}/sync`, { timeout: 15_000 });
+  await click();
+  expect((await sync).status()).toBe(200);
+}
+
+// The panel's reflect and clickid rows. Their controls reload the page, so Prebid.js's pixel call is still the only
+// request to the endpoint.
+test('the results panel shows uid1 kept by reflect, and restored after "Delete uid1 and reload"', async ({ page, context, sid }) => {
+  await visit(page);
+  const row = page.locator('[data-check="reflect"]');
+  const original = (await uid1Cookies(context))[0]?.value;
+  expect(original).toMatch(/^v1[.]/);
+  // pass where the Cookie Store API shows the year-long expiry (https), info where it can't (the local http page).
+  await expect(row).toHaveAttribute('data-status', /^(pass|info)$/);
+  await expect(row).toContainText(`uid1=${String(original)}`);
+  sid.reset();
+  await reloadWith(page, () => row.locator('#sid-uid1-delete').click());
+  await expect(row).toHaveAttribute('data-status', 'pass');
+  await expect(row).toContainText('restored uid1');
+  // Reloaded with ?vendor=late, so the vendor tag couldn't re-mint uid1 before the pixel call.
+  expect(new URL(page.url()).searchParams.get('vendor')).toBe('late');
+  expect((await sid.requests()).map(r => new URL(r.path, 'http://x').pathname)).toEqual([`${SID}/sync`]);
+  expect((await uid1Cookies(context)).map(c => c.value)).toEqual([original]);
+});
+
+test('the results panel links to a landing page with a gclid, and shows it kept in _sid_gclid', async ({ page, context, sid }) => {
+  await visit(page);
+  const row = page.locator('[data-check="clickid"]');
+  await expect(row).toHaveAttribute('data-status', 'info');
+  sid.reset();
+  await reloadWith(page, () => row.locator('#sid-gclid-try').click());
+  const gclid = new URL(page.url()).searchParams.get('gclid');
+  expect(gclid).toMatch(/^demo-[0-9a-z]+$/);
+  await expect(row).toHaveAttribute('data-status', 'pass');
+  await expect(row).toContainText(String(gclid));
+  const kept = (await cookie(context, '_sid_gclid'))?.value;
+  expect(kept).toMatch(/^[0-9]{10}[.]/);
+  expect(kept?.slice(11)).toBe(gclid);
+  expect((await sid.requests()).map(r => new URL(r.path, 'http://x').pathname)).toEqual([`${SID}/sync`]);
+  await expect(page.locator('#sid-verdict')).toHaveAttribute('data-status', 'pass');
 });
 
 test('the demo\'s AWS tile turns red when its EU visitor fails', async ({ page }) => {
