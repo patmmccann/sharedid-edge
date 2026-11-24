@@ -150,16 +150,23 @@ if (kind === 'upstream') {
   const zone = need('PLATFORM_ZONE');
   const prefix = need('PLATFORM_PREFIX');
   const { SID_MODULE_CONFIG: moduleConfig, ...settings } = e2eSite(need('PLATFORM_COOKIE_DOMAIN'));
+  // The opt-in encrypted-ip module, with the test key's recipients (scripts/encrypted-ip-test-key.mjs), when the
+  // workflow has the ENCRYPTED_IP_TEST_KEY secret: built in through scripts/module-list.mjs's generated entry point.
+  const encryptedIp = process.env['ENCRYPTED_IP_CONFIG'] ?? '';
+  const withEncryptedIp = encryptedIp === '' ? {} : { 'encrypted-ip': JSON.parse(encryptedIp) };
   write('platform', {
     ...sharedIdWorker,
+    ...(encryptedIp === '' ? {} : { main: '../../.sharedid-modules/worker.ts' }),
     name: process.env['PLATFORM_WORKER'] ?? 'sharedid-edge-e2e-platform',
     routes: [{ pattern: `${site}${prefix}/_sid/*`, zone_name: zone }],
     vars: {
       ...settings,
       SID_BASE_PATH: `${prefix}/_sid`,
-      SID_MODULES: 'ip,geo,ua,bot,reflect,clickid',
-      SID_MODULE_CONFIG: JSON.stringify({ ...moduleConfig, bot: { missingHeaders: true } }),
-      SID_SKIP_BOTS: 'declared'
+      SID_MODULES: `ip,geo,ua,bot,reflect,clickid${encryptedIp === '' ? '' : ',encrypted-ip'}`,
+      SID_MODULE_CONFIG: JSON.stringify({ ...moduleConfig, bot: { missingHeaders: true }, ...withEncryptedIp }),
+      SID_SKIP_BOTS: 'declared',
+      // A fresh isolate's first Web Crypto call can take longer than the default 50 ms (encrypted-ip's README).
+      SID_MODULE_TIMEOUT_MS: '200'
     }
   });
   const assets = join(out, 'platform-site');

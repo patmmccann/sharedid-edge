@@ -7,6 +7,7 @@ import { extname, join, normalize, sep } from 'node:path';
 import { createHandler, resolveConfig, settingsFromEnv, trustedUpstreamFromEnv, withTrustedUpstream, type ForwardFetch, type PlatformInfo, type SharedIdEdgeHandler } from '../packages/core/dist/index.js';
 import { botModule } from '../packages/modules/bot/dist/index.js';
 import { clickIdModule } from '../packages/modules/clickid/dist/index.js';
+import { encryptedIpModule } from '../packages/modules/encrypted-ip/dist/index.js';
 import { gppModule } from '../packages/modules/gpp/dist/index.js';
 import { reflectModule } from '../packages/modules/reflect/dist/index.js';
 import { uaModule } from '../packages/modules/ua/dist/index.js';
@@ -24,7 +25,9 @@ const port = Number(process.env['PORT'] ?? 4310);
 // tests that need it run locally only. ua and bot (with missingHeaders) answer /_sid/v1's device data and traffic
 // signal, as on the live platform-module deployments, with SID_SKIP_BOTS=declared: a client that names itself as a bot
 // gets no SharedID from /_sid/v1 (ua, which declares it, runs there only), and the tests check the browsers aren't taken
-// for one.
+// for one. The opt-in encrypted-ip module encrypts the client's address (PLATFORM's, below) to the live demo's test
+// recipient, here with the public key of RFC 9180's published test vectors, whose private key is public too: the
+// tests decrypt with it.
 // The id5 vendor module, against a stub of ID5's fetch endpoint in this process: the handler's forwardFetch, as in the
 // module's unit tests, so the server's request to ID5 never leaves this process and the browser never sees it. Core
 // still applies its checks (ID5's declared hosts, https) before calling it. The stub answers with one EID,
@@ -43,6 +46,8 @@ const id5Stub: ForwardFetch = async request => {
 // Every local visitor connects from 127.0.0.1, which the id5 module never sends. This address stands in for the one a
 // CDN would report for the visitor (a routable one, as in the conformance cases), for the main site only.
 const PLATFORM: PlatformInfo = { clientIp: '203.0.114.7' };
+/** The encrypted-ip recipient, a made-up Prebid Server host, as on the live deployments (scripts/encrypted-ip-test-key.mjs). */
+const EIP_RECIPIENT = 'eip-test.sharedid.dev';
 
 const handler = createHandler({
   config: resolveConfig({
@@ -50,7 +55,7 @@ const handler = createHandler({
     // writes _pubcid on sharedid.test, so the endpoint does too, as on the live site with sharedid.dev.
     SID_COOKIE_DOMAIN: 'sharedid.test',
     SID_SYNC_CACHE_SECONDS: '0',
-    SID_MODULES: 'reflect,clickid,gpp,id5,ua,bot',
+    SID_MODULES: 'reflect,clickid,gpp,id5,ua,bot,encrypted-ip',
     SID_SKIP_BOTS: 'declared',
     // id5 waits up to 300 ms for ID5 (here, the stub), so the module time limit is above it.
     SID_MODULE_TIMEOUT_MS: '1000',
@@ -60,10 +65,11 @@ const handler = createHandler({
       reflect: { cookies: [{ name: 'uid1', maxAgeDays: 365, domain: 'sharedid.test', httpOnly: false, restore: true }, { name: '_ga', maxAgeDays: 400, restore: true }] },
       // ID5's test partner, and the cache cookie on the cookie domain.
       id5: { partner: 173, domain: 'sharedid.test' },
-      bot: { missingHeaders: true }
+      bot: { missingHeaders: true },
+      'encrypted-ip': { pbs: { [EIP_RECIPIENT]: { key: { keys: [{ kty: 'OKP', crv: 'X25519', kid: 'rfc9180', x: 'OUjP4K0d22ldeA5ZB3GV2mxWUGsCcyl5SrAryoCBXE0' }] } } } }
     })
   }),
-  modules: [reflectModule, clickIdModule, gppModule, id5Module, uaModule, botModule],
+  modules: [reflectModule, clickIdModule, gppModule, id5Module, uaModule, botModule, encryptedIpModule],
   forwardFetch: id5Stub
 });
 

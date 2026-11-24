@@ -93,9 +93,17 @@ configure() {
       if [ -n "$2" ]; then uid1_domain="\"domain\":\"$2\","; fi
       set_env SID_COOKIE_DOMAIN "${2:-host-only}"
       set_env SID_SYNC_CACHE_SECONDS 0
-      set_env SID_MODULES ip,geo,ua,bot,reflect,clickid
+      # With the ENCRYPTED_IP_TEST_KEY secret, the workflow builds the opt-in encrypted-ip module into the bundle and
+      # sets ENCRYPTED_IP_CONFIG, the test key's recipients (scripts/encrypted-ip-test-key.mjs).
+      local modules=ip,geo,ua,bot,reflect,clickid encrypted_ip=''
+      if [ -n "${ENCRYPTED_IP_CONFIG:-}" ]; then
+        modules="$modules,encrypted-ip"
+        encrypted_ip=",\"encrypted-ip\":$ENCRYPTED_IP_CONFIG"
+      fi
+      set_env SID_MODULES "$modules"
+      set_env SID_MODULE_TIMEOUT_MS 200
       set_env SID_SKIP_BOTS declared
-      set_env SID_MODULE_CONFIG "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,$uid1_domain\"httpOnly\":false,\"restore\":true},{\"name\":\"_ga\",\"maxAgeDays\":400,\"restore\":true}]},\"bot\":{\"missingHeaders\":true}}"
+      set_env SID_MODULE_CONFIG "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,$uid1_domain\"httpOnly\":false,\"restore\":true},{\"name\":\"_ga\",\"maxAgeDays\":400,\"restore\":true}]},\"bot\":{\"missingHeaders\":true}$encrypted_ip}"
       ;;
     conformance)
       # The defaults; SID_COOKIE_DOMAIN has none.

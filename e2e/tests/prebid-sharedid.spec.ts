@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test as base, type BrowserContext, type Page, type Request, type Response } from '@playwright/test';
+// The encrypted-ip module's test receiver, written independently of the module's own HPKE code.
+import { open as openHpke, privateKey as privateKeyFromRaw } from '../../packages/modules/encrypted-ip/test/receiver.js';
 
 /** A request the page sent to SharedID Edge: its path and query, and the cookies the browser sent with it. */
 interface SidRequest {
@@ -640,6 +642,97 @@ test('a client that names itself as a bot (curl) is flagged, and with SID_SKIP_B
   expect(body.ortb2?.device?.ext?.traffic).toMatchObject({ bot: true, botKind: 'declared' });
   expect(body.ortb2?.device?.ext?.traffic?.sources).toContain('ua');
   expect((await response.headersArray()).filter(h => h.name.toLowerCase() === 'set-cookie' && h.value.startsWith('_pubcid='))).toEqual([]);
+});
+
+/**
+ * The encrypted-ip module's test key (E2E_EIP_PRIVATE_KEY: an X25519 private key, 32 bytes as unpadded base64url),
+ * held live only as the ENCRYPTED_IP_TEST_KEY repository secret; the deployments get its public key
+ * (scripts/encrypted-ip-test-key.mjs). Locally, server.ts uses RFC 9180's published test-vector key, whose private key
+ * is public too. Empty (live, without the secret) skips the encrypted-ip tests.
+ */
+const EIP_PRIVATE_KEY = process.env['E2E_EIP_PRIVATE_KEY'] ?? (LIVE ? '' : 'RhLFUCY_yK1YN13z9VeqxTHSaFCQPlWp8j8h2FNOisg');
+const EIP_RECIPIENT = 'eip-test.sharedid.dev';
+
+interface EipPayload {
+  eip?: { pbs?: Record<string, { value: string; kid: string; stale?: boolean }> };
+  ortb2?: { device?: { ip?: string; ipv6?: string } };
+  ext?: { modules?: Record<string, { status: string }> };
+}
+
+/** The test key pair: the private key, and the public key's raw bytes (for decrypting) and kid. */
+async function eipKey(privateKey: string): Promise<{ key: CryptoKey; publicKey: Uint8Array<ArrayBuffer>; kid: string }> {
+  const raw = Buffer.from(privateKey, 'base64url');
+  const key = await privateKeyFromRaw(new Uint8Array(raw));
+  const extractable = await crypto.subtle.importKey('pkcs8', new Uint8Array([...Buffer.from('302e020100300506032b656e04220420', 'hex'), ...raw]), { name: 'X25519' }, true, ['deriveBits']);
+  const { x } = await crypto.subtle.exportKey('jwk', extractable);
+  const publicKey = new Uint8Array(Buffer.from(String(x), 'base64url'));
+  return { key, publicKey, kid: Buffer.from(await crypto.subtle.digest('SHA-256', publicKey)).toString('base64url').slice(0, 8) };
+}
+
+/** Decrypts an encrypted-ip value to the address, or undefined when this key can't. */
+async function decryptIp(value: string, key: { key: CryptoKey; publicKey: Uint8Array<ArrayBuffer> }): Promise<string | undefined> {
+  try {
+    return new TextDecoder().decode(await openHpke(new Uint8Array(Buffer.from(value, 'base64url')), key.key, key.publicKey));
+  } catch {
+    return undefined;
+  }
+}
+
+async function v1Json(page: Page, query: string, headers: Record<string, string> = {}): Promise<EipPayload> {
+  const response = await page.request.get(`${SID}/v1${query}`, { headers });
+  expect(response.status()).toBe(200);
+  return await response.json() as EipPayload;
+}
+
+test('with consent, /_sid/v1 has the IP address encrypted to the test key, a fresh value each time, which only that key decrypts', async ({ page }) => {
+  test.skip(EIP_PRIVATE_KEY === '', 'no encrypted-ip test key (E2E_EIP_PRIVATE_KEY)');
+  const key = await eipKey(EIP_PRIVATE_KEY);
+  // gdpr=0, as a page outside the EU may send; the server-side address check needs no TC string with Special Feature 1.
+  const first = await v1Json(page, '?gdpr=0');
+  const second = await v1Json(page, '?gdpr=0');
+  const values = [first, second].map(body => body.eip?.pbs?.[EIP_RECIPIENT]);
+  for (const value of values) {
+    expect(value?.value).toMatch(/^[A-Za-z0-9_-]{67,124}$/);
+    // The kid follows the key: a new key pair, a new kid (scripts/encrypted-ip-test-key.mjs); locally, server.ts's.
+    expect(value?.kid).toBe(LIVE ? key.kid : 'rfc9180');
+  }
+  expect(values[0]?.value).not.toBe(values[1]?.value);
+  const addresses = await Promise.all(values.map(value => decryptIp(String(value?.value), key)));
+  // The ip module's plain address, where the deployment runs it (live); locally, server.ts's stand-in client address.
+  const expected = first.ortb2?.device?.ip ?? first.ortb2?.device?.ipv6 ?? (LIVE ? undefined : '203.0.114.7');
+  for (const address of addresses) {
+    if (expected === undefined) expect(address).toMatch(/^[0-9a-f:.]+$/i);
+    else expect(address).toBe(expected);
+  }
+  expect(addresses[0]).toBe(addresses[1]);
+  // Another key can't read it.
+  const pair = await crypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']);
+  const other = { key: pair.privateKey, publicKey: new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey)) };
+  expect(await decryptIp(String(values[0]?.value), other)).toBeUndefined();
+});
+
+test('without consent for the address (a TC string without Special Feature 1, or GPC), there\'s no encrypted IP address', async ({ page }) => {
+  test.skip(EIP_PRIVATE_KEY === '', 'no encrypted-ip test key (E2E_EIP_PRIVATE_KEY)');
+  for (const [query, headers] of [[`?gdpr=1&gdpr_consent=${tcString('given')}`, {}], ['?gdpr=0', { 'Sec-GPC': '1' }]] as const) {
+    const body = await v1Json(page, query, headers);
+    expect(body.eip, query).toBeUndefined();
+    expect(body.ext?.modules?.['encrypted-ip']?.status, query).toBe('empty');
+  }
+});
+
+test('the results panel\'s encrypted-ip row: well formed with consent, grey without it', async ({ page }) => {
+  test.skip(EIP_PRIVATE_KEY === '', 'no encrypted-ip test key (E2E_EIP_PRIVATE_KEY)');
+  const row = page.locator('[data-check="eip"]');
+  // GDPR doesn't apply: no TC string, so the address may be used.
+  await visit(page, '/?consent=notApplicable&checks=1');
+  await expect(row).toHaveAttribute('data-status', 'pass');
+  await expect(row).toContainText(EIP_RECIPIENT);
+  // The value itself isn't shown.
+  await expect(row).not.toContainText(/[A-Za-z0-9_-]{67,}/);
+  // The default scenario's TC string has no Special Feature 1.
+  await visit(page, '/?checks=1');
+  await expect(row).toHaveAttribute('data-status', 'info');
+  await expect(row).toContainText('Special Feature 1');
 });
 
 // The demo's tiles for the main sites and for the copies with the platform modules, at /platform/.
