@@ -49,10 +49,20 @@
   var rows = {};
   var panel;
 
+  // Set when the worker says this page view's consent rules the ID out: then the rows that look for a cookie the
+  // worker rightly didn't set say so, rather than failing, even when they finish after the worker's answer.
+  var denied;
+  var CONSENT_ROWS = ['cookie', 'same-id', 'eids', 'reflect', 'clickid'];
+
   /** Sets a check's row: its status, title and details (strings, or nodes). */
   function report(name, status, title, details) {
     var row = rows[name];
     if (!row) return;
+    if (status === 'fail' && denied !== undefined && CONSENT_ROWS.indexOf(name) >= 0) {
+      status = 'info';
+      title += ' (consent: ' + denied + ')';
+      details = [];
+    }
     row.setAttribute('data-status', status);
     row.querySelector('.sid-icon').textContent = ICONS[status];
     row.querySelector('.sid-title').textContent = title;
@@ -252,8 +262,9 @@
         report('worker', 'info', 'The worker set no ID: ' + answer.denied, head.concat([code('X-SharedID-Status: ' + answer.denied),
           ': this page view’s consent rules the ID out, so the endpoint stores none and deletes what was there.']));
         // Not failures, then: there's meant to be no ID.
-        ['cookie', 'same-id', 'eids', 'reflect', 'clickid'].forEach(function (name) {
-          if (rows[name].getAttribute('data-status') === 'fail') report(name, 'info', rows[name].querySelector('.sid-title').textContent + ' (consent: ' + answer.denied + ')', []);
+        denied = answer.denied;
+        CONSENT_ROWS.forEach(function (name) {
+          if (rows[name].getAttribute('data-status') === 'fail') report(name, 'fail', rows[name].querySelector('.sid-title').textContent, []);
         });
       } else if (id && id === readCookie('_pubcid') && (cookieId === undefined || id === cookieId)) {
         report('worker', 'pass', 'The worker has the same ID', head.concat([

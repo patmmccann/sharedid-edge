@@ -648,6 +648,15 @@ test('the results panel links to a landing page with a gclid, and shows it kept 
   await expect(page.locator('#sid-verdict')).toHaveAttribute('data-status', 'pass');
 });
 
+test('when consent rules the ID out, the clickid row says so rather than failing, though it finishes after the worker', async ({ page }) => {
+  // purpose1Only: the endpoint denies, so it keeps no click ID; the row waits for one, then reports after the worker.
+  await visit(page, '/?consent=purpose1Only&gclid=demo-consent&checks=1');
+  await expect(page.locator('[data-check="worker"]')).toContainText('denied: tcf:');
+  await expect(page.locator('[data-check="clickid"]')).toHaveAttribute('data-status', 'info', { timeout: 10_000 });
+  await expect(page.locator('[data-check="clickid"]')).toContainText('(consent: denied: tcf:');
+  await expect(page.locator('#sid-verdict')).not.toHaveAttribute('data-status', 'fail');
+});
+
 test('the demo\'s AWS tile turns red when its EU visitor fails', async ({ page }) => {
   test.skip(LIVE, 'the demo\'s tiles are checked once, locally');
   await page.route('https://api.github.com/**', route => {
