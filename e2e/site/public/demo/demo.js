@@ -33,8 +33,10 @@
     },
     {
       name: 'Upstream operator behind a Cloudflare publisher',
-      shape: 'The publisher\u2019s Cloudflare zone forwards /_sid/* to an upstream operator\u2019s endpoint (sid.saleshouse.dev, trusted-upstream mode); the cookie is still the publisher\u2019s.',
+      shape: 'The publisher\u2019s Cloudflare zone forwards /_sid/* to an upstream operator\u2019s endpoint (trusted-upstream mode, on its own domain); the cookie is still the publisher\u2019s.',
       site: 'https://saleshouse-pub.sharedid.dev/',
+      // Shown instead of the test hostname.
+      label: 'the test publisher, on a sharedid.dev subdomain',
       workflow: 'e2e-upstream.yml',
       // Its own jobs, and the EU visitor, which requests all three of this workflow's sites.
       jobs: /Deploy the Workers|saleshouse-pub\.sharedid\.dev|^An EU visitor/,
@@ -198,7 +200,7 @@
     if (live) {
       var actions = el('div', { 'class': 'actions' }, [
         el('a', { href: spec.site, target: '_blank', rel: 'noopener', text: 'Run it in your browser \u2197' }),
-        el('span', { 'class': 'ci-only', text: new URL(spec.site).host + new URL(spec.site).pathname })
+        el('span', { 'class': 'ci-only', text: spec.label || new URL(spec.site).host + new URL(spec.site).pathname })
       ]);
       if (spec.embed && sameSite(spec.site)) {
         var button = el('button', { type: 'button', text: 'Run it here' });
