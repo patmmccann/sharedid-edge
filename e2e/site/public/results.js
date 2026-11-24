@@ -208,9 +208,22 @@
 
   function json(value) { return el('pre', { text: JSON.stringify(value, null, 2) }); }
 
-  /** GET /_sid/v1, same-origin: the worker's view, readable headers and JSON. */
+  // The query Prebid.js sent to pixelUrl, without the id: its consent (gdpr, gdpr_consent, us_privacy, gpp, gpp_sid)
+  // and cookie_domain. The panel's own requests carry it, so the worker decides as it did for Prebid.js's call, and
+  // never sets an ID this page view's consent ruled out.
+  var syncQuery = '';
+
+  function rememberSync(entry) {
+    // As sent, byte for byte: URLSearchParams would re-encode them.
+    var rest = new URL(entry.name).search.slice(1).split('&').filter(function (pair) {
+      return pair !== '' && pair.split('=')[0] !== 'id';
+    }).join('&');
+    syncQuery = rest === '' ? '' : '?' + rest;
+  }
+
+  /** GET /_sid/v1, same-origin, with the sync's consent: the worker's view, readable headers and JSON. */
   function askWorker() {
-    return fetch(SID + '/v1', { credentials: 'same-origin', cache: 'no-store' }).then(function (response) {
+    return fetch(SID + '/v1' + syncQuery, { credentials: 'same-origin', cache: 'no-store' }).then(function (response) {
       return response.json().then(function (body) {
         return { status: response.status, source: response.headers.get('x-sharedid-source'), denied: response.headers.get('x-sharedid-status'), body: body };
       });
@@ -228,9 +241,14 @@
     report('worker', 'pending', 'Asking the worker\u2026', []);
     return askWorker().then(function (answer) {
       var id = answer.body.sharedid;
-      var head = ['GET ', code(SID + '/v1'), ' answered ' + answer.status + ' with '];
+      var head = ['GET ', code(SID + '/v1' + syncQuery), ' answered ' + answer.status + ' with '];
       if (answer.denied) {
-        report('worker', 'info', 'The worker set no ID: ' + answer.denied, head.concat([code('X-SharedID-Status: ' + answer.denied), '.']));
+        report('worker', 'info', 'The worker set no ID: ' + answer.denied, head.concat([code('X-SharedID-Status: ' + answer.denied),
+          ': this page view’s consent rules the ID out, so the endpoint stores none and deletes what was there.']));
+        // Not failures, then: there's meant to be no ID.
+        ['cookie', 'same-id', 'eids'].forEach(function (name) {
+          if (rows[name].getAttribute('data-status') === 'fail') report(name, 'info', rows[name].querySelector('.sid-title').textContent + ' (consent: ' + answer.denied + ')', []);
+        });
       } else if (id && id === readCookie('_pubcid') && (cookieId === undefined || id === cookieId)) {
         report('worker', 'pass', 'The worker has the same ID', head.concat([
           code('X-SharedID-Source: ' + answer.source), ' (it ' + (SOURCES[answer.source] || answer.source) + ') and ',
@@ -352,9 +370,15 @@
         return undefined;
       }
       var sent = sentId(entry);
-      var status = typeof entry.responseStatus === 'number' && entry.responseStatus > 0 ? ' answered ' + entry.responseStatus : ' answered';
-      report('sync', 'pass', 'Prebid.js called SharedID Edge', [
-        'GET ', code(new URL(entry.name).pathname + new URL(entry.name).search), status + ' in ' + Math.round(entry.responseEnd - entry.startTime) + ' ms.'
+      rememberSync(entry);
+      // responseStatus (Chrome, Firefox): a failed sync fails the check, even when an earlier visit's cookie makes the
+      // others pass. Where the browser doesn't report it (Safari), the cookie checks below are the evidence.
+      var code_ = typeof entry.responseStatus === 'number' && entry.responseStatus > 0 ? entry.responseStatus : undefined;
+      var ok = code_ === undefined || (code_ >= 200 && code_ < 300);
+      report('sync', ok ? 'pass' : 'fail', ok ? 'Prebid.js called SharedID Edge' : 'SharedID Edge answered Prebid.js with ' + code_, [
+        'GET ', code(new URL(entry.name).pathname + new URL(entry.name).search),
+        (code_ === undefined ? ' answered' : ' answered ' + code_) + ' in ' + Math.round(entry.responseEnd - entry.startTime) + ' ms.' +
+          (ok ? '' : ' The ID cookies below may be left from an earlier visit; this sync didn’t refresh them.')
       ]);
       // The pixel's Set-Cookie shows in document.cookie by the next task; Prebid.js reads it in the pixel's load handler.
       return wait(function () { return pbjs.getUserIds().pubcid && readCookie('_pubcid'); }, 3000).then(function () { return sent; });

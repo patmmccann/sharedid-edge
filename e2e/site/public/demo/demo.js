@@ -22,7 +22,8 @@
       shape: 'A Lambda function behind a /_sid/* behaviour of the site\u2019s CloudFront distribution (the page from S3).',
       site: 'https://da614puh352or.cloudfront.net/',
       workflow: 'e2e-aws.yml',
-      jobs: /CloudFront/
+      // The CloudFront jobs and the EU visitor of this distribution, not the Lambda@Edge ones.
+      jobs: /CloudFront|^An EU visitor \(eu-central-1\)$/
     },
     {
       name: 'Vercel',
@@ -35,7 +36,8 @@
       shape: 'The publisher\u2019s Cloudflare zone forwards /_sid/* to an upstream operator\u2019s endpoint (sid.saleshouse.dev, trusted-upstream mode); the cookie is still the publisher\u2019s.',
       site: 'https://saleshouse-pub.sharedid.dev/',
       workflow: 'e2e-upstream.yml',
-      jobs: /Deploy the Workers|saleshouse-pub\.sharedid\.dev/,
+      // Its own jobs, and the EU visitor, which requests all three of this workflow's sites.
+      jobs: /Deploy the Workers|saleshouse-pub\.sharedid\.dev|^An EU visitor/,
       embed: true
     },
     {
@@ -43,14 +45,14 @@
       shape: 'The publisher\u2019s CloudFront distribution forwards /_sid/* to the same upstream operator\u2019s endpoint.',
       site: 'https://pub.hotba.be/',
       workflow: 'e2e-upstream.yml',
-      jobs: /CloudFront publisher|pub\.hotba\.be/
+      jobs: /CloudFront publisher|pub\.hotba\.be|^An EU visitor/
     },
     {
       name: 'Hosting company on Cloudflare for SaaS',
       shape: 'A customer\u2019s custom hostname on a Cloudflare for SaaS zone, with SharedID Edge for the hostnames it lists.',
       site: 'https://saas.hotba.be/',
       workflow: 'e2e-upstream.yml',
-      jobs: /Deploy the Workers|saas\.hotba\.be/
+      jobs: /Deploy the Workers|saas\.hotba\.be|^An EU visitor/
     },
     {
       name: 'Node.js container on AWS Lambda behind a Cloudflare publisher',
