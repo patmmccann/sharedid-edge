@@ -367,6 +367,12 @@ describe('time limits and failures', () => {
     expect(cacheOf(response)).toEqual({ t: NOW_S - 9 * 3600, r: NOW_S + 3600, e: [ID5_EID], s: 'sig-0' });
   });
 
+  it('backs off for an hour after a successful status with malformed JSON, as after an error', async () => {
+    const stub = id5Stub(() => new Response('{not json', { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const response = await call(handler(stub.send));
+    expect(cacheOf(response)).toEqual({ t: NOW_S, r: NOW_S + 3600 });
+  });
+
   it('reports an invalid configuration as an error, and is a configuration error on an adapter that can\'t send requests', async () => {
     const body = await (await call(handler(id5Stub().send, { partner: 'abc' }))).json() as PayloadV1;
     expect(body.ext.modules['id5']?.status).toBe('error');

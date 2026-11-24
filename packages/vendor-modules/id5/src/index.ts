@@ -388,6 +388,14 @@ function storeCache(settings: Id5Settings, cache: Id5Cache, now: number): Module
   return cacheCookie(settings, value, Math.max(1, cache.t + ID5_MAX_AGE_SECONDS - now));
 }
 
+function parseReplyText(text: string): Id5Reply | undefined {
+  try {
+    return parseId5Reply(JSON.parse(text));
+  } catch {
+    return undefined;
+  }
+}
+
 const eidsOf = (cache: Id5Cache | undefined): ModuleResult | undefined => (cache?.e === undefined ? undefined : { eids: cache.e });
 
 async function run(context: ModuleContext): Promise<ModuleResult | undefined> {
@@ -424,7 +432,7 @@ async function run(context: ModuleContext): Promise<ModuleResult | undefined> {
     signature: fallback?.s,
     now: new Date(now * 1000)
   });
-  let reply: Id5Reply | undefined;
+  let text: string;
   try {
     const response = await fetch(settings.endpoint, {
       method: 'POST',
@@ -432,12 +440,13 @@ async function run(context: ModuleContext): Promise<ModuleResult | undefined> {
       body: new TextEncoder().encode(JSON.stringify(body)),
       timeoutMs: settings.timeoutMs
     });
-    const text = response.ok ? await response.text() : '';
-    reply = text === '' || text.length > MAX_REPLY_LENGTH ? undefined : parseId5Reply(JSON.parse(text));
+    text = response.ok ? await response.text() : '';
   } catch {
     // Timed out, or the network failed: answer from the cache and ask again on the next request. Nothing is reported.
     return eidsOf(fallback);
   }
+  // An error status, an empty or oversized body, or JSON that doesn't parse is an unusable answer, backed off below.
+  const reply = text === '' || text.length > MAX_REPLY_LENGTH ? undefined : parseReplyText(text);
   if (reply === undefined) {
     // ID5 answered with an error, or without anything usable: ask again in an hour, keeping what's cached.
     const retry: Id5Cache = { ...(fallback ?? { t: now }), r: now + ID5_RETRY_SECONDS };
