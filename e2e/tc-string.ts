@@ -33,7 +33,7 @@ function numberList(value: unknown, what: string): number[] {
 
 /** A scenario where GDPR applies, with a TC string, or one where it doesn't. */
 type Scenario =
-  | { readonly name: string; readonly description: string; readonly gdprApplies: true; readonly purposeConsents: number[]; readonly publisherConsents: number[] }
+  | { readonly name: string; readonly description: string; readonly gdprApplies: true; readonly purposeConsents: number[]; readonly publisherConsents: number[]; readonly specialFeatures: number[] }
   | { readonly name: string; readonly description: string; readonly gdprApplies: false };
 
 interface Config {
@@ -53,7 +53,9 @@ function readConfig(): Config {
       description,
       gdprApplies: true,
       purposeConsents: numberList(value['purposeConsents'], `tcf-config.json: ${name}.purposeConsents`),
-      publisherConsents: numberList(value['publisherConsents'], `tcf-config.json: ${name}.publisherConsents`)
+      publisherConsents: numberList(value['publisherConsents'], `tcf-config.json: ${name}.publisherConsents`),
+      // Special feature opt-ins (1 is precise geolocation), when the scenario has any.
+      specialFeatures: value['specialFeatures'] === undefined ? [] : numberList(value['specialFeatures'], `tcf-config.json: ${name}.specialFeatures`)
     };
   });
   if (!scenarios.some(s => s.name === 'given')) throw new Error('tcf-config.json needs a "given" scenario (the page\'s default)');
@@ -107,6 +109,8 @@ interface Encoded {
   readonly purposes: number[];
   readonly publisherPurposes: number[];
   readonly vendors: number[];
+  /** Special feature opt-ins; absent in strings generated before scenarios could have them (none). */
+  readonly specialFeatures?: number[];
 }
 
 function check(config: Config): void {
@@ -130,7 +134,8 @@ function check(config: Config): void {
     for (const [label, want, listed, inString] of [
       ['vendor consents', vendors, entry.vendors, setIds(decoded.vendorConsents)],
       ['purpose consents', scenario.purposeConsents, entry.purposes, setIds(decoded.purposeConsents)],
-      ['publisher consents', scenario.publisherConsents, entry.publisherPurposes, setIds(decoded.publisherConsents)]
+      ['publisher consents', scenario.publisherConsents, entry.publisherPurposes, setIds(decoded.publisherConsents)],
+      ['special feature opt-ins', scenario.specialFeatures, entry.specialFeatures ?? [], setIds(decoded.specialFeatureOptins)]
     ] as const) {
       compare(`${scenario.name} ${label} (tcf.js list)`, [...want], [...listed]);
       compare(`${scenario.name} ${label} (TC string)`, [...want], [...inString]);
@@ -171,17 +176,18 @@ async function generate(config: Config): Promise<void> {
     model.isServiceSpecific = true;
     model.purposeConsents.set(scenario.purposeConsents);
     model.publisherConsents.set(scenario.publisherConsents);
+    model.specialFeatureOptins.set(scenario.specialFeatures);
     model.vendorConsents.set(vendors);
     model.created = today;
     model.lastUpdated = today;
     const tcString = TCString.encode(model);
     // Decode it again before writing anything.
     const decoded = TCString.decode(tcString);
-    if (!same(setIds(decoded.vendorConsents), vendors) || !same(setIds(decoded.purposeConsents), scenario.purposeConsents) || !same(setIds(decoded.publisherConsents), scenario.publisherConsents)) {
+    if (!same(setIds(decoded.vendorConsents), vendors) || !same(setIds(decoded.purposeConsents), scenario.purposeConsents) || !same(setIds(decoded.publisherConsents), scenario.publisherConsents) || !same(setIds(decoded.specialFeatureOptins), scenario.specialFeatures)) {
       throw new Error(`${scenario.name}: the encoded TC string doesn't decode to the configured consents`);
     }
-    embedded[scenario.name] = { tcString, purposes: scenario.purposeConsents, publisherPurposes: scenario.publisherConsents, vendors };
-    summary.push(`//   ${scenario.name}: ${scenario.description}.`, `//     ${tcString}`, `//     purpose consents ${scenario.purposeConsents.join(', ')}; publisher consents ${scenario.publisherConsents.join(', ')}; vendor consents below`);
+    embedded[scenario.name] = { tcString, purposes: scenario.purposeConsents, publisherPurposes: scenario.publisherConsents, vendors, specialFeatures: scenario.specialFeatures };
+    summary.push(`//   ${scenario.name}: ${scenario.description}.`, `//     ${tcString}`, `//     purpose consents ${scenario.purposeConsents.join(', ')}; publisher consents ${scenario.publisherConsents.join(', ')}; special features ${scenario.specialFeatures.join(', ') || 'none'}; vendor consents below`);
   }
 
   const vendorLines = vendors.map(id => {
@@ -226,7 +232,7 @@ window.SID_E2E_TCF = (function () {
     purposeOneTreatment: false,
     purpose: { consents: flags(scenario.purposes), legitimateInterests: {} },
     vendor: { consents: flags(scenario.vendors), legitimateInterests: {} },
-    specialFeatureOptins: {},
+    specialFeatureOptins: flags(scenario.specialFeatures || []),
     publisher: { consents: flags(scenario.publisherPurposes), legitimateInterests: {}, customPurpose: { consents: {}, legitimateInterests: {} }, restrictions: {} }
   };
 })();

@@ -6,8 +6,8 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "conformance": "node dist/run.js --target node",
-    "conformance:docker": "node dist/run.js --target docker",
+    "conformance": "node dist/run.js --target node && node dist/id5-checks.js --target node",
+    "conformance:docker": "node dist/run.js --target docker && node dist/id5-checks.js --target docker",
     "conformance:wrangler": "node dist/run.js --target wrangler",
     "conformance:lambda": "node dist/run.js --target lambda",
     "conformance:lambda-aws-emulator": "node dist/run.js --target lambda-aws-emulator",

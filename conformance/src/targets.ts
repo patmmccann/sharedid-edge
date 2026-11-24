@@ -34,7 +34,17 @@ export interface RunningTarget {
    * platform itself, never to skip a failure of the adapter; the adapter's README says what it means for publishers.
    */
   readonly limitations: Readonly<Record<string, string>>;
+  /**
+   * The ID5 stub's URL (id5-stub.ts), when the target runs one: the Node.js and docker targets, for a configuration
+   * whose SID_MODULES lists `id5`. Its `GET /__requests` lists the bodies the server sent (id5-checks.ts).
+   */
+  readonly id5Stub?: string;
   stop(): Promise<void>;
+}
+
+/** Whether a configuration's SID_MODULES lists the id5 module. */
+function listsId5(config: Readonly<Record<string, string>>): boolean {
+  return (config['SID_MODULES'] ?? '').split(',').some(name => name.trim() === 'id5');
 }
 
 export type TargetName = 'node' | 'docker' | 'wrangler' | 'lambda' | 'lambda-aws-emulator' | 'lambda-edge' | 'lambda-edge-viewer' | 'vercel' | 'azure' | 'gcp' | 'akamai' | 'fastly';
@@ -462,14 +472,16 @@ export async function startTarget(
     // that sends each request from the case's client IP, since nginx overwrites X-Forwarded-For. The image runs core
     // unbundled with every opt-in module, as the Node.js target does: SID_MODULE_PACKAGES for vendor-modules, and the
     // no-tcf preload. Plain http on a local address, so cookies aren't Secure.
-    const stop = await startDockerTarget({
+    // With id5, ID5's stub runs as a container next to the server's, which sends its requests for ID5 there.
+    const { stop, id5Stub } = await startDockerTarget({
       port,
       env: { ...vendorPackages, ...config },
       image: process.env['SID_DOCKER_IMAGE'] ?? 'sharedid-edge-node:conformance',
       conformanceDir: join(ROOT, 'conformance'),
-      preload: ['upstream-preload.js', ...(noTcf ? ['no-tcf.js'] : [])]
+      preload: ['upstream-preload.js', ...(noTcf ? ['no-tcf.js'] : [])],
+      id5Stub: listsId5(config)
     });
-    return { baseUrl, publicOrigin: caseConfig['SID_PUBLIC_ORIGIN'] ?? baseUrl, stop, requestHeaders: headers => ({ ...headers }), unavailable: UNAVAILABLE[target], limitations: LIMITATIONS[target] ?? {} };
+    return { baseUrl, publicOrigin: caseConfig['SID_PUBLIC_ORIGIN'] ?? baseUrl, stop, requestHeaders: headers => ({ ...headers }), unavailable: UNAVAILABLE[target], limitations: LIMITATIONS[target] ?? {}, ...(id5Stub === undefined ? {} : { id5Stub }) };
   }
   if (target === 'fastly') {
     // The real Compute package (deploy*/main.wasm) in Viceroy, Fastly's local runtime, behind a relay that sends each
@@ -488,9 +500,16 @@ export async function startTarget(
   let child: ChildProcess;
   // A process the target needs besides `child`, stopped with it.
   let upstream: { readonly child: ChildProcess; readonly url: string } | undefined;
+  // The Node.js target with id5: ID5's stub as its own process, which the server sends its requests for ID5 to.
+  let id5Stub: string | undefined;
   if (target === 'node') {
+    if (listsId5(config)) {
+      const stubPort = await freePort();
+      upstream = { url: `http://127.0.0.1:${String(stubPort)}`, child: spawn(process.execPath, [join(ROOT, 'conformance/dist/id5-stub.js'), String(stubPort)], { stdio: ['ignore', 'ignore', 'inherit'] }) };
+      id5Stub = upstream.url;
+    }
     child = spawn(process.execPath, [...STAND_IN, ...(noTcf ? ['--import', pathToFileURL(join(ROOT, 'conformance/dist/no-tcf.js')).href] : []), join(ROOT, 'packages/adapters/node/dist/cli.js')], {
-      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), HOST: '127.0.0.1', ...vendorPackages, ...config },
+      env: { PATH: process.env['PATH'] ?? '', PORT: String(port), HOST: '127.0.0.1', ...vendorPackages, ...config, ...(id5Stub === undefined ? {} : { CONFORMANCE_ID5_STUB: id5Stub }) },
       stdio: ['ignore', 'ignore', 'inherit']
     });
   } else if (target === 'lambda') {
@@ -605,6 +624,7 @@ export async function startTarget(
     stop,
     requestHeaders: target === 'wrangler' ? asRequestCf : headers => ({ ...headers }),
     unavailable: UNAVAILABLE[target],
-    limitations: LIMITATIONS[target] ?? {}
+    limitations: LIMITATIONS[target] ?? {},
+    ...(id5Stub === undefined ? {} : { id5Stub })
   };
 }

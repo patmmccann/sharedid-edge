@@ -5,18 +5,18 @@
 // pixelConsent: true sends it to pixelUrl (gdpr, gdpr_consent). When GDPR applies, the TC string is also written to
 // euconsent-v2 here, as CMPs do; SharedID Edge reads it when a request has no gdpr_consent. ?tcfCookie=none leaves the
 // cookie out, as CMPs that keep the string only in local storage do. ?consent=none returns no consent data, as on a
-// page without a TCF CMP. TC strings: GVL v186, TCF policy version 5, created 2026-11-20.
+// page without a TCF CMP. TC strings: GVL v186, TCF policy version 5, created 2026-11-24.
 //
 // Scenarios:
-//   given: GDPR applies; consent to everything the tests need.
-//     CQt-4cAQt-4cAACABBENC6FgAP_AAAAAACiQIEQCQAKgAZAA4ACAAGgARQF5gMZAgQAAAAAA.IAAA.f_gAAAAAAAAA
-//     purpose consents 1, 2, 3, 4, 5, 6, 7, 8, 9, 10; publisher consents 1, 2, 3, 4, 5, 6, 7, 8, 9, 10; vendor consents below
+//   given: GDPR applies; consent to everything the tests need, with precise geolocation (Special Feature 1), which the id5 module needs to send the client IP.
+//     CQuMEMAQuMEMAACABBENC6FoAP_AAAAAACiQIEQCgAKgAZAA4ACAAGgARQBBgLzAYyBAgAAAAAAA.IAAA.f_gAAAAAAAAA
+//     purpose consents 1, 2, 3, 4, 5, 6, 7, 8, 9, 10; publisher consents 1, 2, 3, 4, 5, 6, 7, 8, 9, 10; special features 1; vendor consents below
 //   denied: GDPR applies; no purpose 1 consent, for vendors or the publisher.
-//     CQt-4cAQt-4cAACABBENC6FgAH_AAAAAACiQIEQCQAKgAZAA4ACAAGgARQF5gMZAgQAAAAAA.IAAA.b_gAAAAAAAAA
-//     purpose consents 2, 3, 4, 5, 6, 7, 8, 9, 10; publisher consents 2, 3, 4, 5, 6, 7, 8, 9, 10; vendor consents below
+//     CQuMEMAQuMEMAACABBENC6FgAH_AAAAAACiQIEQCgAKgAZAA4ACAAGgARQBBgLzAYyBAgAAAAAAA.IAAA.b_gAAAAAAAAA
+//     purpose consents 2, 3, 4, 5, 6, 7, 8, 9, 10; publisher consents 2, 3, 4, 5, 6, 7, 8, 9, 10; special features none; vendor consents below
 //   purpose1Only: GDPR applies; vendors have consent for purposes 1-10, but the publisher only for purpose 1, none of 2-10.
-//     CQt-4cAQt-4cAACABBENC6FgAP_AAAAAACiQIEQCQAKgAZAA4ACAAGgARQF5gMZAgQAAAAAA.IAAA.cAAAAAAAAAAA
-//     purpose consents 1, 2, 3, 4, 5, 6, 7, 8, 9, 10; publisher consents 1; vendor consents below
+//     CQuMEMAQuMEMAACABBENC6FgAP_AAAAAACiQIEQCgAKgAZAA4ACAAGgARQBBgLzAYyBAgAAAAAAA.IAAA.cAAAAAAAAAAA
+//     purpose consents 1, 2, 3, 4, 5, 6, 7, 8, 9, 10; publisher consents 1; special features none; vendor consents below
 //   notApplicable: GDPR doesn't apply; no TC string.
 //
 // Vendor consents in every TC string (the bundle's modules, from prebid.js's metadata, and tcf-config.json's extraVendors):
@@ -26,11 +26,12 @@
 //     32  Xandr, Inc.: module msftBidAdapter (msft), msftBidAdapter (oftmedia), msftBidAdapter (msftstaila)
 //     52  Magnite, Inc. : module magniteBidAdapter (magnite)
 //     69  OpenX: module openxBidAdapter (openx)
+//    131  ID5 Technology SAS: extra: ID5 (SharedID Edge's id5 module, server-side; not in the Prebid.js bundle)
 //    755  Google Advertising Products: extra: Google (GPT and Google's demand)
 //    793  Amazon Ads: extra: Amazon Ads
 //   1032  Project Agora Ltd: module msftBidAdapter (projectagora)
 window.SID_E2E_TCF = (function () {
-  var scenarios = {"given":{"tcString":"CQt-4cAQt-4cAACABBENC6FgAP_AAAAAACiQIEQCQAKgAZAA4ACAAGgARQF5gMZAgQAAAAAA.IAAA.f_gAAAAAAAAA","purposes":[1,2,3,4,5,6,7,8,9,10],"publisherPurposes":[1,2,3,4,5,6,7,8,9,10],"vendors":[21,25,28,32,52,69,755,793,1032]},"denied":{"tcString":"CQt-4cAQt-4cAACABBENC6FgAH_AAAAAACiQIEQCQAKgAZAA4ACAAGgARQF5gMZAgQAAAAAA.IAAA.b_gAAAAAAAAA","purposes":[2,3,4,5,6,7,8,9,10],"publisherPurposes":[2,3,4,5,6,7,8,9,10],"vendors":[21,25,28,32,52,69,755,793,1032]},"purpose1Only":{"tcString":"CQt-4cAQt-4cAACABBENC6FgAP_AAAAAACiQIEQCQAKgAZAA4ACAAGgARQF5gMZAgQAAAAAA.IAAA.cAAAAAAAAAAA","purposes":[1,2,3,4,5,6,7,8,9,10],"publisherPurposes":[1],"vendors":[21,25,28,32,52,69,755,793,1032]},"notApplicable":null};
+  var scenarios = {"given":{"tcString":"CQuMEMAQuMEMAACABBENC6FoAP_AAAAAACiQIEQCgAKgAZAA4ACAAGgARQBBgLzAYyBAgAAAAAAA.IAAA.f_gAAAAAAAAA","purposes":[1,2,3,4,5,6,7,8,9,10],"publisherPurposes":[1,2,3,4,5,6,7,8,9,10],"vendors":[21,25,28,32,52,69,131,755,793,1032],"specialFeatures":[1]},"denied":{"tcString":"CQuMEMAQuMEMAACABBENC6FgAH_AAAAAACiQIEQCgAKgAZAA4ACAAGgARQBBgLzAYyBAgAAAAAAA.IAAA.b_gAAAAAAAAA","purposes":[2,3,4,5,6,7,8,9,10],"publisherPurposes":[2,3,4,5,6,7,8,9,10],"vendors":[21,25,28,32,52,69,131,755,793,1032],"specialFeatures":[]},"purpose1Only":{"tcString":"CQuMEMAQuMEMAACABBENC6FgAP_AAAAAACiQIEQCgAKgAZAA4ACAAGgARQBBgLzAYyBAgAAAAAAA.IAAA.cAAAAAAAAAAA","purposes":[1,2,3,4,5,6,7,8,9,10],"publisherPurposes":[1],"vendors":[21,25,28,32,52,69,131,755,793,1032],"specialFeatures":[]},"notApplicable":null};
   var query = new URLSearchParams(location.search);
   var name = query.get('consent') || 'given';
   if (name === 'none') return undefined;
@@ -53,7 +54,7 @@ window.SID_E2E_TCF = (function () {
     purposeOneTreatment: false,
     purpose: { consents: flags(scenario.purposes), legitimateInterests: {} },
     vendor: { consents: flags(scenario.vendors), legitimateInterests: {} },
-    specialFeatureOptins: {},
+    specialFeatureOptins: flags(scenario.specialFeatures || []),
     publisher: { consents: flags(scenario.publisherPurposes), legitimateInterests: {}, customPurpose: { consents: {}, legitimateInterests: {} }, restrictions: {} }
   };
 })();

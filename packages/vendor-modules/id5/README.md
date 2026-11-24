@@ -28,6 +28,7 @@ The `id5` module for [SharedID Edge](../../../README.md): the [ID5 ID](https://i
 - [Platforms](#platforms)
 - [Size](#size)
 - [Using it in code](#using-it-in-code)
+- [How it's tested](#how-its-tested)
 - [Troubleshooting](#troubleshooting)
 
 ## Turning it on
@@ -255,6 +256,16 @@ const handler = createHandler({
 ```
 
 Other exports: `id5ModuleConfig()` (the settings parser), `parseId5Reply()`, `existingId5Reply()`, `id5RequestBody()`, `id5Denial()`, `clientAddress()`, `isRoutableIp()`, `isWebKit27()`, `readCache()`, `cacheCookieValue()`, and the constants `ID5_GVLID`, `ID5_HOSTS`, `ID5_DEFAULT_ENDPOINT`, `ID5_EID_SOURCE`, `ID5_REFRESH_SECONDS`, `ID5_MAX_AGE_SECONDS`.
+
+## How it's tested
+
+Never against ID5 itself: there's no live partner number yet, and partner 173 (ID5's test partner) appears only in tests and examples.
+
+- **Unit tests** (`test/id5.test.ts`) run the module through core's handler against a stub ID5 server (core's `forwardFetch`): ID5's answers and opt-out, the exact request body, the cache and its refresh with the signature, timeouts and back-off, every consent denial, IPv4, IPv6 and non-routable addresses, `browsers`.
+- **The conformance suite** (`conformance/cases/module-id5.json`) runs on every target that can send requests. On the Node.js server and its container image behind nginx (CI's `container` job, no account), ID5 is a stub running as its own process or container, so the server's request to "ID5" really goes over the network. A check script (`conformance/src/id5-checks.ts`) then makes requests in turn: the EID, the cache answering the next request without a second call to the stub, nothing sent on GPC, opt-out, missing vendor consent or a `us_privacy` opt-out, the SharedID sent as `puid` with consent, and ID5's opt-out.
+- **The browser tests** (`e2e/`, local) run unmodified Prebid.js against a test server with the module and an in-process stub: the EID in `/_sid/v1`, the `HttpOnly` cache sent back and reused, and no ID5 ID when consent is denied, with a GPP opt-out or with GPC. The e2e page's results panel has an "ID5 ID (server-to-server)" row.
+
+Tests point the module at a stub by replacing what's behind core's `fetch`, never by changing `endpoint`, which only ever accepts ID5's hosts.
 
 ## Troubleshooting
 
