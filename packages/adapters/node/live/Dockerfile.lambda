@@ -1,0 +1,15 @@
+# This project's live test of the container image as an upstream operator's endpoint (README.md, Live tests): the
+# image built from the commit (BASE), unchanged, plus AWS Lambda Web Adapter, so Lambda runs it behind a function URL.
+# The adapter is an extension: it starts with the container, waits for the health check, and turns each function URL
+# request into an HTTP request to the server on PORT. Not for deployers; it's how the test gets a TLS hostname on AWS.
+ARG BASE=sharedid-edge-node
+FROM public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 AS adapter
+
+FROM ${BASE}
+COPY --from=adapter /lambda-adapter /opt/extensions/lambda-adapter
+# The server's own port and health check (the image's PORT and HEALTH_PORT): ready once /healthz answers 200.
+ENV AWS_LWA_PORT=8787 \
+    AWS_LWA_READINESS_CHECK_PORT=8788 \
+    AWS_LWA_READINESS_CHECK_PATH=/healthz \
+    AWS_LWA_READINESS_CHECK_HEALTHY_STATUS=200 \
+    AWS_LWA_READINESS_CHECK_TIMEOUT_SECONDS=8

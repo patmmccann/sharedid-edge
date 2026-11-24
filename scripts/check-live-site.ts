@@ -5,7 +5,7 @@
 //
 //   npx tsx scripts/check-live-site.ts --site https://pub.example --cookie-domain example
 //                                      [--endpoint https://sid.upstream.example] [--unlisted https://other.example]
-//                                      [--wait 150]
+//                                      [--base-path /node-upstream/_sid] [--wait 150]
 //
 // The site runs SharedID Edge with SID_MODULES including ip and geo (the live tests' e2e settings), on its own
 // hostname or forwarded to an upstream operator's endpoint by the publisher's CDN. It checks:
@@ -24,11 +24,12 @@ import { randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { checkClientIp, clientIp, runChecks, type CheckFn, type Payload, v1 as getV1 } from './live-checks.js';
 
-const USAGE = 'Usage: check-live-site --site https://<site> --cookie-domain <domain> [--endpoint https://<upstream endpoint>] [--unlisted https://<unlisted hostname>] [--wait <seconds>]';
+const USAGE = 'Usage: check-live-site --site https://<site> --cookie-domain <domain> [--base-path /_sid] [--endpoint https://<upstream endpoint>] [--unlisted https://<unlisted hostname>] [--wait <seconds>]';
 const { values } = parseArgs({
   options: {
     site: { type: 'string' },
     'cookie-domain': { type: 'string' },
+    'base-path': { type: 'string', default: '/_sid' },
     endpoint: { type: 'string' },
     unlisted: { type: 'string' },
     wait: { type: 'string', default: '0' },
@@ -46,6 +47,9 @@ if (values.site === undefined || values['cookie-domain'] === undefined) {
 const origin = (url: string): string => new URL(url).origin;
 const site = origin(values.site);
 const cookieDomain = values['cookie-domain'].toLowerCase();
+// The deployment's SID_BASE_PATH, the same on the site and the endpoint: /_sid, or a prefixed one for a setup that
+// shares its hostname (/node-upstream/_sid).
+const sid = values['base-path'].replace(/\/+$/, '');
 const waitSeconds = Number(values.wait);
 if (!Number.isFinite(waitSeconds) || waitSeconds < 0) {
   console.error(USAGE);
@@ -70,13 +74,13 @@ const FORGED = {
 };
 
 async function v1(base: string, headers: Record<string, string> = {}): Promise<{ response: Response; payload: Payload | undefined }> {
-  return getV1(`${base}/_sid/v1`, headers);
+  return getV1(`${base}${sid}/v1`, headers);
 }
 
 /** /_sid/sync as Prebid.js calls it on a first visit, with a fresh ID; whether it set that ID, and on which domain. */
 async function sync(base: string, headers: Record<string, string> = {}): Promise<{ status: number; cookies: string[]; domain: string | undefined; setsId: boolean }> {
   const id = randomUUID();
-  const response = await fetch(`${base}/_sid/sync?id=${encodeURIComponent(encodeURIComponent(`pubcid:${id}`))}`, { headers });
+  const response = await fetch(`${base}${sid}/sync?id=${encodeURIComponent(encodeURIComponent(`pubcid:${id}`))}`, { headers });
   await response.arrayBuffer();
   const cookies = response.headers.getSetCookie();
   const pubcid = cookies.find(c => c.startsWith(`_pubcid=${id}`));
@@ -98,7 +102,7 @@ async function firstAnswer(): Promise<{ response: Response; payload: Payload | u
 
 async function run(check: CheckFn): Promise<void> {
   const first = await firstAnswer();
-  check(`${site}/_sid/v1 answers 200 with payload version 1`, first.response.status === 200 && first.payload !== undefined, String(first.response.status));
+  check(`${site}${sid}/v1 answers 200 with payload version 1`, first.response.status === 200 && first.payload !== undefined, String(first.response.status));
 
   const ip = await checkClientIp(check, 'the visitor\'s real address arrives (ip module)', first.payload);
   const geo = first.payload?.ortb2?.device?.geo;
@@ -106,15 +110,15 @@ async function run(check: CheckFn): Promise<void> {
 
   const forged = await v1(site, FORGED);
   const forgedGeo = forged.payload?.ortb2?.device?.geo;
-  check('forged X-SID-*, X-Forwarded-*, X-Real-IP and X-Vercel-* headers change nothing in /_sid/v1',
+  check(`forged X-SID-*, X-Forwarded-*, X-Real-IP and X-Vercel-* headers change nothing in ${sid}/v1`,
     forged.response.status === 200 && clientIp(forged.payload) === ip && forgedGeo?.country === geo?.country && forgedGeo?.region === geo?.region && forgedGeo?.city === geo?.city,
     `${String(forged.response.status)}, device.ip(v6): ${clientIp(forged.payload) ?? 'none'}, device.geo: ${JSON.stringify(forgedGeo ?? null)}`);
 
   const plain = await sync(site);
-  check(`/_sid/sync sets _pubcid with Domain=${cookieDomain}`, plain.status === 200 && plain.setsId && plain.domain === cookieDomain,
+  check(`${sid}/sync sets _pubcid with Domain=${cookieDomain}`, plain.status === 200 && plain.setsId && plain.domain === cookieDomain,
     `${String(plain.status)}, _pubcid domain: ${plain.domain ?? (plain.setsId ? 'host-only' : 'not set')}`);
   const forgedSync = await sync(site, FORGED);
-  check('forged headers change nothing in /_sid/sync (same site settings, GDPR not decided by a forged country)',
+  check(`forged headers change nothing in ${sid}/sync (same site settings, GDPR not decided by a forged country)`,
     forgedSync.status === plain.status && forgedSync.setsId === plain.setsId && forgedSync.domain === plain.domain,
     `${String(forgedSync.status)}, _pubcid domain: ${forgedSync.domain ?? (forgedSync.setsId ? 'host-only' : 'not set')}`);
 
@@ -123,10 +127,10 @@ async function run(check: CheckFn): Promise<void> {
     const forwarded = { ...FORGED, 'X-Forwarded-Host': new URL(site).hostname };
     for (const [name, headers] of [['no headers', {}], ['forged secret, forwarded host, client IP and country', forwarded]] as const) {
       const direct = await sync(endpoint, headers);
-      check(`${endpoint}/_sid/sync called directly (${name}) answers 403 with no cookie`, direct.status === 403 && direct.cookies.length === 0,
+      check(`${endpoint}${sid}/sync called directly (${name}) answers 403 with no cookie`, direct.status === 403 && direct.cookies.length === 0,
         `${String(direct.status)}, ${String(direct.cookies.length)} Set-Cookie`);
       const directV1 = await v1(endpoint, headers);
-      check(`${endpoint}/_sid/v1 called directly (${name}) answers 403`, directV1.response.status === 403 && directV1.response.headers.getSetCookie().length === 0,
+      check(`${endpoint}${sid}/v1 called directly (${name}) answers 403`, directV1.response.status === 403 && directV1.response.headers.getSetCookie().length === 0,
         String(directV1.response.status));
     }
   }
@@ -134,10 +138,10 @@ async function run(check: CheckFn): Promise<void> {
   if (values.unlisted !== undefined) {
     const unlisted = origin(values.unlisted);
     for (const path of ['v1', 'sync']) {
-      const response = await fetch(`${unlisted}/_sid/${path}`);
+      const response = await fetch(`${unlisted}${sid}/${path}`);
       await response.arrayBuffer();
       const cookies = response.headers.getSetCookie();
-      check(`${unlisted}/_sid/${path}, not in SID_HOSTS, answers 404 with no cookie`, response.status === 404 && cookies.length === 0,
+      check(`${unlisted}${sid}/${path}, not in SID_HOSTS, answers 404 with no cookie`, response.status === 404 && cookies.length === 0,
         `${String(response.status)}, ${String(cookies.length)} Set-Cookie`);
     }
   }

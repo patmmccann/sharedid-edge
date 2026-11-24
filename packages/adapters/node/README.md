@@ -14,6 +14,7 @@ SharedID Edge as a **Node.js HTTP server**, for self-hosting behind the web serv
 - [Using it as a library](#using-it-as-a-library)
 - [Scheduled data updates](#scheduled-data-updates)
 - [Verify](#verify)
+- [Live tests](#live-tests)
 - [Troubleshooting](#troubleshooting)
 
 ## Architecture
@@ -220,6 +221,30 @@ curl -s https://www.example.com/_sid/v1 | jq .
 ```
 
 Locally, `npm run conformance` runs the whole conformance suite against this server.
+
+## Live tests
+
+[`e2e-node-upstream.yml`](../../../.github/workflows/e2e-node-upstream.yml) tests the container image on real infrastructure as an upstream operator's endpoint ([SharedID Edge for upstream operators](../../../docs/upstream-operators.md)), behind a publisher on Cloudflare. Like the other live workflows, it runs only from `main` (every merge, nightly, on demand), never on pull requests. It's for this project's own testing, not a deployment recipe.
+
+```text
+Browser ──► e2e.sharedid.dev/node-upstream/          the test page (Workers static assets)
+              └─ /node-upstream/_sid/*  ──► the Cloudflare recipe (cloudflare/live/forward.js): shared secret,
+                                            X-Forwarded-Host, X-SID-Client-IP, X-SID-Country/Region
+                                            ──► Lambda function URL (TLS) ──► this image, unchanged, with AWS Lambda
+                                                Web Adapter (live/Dockerfile.lambda), in trusted-upstream mode
+```
+
+The hostname is shared with the Cloudflare live tests, which own its root and `/_sid/*`, so this setup lives under `/node-upstream/` (`SID_BASE_PATH=/node-upstream/_sid`), and the browser tests run with `E2E_PATH=/node-upstream` (the page builds its `pixelUrl` from its own path). A second path, `/node-upstream-conformance/_sid/*`, goes to the same image on the default settings for the conformance suite.
+
+[`live/upstream.sh`](live/upstream.sh) builds the image from the commit, adds the adapter, pushes it to the ECR repository `sharedid-node-upstream`, deploys [`live/upstream.yaml`](live/upstream.yaml) (stack `sharedid-node-upstream`: two functions and their public function URLs), then deploys the two forwarding Workers with Wrangler. The workflow then runs:
+
+- [`check-live-site`](../../../docs/verification.md#check-live-site) with `--base-path /node-upstream/_sid`: the visitor's real address and region reach the image through the publisher; forged headers change nothing; the function URL called directly, without the secret or with a forged one, answers `403` with no cookie;
+- `verify-deployment` against the publisher (same IP addresses as the page, `Secure` server-set cookies on `sharedid.dev`, not cached);
+- the conformance suite's default cases through `/node-upstream-conformance/_sid`;
+- the browser tests in Chromium, Firefox and WebKit against `https://e2e.sharedid.dev/node-upstream/`;
+- the [EU visitor](../../../docs/verification.md#check-eu-visitor) from Frankfurt.
+
+**Setup** (once): the AWS live tests' OIDC role ([AWS live tests](../aws-lambda/README.md#live-tests)) with [`live/iam-policy.json`](live/iam-policy.json) from this package attached too (ECR, for the `sharedid-*` repositories; `ACCOUNT_ID` replaced), the repository secret `UPSTREAM_SECRET_NODE` (`openssl rand -hex 32`), the Cloudflare secrets the other live workflows use, and the repository variable `NODE_UPSTREAM_LIVE=true`. Until all are set, the workflow skips with a notice naming what's missing. By hand: `NODE_UPSTREAM_SECRETS_DIR=<a private folder> packages/adapters/node/live/upstream.sh`.
 
 ## Troubleshooting
 

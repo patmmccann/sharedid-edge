@@ -5,7 +5,9 @@
 //
 //   node live/configs.mjs upstream       # .out/endpoint.json, .out/forward.json
 //   node live/configs.mjs saas           # .out/saas.json, .out/saas-site.json
-import { mkdirSync, writeFileSync } from 'node:fs';
+//   node live/configs.mjs node-upstream  # .out/node-upstream-publisher.json, .out/node-upstream-conformance.json
+//   node live/configs.mjs node-upstream-hosts   # prints SID_HOSTS of the Node.js live test's endpoint
+import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -105,6 +107,37 @@ if (kind === 'upstream') {
     assets: { directory: '../../../../../e2e/site/public' },
     routes: [{ pattern: '*/*', zone_name: zone }]
   });
+} else if (kind === 'node-upstream-hosts') {
+  // The Node.js server's live test (packages/adapters/node/live/upstream.sh): SID_HOSTS of its endpoint, printed.
+  process.stdout.write(`${JSON.stringify({ [need('NODE_UPSTREAM_SITE')]: e2eSite(need('NODE_UPSTREAM_COOKIE_DOMAIN')) })}\n`);
+} else if (kind === 'node-upstream') {
+  // The publisher in front of the Node.js server's container on AWS (packages/adapters/node/live/upstream.sh), on a
+  // path of a hostname other setups share: forward.js on <site><prefix>/_sid/*, and the e2e test page as static
+  // assets at <site><prefix>/, so the page and the endpoint share the hostname. A second forward.js on
+  // <site><conformance prefix>/_sid/* sends the conformance suite to the default-settings endpoint.
+  const site = need('NODE_UPSTREAM_SITE');
+  const zone = need('NODE_UPSTREAM_ZONE');
+  const prefix = need('NODE_UPSTREAM_PREFIX');
+  const conformancePrefix = need('NODE_UPSTREAM_CONFORMANCE_PREFIX');
+  const assets = join(out, 'node-upstream-site');
+  rmSync(assets, { recursive: true, force: true });
+  cpSync(join(here, '../../../../e2e/site/public'), join(assets, prefix), { recursive: true });
+  write('node-upstream-publisher', {
+    ...common,
+    name: process.env['NODE_UPSTREAM_WORKER'] ?? 'sharedid-node-upstream-publisher',
+    main: '../forward.js',
+    // Only /_sid/* runs the Worker; the rest of the prefix is the page.
+    assets: { directory: './node-upstream-site', run_worker_first: [`${prefix}/_sid/*`] },
+    routes: [{ pattern: `${site}${prefix}/*`, zone_name: zone }],
+    vars: { SID_ENDPOINT: need('NODE_UPSTREAM_ENDPOINT') }
+  });
+  write('node-upstream-conformance', {
+    ...common,
+    name: process.env['NODE_UPSTREAM_CONFORMANCE_WORKER'] ?? 'sharedid-node-upstream-conformance',
+    main: '../forward.js',
+    routes: [{ pattern: `${site}${conformancePrefix}/_sid/*`, zone_name: zone }],
+    vars: { SID_ENDPOINT: need('NODE_UPSTREAM_CONFORMANCE_ENDPOINT') }
+  });
 } else {
-  throw new Error('Usage: node live/configs.mjs upstream|saas');
+  throw new Error('Usage: node live/configs.mjs upstream|saas|node-upstream|node-upstream-hosts');
 }
