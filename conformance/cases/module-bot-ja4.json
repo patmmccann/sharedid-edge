@@ -1,0 +1,44 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The bot module's ja4Mismatch with SID_SKIP_BOTS=likely. It compares the client's JA4 TLS fingerprint, which only the platform provides (Cloudflare Bot Management, Fastly Compute, CloudFront when configured), with the browser the user agent claims. None of the local targets has a JA4, so these cases check that without one there's no decision: a Chrome user agent gets its ID, and a JA4 header the visitor sends (here CloudFront's header name, with a Python fingerprint) is never read as the platform's. The contradictions themselves are covered by the bot module's and the adapters' unit tests.",
+  "config": {
+    "SID_MODULES": "bot",
+    "SID_MODULE_CONFIG": "{\"bot\":{\"ja4Mismatch\":true}}",
+    "SID_SKIP_BOTS": "likely"
+  },
+  "cases": [
+    {
+      "name": "without a JA4 from the platform there's no decision, and the ID is minted",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "en" } },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-source": "minted" },
+        "absentHeaders": ["x-sharedid-status"],
+        "jsonIncludes": { "ext": { "modules": { "bot": { "status": "empty" } } } },
+        "jsonAbsent": ["ortb2"],
+        "cookies": [{ "name": "_pubcid", "valuePattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" }]
+      }
+    },
+    {
+      "name": "a JA4 header sent by the visitor isn't the platform's fingerprint",
+      "request": { "path": "/_sid/v1", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "en", "cloudfront-viewer-ja4-fingerprint": "t13d181000_85036bcba153_d41ae481755e", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-source": "cookie" },
+        "absentHeaders": ["x-sharedid-status"],
+        "jsonIncludes": { "sharedid": "c29cb2ae-769d-42f6-891a-f53cadee823d", "ext": { "modules": { "bot": { "status": "empty" } } } },
+        "jsonAbsent": ["ortb2"],
+        "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }]
+      }
+    },
+    {
+      "name": "on /sync too: no JA4, no decision",
+      "request": { "path": "/_sid/sync", "headers": { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36", "accept-language": "en", "cloudfront-viewer-ja4-fingerprint": "t13d190900_9dc949149365_97f8aa674fd9" } },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-source": "minted", "x-sharedid-modules": "bot=empty" },
+        "absentHeaders": ["x-sharedid-status"]
+      }
+    }
+  ]
+}

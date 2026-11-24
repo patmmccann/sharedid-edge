@@ -186,6 +186,26 @@ describe('platformInfo', () => {
     expect(platformInfo(cloudFrontEvent({ omitHeaders: ['cloudfront-viewer-address'] }))).not.toHaveProperty('clientIp');
   });
 
+  it('reads CloudFront-Viewer-JA4-Fingerprint only when configured to (viewerJa4), and only behind CloudFront', () => {
+    const ja4 = 't13d2014h2_a09f3c656075_14788d8d241b';
+    const event = cloudFrontEvent({ headers: { 'cloudfront-viewer-ja4-fingerprint': ja4 } });
+    expect(platformInfo(event, { viewerJa4: true })).toMatchObject({ clientIp: '198.51.100.23', ja4 });
+    expect(platformInfo(event)).not.toHaveProperty('ja4');
+    expect(platformInfo(event, { viewerJa4: true, behindCloudFront: false })).toEqual({ clientIp: '64.252.0.10' });
+    expect(platformInfo(cloudFrontEvent({ headers: { 'cloudfront-viewer-ja4-fingerprint': 'forged' } }), { viewerJa4: true })).not.toHaveProperty('ja4');
+  });
+
+  it('with SID_CLOUDFRONT_JA4, the bot module\'s ja4Mismatch skips minting for a Safari user agent over Go\'s TLS', async () => {
+    const env = { SID_COOKIE_DOMAIN: 'host-only', SID_MODULES: 'bot', SID_MODULE_CONFIG: '{"bot":{"ja4Mismatch":true}}', SID_SKIP_BOTS: 'likely' };
+    const event = cloudFrontEvent({ path: '/_sid/v1', headers: { 'cloudfront-viewer-ja4-fingerprint': 't13d190900_9dc949149365_97f8aa674fd9' } });
+    const skipped = await handlerFromEnv({ ...env, SID_CLOUDFRONT_JA4: 'true' })(event);
+    expect(skipped.headers['x-sharedid-status']).toBe('skipped: bot');
+    expect(skipped.cookies).toEqual([]);
+    const ignored = await handlerFromEnv(env)(event);
+    expect(ignored.headers['x-sharedid-status']).toBeUndefined();
+    expect(ignored.cookies.some(c => c.startsWith('_pubcid='))).toBe(true);
+  });
+
   it('parses viewer addresses', () => {
     expect(parseViewerAddress('192.0.2.1:443')).toBe('192.0.2.1');
     expect(parseViewerAddress(' [2001:db8::1]:46532 ')).toBe('2001:db8::1');

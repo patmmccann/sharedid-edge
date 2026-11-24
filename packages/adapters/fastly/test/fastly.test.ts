@@ -90,6 +90,14 @@ describe('platformInfo', () => {
     expect(platformInfo(client('192.0.2.1', { country_code: 'CA', region: 'ON', postal_code: 'm5v' })).postalCode).toBe('M5V');
   });
 
+  it("reads the JA4 fingerprint from event.client.tlsJA4, only when it's one", () => {
+    const ja4 = 't13d1516h2_8daaf6152771_02713d6af862';
+    expect(platformInfo({ ...client('192.0.2.1', null), tlsJA4: ja4 })).toEqual({ clientIp: '192.0.2.1', ja4 });
+    for (const tlsJA4 of [null, undefined, '', 'not-a-ja4']) {
+      expect(platformInfo({ ...client('192.0.2.1', null), tlsJA4 })).toEqual({ clientIp: '192.0.2.1' });
+    }
+  });
+
   it('drops what core drops, and an address that is not an IP address', () => {
     expect(platformInfo(client('not-an-ip', { country_code: 'T1', region: 'TX!', latitude: 95, longitude: 10 }))).toEqual({});
     expect(platformInfo(client('', null))).toEqual({});

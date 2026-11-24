@@ -33,6 +33,14 @@ export interface PlatformInfo {
    * proxy flag). Core merges it into the traffic signal as source `platform`.
    */
   readonly traffic?: TrafficReport;
+  /**
+   * The client's JA4 TLS fingerprint, as the platform computed it from the visitor's own connection (on Cloudflare,
+   * `request.cf.botManagement.ja4`; on Fastly, `event.client.tlsJA4`; behind CloudFront, when configured,
+   * `CloudFront-Viewer-JA4-Fingerprint`), checked with `ja4Value`. Never from a header a visitor could send. Only for
+   * modules that compare it with the request (the `bot` module's `ja4Mismatch`); never stored, logged, returned, or
+   * used to derive an identifier.
+   */
+  readonly ja4?: string;
 }
 
 /** An OpenRTB extended identifier, in the `user.ext.eids` format. */

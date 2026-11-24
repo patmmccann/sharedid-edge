@@ -35,8 +35,8 @@
     "kind": "module",
     "name": "bot",
     "title": "bot and staff-traffic signals",
-    "summary": "`ortb2.device.ext.traffic`: a likely bot when a browser lacks headers browsers send, and `internal` for your own staff, merged with other modules' reports and Cloudflare Bot Management. Sent whatever the consent",
-    "settings": "`missingHeaders`, `internalCookie`; secret `internalToken`",
+    "summary": "`ortb2.device.ext.traffic`: a likely bot when a browser lacks headers browsers send or its JA4 TLS fingerprint contradicts its user agent, and `internal` for your own staff, merged with other modules' reports and Cloudflare Bot Management. Sent whatever the consent",
+    "settings": "`missingHeaders`, `ja4Mismatch`, `internalCookie`; secret `internalToken`",
     "routes": [
       "v1",
       "sync"

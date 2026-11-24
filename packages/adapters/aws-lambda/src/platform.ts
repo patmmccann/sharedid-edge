@@ -1,4 +1,4 @@
-import { EU_COUNTRY_CODES, locationWithEU, parseViewerAddress, type PlatformInfo } from '@sharedid-edge/core';
+import { EU_COUNTRY_CODES, ja4Value, locationWithEU, parseViewerAddress, type PlatformInfo } from '@sharedid-edge/core';
 import type { LambdaEventV2 } from './event.js';
 
 /** The 27 EU member states, from core: the meaning of Cloudflare's `request.cf.isEUCountry`. */
@@ -17,6 +17,13 @@ export interface PlatformOptions {
    * send them) and the client IP is `requestContext.http.sourceIp`; there is no location.
    */
   readonly behindCloudFront?: boolean;
+  /**
+   * `true`: the origin request policy adds `CloudFront-Viewer-JA4-Fingerprint`, so CloudFront sets it from the
+   * viewer's TLS connection, and it becomes `PlatformInfo.ja4`. `false` (the default): the header is ignored, since
+   * a policy that doesn't add it (such as the managed `AllViewerExceptHostHeader`) may pass on a visitor's own copy.
+   * Only behind CloudFront.
+   */
+  readonly viewerJa4?: boolean;
 }
 
 function header(event: LambdaEventV2, name: string): string | undefined {
@@ -34,7 +41,9 @@ export function platformInfo(event: LambdaEventV2, options: PlatformOptions = {}
     const sourceIp = event.requestContext.http.sourceIp;
     return sourceIp === undefined || sourceIp === '' ? {} : { clientIp: sourceIp };
   }
-  return viewerInfo(parseViewerAddress(header(event, 'cloudfront-viewer-address')), name => header(event, name));
+  const info = viewerInfo(parseViewerAddress(header(event, 'cloudfront-viewer-address')), name => header(event, name));
+  const ja4 = options.viewerJa4 === true ? ja4Value(header(event, 'cloudfront-viewer-ja4-fingerprint')) : undefined;
+  return ja4 === undefined ? info : { ...info, ja4 };
 }
 
 /**

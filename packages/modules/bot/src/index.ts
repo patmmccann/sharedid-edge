@@ -1,4 +1,7 @@
 import { defineModule, type EdgeModule, type ModuleContext, type ModuleResult, type TrafficReport } from '@sharedid-edge/core';
+import { ja4Contradicts } from './ja4.js';
+
+export { claimedBrowser, ja4Contradicts, ja4Stack, type BrowserFamily, type TlsStack } from './ja4.js';
 
 /** The module's settings, from `SID_MODULE_CONFIG.bot`. */
 export interface BotSettings {
@@ -8,12 +11,28 @@ export interface BotSettings {
    * heuristic, so off by default.
    */
   readonly missingHeaders: boolean;
+  /**
+   * Flag a request whose JA4 TLS fingerprint, from the platform, contradicts the browser its user agent claims (a
+   * Chrome user agent over Python's TLS stack, say) as `botKind: 'likely'`. Only where the platform provides the
+   * fingerprint; elsewhere it does nothing. A heuristic, so off by default.
+   */
+  readonly ja4Mismatch: boolean;
   /** The name of the cookie that marks the site's own staff (`internal: true`); undefined for none. */
   readonly internalCookie: string | undefined;
 }
 
+/**
+ * Flags the Cloudflare Snippet's build sets with esbuild's `define`: with `__SID_PREVALIDATED__`,
+ * `__SID_UNUSED_BOT_JA4__` is `true` when no bundled setting turns `ja4Mismatch` on, so the JA4 check compiles away.
+ * Unset everywhere else.
+ */
+interface SnippetFlags {
+  readonly __SID_PREVALIDATED__?: boolean;
+  readonly __SID_UNUSED_BOT_JA4__?: boolean;
+}
+
 const COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,64}$/;
-const SETTINGS = ['missingHeaders', 'internalCookie'];
+const SETTINGS = ['missingHeaders', 'ja4Mismatch', 'internalCookie'];
 const SECRETS = ['internalToken'];
 
 /**
@@ -27,12 +46,13 @@ export function botSettings(config: Readonly<Record<string, unknown>>): BotSetti
   for (const key of Object.keys(config)) {
     if (!SETTINGS.includes(key)) throw new TypeError(`bot: unknown setting "${key}"`);
   }
-  const { missingHeaders, internalCookie } = config;
+  const { missingHeaders, ja4Mismatch, internalCookie } = config;
   if (missingHeaders !== undefined && typeof missingHeaders !== 'boolean') throw new TypeError('bot: "missingHeaders" must be true or false');
+  if (ja4Mismatch !== undefined && typeof ja4Mismatch !== 'boolean') throw new TypeError('bot: "ja4Mismatch" must be true or false');
   if (internalCookie !== undefined && (typeof internalCookie !== 'string' || !COOKIE_NAME.test(internalCookie))) {
     throw new TypeError('bot: "internalCookie" must be a cookie name');
   }
-  return { missingHeaders: missingHeaders ?? false, internalCookie };
+  return { missingHeaders: missingHeaders ?? false, ja4Mismatch: ja4Mismatch ?? false, internalCookie };
 }
 
 /** Reads the module's `SID_MODULE_SECRETS` entry: an optional `internalToken`. Never echoes a value. */
@@ -87,12 +107,14 @@ function sameToken(a: string, b: string): boolean {
   return diff === 0;
 }
 
-function run({ request, url, cookies, config, secrets }: ModuleContext): ModuleResult | undefined {
+function run({ request, url, cookies, platform, config, secrets }: ModuleContext): ModuleResult | undefined {
   const settings = botSettings(config);
   const token = internalToken(secrets);
   const marker = settings.internalCookie === undefined ? undefined : cookies.get(settings.internalCookie);
   const internal = marker !== undefined && marker !== '' && (token === undefined || sameToken(marker, token));
-  const likely = settings.missingHeaders && missingBrowserHeaders(request.headers, url);
+  const likely = (settings.missingHeaders && missingBrowserHeaders(request.headers, url))
+    || (!((globalThis as SnippetFlags).__SID_PREVALIDATED__ === true && (globalThis as SnippetFlags).__SID_UNUSED_BOT_JA4__ === true)
+      && settings.ja4Mismatch && platform.ja4 !== undefined && ja4Contradicts(request.headers.get('User-Agent') ?? '', platform.ja4));
   const traffic: TrafficReport = {
     ...(likely ? { bot: true, botKind: 'likely' } : {}),
     ...(internal ? { internal: true } : {})
@@ -105,6 +127,8 @@ function run({ request, url, cookies, config, secrets }: ModuleContext): ModuleR
  * modules' reports and the platform's own verdict (Cloudflare Bot Management). It adds:
  *
  * - with `"missingHeaders": true`, `bot: true, botKind: 'likely'` for a "browser" missing headers browsers send;
+ * - with `"ja4Mismatch": true`, the same for a request whose JA4 TLS fingerprint (where the platform provides it)
+ *   contradicts the browser its user agent claims;
  * - with `"internalCookie": "<name>"`, `internal: true` when the request carries that cookie (with
  *   `SID_MODULE_SECRETS.bot.internalToken`, only when its value is the token).
  *

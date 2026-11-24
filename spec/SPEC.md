@@ -310,6 +310,16 @@ What the platform knows about the request beyond the request itself: the client 
 
 An implementation behind Cloudflare that isn't a Worker (for example the Node.js server, with Cloudflare's "add visitor location headers" managed transform) reads the location from the headers in the last column **only** when configured to trust its proxy (`SID_TRUST_PROXY`), as it does for the client IP in `X-Forwarded-For`: otherwise the client can set them.
 
+**The TLS fingerprint.** The platform information MAY also carry the client's [JA4](https://github.com/FoxIO-LLC/ja4/blob/main/technical_details/JA4.md) TLS fingerprint (`ja4`), as the platform computed it from the visitor's own TLS connection: the whole `a_b_c` string, such as `t13d1516h2_8daaf6152771_02713d6af862`, with `a` the protocol (`t` TCP, `q` QUIC, `d` DTLS), TLS version, SNI (`d` or `i`), the cipher and extension counts and the ALPN's first and last characters, and `b` and `c` 12 lower-case hex digits each. Anything else is left out. Only from the platform, never from a header a visitor could send:
+
+| Platform | Source |
+| --- | --- |
+| Cloudflare | `request.cf.botManagement.ja4` (Bot Management, an Enterprise add-on) |
+| Fastly Compute | `event.client.tlsJA4` |
+| AWS Lambda behind CloudFront | `CloudFront-Viewer-JA4-Fingerprint`, only when configured to say the origin request policy adds it (`SID_CLOUDFRONT_JA4`), so CloudFront sets it |
+
+Other platforms, the Lambda@Edge bundle, a server behind a proxy it trusts, and [trusted-upstream mode](#trusted-upstream) (where the connection is the publisher's CDN's) have none. It's used only by modules that compare it with the request (the [`bot` module](modules/bot.md)'s `ja4Mismatch`): it MUST NOT be stored, logged, returned, or used to derive an identifier.
+
 ### Platform traffic verdict
 
 The platform information MAY carry the platform's own traffic verdict, a report with the fields of the [traffic signal](#traffic-signal) (without `sources`). It's merged first, as source `platform`, on every route, whether or not any module runs, and so it's in the payload even with no modules; a verdict that isn't valid is ignored. Platforms add only what they themselves determined, never a guess:

@@ -163,7 +163,9 @@ const unused = {
   REFLECT_PREFER: reflectCookies.every(c => c.prefer === 'browser'),
   REFLECT_OLDER: reflectCookies.every(c => c.prefer !== 'older'),
   // Sites that don't run reflect get {} (no keeper), and it throws before reaching per-cookie code.
-  REFLECT_PER_COOKIE: served.every(c => c.moduleConfig['reflect']?.keeper?.mode !== 'per-cookie')
+  REFLECT_PER_COOKIE: served.every(c => c.moduleConfig['reflect']?.keeper?.mode !== 'per-cookie'),
+  // The bot module's JA4 check, and its table, when no site turns ja4Mismatch on.
+  BOT_JA4: served.every(c => c.moduleConfig['bot']?.ja4Mismatch !== true)
 };
 // Without a module that has a consent hook, core's code that runs them compiles away (NO_CONSENT_HOOKS in core's modules.ts).
 // A Snippet has no bindings, so no rate limiter: core's check for one compiles away too (NO_RATE_LIMIT in handler.ts).

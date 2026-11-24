@@ -1,4 +1,4 @@
-import { locationWithEU, parseIp, type PlatformInfo } from '@sharedid-edge/core';
+import { ja4Value, locationWithEU, parseIp, type PlatformInfo } from '@sharedid-edge/core';
 import type { FastlyClientInfo, FastlyGeolocation } from './fastly.js';
 
 /** Placeholders Fastly's geolocation data uses for "unknown" in text fields. */
@@ -30,6 +30,8 @@ function position(geo: FastlyGeolocation): { readonly latitude?: number; readonl
  *   values (`?`, a `0` metro code, coordinates of 0,0) are dropped, and postal codes are upper-cased (Fastly gives
  *   alphanumeric ones in lowercase). Fastly has no IANA time zone, so there's none.
  *
+ * - The JA4 TLS fingerprint from `event.client.tlsJA4`, which Fastly computes from the connection's ClientHello.
+ *
  * The location is checked by core's `locationInfo` like every adapter's, with `isEU` from the country.
  */
 export function platformInfo(client: FastlyClientInfo): PlatformInfo {
@@ -45,5 +47,6 @@ export function platformInfo(client: FastlyClientInfo): PlatformInfo {
     ...position(geo),
     continent: known(geo.continent)
   });
-  return { ...(clientIp === undefined ? {} : { clientIp }), ...location };
+  const ja4 = ja4Value(client.tlsJA4);
+  return { ...(clientIp === undefined ? {} : { clientIp }), ...location, ...(ja4 === undefined ? {} : { ja4 }) };
 }
