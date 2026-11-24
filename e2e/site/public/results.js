@@ -126,7 +126,7 @@
         document.createTextNode('This page loads unmodified Prebid.js with SharedID\u2019s '),
         code('pixelUrl'),
         document.createTextNode(' pointing at '),
-        code(location.host + SID + '/sync'),
+        code(SID + '/sync'),
         document.createTextNode(', on the same site. Below is what happened in this browser, on this page view.')
       ]),
       el('div', { id: 'sid-verdict', 'data-status': 'pending' }, [
