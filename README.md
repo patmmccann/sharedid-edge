@@ -6,6 +6,8 @@ It replaces the [WordPress](https://github.com/prebid/sharedid-wordpress) and [D
 
 It also has a **module** interface for IDs and signals that are best computed at the edge (connecting IP, geography, bot scores, device data), returned to the page in one JSON response. See the [proposal](https://github.com/prebid/prebid-server/issues/5064) for the background.
 
+**See it working live:** [e2e.sharedid.dev/demo](https://e2e.sharedid.dev/demo/) lists every live deployment this project's tests keep running (Cloudflare, AWS CloudFront and Lambda, Vercel, upstream operators, a hosting company on Cloudflare for SaaS, the Node.js container). Open one, and a panel shows, with green checks, the cookie the server set in your browser, how long your browser will keep it, and the ID Prebid.js puts into bid requests, next to the latest test run.
+
 ## How it works
 
 ```text

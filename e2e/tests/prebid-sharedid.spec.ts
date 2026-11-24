@@ -481,3 +481,70 @@ test('an opted-out user gets no id cookies from the endpoint', async ({ page, co
   expect(await cookie(context, '_pubcid')).toBeUndefined();
   expect(await cookie(context, '_pubcid_sv')).toBeUndefined();
 });
+
+// The results panel a person sees on the page (site/public/results.js). Under automation it sends nothing of its own to
+// the endpoint, so the tests above see only Prebid.js's requests; ?checks=1 turns its /_sid/v1 checks on, as for a
+// person.
+test('the results panel shows the integration working, and the HttpOnly copy restoring a deleted _pubcid', async ({ page, context, sid }) => {
+  await visit(page);
+  // Under automation: Prebid.js's sync only, and the browser-side checks.
+  await expect(page.locator('#sid-verdict')).toHaveAttribute('data-status', 'pass');
+  expect((await sid.requests()).map(r => new URL(r.path, 'http://x').pathname)).toEqual([`${SID}/sync`]);
+  const id = (await cookie(context, '_pubcid'))?.value;
+  for (const check of ['prebid', 'sync', 'cookie', 'same-id', 'eids']) {
+    await expect(page.locator(`[data-check="${check}"]`), check).toHaveAttribute('data-status', 'pass');
+  }
+  await expect(page.locator('[data-check="eids"]')).toContainText('pubcid.org');
+  await expect(page.locator('[data-check="eids"]')).toContainText(String(id));
+  await expect(page.locator('[data-check="worker"]')).toHaveAttribute('data-status', 'info');
+
+  // As a person sees it: the worker's checks too, then the recovery copy restoring a deleted _pubcid.
+  await visit(page, '/?checks=1');
+  await expect(page.locator('[data-check="worker"]')).toHaveAttribute('data-status', 'pass');
+  await expect(page.locator('[data-check="worker"]')).toContainText('X-SharedID-Source: cookie');
+  await expect(page.locator('#sid-verdict')).toHaveAttribute('data-status', 'pass');
+  await page.locator('#sid-recover').click();
+  await expect(page.locator('[data-check="recovery"]')).toHaveAttribute('data-status', 'pass');
+  expect((await cookie(context, '_pubcid'))?.value).toBe(id);
+});
+
+test('the results panel fails the sync check when the endpoint answers Prebid.js with an error', async ({ page, browserName }) => {
+  test.skip(browserName === 'webkit', 'WebKit\'s resource timing has no responseStatus');
+  await visit(page); // an earlier visit's _pubcid, which would make the cookie and EID checks pass
+  await page.route(`**${SID}/sync**`, route => route.fulfill({ status: 500, body: 'Internal error' }));
+  await page.goto(at('/'));
+  await expect(page.locator('[data-check="sync"]')).toHaveAttribute('data-status', 'fail');
+  await expect(page.locator('[data-check="sync"]')).toContainText('500');
+  await expect(page.locator('#sid-verdict')).toHaveAttribute('data-status', 'fail');
+});
+
+test('the results panel\'s own /_sid/v1 call carries the page\'s consent, so a GPP opt-out stays opted out', async ({ page, context, sid }) => {
+  test.skip(LIVE, 'the live deployments don\'t build the opt-in gpp module');
+  await visit(page, '/?consent=none&gpp=usnatOptOut&checks=1');
+  await expect(page.locator('[data-check="worker"]')).toContainText('denied: gpp: usnat: opted out of sale');
+  const v1 = (await sid.requests()).filter(r => r.path.startsWith(`${SID}/v1`));
+  expect(v1).toHaveLength(1);
+  expect(syncParams(v1[0])).toEqual([['gpp', 'DBABLA~CVQaAAAAAABA.QA'], ['gpp_sid', '7']]);
+  expect(await cookie(context, '_pubcid_sv')).toBeUndefined();
+  await expect.poll(() => cookie(context, '_pubcid')).toBeUndefined();
+  await expect(page.locator('#sid-verdict')).not.toHaveAttribute('data-status', 'fail');
+});
+
+test('the demo\'s AWS tile turns red when its EU visitor fails', async ({ page }) => {
+  test.skip(LIVE, 'the demo\'s tiles are checked once, locally');
+  await page.route('https://api.github.com/**', route => {
+    const url = route.request().url();
+    const body = url.includes('/workflows/')
+      ? { workflow_runs: [{ id: 1, updated_at: new Date().toISOString(), html_url: 'https://github.com/', event: 'push', head_sha: '0123456789abcdef' }] }
+      : { jobs: [
+        { name: 'Deploy to CloudFront, verify, conformance', conclusion: 'success' },
+        { name: 'Prebid.js end to end, live on CloudFront (chromium)', conclusion: 'success' },
+        { name: 'An EU visitor (eu-central-1)', conclusion: 'failure' },
+        { name: 'An EU visitor on Lambda@Edge (eu-central-1)', conclusion: 'skipped' }
+      ] };
+    return route.fulfill({ json: body, headers: { 'access-control-allow-origin': '*' } });
+  });
+  await page.goto('/demo/');
+  await expect(page.locator('.tile[data-workflow="e2e-aws.yml"]')).toHaveAttribute('data-status', 'fail');
+  // The Lambda@Edge jobs aren't this tile's: with only them failing, it would pass.
+});

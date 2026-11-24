@@ -201,7 +201,9 @@ export default defineConfig({
       { text: 'Platforms', link: adapterItems[0]?.link ?? '/' },
       { text: 'Modules', link: '/docs/modules' },
       { text: 'Prebid.js', link: '/docs/prebid' },
-      { text: 'Specification', link: '/spec/' }
+      { text: 'Specification', link: '/spec/' },
+      // The live demo (e2e/site/public/demo), deployed by the Cloudflare live tests.
+      { text: 'Live demo', link: 'https://e2e.sharedid.dev/demo/' }
     ],
     sidebar: [
       { text: 'Introduction', items: [{ text: 'SharedID Edge', link: '/' }] },
