@@ -8,6 +8,12 @@
 //
 // Loaded by `upstream-preload.ts` (`node --import`) in every target process run with Node.js, and imported first by the
 // Worker entry point `targets.ts` writes for `wrangler dev`. Web-standard APIs only: workerd runs it too.
+//
+// **The ID5 stub over the network.** With `CONFORMANCE_ID5_STUB` in the process's environment (a loopback http URL),
+// requests to ID5's hosts aren't answered in memory: they're sent, same path and body, to that URL, where `id5-stub.ts`
+// runs as its own process (the Node.js target) or container (the `docker` target), so the server's request to ID5
+// really leaves it. This is the only way to point the `id5` module at anything but ID5: it lives here, in a test
+// preload that no build or image includes, so the module's own rule (https on ID5's hosts) stays as it is.
 
 /** The hosts answered here: Google's tag gateway endpoints, and ID5's. */
 function stoodIn(hostname: string): boolean {
@@ -18,12 +24,16 @@ function isId5(hostname: string): boolean {
   return hostname === 'id5-sync.com' || hostname === 'api.id5-sync.com';
 }
 
+/** A `ua` containing this gets ID5's opt-out from the stand-in (`universal_uid` `"0"`), for the opt-out cases. */
+export const ID5_OPT_OUT_MARKER = 'id5-stub-optout';
+
 /**
  * ID5's stand-in: a fetch answer with one EID (`ID5*conformance`, `linkType` 2) whose UID `ext.sent` echoes what the
  * request carried (`partner`, `ip`, `ipv6`, `ua`, `puid`, `s`; `null` when absent), so cases check what was sent
- * through the payload, and `signature` `conformance-signature`.
+ * through the payload, and `signature` `conformance-signature`. A `ua` containing `ID5_OPT_OUT_MARKER` gets ID5's
+ * opt-out instead. Also what `id5-stub.ts` answers.
  */
-async function id5StandIn(request: Request): Promise<Response> {
+export async function id5StandIn(request: Request): Promise<Response> {
   let body: Record<string, unknown> = {};
   try {
     const parsed: unknown = JSON.parse(await request.text());
@@ -31,6 +41,7 @@ async function id5StandIn(request: Request): Promise<Response> {
   } catch {
     return new Response('bad request', { status: 400 });
   }
+  if (typeof body['ua'] === 'string' && body['ua'].includes(ID5_OPT_OUT_MARKER)) return Response.json({ universal_uid: '0', signature: 'conformance-signature' });
   const sent = Object.fromEntries(['partner', 'ip', 'ipv6', 'ua', 'puid', 's'].map(key => [key, body[key] ?? null]));
   const eid = { source: 'id5-sync.com', uids: [{ id: 'ID5*conformance', atype: 1, ext: { linkType: 2, sent } }] };
   return Response.json({ ids: { id5id: { eid } }, signature: 'conformance-signature', cache_control: { max_age_sec: 7200 } });
@@ -77,11 +88,32 @@ function target(input: string | URL | Request): URL {
   return new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
 }
 
-/** Replaces `globalThis.fetch` with one that answers stood-in hosts here and refuses anything but loopback. */
+/** `CONFORMANCE_ID5_STUB`, when the process has it and it's a loopback http URL (see the top of this file). */
+function id5StubUrl(): URL | undefined {
+  const value = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.['CONFORMANCE_ID5_STUB'];
+  if (value === undefined || value === '') return undefined;
+  const url = new URL(value);
+  if (url.protocol !== 'http:' || !LOOPBACK.has(url.hostname)) throw new TypeError('conformance: CONFORMANCE_ID5_STUB must be a loopback http URL');
+  return url;
+}
+
+/** Sends a request for ID5 to the stub process at `stub`, with the same path, query, headers and body. */
+async function toId5Stub(stub: URL, request: Request, original: typeof fetch): Promise<Response> {
+  const from = new URL(request.url);
+  const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer();
+  return original(new URL(`${from.pathname}${from.search}`, stub), { method: request.method, headers: request.headers, signal: request.signal, ...(body === undefined ? {} : { body }) });
+}
+
+/**
+ * Replaces `globalThis.fetch` with one that answers stood-in hosts here (or, for ID5 with `CONFORMANCE_ID5_STUB`, sends
+ * them to the stub process) and refuses anything but loopback.
+ */
 export function installUpstreamStandIn(): void {
   const original = globalThis.fetch.bind(globalThis);
+  const stub = id5StubUrl();
   globalThis.fetch = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = target(input);
+    if (stub !== undefined && isId5(url.hostname)) return toId5Stub(stub, new Request(input, init), original);
     if (stoodIn(url.hostname)) return upstreamStandIn(new Request(input, init));
     if (!LOOPBACK.has(url.hostname)) return Promise.reject(new TypeError('conformance: requests may not leave this machine'));
     return original(input, init);

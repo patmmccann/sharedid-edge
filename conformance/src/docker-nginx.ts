@@ -19,6 +19,11 @@
 // X-Forwarded-For entry with SID_TRUST_PROXY; otherwise 127.0.0.1), as fastly-viceroy.ts does. Those addresses must be
 // local: on Linux, `sudo ip route add local 192.0.2.0/24 dev lo`, as CI does for the cases' ranges. The cases'
 // Cloudflare location headers pass through nginx unchanged, as they would from Cloudflare in front of it.
+//
+// With `id5Stub` (case files that list the `id5` module), a third container: ID5's stub (id5-stub.ts), from the same
+// image with `node` as its entry point, on the host's network. The server gets `CONFORMANCE_ID5_STUB`, so the upstream
+// stand-in sends its requests for ID5 there: a real request from the server's container to another, which the
+// browser (the runner) never makes.
 import { execFile } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { isIPv6 } from 'node:net';
@@ -43,6 +48,14 @@ export interface DockerTargetOptions {
   readonly conformanceDir: string;
   /** Files under conformance/dist/ the server preloads with --import, like upstream-preload.js. */
   readonly preload: readonly string[];
+  /** Whether to run ID5's stub as a container next to the server, and point the server at it (see above). */
+  readonly id5Stub?: boolean;
+}
+
+/** A running docker target: how to stop it, and the ID5 stub's URL when it has one. */
+export interface DockerTarget {
+  readonly stop: () => Promise<void>;
+  readonly id5Stub: string | undefined;
 }
 
 /**
@@ -78,9 +91,10 @@ async function docker(...args: string[]): Promise<string> {
 }
 
 /** Starts the server's container and nginx, and the relay in front; resolves once nginx answers, to a function that stops them. */
-export async function startDockerTarget(options: DockerTargetOptions): Promise<() => Promise<void>> {
+export async function startDockerTarget(options: DockerTargetOptions): Promise<DockerTarget> {
   const trustProxy = /^(1|true|yes|on)$/i.test(options.env['SID_TRUST_PROXY'] ?? '');
-  const [serverPort, nginxPort] = [await freePort(), await freePort()];
+  const [serverPort, nginxPort, stubPort] = [await freePort(), await freePort(), await freePort()];
+  const id5Stub = options.id5Stub === true ? `http://127.0.0.1:${String(stubPort)}` : undefined;
   const name = `sharedid-conformance-${String(options.port)}`;
   const dir = mkdtempSync(join(tmpdir(), 'sharedid-nginx-'));
   const conf = join(dir, 'default.conf');
@@ -92,13 +106,18 @@ export async function startDockerTarget(options: DockerTargetOptions): Promise<(
     HOST: '127.0.0.1',
     // The image's health check isn't used here; off, so it doesn't take a port.
     HEALTH_PORT: '',
-    NODE_OPTIONS: options.preload.map(file => `--import /conformance/dist/${file}`).join(' ')
+    NODE_OPTIONS: options.preload.map(file => `--import /conformance/dist/${file}`).join(' '),
+    ...(id5Stub === undefined ? {} : { CONFORMANCE_ID5_STUB: id5Stub })
   };
   const stopAll = async (): Promise<void> => {
-    await docker('rm', '-f', `${name}-server`, `${name}-nginx`).catch(() => undefined);
+    await docker('rm', '-f', `${name}-server`, `${name}-nginx`, ...(id5Stub === undefined ? [] : [`${name}-id5`])).catch(() => undefined);
     rmSync(dir, { recursive: true, force: true });
   };
   try {
+    if (id5Stub !== undefined) {
+      await docker('run', '-d', '--name', `${name}-id5`, '--network', 'host', '--no-healthcheck', '--entrypoint', 'node',
+        '-v', `${options.conformanceDir}:/conformance:ro`, options.image, '/conformance/dist/id5-stub.js', String(stubPort));
+    }
     await docker('run', '-d', '--name', `${name}-server`, '--network', 'host', '--no-healthcheck',
       '-v', `${options.conformanceDir}:/conformance:ro`,
       ...Object.entries(env).flatMap(([key, value]) => ['-e', `${key}=${value}`]),
@@ -115,9 +134,12 @@ export async function startDockerTarget(options: DockerTargetOptions): Promise<(
     return forwardFrom(isIPv6(from) ? '::1' : '127.0.0.1', nginxPort, from, req.method ?? 'GET', req.url ?? '/', req.rawHeaders, await readBody(req));
   });
 
-  return async () => {
-    await closeRelay();
-    await stopAll();
+  return {
+    id5Stub,
+    stop: async () => {
+      await closeRelay();
+      await stopAll();
+    }
   };
 }
 

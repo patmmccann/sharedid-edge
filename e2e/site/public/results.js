@@ -91,7 +91,8 @@
     ['lifetime', 'How long your browser keeps it'],
     ['worker', 'What the worker says'],
     ['recovery', 'The HttpOnly recovery copy'],
-    ['modules', 'Edge modules: visitor IP and location']
+    ['modules', 'Edge modules: visitor IP and location'],
+    ['id5', 'ID5 ID (server-to-server)']
   ];
 
   function render() {
@@ -260,11 +261,13 @@
         ]));
       }
       modules(answer.body);
+      id5(answer.body, answer.denied);
       if (!answer.denied && id) recoveryReady(id);
       return answer;
     }, function (error) {
       report('worker', 'fail', 'The worker didn\u2019t answer', ['GET ' + SID + '/v1 failed: ' + String(error)]);
       report('modules', 'info', 'Edge modules: no answer', []);
+      report('id5', 'info', 'ID5 ID (server-to-server): no answer', []);
     });
   }
 
@@ -290,6 +293,33 @@
       report('modules', 'pass', 'The edge added ' + [ip ? 'your IP address' : '', geo ? 'your location' : ''].filter(Boolean).join(' and '), details);
     } else {
       report('modules', 'info', 'No IP or location modules on this deployment', details);
+    }
+  }
+
+  /**
+   * The id5 module's row (packages/vendor-modules/id5): grey when the deployment doesn't run it, or this page view's
+   * consent rules it out; green with the ID5 EID the worker fetched server-to-server; red only when it runs, consent
+   * allows it (its report's forwards), and no ID5 EID came back.
+   */
+  function id5(body, denied) {
+    var report_ = ((body.ext && body.ext.modules) || {}).id5;
+    var eid = (body.eids || []).filter(function (e) { return e.source === 'id5-sync.com'; })[0];
+    if (!report_) {
+      report('id5', 'info', 'ID5 ID (server-to-server): not on this deployment', ['This deployment doesn’t run the ', code('id5'), ' module.']);
+    } else if (eid) {
+      report('id5', 'pass', 'The edge fetched an ID5 ID', [
+        'The worker asked ID5 for this visitor’s ID5 ID, server to server, and returned it in ', code(SID + '/v1'), '’s ', code('eids'),
+        ' (cached in the HttpOnly ', code('sid_id5_<partner>'), ' cookie):', json(eid)
+      ]);
+    } else if (denied || report_.status === 'skipped' || report_.forwards === false) {
+      report('id5', 'info', 'ID5 ID (server-to-server): not asked', [
+        'This page view’s consent rules it out (', code(denied || report_.reason || 'forwards: false'), '), so nothing is sent to ID5.'
+      ]);
+    } else {
+      report('id5', 'fail', 'No ID5 ID came back', [
+        'The ', code('id5'), ' module runs here and consent allows it, but ', code(SID + '/v1'), ' has no ', code('id5-sync.com'),
+        ' EID. Module status: ', code(report_.status), '.'
+      ]);
     }
   }
 
@@ -364,7 +394,7 @@
         var why = optedOut ? 'You opted out (_pubcid_optout), so Prebid.js stores no ID.'
           : consent === 'denied' ? 'This page view denies consent (?consent=denied), so Prebid.js stores no ID.' : '';
         report('sync', why ? 'info' : 'fail', 'Prebid.js didn\u2019t call ' + SID + '/sync', [why || 'No pixelUrl request within 15 seconds.']);
-        ['cookie', 'same-id', 'eids', 'lifetime', 'worker', 'recovery', 'modules'].forEach(function (name) {
+        ['cookie', 'same-id', 'eids', 'lifetime', 'worker', 'recovery', 'modules', 'id5'].forEach(function (name) {
           report(name, 'info', rows[name].querySelector('.sid-title').textContent.replace(/[:\u2026]+$/, '') + ': not checked', []);
         });
         return undefined;
@@ -412,6 +442,7 @@
         ]);
         report('recovery', 'info', 'The HttpOnly recovery copy: ask the worker first', []);
         report('modules', 'info', 'Edge modules: ask the worker first', []);
+        report('id5', 'info', 'ID5 ID (server-to-server): ask the worker first', []);
       } else {
         checks.push(workerChecks(cookieId));
       }

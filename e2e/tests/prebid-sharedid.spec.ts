@@ -530,6 +530,81 @@ test('the results panel\'s own /_sid/v1 call carries the page\'s consent, so a G
   await expect(page.locator('#sid-verdict')).not.toHaveAttribute('data-status', 'fail');
 });
 
+// The id5 vendor module (server.ts runs it against a stub of ID5 in its own process; the live deployments don't build
+// it). The browser sees only the worker: the ID5 EID in /_sid/v1, and the HttpOnly cache cookie. What the stub received
+// is checked by the module's unit tests and the conformance suite, not here.
+interface Id5Payload { readonly eids?: readonly { readonly source: string; readonly uids: readonly { readonly id: string }[] }[] }
+const ID5_COOKIE = 'sid_id5_173';
+
+/** Loads the page with the results panel's worker checks, and returns the panel's /_sid/v1 answer. */
+async function visitWithWorker(page: Page, path: string): Promise<{ readonly payload: Id5Payload; readonly response: Response }> {
+  const v1 = page.waitForResponse(response => new URL(response.url()).pathname === `${SID}/v1`, { timeout: 15_000 });
+  await visit(page, path);
+  const response = await v1;
+  return { payload: await response.json() as Id5Payload, response };
+}
+
+function id5Eid(payload: Id5Payload): { readonly id: string } | undefined {
+  return payload.eids?.find(eid => eid.source === 'id5-sync.com')?.uids[0];
+}
+
+test('with consent, /_sid/v1 has the ID5 ID the worker fetched server-to-server, cached in an HttpOnly cookie', async ({ page, context }) => {
+  test.skip(LIVE, 'the live deployments don\'t build the id5 module');
+  const { payload } = await visitWithWorker(page, '/?checks=1');
+  expect(id5Eid(payload)?.id).toBe('ID5*e2e-stub');
+  expect((await cookie(context, ID5_COOKIE))?.httpOnly).toBe(true);
+  await expect(page.locator('[data-check="id5"]')).toHaveAttribute('data-status', 'pass');
+  await expect(page.locator('[data-check="id5"]')).toContainText('ID5*e2e-stub');
+});
+
+test('the ID5 cache cookie is sent back and reused: the next page view gets the ID without a new cache', async ({ page, context, sid }) => {
+  test.skip(LIVE, 'the live deployments don\'t build the id5 module');
+  await visit(page);
+  const first = (await cookie(context, ID5_COOKIE))?.value;
+  expect(first).toBeDefined();
+  sid.reset();
+  const sync = page.waitForResponse(response => new URL(response.url()).pathname === `${SID}/sync`);
+  const { payload, response } = await visitWithWorker(page, '/?checks=1');
+  expect(id5Eid(payload)?.id).toBe('ID5*e2e-stub');
+  // The browser sent the cache with the page view's requests, and neither answer replaced it.
+  for (const request of await sid.requests()) expect(request.cookie).toContain(`${ID5_COOKIE}=${String(first)}`);
+  for (const answer of [await sync, response]) {
+    expect((await answer.headerValues('set-cookie')).filter(line => line.startsWith(`${ID5_COOKIE}=`))).toEqual([]);
+  }
+  expect((await cookie(context, ID5_COOKIE))?.value).toBe(first);
+});
+
+test('without purpose 1 consent, there\'s no ID5 ID and the cache is deleted', async ({ page, context }) => {
+  test.skip(LIVE, 'the live deployments don\'t build the id5 module');
+  await visit(page);
+  expect(await cookie(context, ID5_COOKIE)).toBeDefined();
+  await page.goto(at('/?consent=denied'));
+  await expect.poll(() => gdprMeta(page)).toMatchObject({ gdprApplies: true });
+  // tcfControl stops Prebid.js's sync; the endpoint reads the denied string from euconsent-v2.
+  const response = await page.request.get(`${SID}/v1`);
+  expect(id5Eid(await response.json() as Id5Payload)).toBeUndefined();
+  expect(await cookie(context, ID5_COOKIE)).toBeUndefined();
+});
+
+test('with a GPP opt-out, there\'s no ID5 ID, and the panel says consent ruled it out', async ({ page, context }) => {
+  test.skip(LIVE, 'the live deployments don\'t build the id5 or gpp modules');
+  const { payload } = await visitWithWorker(page, '/?consent=none&gpp=usnatOptOut&checks=1');
+  expect(id5Eid(payload)).toBeUndefined();
+  expect(await cookie(context, ID5_COOKIE)).toBeUndefined();
+  await expect(page.locator('[data-check="id5"]')).toHaveAttribute('data-status', 'info');
+});
+
+test('with Global Privacy Control, there\'s no ID5 ID, and an existing cache is deleted', async ({ page, context }) => {
+  test.skip(LIVE, 'the live deployments don\'t build the id5 module');
+  await visit(page);
+  expect(await cookie(context, ID5_COOKIE)).toBeDefined();
+  await page.setExtraHTTPHeaders({ 'Sec-GPC': '1' });
+  const { payload } = await visitWithWorker(page, '/?checks=1');
+  expect(id5Eid(payload)).toBeUndefined();
+  expect(await cookie(context, ID5_COOKIE)).toBeUndefined();
+  await expect(page.locator('[data-check="id5"]')).toHaveAttribute('data-status', 'info');
+});
+
 test('the demo\'s AWS tile turns red when its EU visitor fails', async ({ page }) => {
   test.skip(LIVE, 'the demo\'s tiles are checked once, locally');
   await page.route('https://api.github.com/**', route => {
