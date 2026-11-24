@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigError, createHandler, declaredHost, defineModule, MAX_FORWARD_BODY_BYTES, resolveConfig, type EdgeModule, type ForwardContext, type ForwardFetch, type PayloadV1 } from '../src/index.js';
-import { publisherTc } from './helpers.js';
+import { publisherTc, tcString } from './helpers.js';
 
 /** A stubbed upstream: records each request it gets and answers with `answer`. Nothing leaves the test. */
 function upstream(answer: (request: Request) => Response = () => new Response('upstream', { headers: { 'Cache-Control': 'private, max-age=60' } })): { readonly sent: Request[]; readonly send: ForwardFetch } {
@@ -245,5 +245,97 @@ describe('the forwarding decision', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('image/gif');
     expect(response.headers.get('X-SharedID-Forwarding')).toBeNull();
+  });
+});
+
+describe('module requests (fetching)', () => {
+  /** A module that sends one request from `run` when it can, and says in its output whether it could. */
+  function fetchingModule(target = 'https://api.lookup.example/id', options: { readonly gvlid?: number; readonly timeoutMs?: number } = {}): EdgeModule {
+    return defineModule({
+      name: 'lookup',
+      routes: ['v1', 'sync'],
+      ...(options.gvlid === undefined ? {} : { gvlid: options.gvlid, purposes: [1] }),
+      fetching: { hosts: ['api.lookup.example'] },
+      run: async ({ fetch }) => {
+        if (fetch === undefined) return { ortb2: { fetch: 'blocked' } };
+        try {
+          const response = await fetch(target, { method: 'POST', body: new TextEncoder().encode('{}'), ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) });
+          return { ortb2: { fetch: await response.text() } };
+        } catch {
+          return { ortb2: { fetch: 'failed' } };
+        }
+      }
+    });
+  }
+  const build = (module: EdgeModule, env: Record<string, string>, send: ForwardFetch | null): ReturnType<typeof createHandler> =>
+    createHandler({ config: resolveConfig({ SID_MODULES: module.name, ...env }), modules: [module], ...(send === null ? {} : { forwardFetch: send }) });
+  const fetched = async (h: ReturnType<typeof createHandler>, path: string, headers: Record<string, string> = {}): Promise<unknown> =>
+    ((await (await h(get(path, headers))).json()) as PayloadV1).ortb2?.['fetch'];
+
+  it('sends a module\'s request to a declared host, from /v1 and /sync', async () => {
+    const stub = upstream(() => new Response('looked up'));
+    const h = build(fetchingModule(), { SID_MODULE_TIMEOUT_MS: '500' }, stub.send);
+    expect(await fetched(h, '/_sid/v1')).toBe('looked up');
+    expect(stub.sent[0]?.url).toBe('https://api.lookup.example/id');
+    expect(stub.sent[0]?.method).toBe('POST');
+    await h(get('/_sid/sync'));
+    expect(stub.sent).toHaveLength(2);
+  });
+
+  it('refuses hosts the module didn\'t declare, and http', async () => {
+    const stub = upstream();
+    expect(await fetched(build(fetchingModule('https://elsewhere.example/id'), {}, stub.send), '/_sid/v1')).toBe('failed');
+    expect(await fetched(build(fetchingModule('http://api.lookup.example/id'), {}, stub.send), '/_sid/v1')).toBe('failed');
+    expect(stub.sent).toHaveLength(0);
+  });
+
+  it('reports on /v1 whether the module may send requests for this visitor, and nothing else', async () => {
+    const h = build(fetchingModule(), {}, upstream().send);
+    const report = async (headers: Record<string, string> = {}): Promise<unknown> => ((await (await h(get('/_sid/v1', headers))).json()) as PayloadV1).ext.modules['lookup'];
+    expect(await report()).toEqual({ ms: expect.any(Number) as number, status: 'ok', forwards: true });
+    expect(await report({ 'Sec-GPC': '1' })).toEqual({ ms: expect.any(Number) as number, status: 'ok', forwards: false });
+  });
+
+  it('gives no fetch, and sends nothing, on opt-out, GPC, COPPA or GDPR without a TC string', async () => {
+    const stub = upstream();
+    const h = build(fetchingModule(), {}, stub.send);
+    expect(await fetched(h, '/_sid/v1', { Cookie: '_pubcid_optout=1' })).toBe('blocked');
+    expect(await fetched(h, '/_sid/v1', { 'Sec-GPC': '1' })).toBe('blocked');
+    expect(await fetched(h, '/_sid/v1?coppa=1')).toBe('blocked');
+    expect(await fetched(h, '/_sid/v1?gdpr=1')).toBe('blocked');
+    expect(stub.sent).toHaveLength(0);
+  });
+
+  it('gives a vendor module its fetch under GDPR only with the vendor\'s consent', async () => {
+    const stub = upstream(() => new Response('ok'));
+    const h = build(fetchingModule(undefined, { gvlid: 131 }), {}, stub.send);
+    expect(await fetched(h, `/_sid/v1?gdpr=1&gdpr_consent=${tcString([1], { vendors: [131] })}`)).toBe('ok');
+    expect(await fetched(h, `/_sid/v1?gdpr=1&gdpr_consent=${tcString([1], { vendors: [130] })}`)).toBeUndefined();
+    expect(stub.sent).toHaveLength(1);
+  });
+
+  it('gives up within the module\'s own limit, and never later than four fifths of SID_MODULE_TIMEOUT_MS', async () => {
+    // The stub holds each request, as a runtime's fetch does while it waits, so nothing is collected before it aborts.
+    const held: Request[] = [];
+    const hang: ForwardFetch = request => new Promise((_resolve, reject) => {
+      held.push(request);
+      request.signal.addEventListener('abort', () => { reject(new Error('aborted')); });
+    });
+    const started = Date.now();
+    expect(await fetched(build(fetchingModule(undefined, { timeoutMs: 20 }), { SID_MODULE_TIMEOUT_MS: '2000' }, hang), '/_sid/v1')).toBe('failed');
+    expect(Date.now() - started).toBeLessThan(1500);
+    // A module asking for longer than core allows still answers before core stops waiting for it.
+    const body = await (await build(fetchingModule(undefined, { timeoutMs: 5000 }), { SID_MODULE_TIMEOUT_MS: '100' }, hang)(get('/_sid/v1'))).json() as PayloadV1;
+    expect(body.ortb2?.['fetch']).toBe('failed');
+    expect(body.ext.modules['lookup']?.status).toBe('ok');
+  });
+
+  it('is a configuration error on an adapter that can\'t send requests', () => {
+    expect(() => build(fetchingModule(), {}, null)).toThrow(ConfigError);
+    expect(() => createHandler({ config: resolveConfig({}), modules: [fetchingModule()] })).not.toThrow();
+  });
+
+  it('checks the declared hosts when the module is defined', () => {
+    expect(() => defineModule({ name: 'bad', fetching: { hosts: ['https://x.example'] }, run: () => undefined })).toThrow('fetching.hosts');
   });
 });

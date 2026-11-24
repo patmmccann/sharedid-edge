@@ -1,0 +1,110 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The id5 vendor module (SID_MODULES=id5, partner 173, ID5's test partner), which sends a request to ID5 from run, through core: here to the local stand-in for ID5's API (conformance/src/upstream-stand-in.ts), which answers with one EID (ID5*conformance, linkType 2) whose UID ext.sent echoes what the request carried (partner, ip, ipv6, ua, puid, s). The answer is returned in eids and cached in the HttpOnly sid_id5_173 cookie (30 days). Nothing is sent, and an existing cache cookie is deleted, on opt-out, GPC, COPPA, a us_privacy or GPP US opt-out, or where GDPR applies without ID5's TCF vendor consent (GVL ID 131); nothing is sent from a client IP that is not routable (192.0.2.77, a documentation address; private ones are unit-tested, since the relayed targets can only send from the ranges CI makes local). Requests carry the client IP as X-Forwarded-For (with SID_TRUST_PROXY) and CF-Connecting-IP (Workers): 203.0.114.7, a routable address outside the documentation ranges, which CI makes local for the relayed targets. The SharedID is the request's _pubcid cookie, so it's fixed. TC strings: CAAAAAAAAAAAAAAAAAAAAAAIAMAAAAAAAAAABBgAAAAAAAAAAAAAAAAAAAAAgAAAA.eAAAAAAAAA has consent for vendor 131, purposes 1 and 2 (core segment and publisher segment) and Special Feature 1; CAAAAAAAAAAAAAAAAAAAAAAIAMAAAAAAAAAABBAAAAAAAAAAAAAAAAAAAAABAAAAA.eAAAAAAAAA the same for vendor 130 instead. DBABLA~CVQaAAAAAABA.QA is US National v2 with SaleOptOut=1. SID_MODULE_TIMEOUT_MS is 3000 and the module's timeoutMs 2000, so a busy test machine doesn't time out.",
+  "build": ["vendor-modules"],
+  "config": {
+    "SID_MODULES": "id5",
+    "SID_MODULE_CONFIG": "{\"id5\":{\"partner\":173,\"timeoutMs\":2000}}",
+    "SID_MODULE_TIMEOUT_MS": "3000",
+    "SID_TRUST_PROXY": "true"
+  },
+  "cases": [
+    {
+      "name": "fetches the ID5 ID with the client IP, user agent and SharedID, returns it in eids and caches it",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "203.0.114.7", "cf-connecting-ip": "203.0.114.7", "user-agent": "Mozilla/5.0 (conformance)", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "sid_id5_173", "valuePattern": "^[A-Za-z0-9_-]+$", "maxAge": 2592000, "httpOnly": true, "sameSite": "Lax", "path": "/" }],
+        "jsonIncludes": {
+          "eids": [
+            { "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] },
+            { "source": "id5-sync.com", "uids": [{ "id": "ID5*conformance", "atype": 1, "ext": { "linkType": 2, "sent": { "partner": 173, "ip": "203.0.114.7", "ipv6": null, "ua": "Mozilla/5.0 (conformance)", "puid": "c29cb2ae-769d-42f6-891a-f53cadee823d", "s": null } } }] }
+          ],
+          "ext": { "modules": { "id5": { "status": "ok" } } }
+        }
+      }
+    },
+    {
+      "name": "fetches it on /sync too, where only the cache cookie is set",
+      "request": { "path": "/_sid/sync", "headers": { "x-forwarded-for": "203.0.114.7", "cf-connecting-ip": "203.0.114.7", "user-agent": "Mozilla/5.0 (conformance)", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "headers": { "content-type": "image/gif", "x-sharedid-modules": "id5=ok" },
+        "cookies": [{ "name": "sid_id5_173", "valuePattern": "^[A-Za-z0-9_-]+$", "maxAge": 2592000, "httpOnly": true }]
+      }
+    },
+    {
+      "name": "fetches it where GDPR applies with ID5's vendor consent, purposes 1 and 2, and Special Feature 1",
+      "request": { "path": "/_sid/v1?gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAIAMAAAAAAAAAABBgAAAAAAAAAAAAAAAAAAAAAgAAAA.eAAAAAAAAA", "headers": { "x-forwarded-for": "203.0.114.7", "cf-connecting-ip": "203.0.114.7", "user-agent": "Mozilla/5.0 (conformance)", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "sid_id5_173", "valuePattern": "^[A-Za-z0-9_-]+$", "httpOnly": true }],
+        "jsonIncludes": { "ext": { "modules": { "id5": { "status": "ok" } } } }
+      }
+    },
+    {
+      "name": "sends nothing where GDPR applies without ID5's vendor consent, and deletes the cache",
+      "request": { "path": "/_sid/v1?gdpr=1&gdpr_consent=CAAAAAAAAAAAAAAAAAAAAAAIAMAAAAAAAAAABBAAAAAAAAAAAAAAAAAAAAABAAAAA.eAAAAAAAAA", "headers": { "x-forwarded-for": "203.0.114.7", "cf-connecting-ip": "203.0.114.7", "user-agent": "Mozilla/5.0 (conformance)", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; sid_id5_173=cached" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "sid_id5_173", "value": "", "maxAge": 0 }],
+        "jsonIncludes": {
+          "eids": [{ "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }],
+          "ext": { "modules": { "id5": { "ms": 0, "status": "skipped", "reason": "tcf: no consent for vendor 131" } } }
+        }
+      }
+    },
+    {
+      "name": "sends nothing with Global Privacy Control, and deletes the cache",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "203.0.114.7", "cf-connecting-ip": "203.0.114.7", "user-agent": "Mozilla/5.0 (conformance)", "sec-gpc": "1", "cookie": "sid_id5_173=cached" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "sid_id5_173", "value": "", "maxAge": 0 }],
+        "jsonIncludes": { "eids": [], "ext": { "modules": { "id5": { "status": "empty" } } } }
+      }
+    },
+    {
+      "name": "sends nothing for a COPPA request",
+      "request": { "path": "/_sid/v1?coppa=1", "headers": { "x-forwarded-for": "203.0.114.7", "cf-connecting-ip": "203.0.114.7", "user-agent": "Mozilla/5.0 (conformance)" } },
+      "expect": { "status": 200, "noCookies": true, "jsonIncludes": { "eids": [], "ext": { "modules": { "id5": { "status": "empty" } } } } }
+    },
+    {
+      "name": "sends nothing after the SharedID opt-out, and deletes the cache",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "203.0.114.7", "cf-connecting-ip": "203.0.114.7", "user-agent": "Mozilla/5.0 (conformance)", "cookie": "_pubcid_optout=1; sid_id5_173=cached" } },
+      "expect": {
+        "status": 200,
+        "cookies": [{ "name": "sid_id5_173", "value": "", "maxAge": 0 }],
+        "jsonIncludes": { "eids": [], "ext": { "modules": { "id5": { "status": "empty" } } } }
+      }
+    },
+    {
+      "name": "sends nothing with a us_privacy opt-out of sale",
+      "request": { "path": "/_sid/v1?us_privacy=1YYN", "headers": { "x-forwarded-for": "203.0.114.7", "cf-connecting-ip": "203.0.114.7", "user-agent": "Mozilla/5.0 (conformance)", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "eids": [{ "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }], "ext": { "modules": { "id5": { "status": "empty" } } } }
+      }
+    },
+    {
+      "name": "sends nothing with a GPP US opt-out, without the gpp module",
+      "request": { "path": "/_sid/v1?gpp=DBABLA~CVQaAAAAAABA.QA&gpp_sid=7", "headers": { "x-forwarded-for": "203.0.114.7", "cf-connecting-ip": "203.0.114.7", "user-agent": "Mozilla/5.0 (conformance)", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "eids": [{ "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }], "ext": { "modules": { "id5": { "status": "empty" } } } }
+      }
+    },
+    {
+      "name": "sends nothing from a client IP that is not routable (a documentation address)",
+      "request": { "path": "/_sid/v1", "headers": { "x-forwarded-for": "192.0.2.77", "cf-connecting-ip": "192.0.2.77", "user-agent": "Mozilla/5.0 (conformance)", "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d" } },
+      "expect": {
+        "status": 200,
+        "jsonIncludes": { "eids": [{ "source": "pubcid.org", "uids": [{ "id": "c29cb2ae-769d-42f6-891a-f53cadee823d", "atype": 1 }] }], "ext": { "modules": { "id5": { "status": "empty" } } } }
+      }
+    },
+    {
+      "name": "opt-out deletes the cache",
+      "request": { "path": "/_sid/optout", "headers": { "cookie": "sid_id5_173=cached" } },
+      "expect": { "status": 204, "cookies": [{ "name": "sid_id5_173", "value": "", "maxAge": 0 }] }
+    }
+  ]
+}

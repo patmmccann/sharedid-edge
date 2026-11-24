@@ -2,7 +2,7 @@ import { AUTO_COOKIE_DOMAIN, DEFAULT_CONFIG, type SharedIdEdgeConfig } from './c
 import { HOSTNAME, hostKey } from './hosts.js';
 import { readConsent, storageDecision, storageDecisionWith, unreadableTcString, type ConsentContext, type ConsentSignal, type StorageDecision } from './consent.js';
 import { cookieValues, parseCookies, serializeCookie, type CookieOptions } from './cookies.js';
-import { forwardDecision, forwardedResponse, forwarder, MAX_FORWARD_BODY_BYTES, ownedPaths, ownerOf, type ForwardDecision, type ForwardFetch, type OwnedPath } from './forwarding.js';
+import { checkFetching, forwardDecision, forwardedResponse, forwarder, MAX_FORWARD_BODY_BYTES, moduleFetchLimitMs, ownedPaths, ownerOf, type ForwardDecision, type ForwardFetch, type ModuleFetch, type OwnedPath } from './forwarding.js';
 import { idFromSyncParam, isValidId, mintId } from './id.js';
 import { consentDenial, consentSignal, deepMerge, ModuleRegistry, optOutCookies, runModules, type EdgeModule, type ModuleCookie, type ModuleRunOutput } from './modules.js';
 import { trimEnd } from './text.js';
@@ -152,6 +152,8 @@ function configuredHandler(options: HandlerOptions, base: SharedIdEdgeConfig, re
   // that can't forward, throws a ConfigError here, which the adapters answer with a 500.
   const owned: readonly OwnedPath[] = (globalThis as SnippetFlags).__SID_NO_FORWARDING__ === true ? []
     : ownedPaths(base.modules.flatMap(name => registry.get(name) ?? []), base, base.basePath === '/' ? ROUTE_LIST : [base.basePath], options.forwardFetch !== undefined);
+  // A module that sends requests from `run` (`fetching`) on an adapter that can't: a ConfigError, as for forwarding.
+  if ((globalThis as SnippetFlags).__SID_NO_FORWARDING__ !== true) checkFetching(base.modules.flatMap(name => registry.get(name) ?? []), options.forwardFetch !== undefined);
 
   return async (request: Request, platform: PlatformInfo = {}): Promise<Response> => {
     const url = new URL(request.url);
@@ -235,13 +237,25 @@ function configuredHandler(options: HandlerOptions, base: SharedIdEdgeConfig, re
         // Modules run on both routes (on /sync, those configured for it). Their traffic reports join the platform's, so
         // SID_SKIP_BOTS sees the same merged verdict on /sync as on /v1.
         const context = { request, url, platform, sharedId: state.id, consent, cookies, optedOut, cookieDomain: config.cookieDomain, autoCookieDomain: autoDomain, storage: decision };
-        const modules = await runModules(registry, config, context, () => now().getTime(), route === ROUTES.sync ? 'sync' : 'v1');
-        // A forwarding module's report says whether this visitor's requests to its paths are passed on, and nothing else.
+        // A module that declares `fetching` gets `fetch` when the decision allows requests for this visitor (builds
+        // without a forwarding module leave this out: NO_FORWARDING).
+        const send = options.forwardFetch;
+        const fetchFor = (globalThis as SnippetFlags).__SID_NO_FORWARDING__ === true || send === undefined ? undefined
+          : (module: EdgeModule): ModuleFetch | undefined => fetcher(module, config, consent, optedOut, signal, send);
+        const modules = await runModules(registry, config, context, () => now().getTime(), route === ROUTES.sync ? 'sync' : 'v1', fetchFor);
+        // A forwarding module's report says whether this visitor's requests to its paths are passed on, and a module that
+        // sends requests from run whether it may for this visitor; nothing else.
         if ((globalThis as SnippetFlags).__SID_NO_FORWARDING__ !== true) {
           for (const { module } of owned) {
             const report = modules.reports[module.name];
             if (report === undefined || (report.status !== 'ok' && report.status !== 'empty')) continue;
             modules.reports[module.name] = { ...report, forwards: decisionFor(module, config, consent, optedOut, signal).forward };
+          }
+          for (const name of config.modules) {
+            const module = registry.get(name);
+            const report = modules.reports[name];
+            if (module?.fetching === undefined || report === undefined || (report.status !== 'ok' && report.status !== 'empty')) continue;
+            modules.reports[name] = { ...report, forwards: fetchDecision(module, config, consent, optedOut, signal).forward };
           }
         }
         const traffic = mergeTraffic([...platformTraffic, ...modules.traffic]);
@@ -292,6 +306,21 @@ function privacySignals(request: Request, url: URL, platform: PlatformInfo, cook
   const optedOut = cookies.has(config.optOutCookieName);
   const signal = optedOut || (globalThis as SnippetFlags).__SID_NO_CONSENT_HOOKS__ === true ? undefined : consentSignal(registry, config, { request, url, platform, consent, cookies });
   return { consent, optedOut, signal };
+}
+
+/**
+ * `ModuleContext.fetch` for a module that declares `fetching` (spec: "Module requests"): the forwarding decision, with
+ * GPC always blocking, and the module's consent checked as for running it; undefined when blocked.
+ */
+function fetcher(module: EdgeModule, config: SharedIdEdgeConfig, consent: ConsentContext, optedOut: boolean, signal: ConsentSignal | undefined, send: ForwardFetch): ModuleFetch | undefined {
+  if (module.fetching === undefined) return undefined;
+  const decision = fetchDecision(module, config, consent, optedOut, signal);
+  return decision.forward ? forwarder(module.fetching.hosts, decision, send, moduleFetchLimitMs(config.moduleTimeoutMs)) : undefined;
+}
+
+/** Whether a module that declares `fetching` may send requests for this visitor: the forwarding decision, GPC blocking. */
+function fetchDecision(module: EdgeModule, config: SharedIdEdgeConfig, consent: ConsentContext, optedOut: boolean, signal: ConsentSignal | undefined): ForwardDecision {
+  return forwardDecision({}, config.moduleConfig[module.name] ?? {}, consent, optedOut, signal, consentDenial(module, consent), unreadableTcString());
 }
 
 /** A forwarding module's decision for a request (forwarding.ts), with the module's purposes checked where GDPR applies. */

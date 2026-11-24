@@ -52,6 +52,8 @@
     { "path": "packages/vendor-modules/dbip/test" },
     { "path": "packages/vendor-modules/ec" },
     { "path": "packages/vendor-modules/ec/test" },
+    { "path": "packages/vendor-modules/id5" },
+    { "path": "packages/vendor-modules/id5/test" },
     { "path": "packages/vendor-modules/ip2location" },
     { "path": "packages/vendor-modules/ip2location/test" },
     { "path": "packages/vendor-modules/maxmind" },

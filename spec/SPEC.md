@@ -257,10 +257,11 @@ When the `Origin` header is in `SID_ALLOWED_ORIGINS`, `/v1` responses carry `Acc
 A module has:
 
 - a `name` (`^[a-z][a-z0-9-]{0,63}$`), used in `SID_MODULES` and `SID_MODULE_CONFIG`;
-- optionally `purposes` (TCF purposes it needs publisher consent for when GDPR applies) and `gvlid` (its IAB vendor ID);
+- optionally `purposes` (TCF purposes it needs consent for when GDPR applies: the publisher's, or with a `gvlid` the vendor's) and `gvlid` (its IAB vendor ID, for a module acting for a TCF vendor);
 - optionally `routes`, the routes it runs on: a non-empty list of `v1` and `sync` without repeats, defaulting to `v1` only (see [Modules on `/sync`](#modules-on-sync));
 - optionally a `consent(context)` hook, which makes it a [consent provider](#consent-providers);
 - optionally `forwarding`, which makes it a [forwarding module](#forwarding-modules);
+- optionally `fetching`, the hosts its `run` may send requests to (see [Module requests](#module-requests));
 - a `run(context)` function returning `{ eids?, ortb2?, eip?, cookies?, traffic?, noStore?, stale? }` or nothing (`eip`: see [Payload v1](#payload-v1); `traffic`: see [Traffic signal](#traffic-signal); `noStore`: see [Modules on `/sync`](#modules-on-sync); `stale`: see [Scheduled data updates](#scheduled-data-updates)).
 
 The context has the request, its URL and cookies, the platform information (see [Platform information](#platform-information)), the SharedID (when storage is allowed), whether the browser opted out, the consent signals, and the module's configuration and secrets.
@@ -271,12 +272,12 @@ The context also has the worker's **storage decision** for the request, `storage
 
 A module's `cookies` are set on the response (of `/v1`, or `/sync`) with `Path=/`, `SameSite=Lax`, `Secure` as for the ID cookies (above), the module's `Domain` (else `SID_COOKIE_DOMAIN`; none when the module marks the cookie host-only; for `auto`, [the request's](#cookie-domain-auto)), `Max-Age` (0 deletes) and `HttpOnly` as given. A module MUST NOT set the worker's own cookie names; a malformed or reserved cookie makes the module an `error`, and none of its output is used. A module that returns only cookies reports `empty`.
 
-A module that sets cookies SHOULD also declare the deletions for opt-out. `{basePath}/optout` deletes the ones the browser sent along with the ID cookies, for every installed module (whether or not it's in `SID_MODULES`), so an opt-out takes effect at once and not only on the next `/v1` call.
+A module that sets cookies SHOULD also declare the deletions for opt-out. `{basePath}/optout` deletes the ones the browser sent along with the ID cookies, for every installed module (whether or not it's in `SID_MODULES`), so an opt-out takes effect at once and not only on the next `/v1` call. When consent skips a module with a `gvlid` (below), on `/v1` or `/sync`, the deletions it declares for the cookies the browser sent are set too, so a vendor's identifier doesn't outlast the vendor's consent.
 
-Modules work only from what the worker has, and make no network calls; a [forwarding module](#forwarding-modules) passes requests on to its declared hosts, through the implementation. The worker:
+Modules work only from what the worker has, and make no network calls of their own; a [forwarding module](#forwarding-modules) passes requests on to its declared hosts, and a module with `fetching` sends requests to its declared hosts from `run` ([Module requests](#module-requests)), both through the implementation. The worker:
 
 - on `/v1`, runs the modules listed in `SID_MODULES`, in order, reporting unknown names, and modules whose `routes` leave out `v1`, as `skipped`;
-- when GDPR applies, skips a module whose `purposes` don't all have publisher consent, and (until vendor consent is decoded) any module with a `gvlid`;
+- when GDPR applies, skips a module without a `gvlid` whose `purposes` don't all have consent in the publisher TC segment (reason `tcf: no publisher consent for purpose <n>`); and a module with a `gvlid` (acting for that TCF vendor) unless there's a TC string (`tcf: GDPR applies and there is no TC string`) that can be read (`tcf: invalid TC string`, or the no-TCF build's reason), its core segment's vendor consents include the `gvlid` (`tcf: no consent for vendor <id>`), and its core segment's purpose consents include each of the module's `purposes` (`tcf: no vendor consent for purpose <n>`);
 - stops waiting for a module after `SID_MODULE_TIMEOUT_MS`;
 - isolates failures: a module that throws or times out is reported and left out, and the rest of the payload is returned.
 
@@ -359,7 +360,7 @@ A module MAY **forward**: own paths on the site and answer the requests under th
 3. a [consent provider](#consent-providers) denies: blocked (`<module>: …`);
 4. there's a TC string that is invalid, or isn't decoded (a build without TCF): blocked (`tcf: …`, as for storage);
 5. GDPR applies and there's no TC string: blocked (`tcf: GDPR applies and there is no TC string`); a consent provider's grant doesn't lift this, since the request goes to another party;
-6. GDPR applies and the module's `purposes` don't all have consent in the publisher TC segment, or it has a `gvlid`: blocked (the reasons modules get on `/v1`);
+6. GDPR applies and the module's consent rule for running (see [Modules](#modules): its `purposes` in the publisher TC segment, or with a `gvlid` the vendor's consent and its `purposes` in the core segment) isn't met: blocked (the reasons modules get on `/v1`);
 7. Global Privacy Control (`Sec-GPC: 1`): blocked (`gpc`), unless the module's `anonymousOnGpc(config)` is true, when it's forwarded **anonymously**;
 8. otherwise forwarded.
 
@@ -380,6 +381,16 @@ A blocked request still gets the module's answer, which SHOULD be one that doesn
 
 **Reporting.** On `/v1`, a forwarding module in `SID_MODULES` reports `forwards` (see [Payload v1](#payload-v1)): whether the decision above, for this request, forwards. Nothing about forwarded requests is logged or kept.
 
+### Module requests
+
+A module MAY send requests from `run` to hosts it declares, for a vendor module that looks an ID up from the vendor's API (the [`id5`](modules/id5.md) module). It's subject to the vendor plugin rules: opt-in, a strict time limit, cached results. Such a module has `fetching`, with `hosts` as for a forwarding module (fixed in its code, and listed as `network` and `forwards` in its package metadata).
+
+- **Off by default,** like a forwarding module: only when listed in `SID_MODULES`. An implementation or adapter that can't send requests to another host MUST treat such a module in `SID_MODULES` as invalid configuration (every request gets a 5xx).
+- **The decision** is the [forwarding decision](#forwarding-modules) for the module, with Global Privacy Control always blocking (there's no anonymous mode). When it's blocked, the module gets no way to send anything (`context.fetch` is absent), on `/v1` and `/sync` alike.
+- **Outbound requests** go only through `context.fetch`, with the checks of a forwarding module's `forward` (`https` on the default port, no credentials, a declared host, no redirects followed). It gives up after the module's own limit or four fifths of `SID_MODULE_TIMEOUT_MS`, whichever is shorter (at least 1 ms), so a module whose request runs out of time can still answer, from a cache, before the worker stops waiting for it. The time limit covers reading the answer.
+- **The module is responsible for its own privacy rules on top:** what it sends, its own denials and its cache. It MUST NOT send the request's own forwarding, client IP or CDN location headers; a client IP it sends comes from the platform information, under the [precise location](#consent) rules.
+- **Reporting.** On `/v1` its report has `forwards`: whether the decision above allows requests for this visitor (not whether one was sent). Nothing about the requests is logged or kept.
+
 ### Module specifications
 
 Each module's behaviour is specified in its own file under [`modules/`](modules), named after the module:
@@ -399,6 +410,7 @@ Each module's behaviour is specified in its own file under [`modules/`](modules)
 - **Vendor modules** (`packages/vendor-modules/`):
   - [The `dbip` module](modules/dbip.md)
   - [The `ec` module](modules/ec.md)
+  - [The `id5` module](modules/id5.md)
   - [The `ip2location` module](modules/ip2location.md)
   - [The `maxmind` module](modules/maxmind.md)
 <!-- generated:spec-modules:end -->

@@ -19,6 +19,28 @@ export interface ForwardInit {
   readonly body?: Uint8Array<ArrayBuffer>;
 }
 
+/** What a module's `run` sends with `ModuleContext.fetch`: as `ForwardInit`, plus a shorter time limit of its own. */
+export interface ModuleFetchInit extends ForwardInit {
+  /** How long to wait, in milliseconds; never longer than core's own limit for the module (`moduleFetchLimitMs`). */
+  readonly timeoutMs?: number;
+}
+
+/**
+ * `ModuleContext.fetch`: sends a request to one of the module's declared hosts, with the checks `ForwardContext.forward`
+ * makes, and gives up after the shorter of `init.timeoutMs` and core's limit.
+ */
+export type ModuleFetch = (url: string | URL, init?: ModuleFetchInit) => Promise<Response>;
+
+/**
+ * What lets a module's `run` send requests (`EdgeModule.fetching`): the hosts it may reach, fixed in its code. For vendor
+ * modules that look an ID up from the vendor's API (`id5`), under the vendor plugin rules: opt-in, a strict time limit,
+ * cached results.
+ */
+export interface ModuleFetching {
+  /** Host names, as for `ModuleForwarding.hosts`. Also listed as `network` and `forwards` in its package metadata. */
+  readonly hosts: readonly string[];
+}
+
 /** What a forwarding module's `serve` gets for one request under its paths. */
 export interface ForwardContext extends Pick<ModuleContext, 'request' | 'url' | 'platform' | 'consent' | 'cookies' | 'optedOut' | 'config' | 'secrets'> {
   /** The path prefix the request is under, one of the module's `paths`. */
@@ -73,12 +95,29 @@ const CLIENT_ADDRESS = /^(?:forwarded|x-forwarded-.*|x-real-ip|true-client-ip|cf
 /** Response headers that describe one connection, or a body the runtime has already decoded. */
 const HOP_BY_HOP = /^(?:connection|keep-alive|transfer-encoding|te|trailer|upgrade|proxy-.*|content-encoding|content-length|access-control-.*)$/;
 
-/** Checks a module's `forwarding` when it's defined; throws a `TypeError` naming the module. */
-export function checkForwarding(name: string, forwarding: ModuleForwarding): void {
-  const hosts: readonly unknown[] = forwarding.hosts;
+/** Checks a module's `forwarding` or `fetching` hosts when they're defined; throws a `TypeError` naming the module. */
+export function checkForwarding(name: string, declared: Pick<ModuleForwarding, 'hosts'>, field = 'forwarding'): void {
+  const hosts: readonly unknown[] = declared.hosts;
   if (hosts.length === 0 || !hosts.every(host => typeof host === 'string' && HOST_PATTERN.test(host))) {
-    throw new TypeError(`Module ${name}: forwarding.hosts must be host names, or *. and a host name`);
+    throw new TypeError(`Module ${name}: ${field}.hosts must be host names, or *. and a host name`);
   }
+}
+
+/**
+ * The longest `ModuleContext.fetch` waits: four fifths of `SID_MODULE_TIMEOUT_MS` (at least 1 ms), so a module whose
+ * request runs out of time still has time to answer from its cache before core stops waiting for it.
+ */
+export function moduleFetchLimitMs(moduleTimeoutMs: number): number {
+  return Math.max(1, Math.floor(moduleTimeoutMs * 0.8));
+}
+
+/**
+ * @throws ConfigError when `modules` (those in `SID_MODULES`) has one that sends requests from `run` (`fetching`) and
+ *   the adapter can't send requests to other hosts, as for a forwarding module.
+ */
+export function checkFetching(modules: readonly EdgeModule[], canForward: boolean): void {
+  const fetching = modules.find(module => module.fetching !== undefined);
+  if (fetching !== undefined && !canForward) throw new ConfigError(`SID_MODULES lists ${fetching.name}, which sends requests to another host; this platform's adapter can't`);
 }
 
 /** Whether `hostname` (lower case, as `URL` gives it) is one of `hosts`. */
@@ -152,7 +191,7 @@ export function ownerOf(pathname: string, owned: readonly OwnedPath[]): OwnedPat
  * anonymously then.
  */
 export function forwardDecision(
-  forwarding: ModuleForwarding,
+  forwarding: Pick<ModuleForwarding, 'anonymousOnGpc'>,
   config: Readonly<Record<string, unknown>>,
   consent: ConsentContext,
   optedOut: boolean,
@@ -171,8 +210,11 @@ export function forwardDecision(
   return { forward: true, anonymous: false };
 }
 
-/** `ForwardContext.forward`, for one request: see there. */
-export function forwarder(hosts: readonly string[], decision: ForwardDecision, send: ForwardFetch): ForwardContext['forward'] {
+/**
+ * `ForwardContext.forward`, for one request: see there. Also `ModuleContext.fetch`, with `limitMs` the longest it waits
+ * (`init.timeoutMs` can only shorten it).
+ */
+export function forwarder(hosts: readonly string[], decision: ForwardDecision, send: ForwardFetch, limitMs: number = FORWARD_TIMEOUT_MS): ModuleFetch {
   return (target, init = {}) => {
     if (!decision.forward) return Promise.reject(new TypeError('forwarding is blocked for this request'));
     const url = new URL(target);
@@ -185,11 +227,16 @@ export function forwarder(hosts: readonly string[], decision: ForwardDecision, s
       headers.forEach((_value, name) => { names.push(name); });
       for (const name of names) if (CLIENT_ADDRESS.test(name)) headers.delete(name);
     }
+    // A timer that holds the controller, rather than AbortSignal.timeout: a runtime may collect a timeout signal that only
+    // the Request's own signal follows, and then never abort. It covers reading the response body too, so it isn't cleared.
+    const controller = new AbortController();
+    const wait = Math.max(1, Math.floor(init.timeoutMs !== undefined && Number.isFinite(init.timeoutMs) ? Math.min(limitMs, init.timeoutMs) : limitMs));
+    setTimeout(() => { controller.abort(new DOMException('The request timed out', 'TimeoutError')); }, wait);
     return send(new Request(url, {
       method: init.method ?? 'GET',
       headers,
       redirect: 'manual',
-      signal: AbortSignal.timeout(FORWARD_TIMEOUT_MS),
+      signal: controller.signal,
       ...(init.body === undefined ? {} : { body: init.body })
     }));
   };

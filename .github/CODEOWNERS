@@ -13,6 +13,9 @@
 /packages/vendor-modules/dbip/  @patmmccann
 /packages/ip-ranges/  @patmmccann
 
+# id5: the ID5 ID, fetched from ID5's documented API with the deployer's own partner number; maintained by the project.
+/packages/vendor-modules/id5/  @patmmccann
+
 # maxmind: MaxMind's free GeoLite2 Country data, built in with the deployer's licence key; maintained by the project.
 /packages/vendor-modules/maxmind/  @patmmccann
 

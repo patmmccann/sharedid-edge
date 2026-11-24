@@ -361,15 +361,38 @@ describe('v1 payload', () => {
     expect(second.headers.getSetCookie().join('\n')).not.toContain(UUID);
   });
 
-  it('skips modules whose TCF purposes lack publisher consent, and vendor modules when GDPR applies', async () => {
+  it('skips modules whose TCF purposes lack publisher consent, and vendor modules without the vendor\'s consent, when GDPR applies', async () => {
     const needs4 = defineModule({ name: 'needs4', purposes: [1, 4], run: () => ({ ortb2: { a: 1 } }) });
-    const vendor = defineModule({ name: 'vendor', gvlid: 1, run: () => ({ ortb2: { b: 1 } }) });
+    const vendor = defineModule({ name: 'vendor', gvlid: 131, purposes: [1], run: () => ({ ortb2: { b: 1 } }) });
     const h = handler({ SID_MODULES: 'needs4,vendor' }, { modules: [needs4, vendor] });
     const payload = await (await h(get(`/_sid/v1?gdpr=1&gdpr_consent=${tcString([1, 4], { publisher: [1, 2] })}`))).json() as PayloadV1;
     expect(payload.ext.modules['needs4']).toEqual({ ms: 0, status: 'skipped', reason: 'tcf: no publisher consent for purpose 4' });
-    expect(payload.ext.modules['vendor']?.reason).toBe('tcf: vendor consent is not checked yet');
+    expect(payload.ext.modules['vendor']?.reason).toBe('tcf: no consent for vendor 131');
     const outsideGdpr = await (await h(get('/_sid/v1?gdpr=0'))).json() as PayloadV1;
     expect(outsideGdpr.ortb2).toEqual({ a: 1, b: 1 });
+  });
+
+  it('runs a vendor module (gvlid) under GDPR with the vendor\'s consent and its purposes in the core segment', async () => {
+    const vendor = defineModule({ name: 'vendor', gvlid: 131, purposes: [1], run: () => ({ ortb2: { b: 1 } }) });
+    const h = handler({ SID_MODULES: 'vendor' }, { modules: [vendor] });
+    const reason = async (query: string): Promise<string | undefined> => ((await (await h(get(`/_sid/v1?gdpr=1${query}`))).json()) as PayloadV1).ext.modules['vendor']?.reason;
+    expect(await reason(`&gdpr_consent=${tcString([1], { vendors: [131] })}`)).toBeUndefined();
+    // The publisher TC segment doesn't count for a vendor, and another vendor's consent doesn't either.
+    expect(await reason(`&gdpr_consent=${tcString([], { vendors: [131], publisher: [1] })}`)).toBe('tcf: no vendor consent for purpose 1');
+    expect(await reason(`&gdpr_consent=${tcString([1], { vendors: [130] })}`)).toBe('tcf: no consent for vendor 131');
+    expect(await reason('')).toBe('tcf: GDPR applies and there is no TC string');
+    expect(await reason('&gdpr_consent=not-a-tc-string')).toBe('tcf: invalid TC string');
+  });
+
+  it('deletes the opt-out cookies of a vendor module that consent skips, when the browser sent them', async () => {
+    const vendor = defineModule({
+      name: 'vendor', gvlid: 131, run: () => undefined,
+      optOutCookies: () => [{ name: 'vendor_id', value: '', maxAgeSeconds: 0, httpOnly: true }]
+    });
+    const h = handler({ SID_MODULES: 'vendor' }, { modules: [vendor] });
+    const withCookie = await h(get('/_sid/v1?gdpr=1', { Cookie: 'vendor_id=abc' }));
+    expect(cookieNamed(withCookie, 'vendor_id')?.attributes.get('max-age')).toBe('0');
+    expect(cookieNamed(await h(get('/_sid/v1?gdpr=1')), 'vendor_id')).toBeUndefined();
   });
 
   it('lets modules set cookies, read cookies, secrets and the opt-out state', async () => {
