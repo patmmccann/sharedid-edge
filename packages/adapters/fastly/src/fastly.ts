@@ -30,6 +30,11 @@ export interface FastlyClientInfo {
   readonly address: string;
   /** Fastly's geolocation of `address`, or `null` when it has none. */
   readonly geo: FastlyGeolocation | null;
+  /**
+   * The JA4 fingerprint of the client's TLS ClientHello, computed by Fastly from the connection; `null` without TLS
+   * (and in Viceroy). Optional here so test doubles and older SDKs without it stay assignable.
+   */
+  readonly tlsJA4?: string | null | undefined;
 }
 
 /** The parts of Fastly's `FetchEvent` the entry point uses. */

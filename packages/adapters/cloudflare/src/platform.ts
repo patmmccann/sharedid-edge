@@ -1,4 +1,4 @@
-import { locationInfo, type LocationSource, type PlatformInfo, type TrafficReport } from '@sharedid-edge/core';
+import { ja4Value, locationInfo, type LocationSource, type PlatformInfo, type TrafficReport } from '@sharedid-edge/core';
 
 /** The parts of a Workers request that platform info comes from. */
 export interface CloudflareRequestLike {
@@ -33,19 +33,30 @@ export function botManagementTraffic(botManagement: unknown): TrafficReport | un
 }
 
 /**
+ * The client's JA4 TLS fingerprint from Bot Management (`request.cf.botManagement.ja4`, an Enterprise add-on),
+ * computed by Cloudflare from the visitor's own connection; undefined without Bot Management, or when it isn't one.
+ * Not in this version of the Workers runtime types, so it's read from the object as `unknown` and checked.
+ */
+export function botManagementJa4(botManagement: unknown): string | undefined {
+  return isRecord(botManagement) ? ja4Value(botManagement['ja4']) : undefined;
+}
+
+/**
  * What Cloudflare knows about the request: the connecting IP (`CF-Connecting-IP`, set by Cloudflare and not
  * spoofable through it), the location fields of `request.cf`, checked by core's `locationInfo`, and Bot Management's
- * verdict, when the zone has it.
+ * verdict and the JA4 fingerprint, when the zone has it.
  */
 export function platformInfo(request: CloudflareRequestLike): PlatformInfo {
   const cf = request.cf;
   const clientIp = request.headers.get('CF-Connecting-IP') ?? undefined;
   const isEU = cf?.isEUCountry === '1' ? true : cf === undefined ? undefined : false;
   const traffic = botManagementTraffic(cf?.botManagement);
+  const ja4 = botManagementJa4(cf?.botManagement);
   return {
     ...(clientIp === undefined ? {} : { clientIp }),
     ...(cf === undefined ? {} : locationInfo(cf)),
     ...(isEU === undefined ? {} : { isEU }),
-    ...(traffic === undefined ? {} : { traffic })
+    ...(traffic === undefined ? {} : { traffic }),
+    ...(ja4 === undefined ? {} : { ja4 })
   };
 }

@@ -14,14 +14,16 @@ const TOKEN = 'staff-token-0123456789';
 
 describe('botSettings', () => {
   it('defaults to nothing on', () => {
-    expect(botSettings({})).toEqual({ missingHeaders: false, internalCookie: undefined });
+    expect(botSettings({})).toEqual({ missingHeaders: false, ja4Mismatch: false, internalCookie: undefined });
   });
-  it('reads both settings', () => {
-    expect(botSettings({ missingHeaders: true, internalCookie: 'its_me' })).toEqual({ missingHeaders: true, internalCookie: 'its_me' });
+  it('reads the settings', () => {
+    expect(botSettings({ missingHeaders: true, ja4Mismatch: true, internalCookie: 'its_me' })).toEqual({ missingHeaders: true, ja4Mismatch: true, internalCookie: 'its_me' });
   });
   it.each([
     [{ missingheaders: true }],
     [{ missingHeaders: 'yes' }],
+    [{ ja4Mismatch: 1 }],
+    [{ ja4mismatch: true }],
     [{ internalCookie: 'bad name' }],
     [{ internalCookie: '' }],
     [{ internalCookie: 1 }]

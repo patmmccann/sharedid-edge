@@ -4,8 +4,9 @@ import { builtInModules } from '@sharedid-edge/modules';
 
 /**
  * Builds the handler from environment variables, once per cold start: the `SID_*` settings, plus
- * `SID_PUBLIC_ORIGIN` (see `publicOrigin`) and `SID_BEHIND_CLOUDFRONT` (`false` when nothing is in front of the
- * function; see `behindCloudFront`), and trusted-upstream mode (`SID_UPSTREAM_SECRETS`; see `upstream`). Invalid settings give a handler that answers every request with a 500, like
+ * `SID_PUBLIC_ORIGIN` (see `publicOrigin`), `SID_BEHIND_CLOUDFRONT` (`false` when nothing is in front of the
+ * function; see `behindCloudFront`), `SID_CLOUDFRONT_JA4` (`true` when the origin request policy adds CloudFront's
+ * JA4 header; see `viewerJa4`), and trusted-upstream mode (`SID_UPSTREAM_SECRETS`; see `upstream`). Invalid settings give a handler that answers every request with a 500, like
  * the Worker, rather than one that sets wrong cookies.
  */
 export function handlerFromEnv(
@@ -19,6 +20,7 @@ export function handlerFromEnv(
       upstream: trustedUpstreamFromEnv(env),
       modules,
       behindCloudFront: booleanFromEnv(env['SID_BEHIND_CLOUDFRONT'], true),
+      viewerJa4: booleanFromEnv(env['SID_CLOUDFRONT_JA4'], false),
       ...publicOriginFromEnv(env)
     }),
     () => () => Promise.resolve(internalError('SharedID Edge is misconfigured'))

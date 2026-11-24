@@ -355,10 +355,11 @@ npm run deploy:rate-limit -w @sharedid-edge/cloudflare          # or deploy:bows
 | `latitude`, `longitude` | `request.cf.latitude`, `.longitude` (dropped if not finite or out of range) | `geo` |
 | `timezone`, `continent` | `request.cf.timezone`, `.continent` | `geo` |
 | `traffic` | `request.cf.botManagement`: `verifiedBot` as `bot: true, botKind: verified`, `score` (1 to 99) as `score`, `corporateProxy` as `proxy: relay` | The traffic signal (`ortb2.device.ext.traffic`, source `platform`) and `SID_SKIP_BOTS` |
+| `ja4` | `request.cf.botManagement.ja4`, the visitor's JA4 TLS fingerprint; values that aren't a JA4 are dropped | The `bot` module's [`ja4Mismatch`](../../modules/bot/README.md#ja4-fingerprint-that-contradicts-the-user-agent), which compares it with the user agent. Never stored, logged or returned |
 
 **In trusted-upstream mode** (`SID_UPSTREAM_SECRETS`), `CF-Connecting-IP` and `request.cf` describe the publisher's CDN, not the visitor, so none of the above is used, Bot Management's verdict included: the client IP and location come from the headers `SID_CLIENT_IP_HEADER` and `SID_LOCATION_HEADERS` name, on requests carrying the secret ([Upstream operators](#upstream-operators)). Custom hostname metadata isn't read then either: the request arrives on your hostname, and `X-Forwarded-Host` picks the site in `SID_HOSTS`.
 
-Core's `locationInfo` validates every location value the same way for all adapters, dropping empty and invalid ones. Location data is available on every Cloudflare plan. Bot Management is an Enterprise add-on: without it, `request.cf.botManagement` is absent or has no score, and the Worker adds no traffic verdict. `verifiedBotCategory` isn't in the Workers runtime types, so it isn't read.
+Core's `locationInfo` validates every location value the same way for all adapters, dropping empty and invalid ones. Location data is available on every Cloudflare plan. Bot Management is an Enterprise add-on: without it, `request.cf.botManagement` is absent or has no score, and the Worker adds no traffic verdict and no JA4. `ja4` isn't in this version of the Workers runtime types, but Cloudflare documents it among `botManagement`'s fields, so it's read as an unknown value and checked. `verifiedBotCategory` isn't in the Workers runtime types, so it isn't read.
 
 ## Built-in modules
 

@@ -18,7 +18,7 @@ The edge sees each request before any script runs, so it's well placed to say wh
 
 ## Turning it on
 
-The module is built into the Cloudflare Worker, the Node.js server, the AWS Lambda adapter, the Vercel adapter, the Azure Functions app and the Google Cloud function, and does nothing until you list it. It runs on `/_sid/v1` and `/_sid/sync`. Its two signals are each off until you turn them on:
+The module is built into the Cloudflare Worker, the Node.js server, the AWS Lambda adapter, the Vercel adapter, the Azure Functions app and the Google Cloud function, and does nothing until you list it. It runs on `/_sid/v1` and `/_sid/sync`. Its signals are each off until you turn them on:
 
 ```jsonc
 // packages/adapters/cloudflare/wrangler.jsonc
@@ -31,6 +31,7 @@ The module is built into the Cloudflare Worker, the Node.js server, the AWS Lamb
 | Setting | Default | |
 | --- | --- | --- |
 | `missingHeaders` | `false` | Report a **likely bot** when a "browser" lacks headers browsers send. A heuristic, so it's opt-in. |
+| `ja4Mismatch` | `false` | Report a **likely bot** when the client's JA4 TLS fingerprint contradicts the browser its user agent claims. Only on platforms that provide JA4 ([which](#ja4-fingerprint-that-contradicts-the-user-agent)); elsewhere it does nothing. A heuristic, so it's opt-in. |
 | `internalCookie` | none | A cookie name. A request carrying it is marked **internal**: your own staff. |
 
 | Secret (`SID_MODULE_SECRETS`) | |
@@ -77,7 +78,7 @@ A normal visitor: nothing to report, so no `ortb2`, and the module reports `empt
 }
 ```
 
-A likely bot: a Chrome user agent without `Accept-Language` or `Sec-Fetch-*` headers:
+A likely bot: a Chrome user agent without `Accept-Language` or `Sec-Fetch-*` headers (with `ja4Mismatch`, a Chrome user agent over Python's TLS reports the same; the fingerprint itself is never returned):
 
 ```json
 {
@@ -141,6 +142,48 @@ A likely bot with Global Privacy Control (`Sec-GPC: 1`): no ID, the ID cookies a
 - it has none of `Sec-Fetch-Site`, `Sec-Fetch-Mode` and `Sec-Fetch-Dest`, and the user agent is a version that always sends them over https: Chrome, Edge, Opera and other Chromium browsers from version 80, Firefox from 90, Safari from 17. Older browsers, and other iOS browsers, aren't expected to send them.
 
 This is a weak signal: a browser extension or a privacy proxy can strip headers, and a careful bot can send them all. The policy is deliberately conservative, so treat `likely` as a hint, not proof. It doesn't use a crawler list, or any other reference data, so there's nothing for [scheduled data updates](../../../docs/data-updates.md) to refresh: crawlers that name themselves are the [`ua` module](../ua/README.md)'s job, reported as `declared`, and its list can be [updated on a schedule](../ua/README.md#scheduled-crawler-list-updates).
+
+### JA4 fingerprint that contradicts the user agent
+
+`ja4Mismatch` compares how the client set up its TLS connection with what its user agent says it is. A script that sends a Chrome user agent from Python or Go still negotiates TLS the way Python or Go does, and the platform sees that in the [JA4 fingerprint](https://github.com/FoxIO-LLC/ja4/blob/main/technical_details/JA4.md) of its ClientHello. When the two contradict, the module reports a **likely** bot, and with `SID_SKIP_BOTS=likely` the worker mints no SharedID for it (`X-SharedID-Status: skipped: bot`), as for the other heuristics.
+
+```jsonc
+"vars": {
+  "SID_MODULES": "bot",
+  "SID_MODULE_CONFIG": "{\"bot\":{\"ja4Mismatch\":true}}",
+  "SID_SKIP_BOTS": "likely"
+}
+```
+
+**Where the fingerprint comes from.** Only from the platform, computed from the visitor's own connection; never from a request header a visitor could send:
+
+| Platform | JA4 | |
+| --- | --- | --- |
+| Cloudflare Worker (and Snippet) | `request.cf.botManagement.ja4` | Only on zones with Bot Management, an Enterprise add-on. Without it there's no JA4, and the setting does nothing. |
+| Fastly Compute | `event.client.tlsJA4` | Every service, over https. |
+| AWS Lambda behind CloudFront | `CloudFront-Viewer-JA4-Fingerprint` | Only with `SID_CLOUDFRONT_JA4=true`, once the origin request policy adds that header (the managed `AllViewerExceptHostHeader` doesn't). See the [Lambda adapter's README](../../adapters/aws-lambda/README.md#platform-information). |
+| Lambda@Edge, Vercel, Azure, Google Cloud, Akamai, Node.js | none | The setting does nothing. |
+
+In trusted-upstream mode there's no JA4 either: the connection the platform sees is the publisher's CDN's, not the visitor's. The fingerprint is only compared: it's never stored, logged, returned or used to derive an identifier.
+
+**What counts as a contradiction.** The module reads the TLS stack from the fingerprint's cipher hash (its second part, which stays the same across a browser's releases), using a small table taken from FoxIO's public [JA4+ mapping](https://github.com/FoxIO-LLC/ja4/blob/main/ja4plus-mapping.csv):
+
+| Cipher hash | Stack |
+| --- | --- |
+| `8daaf6152771` | Chromium (Chrome, Edge, Opera, Samsung Internet, Android WebView, Electron) |
+| `5b57614c22b0` | Firefox |
+| `a09f3c656075` | Safari (Apple's TLS stack) |
+| `85036bcba153`, `c7886603b240` | Python |
+| `9dc949149365`, `e33ad33b3d25`, `cbb2034c60b8`, `8cdfa2d4673b` | Go |
+
+It's a contradiction when a user agent claiming Chromium, Firefox or Safari comes over Python's or Go's TLS, or over another of the three browsers' (Chrome's user agent over Firefox's TLS, say). The rules are conservative, so that real browsers aren't caught:
+
+- **An unknown fingerprint is no decision.** A new browser version with a new cipher list, curl, Java, .NET, or anything else not in the table isn't judged; neither is a user agent that doesn't claim one of the three browsers (crawlers that name themselves are the [`ua` module](../ua/README.md)'s job).
+- **HTTP/3 isn't judged.** Over QUIC (`q…` fingerprints) every browser offers the same three TLS 1.3 cipher suites, so the cipher hash can't tell them apart.
+- **iPhone and iPad user agents aren't judged.** Every iOS browser (Chrome's `CriOS`, Firefox's `FxiOS`, in-app browsers) uses Apple's TLS stack whatever it calls itself.
+- **Apple's stack behind a Mac user agent isn't judged,** since iPad browsers asking for the desktop site send a Mac user agent (Chrome's or Firefox's included).
+
+What it can still misjudge: a TLS-intercepting proxy or antivirus between the visitor and the CDN (on corporate networks, or some security software) replaces the browser's ClientHello with its own, and a browser extension that switches the user agent to another browser's makes the browser lie. If such a proxy is built on Go, or the extension claims another browser, a real visitor looks like a contradiction. Skipping never deletes an ID, so a misjudged visitor keeps the one they have; they're just not given a new one on that request. And a bot running a real browser engine (headless Chrome with Chrome's user agent) has a matching fingerprint: this catches scripts that borrow a browser's user agent, not automated browsers.
 
 **Internal traffic** (`internalCookie`). Your staff set a cookie, and their visits are marked `internal: true`, so the page can, for example, skip ad auctions for them or set OpenRTB `test: 1` so QA traffic isn't billed. That's the page's decision; the worker only reports it, and `SID_SKIP_BOTS` doesn't skip internal traffic (staff see what visitors see). Set the cookie from an internal page:
 
@@ -206,7 +249,8 @@ Exports:
 
 - `botModule`
 - `botSettings(config)`: the checked settings
-- `missingBrowserHeaders(headers, url)` and `sendsFetchMetadata(userAgent)`: the heuristic
+- `missingBrowserHeaders(headers, url)` and `sendsFetchMetadata(userAgent)`: the missing-headers heuristic
+- `ja4Contradicts(userAgent, ja4)`, with `ja4Stack(ja4)` and `claimedBrowser(userAgent)`: the JA4 check
 
 Any module can report to the traffic signal by returning `traffic` (core's `TrafficReport`); see [`../AGENTS.md`](../AGENTS.md).
 
@@ -215,7 +259,9 @@ Any module can report to the traffic signal by returning `traffic` (core's `Traf
 | Symptom | Cause |
 | --- | --- |
 | `ext.modules.bot` is missing | `bot` isn't in `SID_MODULES`. |
-| `status` is always `empty` | Both signals are off: set `missingHeaders`, `internalCookie`, or both. |
+| `status` is always `empty` | Every signal is off: set `missingHeaders`, `ja4Mismatch`, `internalCookie`, or several. |
+| `ja4Mismatch` never reports anything | The platform provides no JA4: on Cloudflare the zone needs Bot Management; on AWS set `SID_CLOUDFRONT_JA4=true` and add `CloudFront-Viewer-JA4-Fingerprint` to the origin request policy; other platforms have none ([where it comes from](#ja4-fingerprint-that-contradicts-the-user-agent)). Or the clients aren't in its table, or they're on HTTP/3. |
+| Real visitors are skipped with `ja4Mismatch` | A TLS-intercepting proxy or antivirus, or a user agent switcher, between them and the CDN. Turn `ja4Mismatch` off, or don't skip `likely` bots. |
 | `status` is `error` | A misspelt setting (they're case-sensitive), a wrong type, or an `internalToken` under 16 characters. |
 | Real visitors are flagged `likely` | Something between the browser and the worker strips `Accept-Language` or `Sec-Fetch-*` (some proxies and extensions do). Turn `missingHeaders` off, or don't skip `likely` bots. |
 | `internal` doesn't appear | The cookie isn't sent to the worker's path or domain (set `Path=/` and the right `Domain`), or its value doesn't match `internalToken`. |

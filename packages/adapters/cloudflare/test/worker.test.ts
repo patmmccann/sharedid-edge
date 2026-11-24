@@ -2,7 +2,7 @@ import { exports } from 'cloudflare:workers';
 import { describe, expect, it, vi } from 'vitest';
 import { utcOffsetMinutes } from '@sharedid-edge/module-geo';
 import { builtInModules as modules } from '@sharedid-edge/modules';
-import { botManagementTraffic, platformInfo } from '../src/platform.js';
+import { botManagementJa4, botManagementTraffic, platformInfo } from '../src/platform.js';
 import { createWorker } from '../src/worker.js';
 
 const UUID = 'c29cb2ae-769d-42f6-891a-f53cadee823d';
@@ -93,6 +93,36 @@ describe('Bot Management', () => {
     for (const score of [0, 100, 1.5, '5', Number.NaN]) {
       expect(botManagementTraffic({ score, verifiedBot: false, corporateProxy: false })).toBeUndefined();
     }
+  });
+
+  it('reads the JA4 fingerprint, only when it is one', () => {
+    const ja4 = 't13d1516h2_8daaf6152771_02713d6af862';
+    expect(botManagementJa4({ ...botManagement, ja4 })).toBe(ja4);
+    expect(platformInfo({ headers: new Headers(), cf: { botManagement: { ...botManagement, ja4 } } })).toEqual({
+      isEU: false, traffic: { bot: true, botKind: 'verified', score: 1 }, ja4
+    });
+    for (const value of [undefined, '', 'x', 42, '771,4865-4866,0-23,29-23,0']) {
+      expect(botManagementJa4({ ...botManagement, ja4: value })).toBeUndefined();
+    }
+    expect(botManagementJa4(undefined)).toBeUndefined();
+  });
+
+  it("with the bot module's ja4Mismatch and SID_SKIP_BOTS=likely, skips minting for a Chrome user agent over Python's TLS", async () => {
+    const fetchHandler = createWorker(modules).fetch;
+    if (fetchHandler === undefined) throw new Error('no fetch handler');
+    const env = { SID_COOKIE_DOMAIN: 'host-only', SID_MODULES: 'bot', SID_MODULE_CONFIG: '{"bot":{"ja4Mismatch":true}}', SID_SKIP_BOTS: 'likely' } as unknown as Env;
+    const call = (request: Request): Promise<Response> => Promise.resolve(fetchHandler(request as Parameters<typeof fetchHandler>[0], env, {} as ExecutionContext));
+    const chrome = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36';
+    const request = (ja4: string): Request => {
+      // ja4 isn't in this version of the Workers types, so the object isn't a fresh literal in `cf`.
+      const withJa4 = { ...botManagement, score: 50, verifiedBot: false, ja4 };
+      return new Request('https://www.example.com/_sid/v1', { headers: { 'User-Agent': chrome, 'Accept-Language': 'en' }, cf: { botManagement: withJa4 } });
+    };
+    const bot = await call(request('t13d181000_85036bcba153_d41ae481755e'));
+    expect(bot.headers.get('X-SharedID-Status')).toBe('skipped: bot');
+    expect(bot.headers.getSetCookie()).toEqual([]);
+    const human = await call(request('t13d1516h2_8daaf6152771_02713d6af862'));
+    expect(human.headers.get('X-SharedID-Source')).toBe('minted');
   });
 
   it('returns the verdict as ortb2.device.ext.traffic from the Worker', async () => {

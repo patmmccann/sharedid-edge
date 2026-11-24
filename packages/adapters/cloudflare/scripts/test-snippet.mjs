@@ -70,6 +70,12 @@ const CONFIGS = {
     SID_MODULES: 'reflect',
     SID_MODULE_CONFIG: reflect([{ name: 'uid1', maxAgeDays: 365, restore: true, prefer: 'backup' }, { name: '_ga', maxAgeDays: 400, restore: true }], { domain: 'example.com', maxAgeDays: 30 })
   },
+  'bot with ja4Mismatch, and SID_SKIP_BOTS': {
+    SID_COOKIE_DOMAIN: 'host-only',
+    SID_MODULES: 'bot',
+    SID_SKIP_BOTS: 'likely',
+    SID_MODULE_CONFIG: { bot: { ja4Mismatch: true } }
+  },
   'ip, geo (coarse) and bot, with SID_SKIP_BOTS': {
     SID_COOKIE_DOMAIN: 'host-only',
     SID_MODULES: 'ip,geo,bot',
@@ -110,6 +116,9 @@ const REQUESTS = [
   { path: '/_sid/v1', headers: { 'user-agent': 'Googlebot/2.1 (+http://www.google.com/bot.html)', 'cf-ipcountry': 'DE', 'cf-ipcity': 'Berlin', 'cf-timezone': 'Europe/Berlin' } },
   { path: '/_sid/v1', headers: { 'sec-gpc': '1', cookie: `_pubcid=${ID}; _sid_keep=${keeper}; uid1_bk=old; uid1=x` } },
   { path: '/_sid/v1', headers: { 'sec-ch-ua': '"Chromium";v="130", "Not?A_Brand";v="99"', 'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"Windows"', 'cf-ipcountry': 'US', 'cf-region-code': 'CA', 'x-forwarded-for': '203.0.113.9' } },
+  // Bot Management's JA4 (request.cf.botManagement.ja4, below): Python's TLS behind a Chrome user agent, then Chrome's.
+  { path: '/_sid/v1', headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36', 'accept-language': 'en', 'x-test-ja4': 't13d181000_85036bcba153_d41ae481755e' } },
+  { path: '/_sid/sync', headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36', 'accept-language': 'en', 'x-test-ja4': 't13d1516h2_8daaf6152771_02713d6af862' } },
   { path: '/_sid/sync?gdpr=1', headers: { cookie: 'cookieyes-consent=consentid:x,consent:yes,action:yes,advertisement:yes' } },
   { path: '/_sid/v1', headers: { cookie: `_pubcid=${ID}; uid1=a; cookieyes-consent=consentid:x,consent:no,action:yes,advertisement:no` } },
   { path: '/_sid/optout', headers: { cookie: `_pubcid=${ID}; uid1=x; _sid_keep=${keeper}; uid1_bk=old; _sid_li_fat_id=1.x` } },
@@ -130,13 +139,17 @@ function check(ok, what) {
   console.error(`not ok: ${what}`);
 }
 
-/** The request a case describes, as Cloudflare gives it: the location headers as `request.cf`, the client IP in CF-Connecting-IP. */
+/**
+ * The request a case describes, as Cloudflare gives it: the location headers as `request.cf`, the client IP in
+ * CF-Connecting-IP, and `x-test-ja4` as Bot Management's `request.cf.botManagement.ja4`.
+ */
 function request({ path, method = 'GET', headers = {} }, host = '127.0.0.1') {
   const cf = {};
   const plain = {};
   for (const [name, value] of Object.entries(headers)) {
     const field = LOCATION[name.toLowerCase()];
-    if (field === undefined) plain[name] = value;
+    if (name.toLowerCase() === 'x-test-ja4') cf.botManagement = { score: 50, verifiedBot: false, corporateProxy: false, ja4: value };
+    else if (field === undefined) plain[name] = value;
     else cf[field] = value;
   }
   if (cf.country !== undefined) cf.isEUCountry = EU_COUNTRY_CODES.has(cf.country.toUpperCase()) ? '1' : '0';

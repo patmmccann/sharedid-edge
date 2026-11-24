@@ -169,6 +169,7 @@ Two more variables are read only by the Lambda adapter:
 | --- | --- | --- |
 | `SID_PUBLIC_ORIGIN` | `https://` + `X-Forwarded-Host`, else `Host` | The origin of request URLs: your site's, like `https://www.example.com` (the template's `SidPublicOrigin`). Set it: behind CloudFront the function doesn't see your site's host (see [The site's host](#the-sites-host)). Its scheme also decides `Secure` cookies for local development ([Secure cookies](../../../docs/configuration.md#secure-cookies)). |
 | `SID_BEHIND_CLOUDFRONT` | `true` | `false` when nothing is in front of the function (see [Platform information](#platform-information)). Don't use it for `/_sid/*` on a site: without CloudFront the endpoint isn't on the site's IP addresses. The template doesn't set it, since the default is right behind CloudFront. |
+| `SID_CLOUDFRONT_JA4` | `false` | `true` once your origin request policy adds `CloudFront-Viewer-JA4-Fingerprint`: the function then reads the visitor's JA4 TLS fingerprint from it, for the `bot` module's `ja4Mismatch` (see [Platform information](#platform-information)). Ignored without CloudFront. The template doesn't set it. |
 
 ### The site's host
 
@@ -290,8 +291,11 @@ The handler gets the client IP and location (`PlatformInfo`) from headers CloudF
 | `timezone` | `CloudFront-Viewer-Time-Zone` | IANA name, for the `geo` module's `utcoffset`. |
 | `isEU` | from `country` | `true` for the 27 EU member states, `false` for other countries, unknown without a country. |
 | `traffic` | none | CloudFront adds no bot verdict, so there is none from the platform; the `bot` module and other modules still report to the traffic signal. |
+| `ja4` | `CloudFront-Viewer-JA4-Fingerprint`, only with `SID_CLOUDFRONT_JA4=true` | The visitor's JA4 TLS fingerprint, for the `bot` module's [`ja4Mismatch`](../../modules/bot/README.md#ja4-fingerprint-that-contradicts-the-user-agent). Values that aren't a JA4 are dropped. |
 
 Core's `locationInfo` validates the location values the same way as on the other platforms (dropping empty values, `XX`, and out-of-range coordinates). CloudFront has no continent header, so `continent` is never set on Lambda. The template's origin request policy (`AllViewerExceptHostHeader`) forwards all these headers. If you use your own policy, forward them too, or the `geo` module only gets what you forward.
+
+**The JA4 fingerprint** isn't in `AllViewerExceptHostHeader`, which adds only the protocol, TLS, device type and location headers, and that policy passes on the visitor's other headers as sent: so by default the function doesn't read `CloudFront-Viewer-JA4-Fingerprint` at all, and a visitor can't feed it one. To use it, give the behaviour your own origin request policy that adds `CloudFront-Viewer-JA4-Fingerprint` (CloudFront then sets it from the viewer's TLS connection, for https requests), and set `SID_CLOUDFRONT_JA4=true`. A custom policy can't forward all viewer headers except `Host` and add a CloudFront header too, so list the headers the function reads ([Add the behaviour to an existing distribution](#add-the-behaviour-to-an-existing-distribution)) plus this one, which takes more than CloudFront's default quota of 10 headers per policy: ask AWS to raise it. Lambda@Edge doesn't read it.
 
 **The `ua` module** reads the visitor's `User-Agent` and User-Agent Client Hints (`Sec-CH-UA`, `Sec-CH-UA-Mobile`, `Sec-CH-UA-Platform`, and any high-entropy hints you ask for). The template's origin request policy (`AllViewerExceptHostHeader`) forwards them. A policy that doesn't forward `User-Agent` makes CloudFront send `User-Agent: Amazon CloudFront` instead, which the module ignores, so it reports `empty`. See the [`ua` module's README](../../modules/ua/README.md#on-aws-lambda-behind-cloudfront).
 
