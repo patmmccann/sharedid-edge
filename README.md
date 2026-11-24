@@ -1,12 +1,14 @@
 # SharedID Edge
 
+**[▶ See it working live in your browser](https://e2e.sharedid.dev/demo/)**: every deployment this project's tests keep running, with green checks for the cookie the server sets.
+
 SharedID Edge is a small [open-source](https://github.com/patmmccann/sharedid-edge) edge worker that keeps the [Prebid SharedID](https://docs.prebid.org/identity/sharedid.html) durable. It runs on a route of your own domain (`www.example.com/_sid/*`) on the CDN that already serves your site, and sets the SharedID as a **server-set first-party cookie**, so Safari doesn't cap it at 7 days.
 
 It replaces the [WordPress](https://github.com/prebid/sharedid-wordpress) and [Drupal](https://github.com/prebid/sharedid-drupal) SharedID plugins and the endpoint examples in the SharedID docs: it implements the same `pixelUrl` contract, so Prebid.js needs no code change. Unlike those, it answers at the CDN edge, so your origin sees no extra traffic.
 
 It also has a **module** interface for IDs and signals that are best computed at the edge (connecting IP, geography, bot scores, device data), returned to the page in one JSON response. See the [proposal](https://github.com/prebid/prebid-server/issues/5064) for the background.
 
-**See it working live:** [e2e.sharedid.dev/demo](https://e2e.sharedid.dev/demo/) lists every live deployment this project's tests keep running (Cloudflare, AWS CloudFront and Lambda, Vercel, upstream operators, a hosting company on Cloudflare for SaaS, the Node.js container). Open one, and a panel shows, with green checks, the cookie the server set in your browser, how long your browser will keep it, and the ID Prebid.js puts into bid requests, next to the latest test run.
+**The live demo:** [e2e.sharedid.dev/demo](https://e2e.sharedid.dev/demo/) lists every live deployment this project's tests keep running (Cloudflare, AWS CloudFront and Lambda, Vercel, upstream operators, a hosting company on Cloudflare for SaaS, the Node.js container). Open one, and a panel shows, with green checks, the cookie the server set in your browser, how long your browser will keep it, and the ID Prebid.js puts into bid requests, next to the latest test run.
 
 ## How it works
 

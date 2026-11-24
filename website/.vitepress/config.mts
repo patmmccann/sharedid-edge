@@ -183,6 +183,20 @@ export default defineConfig({
         chart.content = '<AdoptionChart />\n';
         state.tokens.splice(at, 0, chart);
       });
+      // The live demo's call to action (theme/LiveDemoLink.vue) replaces the README's first paragraph, the plain
+      // "See it working live" link line under the title, so the home page shows a button there instead.
+      md.core.ruler.push('live-demo-link', state => {
+        const env = state.env as { realPath?: string; path?: string };
+        if (posix(relative(ROOT, env.realPath ?? env.path ?? '')) !== 'README.md') return;
+        const h1 = state.tokens.findIndex(token => token.type === 'heading_close' && token.tag === 'h1');
+        const open = state.tokens[h1 + 1];
+        const inline = state.tokens[h1 + 2];
+        if (h1 < 0 || open?.type !== 'paragraph_open' || inline?.content.includes('e2e.sharedid.dev/demo') !== true) return;
+        const close = state.tokens.findIndex((token, i) => i > h1 + 1 && token.type === 'paragraph_close');
+        const button = new state.Token('html_block', '', 0);
+        button.content = '<LiveDemoLink />\n';
+        state.tokens.splice(h1 + 1, close - h1, button);
+      });
       const render = md.renderer.rules.link_open ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options));
       md.renderer.rules.link_open = (tokens, idx, options, env: { path?: string; realPath?: string }, self) => {
         const token = tokens[idx];
