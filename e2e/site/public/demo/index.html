@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SharedID Edge, live</title>
+<!-- The live demo (served at https://e2e.sharedid.dev/demo/ by the Cloudflare live tests): every live deployment the
+     repository's live-test workflows keep running, a link to its own copy of the e2e page (whose results panel,
+     ../results.js, shows what happened in the visitor's browser), and the latest run of its workflow on main, from
+     GitHub's public API. demo.js has the list. See e2e/AGENTS.md. -->
+<style>
+  body { font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; max-width: 72rem; margin: 1.5rem auto; padding: 0 1rem; color: #1d1d1f; }
+  h1 { font-size: 1.7rem; margin: 0 0 .3rem; }
+  h2 { font-size: 1.2rem; margin: 2rem 0 .5rem; }
+  .lead { color: #444; max-width: 52rem; }
+  code { font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #f2f2f4; padding: .05rem .3rem; border-radius: 4px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr)); gap: 1rem; }
+  .tile { border: 1px solid #ddd; border-radius: 12px; padding: 1rem; background: #fafafa; display: flex; flex-direction: column; gap: .5rem; }
+  .tile[data-status=pass] { border-color: #9ad3a8; background: #f0faf2; }
+  .tile[data-status=fail] { border-color: #f1a7ad; background: #fdf1f2; }
+  .tile h3 { margin: 0; font-size: 1.05rem; display: flex; gap: .6rem; align-items: center; }
+  .icon { flex: 0 0 2rem; height: 2rem; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 1.2rem; background: #999; }
+  [data-status=pass] .icon { background: #1a7f37; } [data-status=fail] .icon { background: #cf222e; } [data-status=info] .icon { background: #8c959f; }
+  .shape { color: #444; font-size: .92rem; margin: 0; }
+  .run { font-size: .88rem; color: #333; }
+  .chips { display: flex; flex-wrap: wrap; gap: .3rem; }
+  .chip { font-size: .78rem; padding: .05rem .45rem; border-radius: 999px; border: 1px solid #ccc; background: #fff; }
+  .chip[data-status=pass] { border-color: #1a7f37; color: #1a7f37; } .chip[data-status=fail] { border-color: #cf222e; color: #cf222e; } .chip[data-status=info] { color: #666; }
+  .actions { margin-top: auto; display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+  .actions a, .actions button { font: inherit; font-size: .9rem; padding: .35rem .8rem; border-radius: 6px; border: 1px solid #0969da; background: #0969da; color: #fff; text-decoration: none; cursor: pointer; }
+  .actions button { background: #fff; color: #0969da; }
+  .ci-only { font-size: .88rem; color: #555; }
+  .tile.open { grid-column: 1 / -1; }
+  iframe { width: 100%; height: 36rem; border: 1px solid #ccc; border-radius: 8px; background: #fff; }
+  .note { font-size: .9rem; color: #444; max-width: 52rem; }
+</style>
+</head><body>
+<h1>SharedID Edge, working live</h1>
+<p class="lead">SharedID Edge sets Prebid's SharedID as a server-set first-party cookie from the site's own CDN, so Safari doesn't cap it at 7 days. Each tile below is a real deployment that this repository's live tests deploy and test on every merge and every night. <strong>Open one:</strong> unmodified Prebid.js runs on that site, calls SharedID Edge on the same hostname, and a panel shows, with green checks, the cookie the server set in <em>your</em> browser, how long your browser will keep it, the ID Prebid.js puts into bid requests, and what the edge saw (your IP address and location, where those modules are on).</p>
+<p class="note">Each tile also shows the latest run of its live-test workflow on <code>main</code>: the deploy, the conformance suite, and the same browser tests in Chromium, Firefox and WebKit, against that deployment. How every deployment is tested: <a href="https://sharedid.dev/docs/verification">How SharedID Edge is verified</a>.</p>
+
+<h2>Live deployments: run it in your browser</h2>
+<div class="tiles" id="live"></div>
+
+<h2>Verified by CI, not kept running</h2>
+<p class="note">These run on a CI machine and are gone when the run ends, so there is nothing to open; the tile shows the latest run.</p>
+<div class="tiles" id="ci"></div>
+
+<h2>Does Safari keep it for a year?</h2>
+<p class="note">Safari caps cookies written by page script, and cookies set by a server on another IP address, at 7 days. Open any tile above in Safari: the panel's <em>How long your browser keeps it</em> check reads the cookie's expiry from Safari itself (the Cookie Store API, Safari 18.4 and later) and shows a year, not 7 days. In CI, the real-Safari tests (above) check the same cookies through <code>safaridriver</code> on a Mac, against a local server.</p>
+
+<p class="note">Source: <a href="https://github.com/patmmccann/sharedid-edge">github.com/patmmccann/sharedid-edge</a> &middot; docs: <a href="https://sharedid.dev/">sharedid.dev</a> &middot; the run results come from GitHub's public API, at most every ten minutes per visitor.</p>
+<script src="demo.js"></script>
+</body></html>

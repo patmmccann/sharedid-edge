@@ -481,3 +481,29 @@ test('an opted-out user gets no id cookies from the endpoint', async ({ page, co
   expect(await cookie(context, '_pubcid')).toBeUndefined();
   expect(await cookie(context, '_pubcid_sv')).toBeUndefined();
 });
+
+// The results panel a person sees on the page (site/public/results.js). Under automation it sends nothing of its own to
+// the endpoint, so the tests above see only Prebid.js's requests; ?checks=1 turns its /_sid/v1 checks on, as for a
+// person.
+test('the results panel shows the integration working, and the HttpOnly copy restoring a deleted _pubcid', async ({ page, context, sid }) => {
+  await visit(page);
+  // Under automation: Prebid.js's sync only, and the browser-side checks.
+  await expect(page.locator('#sid-verdict')).toHaveAttribute('data-status', 'pass');
+  expect((await sid.requests()).map(r => new URL(r.path, 'http://x').pathname)).toEqual([`${SID}/sync`]);
+  const id = (await cookie(context, '_pubcid'))?.value;
+  for (const check of ['prebid', 'sync', 'cookie', 'same-id', 'eids']) {
+    await expect(page.locator(`[data-check="${check}"]`), check).toHaveAttribute('data-status', 'pass');
+  }
+  await expect(page.locator('[data-check="eids"]')).toContainText('pubcid.org');
+  await expect(page.locator('[data-check="eids"]')).toContainText(String(id));
+  await expect(page.locator('[data-check="worker"]')).toHaveAttribute('data-status', 'info');
+
+  // As a person sees it: the worker's checks too, then the recovery copy restoring a deleted _pubcid.
+  await visit(page, '/?checks=1');
+  await expect(page.locator('[data-check="worker"]')).toHaveAttribute('data-status', 'pass');
+  await expect(page.locator('[data-check="worker"]')).toContainText('X-SharedID-Source: cookie');
+  await expect(page.locator('#sid-verdict')).toHaveAttribute('data-status', 'pass');
+  await page.locator('#sid-recover').click();
+  await expect(page.locator('[data-check="recovery"]')).toHaveAttribute('data-status', 'pass');
+  expect((await cookie(context, '_pubcid'))?.value).toBe(id);
+});
