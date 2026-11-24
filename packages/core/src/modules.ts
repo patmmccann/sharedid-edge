@@ -1,6 +1,6 @@
 import { isRecord, type SharedIdEdgeConfig } from './config.js';
-import type { ConsentContext, ConsentSignal, StorageDecision } from './consent.js';
-import { checkForwarding, type ModuleForwarding } from './forwarding.js';
+import { unreadableTcString, type ConsentContext, type ConsentSignal, type StorageDecision } from './consent.js';
+import { checkForwarding, type ModuleFetch, type ModuleFetching, type ModuleForwarding } from './forwarding.js';
 import { trafficReport, type TrafficEntry, type TrafficReport } from './traffic.js';
 import type { EncryptedIp, EncryptedIpValue, Eid, ModuleReport, PlatformInfo } from './types.js';
 
@@ -40,6 +40,12 @@ export interface ModuleContext {
    * these in the output or in errors. Frozen, like `config`.
    */
   readonly secrets: Readonly<Record<string, string>>;
+  /**
+   * For a module that declares `fetching`: sends a request to one of its declared hosts (spec: "Module requests").
+   * Undefined for other modules, and whenever the decision rules requests out for this visitor (opt-out, COPPA, GPC, a
+   * consent provider's denial, TCF), so a module checks it before anything else it would send.
+   */
+  readonly fetch?: ModuleFetch;
 }
 
 /**
@@ -186,6 +192,12 @@ export interface EdgeModule {
    * `SID_MODULES` and configured; the adapter must support forwarding (`HandlerOptions.forwardFetch`).
    */
   readonly forwarding?: ModuleForwarding;
+  /**
+   * Lets its `run` send requests to the hosts it declares, through core (`ModuleContext.fetch`; spec: "Module
+   * requests"), under the forwarding decision's privacy rules, with GPC always blocking, and a time limit within
+   * `SID_MODULE_TIMEOUT_MS`. The adapter must support it (`HandlerOptions.forwardFetch`).
+   */
+  readonly fetching?: ModuleFetching;
 }
 
 const MODULE_NAME = /^[a-z][a-z0-9-]{0,63}$/;
@@ -204,7 +216,10 @@ export function defineModule(module: EdgeModule): EdgeModule {
       throw new TypeError(`Module ${module.name}: routes must be a non-empty list of "v1" and "sync" without repeats`);
     }
     // Builds without a forwarding module leave the check out (NO_FORWARDING in handler.ts).
-    if ((globalThis as { __SID_NO_FORWARDING__?: boolean }).__SID_NO_FORWARDING__ !== true && module.forwarding !== undefined) checkForwarding(module.name, module.forwarding);
+    if ((globalThis as { __SID_NO_FORWARDING__?: boolean }).__SID_NO_FORWARDING__ !== true) {
+      if (module.forwarding !== undefined) checkForwarding(module.name, module.forwarding);
+      if (module.fetching !== undefined) checkForwarding(module.name, module.fetching, 'fetching');
+    }
   }
   if (module.routes !== undefined) return Object.freeze({ ...module, routes: Object.freeze([...module.routes]) });
   return Object.freeze({ ...module });
@@ -293,14 +308,17 @@ export interface ModuleRunOutput {
 /**
  * Runs the modules configured for a route (`v1` by default; see {@link moduleNamesFor}) in order. A module that's
  * missing, doesn't run on the route, isn't allowed by consent, throws or runs past `moduleTimeoutMs` is reported and
- * left out; the others still contribute. On `sync` the caller uses only the cookies.
+ * left out; the others still contribute. On `sync` the caller uses only the cookies. A module with a `gvlid` that
+ * consent skips has the cookies it declares for opt-out deleted, when the browser sent them. `fetchFor` gives a
+ * module that declares `fetching` its `ModuleContext.fetch` (undefined when blocked).
  */
 export async function runModules(
   registry: ModuleRegistry,
   config: SharedIdEdgeConfig,
-  base: Omit<ModuleContext, 'config' | 'secrets'>,
+  base: Omit<ModuleContext, 'config' | 'secrets' | 'fetch'>,
   now: () => number,
-  route: ModuleRoute = 'v1'
+  route: ModuleRoute = 'v1',
+  fetchFor?: (module: EdgeModule) => ModuleFetch | undefined
 ): Promise<ModuleRunOutput> {
   const eids: Eid[] = [];
   const cookies: ModuleCookie[] = [];
@@ -323,12 +341,15 @@ export async function runModules(
     const denied = consentDenial(module, base.consent);
     if (denied !== undefined) {
       reports[name] = { ms: 0, status: 'skipped', reason: denied };
+      // A vendor's identifier mustn't outlast the vendor's consent: delete what the module declares for opt-out.
+      if (module.gvlid !== undefined) cookies.push(...optOutCookies(new ModuleRegistry([module]), config).filter(cookie => base.cookies.has(cookie.name)));
       continue;
     }
     const start = now();
     try {
+      const fetch = module.fetching === undefined ? undefined : fetchFor?.(module);
       const result = await withTimeout(
-        Promise.resolve(module.run({ ...base, config: config.moduleConfig[name] ?? {}, secrets: config.moduleSecrets[name] ?? {} })),
+        Promise.resolve(module.run({ ...base, config: config.moduleConfig[name] ?? {}, secrets: config.moduleSecrets[name] ?? {}, ...(fetch === undefined ? {} : { fetch }) })),
         config.moduleTimeoutMs
       );
       const ms = Math.round(now() - start);
@@ -441,14 +462,21 @@ function checkModuleCookie(cookie: ModuleCookie, config: SharedIdEdgeConfig): vo
 }
 
 /**
- * Why consent doesn't allow a module to run, or undefined if it does. When GDPR applies, a module's declared purposes
- * must all have publisher consent (modules without a `gvlid` act for the publisher). Vendor consent isn't decoded yet,
- * so a module with a `gvlid` doesn't run when GDPR applies.
+ * Why consent doesn't allow a module to run, or undefined if it does. When GDPR applies, a module without a `gvlid`
+ * acts for the publisher: its declared purposes must all have publisher consent. A module with a `gvlid` acts for that
+ * TCF vendor: it needs a TC string that can be read, the vendor's consent in the core segment, and consent there for
+ * each of its declared purposes.
  */
 export function consentDenial(module: EdgeModule, consent: ConsentContext): string | undefined {
   if (consent.gdprApplies !== true) return undefined;
-  if (module.gvlid !== undefined) return 'tcf: vendor consent is not checked yet';
   const purposes = module.purposes ?? [];
+  if (module.gvlid !== undefined) {
+    const { tcf } = consent;
+    if (tcf === undefined) return consent.tcString === undefined ? 'tcf: GDPR applies and there is no TC string' : unreadableTcString();
+    if (!tcf.vendorConsent(module.gvlid)) return `tcf: no consent for vendor ${String(module.gvlid)}`;
+    const missing = purposes.filter(p => !tcf.purposeConsents.has(p));
+    return missing.length === 0 ? undefined : `tcf: no vendor consent for purpose ${missing.join(', ')}`;
+  }
   if (purposes.length === 0) return undefined;
   const publisher = consent.tcf?.publisherPurposeConsents;
   if (publisher === undefined) return 'tcf: no publisher consent in the TC string';

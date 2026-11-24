@@ -62,10 +62,14 @@ export {
   FORWARD_TIMEOUT_MS,
   forwardingPaths,
   MAX_FORWARD_BODY_BYTES,
+  moduleFetchLimitMs,
   type ForwardContext,
   type ForwardDecision,
   type ForwardFetch,
   type ForwardInit,
+  type ModuleFetch,
+  type ModuleFetchInit,
+  type ModuleFetching,
   type ModuleForwarding
 } from './forwarding.js';
 export {

@@ -5,7 +5,7 @@ The modules this project maintains, listed in the [module index](../../docs/modu
 - **Project modules are built in,** unless they're [opt-in](#opt-in-modules). Every adapter bundles them through `builtInModules` (`all/src/index.ts`); a new module is added there, never to an adapter. Being built in doesn't turn a module on: it does nothing until listed in `SID_MODULES`.
 - **A package per module,** depending only on `@sharedid-edge/core`'s public API (and, where it saves duplicating code, another project module's exports, as the `ec` vendor module uses `ip`'s parser). Core never depends on a module.
 - **Platform-neutral**, like core: `lib: ["ES2023", "WebWorker"]`, no Node or DOM types, no runtime dependencies besides core (the exception is `ua`, which bundles `isbot`, and `bowser` in opt-in builds; see its `AGENTS.md`). Platform data comes through `PlatformInfo`, never `request.cf` or headers read directly; add new fields to `PlatformInfo` in core and to the adapters.
-- **No network calls,** and no data updates during requests. The one exception is a [forwarding module](#forwarding-modules), which passes requests on to the hosts it declares, through core's `forward`, never `fetch` itself.
+- **No network calls,** and no data updates during requests. The exceptions go through core, never `fetch` itself: a [forwarding module](#forwarding-modules), which passes requests on to the hosts it declares with core's `forward`, and a vendor module with [`fetching`](#module-requests), which sends requests from `run` with `context.fetch`.
 - **Scheduled reference data** uses the opt-in [updater](../data-updates/README.md). Adapter setup/background work loads validated snapshots from private storage; a module's `run` reads only the in-memory copy. Downloads and conversion run on the scheduler or administrative command. `stale: true` reports missing or old data while usable last-good output may still contribute; an expiry may drop it. Never give an updater request context or cache visitor data with the reference data.
 - **Nothing from a request outlives it.** A module object, and anything at a module's top level, can serve many visitors in turn: adapters keep a handler for as long as the settings don't change, and the Fastly adapter's reusable-sandbox build keeps the whole JavaScript instance from one request to the next. So keep no request data (IP, cookies, consent, IDs, headers, location, User-Agent) in module-level variables, closures made at setup, or caches; derive everything from the context on each run. Caches of constants or of configuration are fine. Don't write to `config` or `secrets` (they're frozen: the write throws and the module reports `error`), and don't use a module-level regular expression with the `g` or `y` flag, whose `lastIndex` carries over between calls.
 
@@ -33,7 +33,7 @@ export const example = defineModule({
 - `context.storage` is the worker's own storage decision for the SharedID (`{ allowed: false, reason }` on opt-out, GPC, COPPA or denied consent). A module that stores or extends an identifier should follow it, as `reflect` does.
 - Don't put personal data in the output unless the publisher enabled it in the module's config, and default to off. Never log, store or hash request data, or put it anywhere but the response to the same request.
 - A module that throws or exceeds `SID_MODULE_TIMEOUT_MS` is reported (`ext.modules`) and left out. Don't rely on that for control flow; return `undefined` when there's nothing to add.
-- Modules with a `gvlid` don't run when GDPR applies until vendor consent decoding exists.
+- A module with a `gvlid` acts for that TCF vendor: where GDPR applies, core runs it only with a readable TC string whose core segment has the vendor's consent and consent for each of its `purposes` (the publisher segment doesn't count), and when it skips the module it deletes the cookies the module declares in `optOutCookies` (those the browser sent). A module without a `gvlid` acts for the publisher: its `purposes` are checked in the publisher segment.
 
 ## Consent providers
 
@@ -81,6 +81,15 @@ The rules, from the maintainer's decision on forwarding (#28, 2026-11-10), which
 - **Bounded.** Core reads a `POST` body (at most 64 KiB) only when the decision forwards, and gives it as `body`; never read `request.body` yourself. `forward` gives up after 10 seconds; a failure is a `502`. Don't cache visitor requests or responses; set `Cache-Control` to what the service's documentation allows.
 - **Platforms.** Adapters that can send requests pass `forwardFetch` (core's `fetchForward`); the others refuse a forwarding module in `SID_MODULES` (a 500, not ignored). Say in the README which platforms work, and why the others don't.
 - **Tests never reach the service:** unit tests pass a stub as `forwardFetch`; conformance cases run against the local stand-in in `conformance/src/upstream-stand-in.ts` (add the service's hosts there).
+
+## Module requests
+
+A vendor module that looks an ID up from the vendor's API (`id5`) declares `fetching: { hosts: [...] }` and gets `context.fetch` in `run` (spec: [Module requests](../../spec/SPEC.md#module-requests)). The forwarding rules above apply (opt-in, declared hosts, the disclosure box, `network` and `forwards` in its metadata, platforms), plus:
+
+- **`context.fetch` is absent when blocked** (opt-out, COPPA, GPC, a consent provider's denial, TCF, the module's own consent rule): check it, and send nothing without it. Add your own denials on top, and delete your cache on any of them.
+- **Bounded:** pass `timeoutMs`; core never waits longer than four fifths of `SID_MODULE_TIMEOUT_MS`, so answer from a cache when the request times out. Tell deployers to raise `SID_MODULE_TIMEOUT_MS` (50 ms by default) above your time limit.
+- **Cache the answer** in the visitor's own `HttpOnly` cookie, size-bounded, with the vendor's refresh and expiry, declared in `optOutCookies`. Never in module-level state.
+- **Tests never reach the vendor:** unit tests pass a stub `forwardFetch`; conformance cases use the stand-in (`conformance/src/upstream-stand-in.ts`), where you add the vendor's hosts.
 
 ## Reporting traffic: bots, proxies, internal visitors
 

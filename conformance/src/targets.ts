@@ -230,13 +230,14 @@ function encryptedIpCases(reason: string): [string, string][] {
 const NO_X25519 = "the runtime's Web Crypto has no X25519, which HPKE needs";
 
 /**
- * Forwarding modules (tag-gateway): adapters whose platform doesn't send requests to other hosts refuse one in
+ * Forwarding modules (tag-gateway), and modules that send requests from run (id5): adapters whose platform doesn't send
+ * requests to other hosts refuse one in
  * SID_MODULES (no `forwardFetch`: every request the adapter answers is a 500), so their files are listed, except, for a
  * target whose platform routes only the base path to the adapter (Azure's route template), the cases that expect the
  * platform's own 404 for a path the module doesn't own.
  */
 const NO_FORWARDING = "the adapter doesn't support forwarding modules, and refuses one in SID_MODULES";
-const FORWARDING_FILES = ['module-tag-gateway.json', 'module-tag-gateway-gpc-anonymous.json', 'module-tag-gateway-invalid-config.json'];
+const FORWARDING_FILES = ['module-tag-gateway.json', 'module-tag-gateway-gpc-anonymous.json', 'module-tag-gateway-invalid-config.json', 'module-id5.json'];
 function forwardingFiles(reason: string, except: readonly string[] = []): [string, string][] {
   return FORWARDING_FILES.flatMap(file => {
     const parsed = JSON.parse(readFileSync(join(ROOT, 'conformance/cases', file), 'utf8')) as { readonly cases: readonly { readonly name: string }[] };
@@ -250,6 +251,7 @@ function forwardingFiles(reason: string, except: readonly string[] = []): [strin
  * don't. Lambda's nodejs24.x runtime has fetch, and the lambda target passes them.
  */
 const NO_FETCH = "AWS Emulator's Lambda runtime has no fetch, which forwarding needs (Lambda's nodejs24.x has it)";
+const NO_FETCH_OR_CLIENT_IP = `${NO_FETCH}, and ${CLIENT_IP}`;
 
 const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, string>>>>> = {
   'lambda-aws-emulator': Object.fromEntries([
@@ -270,6 +272,12 @@ const LIMITATIONS: Readonly<Partial<Record<TargetName, Readonly<Record<string, s
       'forwards a hit with Global Privacy Control anonymously: no client IP or location',
       'serves the tag script with Global Privacy Control',
       'forwards the client IP and location as usual without Global Privacy Control'
+    ]),
+    // The id5 module asks ID5 only from a routable client IP, and there the client IP is the loopback address.
+    ...limited('module-id5.json', NO_FETCH_OR_CLIENT_IP, [
+      'fetches the ID5 ID with the client IP, user agent and SharedID, returns it in eids and caches it',
+      'fetches it on /sync too, where only the cache cookie is set',
+      "fetches it where GDPR applies with ID5's vendor consent, purposes 1 and 2, and Special Feature 1"
     ]),
     ...encryptedIpCases(CLIENT_IP),
     // the module is off here, but the case shows the ip module's ortb2.device.ip for its fixture client IP

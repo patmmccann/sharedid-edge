@@ -28,6 +28,10 @@ import {
   type RateLimiter,
   type RateLimitRequest,
   defineModule,
+  moduleFetchLimitMs,
+  type ModuleFetch,
+  type ModuleFetchInit,
+  type ModuleFetching,
   EU_COUNTRY_CODES,
   GDPR_COUNTRY_CODES,
   gdprFromLocation,
@@ -235,3 +239,18 @@ const limiter: RateLimiter = (request: RateLimitRequest) => request.route === 'v
 export const rateLimited: SharedIdEdgeHandler = createHandler({ config, rateLimit: limiter });
 export const asyncRateLimited: SharedIdEdgeHandler = createHandler({ config, rateLimit: () => Promise.resolve(true) });
 export const limits: number = MAX_URL_BYTES + MAX_COOKIE_BYTES;
+
+// A module that sends requests from run to the hosts it declares (`fetching`), through core's `context.fetch`.
+const lookupHosts: ModuleFetching = { hosts: ['api.vendor.example'] };
+const lookupInit: ModuleFetchInit = { method: 'POST', body: new TextEncoder().encode('{}'), timeoutMs: 100 };
+export const lookup: EdgeModule = defineModule({
+  name: 'lookup',
+  fetching: lookupHosts,
+  run: async ({ fetch }) => {
+    const send: ModuleFetch | undefined = fetch;
+    if (send === undefined) return undefined;
+    const response = await send('https://api.vendor.example/id', lookupInit);
+    return response.ok ? { eids: [{ source: 'vendor.example', uids: [{ id: await response.text(), atype: 1 }] }] } : undefined;
+  }
+});
+export const lookupLimit: number = moduleFetchLimitMs(50);

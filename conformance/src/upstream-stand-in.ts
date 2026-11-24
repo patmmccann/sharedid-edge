@@ -1,4 +1,5 @@
-// A local stand-in for the services forwarding modules pass requests on to (Google's tag gateway, `*.fps.goog`), so
+// A local stand-in for the services forwarding modules pass requests on to (Google's tag gateway, `*.fps.goog`), and
+// that modules send requests to from `run` (ID5's API, `id5-sync.com` and `api.id5-sync.com`, for the `id5` module), so
 // conformance runs never reach the internet. `installUpstreamStandIn` replaces `globalThis.fetch` in the process (or
 // the Worker isolate) that runs the implementation: a request to a stood-in host is answered here, in memory; a request
 // to a loopback address goes through as before (the emulators talk to their functions that way); any other request
@@ -8,15 +9,37 @@
 // Loaded by `upstream-preload.ts` (`node --import`) in every target process run with Node.js, and imported first by the
 // Worker entry point `targets.ts` writes for `wrangler dev`. Web-standard APIs only: workerd runs it too.
 
-/** The hosts answered here: Google's tag gateway endpoints. */
+/** The hosts answered here: Google's tag gateway endpoints, and ID5's. */
 function stoodIn(hostname: string): boolean {
-  return hostname === 'fps.goog' || hostname.endsWith('.fps.goog');
+  return hostname === 'fps.goog' || hostname.endsWith('.fps.goog') || isId5(hostname);
+}
+
+function isId5(hostname: string): boolean {
+  return hostname === 'id5-sync.com' || hostname === 'api.id5-sync.com';
+}
+
+/**
+ * ID5's stand-in: a fetch answer with one EID (`ID5*conformance`, `linkType` 2) whose UID `ext.sent` echoes what the
+ * request carried (`partner`, `ip`, `ipv6`, `ua`, `puid`, `s`; `null` when absent), so cases check what was sent
+ * through the payload, and `signature` `conformance-signature`.
+ */
+async function id5StandIn(request: Request): Promise<Response> {
+  let body: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(await request.text());
+    if (typeof parsed === 'object' && parsed !== null) body = parsed as Record<string, unknown>;
+  } catch {
+    return new Response('bad request', { status: 400 });
+  }
+  const sent = Object.fromEntries(['partner', 'ip', 'ipv6', 'ua', 'puid', 's'].map(key => [key, body[key] ?? null]));
+  const eid = { source: 'id5-sync.com', uids: [{ id: 'ID5*conformance', atype: 1, ext: { linkType: 2, sent } }] };
+  return Response.json({ ids: { id5id: { eid } }, signature: 'conformance-signature', cache_control: { max_age_sec: 7200 } });
 }
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
 
 /**
- * The stand-in's answer, by the request's path:
+ * The stand-in's answer: ID5's for ID5's hosts (`id5StandIn`); otherwise, by the request's path:
  *
  * - `…/healthy`: `ok`, as the gateway's health check;
  * - `…/redirect`: a `302` to another host, which the implementation must return rather than follow;
@@ -29,6 +52,7 @@ const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
  */
 export async function upstreamStandIn(request: Request): Promise<Response> {
   const url = new URL(request.url);
+  if (isId5(url.hostname)) return id5StandIn(request);
   if (url.pathname.endsWith('/healthy')) return new Response('ok', { headers: { 'content-type': 'text/plain' } });
   if (url.pathname.endsWith('/redirect')) return new Response(null, { status: 302, headers: { location: 'https://elsewhere.example/' } });
   if (url.pathname.endsWith('/') || url.pathname.endsWith('.js') || url.pathname.endsWith('/gtag/js')) {

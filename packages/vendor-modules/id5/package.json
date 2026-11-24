@@ -1,0 +1,56 @@
+{
+  "name": "@sharedid-edge/module-id5",
+  "version": "0.1.0",
+  "description": "SharedID Edge module: the ID5 ID, fetched server-to-server from ID5 with your own partner number. Opt-in; sends the client IP, user agent and SharedID to ID5",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.tsbuildinfo"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "attw": "attw --pack . --profile esm-only --quiet || attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "@sharedid-edge/core": "0.1.0",
+    "@sharedid-edge/module-gpp": "0.1.0",
+    "@sharedid-edge/module-ip": "0.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/patmmccann/sharedid-edge.git",
+    "directory": "packages/vendor-modules/id5"
+  },
+  "sharedidEdge": {
+    "kind": "module",
+    "name": "id5",
+    "title": "ID5 ID, fetched server-to-server",
+    "summary": "The ID5 ID as an EID, fetched from ID5 by the worker with your own ID5 partner number, cached in an `HttpOnly` cookie; nothing without ID5's TCF vendor consent where GDPR applies, or on opt-out, GPC, COPPA or a US opt-out. Off unless you turn it on",
+    "export": "id5Module",
+    "network": [
+      "id5-sync.com",
+      "api.id5-sync.com"
+    ],
+    "forwards": [
+      "id5-sync.com",
+      "api.id5-sync.com"
+    ],
+    "settings": "`partner` (**required**), `provider`, `endpoint`, `timeoutMs`, `domain`, `readCookie`",
+    "routes": [
+      "v1",
+      "sync"
+    ]
+  }
+}
