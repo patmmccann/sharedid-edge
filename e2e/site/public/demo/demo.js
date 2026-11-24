@@ -1,7 +1,8 @@
 // The live demo's tiles (demo/index.html): one per live deployment the live-test workflows keep running, and one per
 // check that runs only on a CI machine. Each shows the latest completed run of its workflow on main, from GitHub's
 // public API (unauthenticated: 60 requests an hour per address, so results are cached in localStorage for ten
-// minutes), narrowed to the tile's own jobs when a workflow tests several deployments.
+// minutes; each tile says when it last asked, with a link that asks again), narrowed to the tile's own jobs when a
+// workflow tests several deployments.
 (function () {
   var REPO = 'patmmccann/sharedid-edge';
   var API = 'https://api.github.com/repos/' + REPO + '/actions';
@@ -92,10 +93,11 @@
 
   var ICONS = { pass: '\u2713', fail: '\u2717', info: '\u2013', pending: '\u2026' };
 
+  // A cached answer, { at, body }, while it's fresh.
   function cached(url) {
     try {
       var hit = JSON.parse(localStorage.getItem('sid-demo:' + url) || 'null');
-      if (hit && Date.now() - hit.at < CACHE_MS) return hit.body;
+      if (hit && Date.now() - hit.at < CACHE_MS) return hit;
     } catch (e) { /* no storage */ }
     return undefined;
   }
@@ -110,24 +112,29 @@
 
   var inflight = {};
 
-  /** GET a GitHub API URL, cached; rejects with a readable message, naming the rate limit's reset when it's used up. */
-  function github(url) {
-    var hit = cached(url);
+  /**
+   * GET a GitHub API URL, from the cache unless `fresh`; resolves to { at, body }, `at` being when GitHub answered.
+   * Rejects with a readable message, naming the rate limit's reset when it's used up.
+   */
+  function github(url, fresh) {
+    var hit = fresh ? undefined : cached(url);
     if (hit !== undefined) return Promise.resolve(hit);
     if (inflight[url]) return inflight[url];
-    inflight[url] = fetch(url, { headers: { Accept: 'application/vnd.github+json' } }).then(function (response) {
-      if (response.ok) return response.json().then(function (body) { store(url, body); return body; });
+    inflight[url] = fetch(url, { headers: { Accept: 'application/vnd.github+json' }, cache: fresh ? 'no-store' : 'default' }).then(function (response) {
+      delete inflight[url];
+      if (response.ok) return response.json().then(function (body) { store(url, body); return { at: Date.now(), body: body }; });
       var reset = Number(response.headers.get('x-ratelimit-reset'));
       if ((response.status === 403 || response.status === 429) && response.headers.get('x-ratelimit-remaining') === '0') {
         throw new Error('GitHub\u2019s API limit for your address is used up' + (reset ? ' until ' + new Date(reset * 1000).toLocaleTimeString() : '') + '.');
       }
       throw new Error('GitHub\u2019s API answered ' + response.status + '.');
-    });
+    }, function (error) { delete inflight[url]; throw error; });
     return inflight[url];
   }
 
-  function ago(iso) {
-    var minutes = Math.round((Date.now() - Date.parse(iso)) / 60000);
+  /** "3 min ago" for an ISO date or a millisecond time. */
+  function ago(when) {
+    var minutes = Math.round((Date.now() - (typeof when === 'number' ? when : Date.parse(when))) / 60000);
     if (minutes < 60) return minutes + ' min ago';
     var hours = Math.round(minutes / 60);
     return hours < 48 ? hours + ' h ago' : Math.round(hours / 24) + ' days ago';
@@ -149,12 +156,25 @@
     return 'https://github.com/' + REPO + '/actions/workflows/' + tile.workflow + '?query=branch%3Amain';
   }
 
-  function load(tile, node) {
+  // "Checked 3 min ago · Check again": when GitHub was last asked, and a link that asks again, skipping the cache.
+  function checked(tile, node, at) {
+    var again = el('a', { href: '#', text: 'Check again' });
+    again.addEventListener('click', function (event) {
+      event.preventDefault();
+      node.querySelector('.run').textContent = 'Checking GitHub again…';
+      load(tile, node, true);
+    });
+    return el('div', { 'class': 'checked' }, ['Checked ' + (Date.now() - at < 60000 ? 'just now' : ago(at)) + ' · ', again]);
+  }
+
+  function load(tile, node, fresh) {
     var status = node.querySelector('.run');
-    github(API + '/workflows/' + tile.workflow + '/runs?branch=main&status=completed&exclude_pull_requests=true&per_page=1').then(function (body) {
-      var run = body.workflow_runs && body.workflow_runs[0];
+    var at;
+    github(API + '/workflows/' + tile.workflow + '/runs?branch=main&status=completed&exclude_pull_requests=true&per_page=1', fresh).then(function (answer) {
+      at = answer.at;
+      var run = answer.body.workflow_runs && answer.body.workflow_runs[0];
       if (!run) throw new Error('No completed run on main yet.');
-      return github(API + '/runs/' + run.id + '/jobs?per_page=100').then(function (jobs) { return [run, jobs.jobs || []]; });
+      return github(API + '/runs/' + run.id + '/jobs?per_page=100', fresh).then(function (jobs) { return [run, jobs.body.jobs || []]; });
     }).then(function (result) {
       var run = result[0];
       var jobs = result[1].filter(function (job) { return !BOOKKEEPING.test(job.name) && (!tile.jobs || tile.jobs.test(job.name)); });
@@ -173,11 +193,13 @@
         return el('span', { 'class': 'chip', 'data-status': jobStatus(job), text: ICONS[jobStatus(job)] + ' ' + browser(job) });
       });
       if (chips.length > 0) status.appendChild(el('div', { 'class': 'chips' }, chips));
+      status.appendChild(checked(tile, node, at));
     }).catch(function (error) {
       node.setAttribute('data-status', 'info');
       node.querySelector('.icon').textContent = ICONS.info;
       status.textContent = '';
       status.appendChild(el('span', {}, ['Couldn\u2019t load the latest run: ' + error.message + ' ', el('a', { href: runsPage(tile), text: 'See the runs on GitHub' }), '.']));
+      status.appendChild(checked(tile, node, at === undefined ? Date.now() : at));
     });
   }
 
