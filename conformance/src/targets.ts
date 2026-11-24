@@ -5,7 +5,8 @@ import type { BuildOption } from './cases.js';
 import { freePort } from './emulator.js';
 import { startDockerTarget } from './docker-nginx.js';
 import { startFastlyTarget } from './fastly-viceroy.js';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export interface RunningTarget {
@@ -567,7 +568,9 @@ export async function startTarget(
     // The Bowser build is its own entry point, src/bowser.ts, as in the Worker's dev:bowser and deploy:bowser scripts.
     if (vendor) moduleList('.sharedid-modules', '--worker', '--vendor-modules');
     const entry = [standInWorker(bowser ? 'src/bowser.ts' : vendor ? '.sharedid-modules/worker.ts' : 'src/index.ts')];
-    const wrangler = join(ROOT, 'node_modules/wrangler/bin/wrangler.js');
+    // Resolved from the Worker's package, which depends on wrangler: npm may install it there rather than hoist it to
+    // the root node_modules.
+    const wrangler = join(dirname(createRequire(join(ROOT, 'packages/adapters/cloudflare/package.json')).resolve('wrangler/package.json')), 'bin/wrangler.js');
     const defines = noTcf ? ['--define', 'globalThis.__SID_NO_TCF__:true'] : [];
     child = spawn(process.execPath, [wrangler, 'dev', '--ip', '127.0.0.1', '--port', String(port), '--log-level', 'error', '--show-interactive-dev-session=false', ...entry, ...defines, ...vars], {
       cwd: join(ROOT, 'packages/adapters/cloudflare'),
