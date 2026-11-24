@@ -4,7 +4,7 @@
 >
 > - **What is sent:** one `POST` with a JSON body: your ID5 partner number (`partner`), the visitor's **full IP address** (`ip` for IPv4, `ipv6` for IPv6, from your platform, never from the request's headers, and only a routable public address), the browser's **user agent** (`ua`), the visitor's **SharedID** as ID5's partner user ID (`puid`), your site's host name (`domain`), the consent strings the request carries (`gdpr`, `gdpr_consent`, `us_privacy`, `gpp_string`, `gpp_sid`), your `provider` name if you set one, the time (`ts`), this integration's name and version (`origin`, `v`), and the `signature` ID5 returned last time. No other cookie, header or page URL.
 > - **To which host:** `id5-sync.com` by default (`https://id5-sync.com/gs/v2/<partner>.json`), or `api.id5-sync.com` if you set `endpoint`. Core refuses any other host.
-> - **When:** on `/_sid/v1` and `/_sid/sync`, only when the visitor has no cached ID5 answer younger than 8 hours (ID5's refresh time), so about once per visitor per 8 hours of activity, within a time limit (`timeoutMs`, 300 ms by default).
+> - **When:** on `/_sid/v1` and `/_sid/sync`, only when the visitor has no cached ID5 answer younger than 8 hours (ID5's refresh time), so about once per visitor per 8 hours of activity, within a time limit (`timeoutMs`, 300 ms by default). With `"browsers": "webkit27"`, only for visitors on Apple WebKit 27 or later (Safari, and every browser on iOS and iPadOS).
 > - **Under which consent conditions:** **nothing at all** is sent with the SharedID opt-out cookie, Global Privacy Control, a COPPA request (`coppa=1`), a `us_privacy` opt-out of sale, a US opt-out in the GPP string, a consent provider's denial (`cmp`, `gpp`), whenever the SharedID itself may not be stored, where GDPR applies without a TC string, or with a TC string (wherever the visitor is) that doesn't give **ID5 (TCF vendor 131)** consent, with consent for Purpose 1 and consent or legitimate interest for one of Purposes 2 to 10. The IP address also needs the precise-location rules the [`ip`](../../modules/ip/README.md) module follows (with a TC string, opt-in to Special Feature 1); without it, nothing is sent. ID5 may use the IP address and user agent to find or match the visitor's ID5 ID: the ID comes from ID5, never from this project.
 > - **Why the public internet:** ID5's API runs only there; there's no co-located alternative.
 >
@@ -24,6 +24,7 @@ The `id5` module for [SharedID Edge](../../../README.md): the [ID5 ID](https://i
 - [Using the EIDs in Prebid.js](#using-the-eids-in-prebidjs)
 - [Consent and opt-out](#consent-and-opt-out)
 - [Settings](#settings)
+- [Only where the browser blocks ID5: `browsers`](#only-where-the-browser-blocks-id5-browsers)
 - [Platforms](#platforms)
 - [Size](#size)
 - [Using it in code](#using-it-in-code)
@@ -79,6 +80,7 @@ On each `/_sid/v1` or `/_sid/sync` request (on `/_sid/sync` only its cookie is u
 | ID5 answers with an error or nothing usable | the one above | asks again in an hour, keeping the cache | the cached EIDs, if any |
 | ID5 answers with its opt-out (`universal_uid` `0`, or `privacy.id5_consent: false`) | the one above | an opt-out marker, no ID, until the next refresh | nothing from ID5 |
 | No routable client IP, no user agent, or consent rules out a full IP address | none | unchanged | the cached EIDs, if any |
+| `"browsers": "webkit27"` and the visitor's browser isn't Apple WebKit 27 or later | none | unchanged | the cached EIDs, if any |
 
 The module never delays a response by more than `timeoutMs`: the ID5 EID is simply missing from that response, and the next request tries again.
 
@@ -213,9 +215,22 @@ If Prebid.js's own ID5 module also runs on the page, bidders may get the ID5 ID 
 | | `id5.endpoint` | optional | ID5's endpoint, `https://id5-sync.com/gs/v2/{partner}.json` by default (`{partner}` is replaced). Must be https on `id5-sync.com` or `api.id5-sync.com`; for example `https://api.id5-sync.com/gs/v2` (ID5's Prebid Server module) or `https://api.id5-sync.com/ga/v1` (ID5's in-app server-to-server API). |
 | | `id5.timeoutMs` | optional | How long to wait for ID5, 10 to 5000 ms; 300 by default. Never longer than four fifths of `SID_MODULE_TIMEOUT_MS`. |
 | | `id5.domain` | optional | The cache cookie's domain, such as `example.com` (it gets `Domain=.example.com`), or `auto`. Else `SID_COOKIE_DOMAIN`. |
+| | `id5.browsers` | optional | Which visitors the module asks ID5 for: `all` (the default), or `webkit27`, only visitors on Apple WebKit 27 or later. See [below](#only-where-the-browser-blocks-id5-browsers). |
 | | `id5.readCookie` | optional | A first-party cookie that may hold an ID5 answer, used without asking ID5: `id5id` by default (Prebid.js's ID5 module with cookie storage, maybe percent-encoded, maybe per partner under `pbjs`). `""` turns it off. |
 
 There are no secrets: the partner number isn't one. The module is designed for one partner number per deployment: an upstream operator's own, with its `provider` name. `SID_HOSTS` can give each site its own `SID_MODULE_CONFIG`, but per-publisher partner numbers haven't been designed or tested for this module yet.
+
+## Only where the browser blocks ID5: `browsers`
+
+Starting with version 27, Apple's WebKit (Safari on the Mac, and every browser on iOS and iPadOS, which all use WebKit) blocks the requests a page makes to ID5 itself, so ID5's own script can't get an ID there. In other browsers it can. With `"browsers": "webkit27"`, the module asks ID5 only for visitors on those browsers: the server-side fetch fills the gap where the browser blocks ID5's own requests, and sends nothing for visitors whose browser can reach ID5 directly. A page that also runs ID5's own integration gets the ID from one place per visitor, rather than a second ID5 lookup from your server.
+
+The browser is judged from the `User-Agent`, conservatively (when unsure, the module doesn't ask):
+
+- **iOS and iPadOS** (`iPhone`, `iPad` or `iPod`): any browser, with an OS version of 27 or later (`OS 27_0 like Mac OS X`), or Safari's `Version/27` or later. Safari has reported a frozen OS version before, which is why its `Version/` token counts; a third-party iOS browser (Chrome, Firefox, Edge) has no `Version/` token, so if its OS version is frozen too it isn't recognised, and the module doesn't ask.
+- **macOS:** Safari only, with `Version/27` or later; not Chrome, Firefox, Edge or another browser on a Mac. An iPad asking for the desktop site sends Safari's Mac user agent, and counts the same way.
+- Everything else (Android, Windows, Linux) never matches.
+
+For other visitors the module behaves as if it couldn't ask ID5 on that request: no request is sent, and a cached answer under 30 days old (or an `id5id` cookie) is still returned. Consent works exactly as without the setting: a denial still deletes the cache, whatever the browser. The default, `all`, asks for every visitor who passes the consent rules.
 
 ## Platforms
 
@@ -239,7 +254,7 @@ const handler = createHandler({
 });
 ```
 
-Other exports: `id5ModuleConfig()` (the settings parser), `parseId5Reply()`, `existingId5Reply()`, `id5RequestBody()`, `id5Denial()`, `clientAddress()`, `isRoutableIp()`, `readCache()`, `cacheCookieValue()`, and the constants `ID5_GVLID`, `ID5_HOSTS`, `ID5_DEFAULT_ENDPOINT`, `ID5_EID_SOURCE`, `ID5_REFRESH_SECONDS`, `ID5_MAX_AGE_SECONDS`.
+Other exports: `id5ModuleConfig()` (the settings parser), `parseId5Reply()`, `existingId5Reply()`, `id5RequestBody()`, `id5Denial()`, `clientAddress()`, `isRoutableIp()`, `isWebKit27()`, `readCache()`, `cacheCookieValue()`, and the constants `ID5_GVLID`, `ID5_HOSTS`, `ID5_DEFAULT_ENDPOINT`, `ID5_EID_SOURCE`, `ID5_REFRESH_SECONDS`, `ID5_MAX_AGE_SECONDS`.
 
 ## Troubleshooting
 
@@ -253,5 +268,6 @@ Other exports: `id5ModuleConfig()` (the settings parser), `parseId5Reply()`, `ex
 | `status` is `empty` on the first visit, `ok` later | ID5 took longer than `timeoutMs`. The next request tries again; raise `timeoutMs` (and `SID_MODULE_TIMEOUT_MS`) if it keeps happening. |
 | Always `empty`, `forwards: true` | ID5 answers with an error: server-side fetching isn't turned on for your partner number yet, or the request fields need confirming with ID5 (see [The request](#the-request)). The module asks again every hour. Or the visitor's address isn't routable (a private network, a test machine), or there's no user agent. |
 | `forwards: false` | Opt-out, GPC, COPPA or missing consent for this visitor. |
+| Nothing for visitors on Chrome, Firefox, Android or Windows | `"browsers": "webkit27"` limits the module to Apple WebKit 27 or later; set it to `all` (or leave it out) to ask for everyone. |
 | `skipped`, `tcf: no consent for vendor 131` | The TC string doesn't give ID5 consent. |
 | Nothing for visitors whose CMP sends a TC string, though ID5 has consent | The TC string doesn't opt in to Special Feature 1 (precise geolocation), which a full IP address needs here. |

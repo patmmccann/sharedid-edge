@@ -7,6 +7,7 @@ import {
   id5ModuleConfig,
   id5RequestBody,
   isRoutableIp,
+  isWebKit27,
   parseId5Reply,
   readCache,
   ID5_MAX_AGE_SECONDS,
@@ -394,11 +395,11 @@ describe('building blocks', () => {
   it('checks the settings', () => {
     expect(id5ModuleConfig({ partner: 173 })).toEqual({
       partner: 173, provider: undefined, endpoint: 'https://id5-sync.com/gs/v2/173.json', signatureField: 's', timeoutMs: 300,
-      domain: undefined, readCookie: 'id5id', cookieName: 'sid_id5_173'
+      domain: undefined, readCookie: 'id5id', browsers: 'all', cookieName: 'sid_id5_173'
     });
     expect(id5ModuleConfig({ partner: 173, endpoint: 'https://api.id5-sync.com/gs/v2' }).endpoint).toBe('https://api.id5-sync.com/gs/v2');
     for (const bad of [{}, { partner: 0 }, { partner: 1.5 }, { partner: 173, endpoint: 'https://evil.example/gs/v2' }, { partner: 173, endpoint: 'http://id5-sync.com/x' },
-      { partner: 173, endpoint: 'https://id5-sync.com:8443/x' }, { partner: 173, timeoutMs: 5 }, { partner: 173, provider: '' }, { partner: 173, parnter: 1 }, { partner: 173, domain: 'not a domain' }]) {
+      { partner: 173, endpoint: 'https://id5-sync.com:8443/x' }, { partner: 173, timeoutMs: 5 }, { partner: 173, provider: '' }, { partner: 173, parnter: 1 }, { partner: 173, domain: 'not a domain' }, { partner: 173, browsers: 'safari' }]) {
       expect(() => id5ModuleConfig(bad)).toThrow(TypeError);
     }
   });
@@ -428,5 +429,54 @@ describe('building blocks', () => {
     for (const ip of ['0.1.2.3', '10.0.0.1', '172.16.0.1', '192.168.1.1', '169.254.1.1', '198.18.0.1', '203.0.113.5', '224.0.0.1', '255.255.255.255', '::1', '::', 'fc00::1', 'ff02::1', '2001::1', '2002::1', '3fff::1']) {
       expect(routable(ip)).toBe(false);
     }
+  });
+});
+
+const UA_IOS = (os: string, browser: string): string => `Mozilla/5.0 (iPhone; CPU iPhone OS ${os} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) ${browser}`;
+const UA_MAC = (browser: string): string => `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) ${browser}`;
+
+describe('browsers: "webkit27"', () => {
+  it.each([
+    // Safari on iOS reports a frozen OS version; its Version/ token is the browser's.
+    ['iOS 27 Safari (frozen OS version)', UA_IOS('18_6', 'Version/27.0 Mobile/15E148 Safari/604.1'), true],
+    ['iOS 27 Safari', UA_IOS('27_0', 'Version/27.0 Mobile/15E148 Safari/604.1'), true],
+    ['iPadOS 27 Safari', 'Mozilla/5.0 (iPad; CPU OS 27_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.1 Mobile/15E148 Safari/604.1', true],
+    ['iOS 27 Chrome', UA_IOS('27_0', 'CriOS/140.0.7339.122 Mobile/15E148 Safari/604.1'), true],
+    ['iOS 27 Firefox', UA_IOS('27_0_1', 'FxiOS/143.0 Mobile/15E148 Safari/605.1.15'), true],
+    ['iOS 26 Safari', UA_IOS('18_6', 'Version/26.0 Mobile/15E148 Safari/604.1'), false],
+    ['iOS 26 Chrome', UA_IOS('26_0', 'CriOS/140.0.7339.122 Mobile/15E148 Safari/604.1'), false],
+    ['iOS Chrome with a frozen OS version (unsure, so no)', UA_IOS('18_6', 'CriOS/140.0.7339.122 Mobile/15E148 Safari/604.1'), false],
+    ['macOS Safari 27', UA_MAC('Version/27.0 Safari/605.1.15'), true],
+    ['macOS Safari 26', UA_MAC('Version/26.2 Safari/605.1.15'), false],
+    ['an iPad asking for the desktop site (Safari 27)', UA_MAC('Version/27.0 Safari/605.1.15'), true],
+    ['macOS Chrome', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36', false],
+    ['macOS Edge', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0', false],
+    ['macOS Firefox', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:143.0) Gecko/20100101 Firefox/143.0', false],
+    ['Android Chrome', 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36', false],
+    ['an Android WebView with Version/', 'Mozilla/5.0 (Linux; Android 15; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/140.0.0.0 Mobile Safari/537.36', false],
+    ['Windows Chrome', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36', false]
+  ])('%s: %s', (_name, ua, expected) => {
+    expect(isWebKit27(ua)).toBe(expected);
+  });
+
+  it('asks ID5 only for WebKit 27 or later, and still serves a cached answer to other browsers', async () => {
+    const stub = id5Stub();
+    const h = handler(stub.send, { browsers: 'webkit27' });
+    const android = 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36';
+    const none = await call(h, '/_sid/v1', { 'User-Agent': android });
+    expect(((await none.json()) as PayloadV1).eids).toHaveLength(1);
+    expect(cookie(none, COOKIE)).toBeUndefined();
+    const due = cacheCookieValue({ t: NOW_S - 9 * 3600, r: NOW_S - 1, e: [ID5_EID] });
+    const cached = await call(h, '/_sid/v1', { 'User-Agent': android, Cookie: `${COOKIE}=${due}` });
+    expect(((await cached.json()) as PayloadV1).eids[1]).toEqual(ID5_EID);
+    expect(stub.bodies).toHaveLength(0);
+    await call(h, '/_sid/v1', { 'User-Agent': UA_IOS('18_6', 'Version/27.0 Mobile/15E148 Safari/604.1') });
+    expect(stub.bodies).toHaveLength(1);
+  });
+
+  it('still deletes the cache on a denial for other browsers', async () => {
+    const due = cacheCookieValue({ t: NOW_S, r: NOW_S + 3600, e: [ID5_EID] });
+    const response = await call(handler(id5Stub().send, { browsers: 'webkit27' }), '/_sid/v1', { 'Sec-GPC': '1', Cookie: `${COOKIE}=${due}` });
+    expect(cookie(response, COOKIE)?.attributes.get('max-age')).toBe('0');
   });
 });

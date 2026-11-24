@@ -40,7 +40,7 @@ const MAX_UIDS = 2;
 /** Purposes 2 to 10: at least one needs consent or legitimate interest for ID5 (core segment), as in vendor mode. */
 const USE_PURPOSES: readonly number[] = [2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-const SETTINGS = new Set(['partner', 'provider', 'endpoint', 'timeoutMs', 'domain', 'readCookie']);
+const SETTINGS = new Set(['partner', 'provider', 'endpoint', 'timeoutMs', 'domain', 'readCookie', 'browsers']);
 const DOMAIN = /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
 const COOKIE_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,64}$/;
 const PRINTABLE = /^[\x20-\x7E]+$/;
@@ -63,6 +63,8 @@ export interface Id5Settings {
   readonly domain: string | undefined;
   /** A first-party cookie holding an ID5 answer to use before asking ID5 (`id5id` by default), or undefined for none. */
   readonly readCookie: string | undefined;
+  /** Which visitors' browsers the module asks ID5 for: `all` (the default), or `webkit27` (`isWebKit27`). */
+  readonly browsers: Id5Browsers;
   /** The cache cookie's name: `sid_id5_<partner>`. */
   readonly cookieName: string;
 }
@@ -75,7 +77,7 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
  */
 export function id5ModuleConfig(config: Readonly<Record<string, unknown>>): Id5Settings {
   for (const key of Object.keys(config)) if (!SETTINGS.has(key)) throw new TypeError(`id5: unknown setting "${key}"`);
-  const { partner, provider, endpoint, timeoutMs, domain, readCookie } = config;
+  const { partner, provider, endpoint, timeoutMs, domain, readCookie, browsers } = config;
   if (typeof partner !== 'number' || !Number.isInteger(partner) || partner < 1 || partner > 2_147_483_647) {
     throw new TypeError('id5: "partner" must be your ID5 partner number');
   }
@@ -90,6 +92,7 @@ export function id5ModuleConfig(config: Readonly<Record<string, unknown>>): Id5S
   if (domain !== undefined && domain !== 'auto' && (typeof domain !== 'string' || !DOMAIN.test(domain))) {
     throw new TypeError('id5: "domain" must be a domain like example.com, or auto');
   }
+  if (browsers !== undefined && browsers !== 'all' && browsers !== 'webkit27') throw new TypeError('id5: "browsers" must be "all" or "webkit27"');
   if (readCookie !== undefined && (typeof readCookie !== 'string' || (readCookie !== '' && !COOKIE_NAME.test(readCookie)))) {
     throw new TypeError('id5: "readCookie" must be a cookie name, or "" for none');
   }
@@ -101,8 +104,43 @@ export function id5ModuleConfig(config: Readonly<Record<string, unknown>>): Id5S
     timeoutMs: timeoutMs ?? ID5_DEFAULT_TIMEOUT_MS,
     domain,
     readCookie: readCookie === undefined ? 'id5id' : readCookie === '' ? undefined : readCookie,
+    browsers: browsers ?? 'all',
     cookieName: `sid_id5_${String(partner)}`
   };
+}
+
+/** The `browsers` setting: ask ID5 for every visitor, or only for those on Apple WebKit 27 or later. */
+export type Id5Browsers = 'all' | 'webkit27';
+
+/** The major version in Safari's `Version/<n>` token, or undefined. */
+function safariVersion(ua: string): number | undefined {
+  const match = /\bVersion\/(\d{1,3})(?:[.\s]|$)/.exec(ua);
+  return match?.[1] === undefined ? undefined : Number(match[1]);
+}
+
+/** Browsers on a Mac that also put `Safari/` in their user agent, and aren't Safari. */
+const NOT_SAFARI = /\b(?:Chrome|Chromium|CriOS|Firefox|FxiOS|Edg|EdgiOS|EdgA|OPR|OPT|Opera|SamsungBrowser|YaBrowser|Vivaldi|Brave|DuckDuckGo|Electron)\//;
+
+/**
+ * Whether a user agent is Apple WebKit 27 or later, where the browser itself blocks ID5's own requests, judged
+ * conservatively from the `User-Agent` (when unsure, no):
+ *
+ * - **iOS and iPadOS** (`iPhone`, `iPad` or `iPod`): any browser, since every iOS browser uses WebKit, with an OS
+ *   version of 27 or later (`OS 27_0 like Mac OS X`) or Safari's `Version/27` or later. Apple has frozen the OS version
+ *   in Safari's user agent before, so for a browser without a `Version/` token, a frozen OS version reads as older.
+ * - **macOS** (`Macintosh`): Safari only, with `Version/27` or later and `Safari/`, not Chrome, Firefox, Edge or
+ *   another browser that names itself. An iPad asking for the desktop site sends this user agent, and counts the same way.
+ *
+ * Android, Windows, Linux, and Chrome, Firefox or Edge on a Mac never match.
+ */
+export function isWebKit27(ua: string): boolean {
+  if (!ua.includes('AppleWebKit/')) return false;
+  const version = safariVersion(ua);
+  if (/\b(?:iPhone|iPad|iPod)\b/.test(ua) && !ua.includes('Android')) {
+    const os = /\bOS (\d{1,3})(?:_\d+){0,2} like Mac OS X\b/.exec(ua)?.[1];
+    return (os !== undefined && Number(os) >= 27) || (version !== undefined && version >= 27);
+  }
+  return ua.includes('Macintosh') && ua.includes('Safari/') && !NOT_SAFARI.test(ua) && version !== undefined && version >= 27;
 }
 
 /** An endpoint: `https`, on the default port, without credentials or a fragment, on one of `ID5_HOSTS`. */
@@ -422,6 +460,8 @@ async function run(context: ModuleContext): Promise<ModuleResult | undefined> {
   const address = clientAddress(context.platform, consent);
   const ua = context.request.headers.get('User-Agent')?.trim() ?? '';
   if (fetch === undefined || address === undefined || ua === '' || ua.length > 1024 || !PRINTABLE.test(ua)) return eidsOf(fallback);
+  // `browsers: "webkit27"`: other browsers can reach ID5 themselves, so nothing is sent for them; a cached answer still serves.
+  if (settings.browsers === 'webkit27' && !isWebKit27(ua)) return eidsOf(fallback);
 
   const body = id5RequestBody(settings, {
     address,

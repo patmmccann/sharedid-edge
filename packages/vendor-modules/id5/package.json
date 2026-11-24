@@ -47,7 +47,7 @@
       "id5-sync.com",
       "api.id5-sync.com"
     ],
-    "settings": "`partner` (**required**), `provider`, `endpoint`, `timeoutMs`, `domain`, `readCookie`",
+    "settings": "`partner` (**required**), `provider`, `endpoint`, `timeoutMs`, `domain`, `readCookie`, `browsers` (`all` or `webkit27`)",
     "routes": [
       "v1",
       "sync"
