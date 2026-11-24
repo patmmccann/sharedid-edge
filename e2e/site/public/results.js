@@ -10,6 +10,8 @@
 //   - from the worker: a same-origin GET of /_sid/v1, whose debugging headers (X-SharedID-Source, X-SharedID-Status)
 //     and JSON (the id, the modules' output) a page can read. It runs on its own for a person (navigator.webdriver is
 //     false), with ?checks=1, or from the "Ask the worker" button;
+//   - the ua and bot modules' answers in that /_sid/v1 JSON: device data (ortb2.device) and the bot verdict
+//     (ortb2.device.ext.traffic), each grey where the module isn't on;
 //   - the HttpOnly recovery copy, on demand: "Delete _pubcid" deletes the script-readable cookie, as Safari's cap would,
 //     and asks /_sid/v1 again, which should restore the same id from _pubcid_sv (X-SharedID-Source: recovery).
 //
@@ -92,7 +94,9 @@
     ['worker', 'What the worker says'],
     ['recovery', 'The HttpOnly recovery copy'],
     ['modules', 'Edge modules: visitor IP and location'],
-    ['id5', 'ID5 ID (server-to-server)']
+    ['id5', 'ID5 ID (server-to-server)'],
+    ['device', 'Device data (the ua module)'],
+    ['bot', 'Bot verdict (the bot and ua modules)']
   ];
 
   function render() {
@@ -262,12 +266,16 @@
       }
       modules(answer.body);
       id5(answer.body, answer.denied);
+      deviceCheck(answer.body);
+      botCheck(answer.body);
       if (!answer.denied && id) recoveryReady(id);
       return answer;
     }, function (error) {
       report('worker', 'fail', 'The worker didn\u2019t answer', ['GET ' + SID + '/v1 failed: ' + String(error)]);
       report('modules', 'info', 'Edge modules: no answer', []);
       report('id5', 'info', 'ID5 ID (server-to-server): no answer', []);
+      report('device', 'info', 'Device data: no answer', []);
+      report('bot', 'info', 'Bot verdict: no answer', []);
     });
   }
 
@@ -320,6 +328,59 @@
         'The ', code('id5'), ' module runs here and consent allows it, but ', code(SID + '/v1'), ' has no ', code('id5-sync.com'),
         ' EID. Module status: ', code(report_.status), '.'
       ]);
+    }
+  }
+
+  // The ua and bot modules, from the worker's /_sid/v1 answer: the device data ua reads from the User-Agent and Client
+  // Hints (ortb2.device), and the traffic signal both report into (ortb2.device.ext.traffic). Green when the module
+  // answered, grey when it isn't on this deployment.
+  var DEVICE_TYPES = { 1: 'mobile or tablet', 2: 'computer', 3: 'connected TV', 4: 'phone', 5: 'tablet', 6: 'connected device', 7: 'set-top box' };
+
+  function deviceCheck(body) {
+    var device = (body.ortb2 && body.ortb2.device) || {};
+    var statuses = (body.ext && body.ext.modules) || {};
+    if (!statuses.ua) {
+      report('device', 'info', 'No ua module on this deployment', ['The ', code('ua'), ' module turns the browser\u2019s User-Agent and Client Hints into OpenRTB device data (',
+        code('ortb2.device.sua'), ', ', code('os'), ', ', code('devicetype'), '\u2026), before any script runs. It isn\u2019t on here.']);
+      return;
+    }
+    var fields = {};
+    ['sua', 'devicetype', 'make', 'model', 'os', 'osv', 'ua'].forEach(function (key) { if (device[key] !== undefined) fields[key] = device[key]; });
+    var sua = device.sua || {};
+    var browser = (sua.browsers || []).filter(function (b) { return !/not.?a.?brand|chromium/i.test(b.brand); })[0] || (sua.browsers || [])[0];
+    var summary = [
+      browser ? browser.brand + (browser.version && browser.version[0] ? ' ' + browser.version[0] : '') : '',
+      sua.platform ? 'on ' + sua.platform.brand : device.os ? 'on ' + device.os : '',
+      DEVICE_TYPES[device.devicetype] ? '(' + DEVICE_TYPES[device.devicetype] + ')' : ''
+    ].filter(Boolean).join(' ');
+    if (Object.keys(fields).length === 0) {
+      report('device', 'pass', 'The ua module answered: no device data from this browser', ['It answered ', code(statuses.ua.status), ': it reads device data from User-Agent Client Hints, which Chrome and other Chromium browsers send over https, and Firefox and Safari don\u2019t send at all. Its bot check still ran on the User-Agent (below).']);
+      return;
+    }
+    report('device', 'pass', 'The edge read your device' + (summary === '' ? '' : ': ' + summary), [
+      'The ', code('ua'), ' module read the request\u2019s User-Agent and Client Hints, before any script ran, as OpenRTB device data the page can pass to Prebid.js in ',
+      code('ortb2.device'), ':', json(fields)
+    ]);
+  }
+
+  function botCheck(body) {
+    var device = (body.ortb2 && body.ortb2.device) || {};
+    var statuses = (body.ext && body.ext.modules) || {};
+    var traffic = (device.ext && device.ext.traffic) || {};
+    var on = ['bot', 'ua'].filter(function (name) { return statuses[name]; });
+    if (on.length === 0) {
+      report('bot', 'info', 'No bot or ua module on this deployment', ['The ', code('bot'), ' and ', code('ua'), ' modules report automated traffic in ',
+        code('ortb2.device.ext.traffic'), ', so the page can skip or flag the auction. They aren\u2019t on here.']);
+      return;
+    }
+    var ja4 = [' JA4 TLS fingerprint check (the ', code('bot'), ' module\u2019s ', code('ja4Mismatch'), '): only where the platform supplies the fingerprint ',
+      '(Cloudflare Bot Management, Fastly, or CloudFront configured for it), and its result shows only as a ', code('likely'), ' verdict; the fingerprint itself is never returned.'];
+    var head = ['Modules on: ', code(on.join(', ')), '. ', code('ortb2.device.ext.traffic'), ': ', code(JSON.stringify(device.ext && device.ext.traffic ? traffic : {})), '.'];
+    if (traffic.bot === true) {
+      report('bot', 'pass', 'Flagged as a bot (' + String(traffic.botKind) + ')', head.concat([' From ', code((traffic.sources || []).join(', ')),
+        '. With ', code('SID_SKIP_BOTS'), ', the worker mints no SharedID for such requests (', code('X-SharedID-Status: skipped: bot'), ').'], ja4));
+    } else {
+      report('bot', 'pass', 'Not flagged as a bot', head.concat([' Your browser sent what browsers send, and its User-Agent names no crawler.'], ja4));
     }
   }
 
@@ -394,7 +455,7 @@
         var why = optedOut ? 'You opted out (_pubcid_optout), so Prebid.js stores no ID.'
           : consent === 'denied' ? 'This page view denies consent (?consent=denied), so Prebid.js stores no ID.' : '';
         report('sync', why ? 'info' : 'fail', 'Prebid.js didn\u2019t call ' + SID + '/sync', [why || 'No pixelUrl request within 15 seconds.']);
-        ['cookie', 'same-id', 'eids', 'lifetime', 'worker', 'recovery', 'modules', 'id5'].forEach(function (name) {
+        ['cookie', 'same-id', 'eids', 'lifetime', 'worker', 'recovery', 'modules', 'id5', 'device', 'bot'].forEach(function (name) {
           report(name, 'info', rows[name].querySelector('.sid-title').textContent.replace(/[:\u2026]+$/, '') + ': not checked', []);
         });
         return undefined;
@@ -443,6 +504,8 @@
         report('recovery', 'info', 'The HttpOnly recovery copy: ask the worker first', []);
         report('modules', 'info', 'Edge modules: ask the worker first', []);
         report('id5', 'info', 'ID5 ID (server-to-server): ask the worker first', []);
+        report('device', 'info', 'Device data: ask the worker first', []);
+        report('bot', 'info', 'Bot verdict: ask the worker first', []);
       } else {
         checks.push(workerChecks(cookieId));
       }

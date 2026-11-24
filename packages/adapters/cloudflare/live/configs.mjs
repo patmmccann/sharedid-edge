@@ -142,7 +142,8 @@ if (kind === 'upstream') {
   });
 } else if (kind === 'platform') {
   // The live demo's platform-modules deployment (.github/workflows/e2e-cloudflare.yml): a second SharedID Edge Worker
-  // on <site><prefix>/_sid/*, with the e2e settings plus the modules that read Cloudflare's request data, and the e2e
+  // on <site><prefix>/_sid/*, with the e2e settings plus the modules that read the request (ip, geo, ua and bot, with
+  // bot's missingHeaders, and SID_SKIP_BOTS=declared: a client that names itself as a bot gets no SharedID), and the e2e
   // test page as static assets at <site><prefix>/, so the main e2e environment (wrangler.jsonc, env.e2e) keeps its
   // settings. The more specific route wins: <prefix>/_sid/* over <prefix>/* over the test site's /*.
   const site = need('PLATFORM_SITE');
@@ -153,7 +154,13 @@ if (kind === 'upstream') {
     ...sharedIdWorker,
     name: process.env['PLATFORM_WORKER'] ?? 'sharedid-edge-e2e-platform',
     routes: [{ pattern: `${site}${prefix}/_sid/*`, zone_name: zone }],
-    vars: { ...settings, SID_BASE_PATH: `${prefix}/_sid`, SID_MODULE_CONFIG: JSON.stringify(moduleConfig) }
+    vars: {
+      ...settings,
+      SID_BASE_PATH: `${prefix}/_sid`,
+      SID_MODULES: 'ip,geo,ua,bot,reflect,clickid',
+      SID_MODULE_CONFIG: JSON.stringify({ ...moduleConfig, bot: { missingHeaders: true } }),
+      SID_SKIP_BOTS: 'declared'
+    }
   });
   const assets = join(out, 'platform-site');
   rmSync(assets, { recursive: true, force: true });

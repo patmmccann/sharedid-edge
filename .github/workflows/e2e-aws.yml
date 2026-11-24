@@ -162,6 +162,8 @@ jobs:
           E2E_BASE_URL: ${{ needs.deploy.outputs.site }}
           E2E_PATH: /platform
           E2E_COOKIE_DOMAIN: ${{ needs.deploy.outputs.cookie-domain }}
+          # ua and bot, with SID_SKIP_BOTS=declared (live/deploy.sh): the device and bot verdict tests.
+          E2E_MODULES: ua,bot
         run: npx playwright test --project=${{ matrix.browser }}
       - name: Upload the Playwright report
         if: failure()

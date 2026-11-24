@@ -86,13 +86,16 @@ configure() {
   case "$1" in
     e2e)
       # As the Cloudflare e2e environment (packages/adapters/cloudflare/wrangler.jsonc, env.e2e): no pixel caching,
-      # reflect with uid1 (on the cookie domain) and _ga, and clickid; plus ip and geo, which check-live-site reads.
+      # reflect with uid1 (on the cookie domain) and _ga, and clickid; plus ip and geo, which check-live-site reads, and
+      # ua and bot (with missingHeaders) for the live demo's device and bot rows, with SID_SKIP_BOTS=declared: a client
+      # that names itself as a bot gets no SharedID (the e2e tests check it, with E2E_MODULES=ua,bot).
       local uid1_domain=''
       if [ -n "$2" ]; then uid1_domain="\"domain\":\"$2\","; fi
       set_env SID_COOKIE_DOMAIN "${2:-host-only}"
       set_env SID_SYNC_CACHE_SECONDS 0
-      set_env SID_MODULES ip,geo,reflect,clickid
-      set_env SID_MODULE_CONFIG "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,$uid1_domain\"httpOnly\":false,\"restore\":true},{\"name\":\"_ga\",\"maxAgeDays\":400,\"restore\":true}]}}"
+      set_env SID_MODULES ip,geo,ua,bot,reflect,clickid
+      set_env SID_SKIP_BOTS declared
+      set_env SID_MODULE_CONFIG "{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,$uid1_domain\"httpOnly\":false,\"restore\":true},{\"name\":\"_ga\",\"maxAgeDays\":400,\"restore\":true}]},\"bot\":{\"missingHeaders\":true}}"
       ;;
     conformance)
       # The defaults; SID_COOKIE_DOMAIN has none.

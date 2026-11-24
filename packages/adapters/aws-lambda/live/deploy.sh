@@ -98,10 +98,12 @@ deploy_functions() {
     "SidModuleConfig=$module_config"
   # The modules that read what CloudFront adds (scripts/check-cloudfront.ts), with an allowed origin for CORS, on
   # /platform/_sid, beside the live demo's copy of the test page at /platform/: so the e2e settings too (no pixel
-  # caching, reflect and clickid), for the browser tests run there with E2E_PATH=/platform.
+  # caching, reflect and clickid), for the browser tests run there with E2E_PATH=/platform; and SID_SKIP_BOTS=declared,
+  # so a client that names itself as a bot gets no SharedID (E2E_MODULES=ua,bot). Not bot's missingHeaders:
+  # check-cloudfront sends a Chrome User-Agent without Sec-Fetch-* headers, which that heuristic calls a likely bot.
   deploy "$prefix-platform" "$out/packaged.yaml" \
     "DistributionId=$distribution" "SidCookieDomain=$cookie_domain" "SidPublicOrigin=$public_origin" "SidBasePath=$platform_base_path" \
-    SidSyncCacheSeconds=0 SidModules=ip,geo,ua,bot,reflect,clickid SidAllowedOrigins=https://allowed.example \
+    SidSyncCacheSeconds=0 SidModules=ip,geo,ua,bot,reflect,clickid SidAllowedOrigins=https://allowed.example SidSkipBots=declared \
     "SidModuleConfig=$module_config"
 }
 
