@@ -28,6 +28,9 @@ export AWS_REGION="${AWS_REGION:-us-east-1}"
 export AWS_DEFAULT_REGION="$AWS_REGION"
 aws="${AWS_CLI:-aws}"
 prefix="${SID_LIVE_PREFIX:-sharedid-e2e}"
+# The platform function's base path, beside the live demo's copy of the test page at /platform/. Passed to the site
+# stack too: on an update, CloudFormation keeps a parameter's existing value unless it's given.
+platform_base_path=/platform/_sid
 
 package_dir="$(cd "$(dirname "$0")/.." && pwd)"
 repo_root="$(cd "$package_dir/../../.." && pwd)"
@@ -97,7 +100,7 @@ deploy_functions() {
   # /platform/_sid, beside the live demo's copy of the test page at /platform/: so the e2e settings too (no pixel
   # caching, reflect and clickid), for the browser tests run there with E2E_PATH=/platform.
   deploy "$prefix-platform" "$out/packaged.yaml" \
-    "DistributionId=$distribution" "SidCookieDomain=$cookie_domain" "SidPublicOrigin=$public_origin" SidBasePath=/platform/_sid \
+    "DistributionId=$distribution" "SidCookieDomain=$cookie_domain" "SidPublicOrigin=$public_origin" "SidBasePath=$platform_base_path" \
     SidSyncCacheSeconds=0 SidModules=ip,geo,ua,bot,reflect,clickid SidAllowedOrigins=https://allowed.example \
     "SidModuleConfig=$module_config"
 }
@@ -109,6 +112,7 @@ deploy_functions "$distribution" "$domain"
 deploy "$prefix-site" live/site.yaml \
   "SidOriginDomainName=$(output "$prefix" OriginDomainName)" \
   "SidOriginAccessControlId=$(output "$prefix" OriginAccessControlId)" \
+  "PlatformBasePath=$platform_base_path" \
   "PlatformOriginDomainName=$(output "$prefix-platform" OriginDomainName)" \
   "PlatformOriginAccessControlId=$(output "$prefix-platform" OriginAccessControlId)"
 
