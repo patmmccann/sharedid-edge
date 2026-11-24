@@ -3,7 +3,8 @@ Description: >-
   This project's AWS live tests (.github/workflows/e2e-aws.yml), not for deployers: the test site. A private S3 bucket
   with the e2e page and its Prebid.js bundle (e2e/site/public), behind a CloudFront distribution with origin access
   control, plus two behaviours to SharedID Edge function URLs from template.yaml stacks: /_sid/* (the e2e settings)
-  and /_sid-platform/* (the modules that read CloudFront's data). deploy.sh deploys it; see README.md, Live tests.
+  and /platform/_sid/* (the modules that read CloudFront's data, for the copy of the page deploy.sh uploads at
+  /platform/). deploy.sh deploys it; see README.md, Live tests.
 
 Parameters:
   SidOriginDomainName:
@@ -14,9 +15,9 @@ Parameters:
     Description: The e2e function stack's OriginAccessControlId output.
   PlatformBasePath:
     Type: String
-    Default: /_sid-platform
-    AllowedPattern: '^/[A-Za-z0-9._~-]+$'
-    Description: The platform function stack's SidBasePath.
+    Default: /platform/_sid
+    AllowedPattern: '^/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$'
+    Description: The platform function stack's SidBasePath, beside the live demo's copy of the test page at /platform/.
   PlatformOriginDomainName:
     Type: String
     Description: The platform function stack's OriginDomainName output.
