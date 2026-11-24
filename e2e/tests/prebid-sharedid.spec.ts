@@ -548,3 +548,25 @@ test('the demo\'s AWS tile turns red when its EU visitor fails', async ({ page }
   await expect(page.locator('.tile[data-workflow="e2e-aws.yml"]')).toHaveAttribute('data-status', 'fail');
   // The Lambda@Edge jobs aren't this tile's: with only them failing, it would pass.
 });
+
+test('a demo tile says when it last checked, and "Check again" skips the cache', async ({ page }) => {
+  test.skip(LIVE, 'the demo\'s tiles are checked once, locally');
+  let eu = 'failure';
+  await page.route('https://api.github.com/**', route => {
+    const url = route.request().url();
+    const body = url.includes('/workflows/')
+      ? { workflow_runs: [{ id: 1, updated_at: new Date().toISOString(), html_url: 'https://github.com/', event: 'push', head_sha: '0123456789abcdef' }] }
+      : { jobs: [{ name: 'Deploy to CloudFront, verify, conformance', conclusion: 'success' }, { name: 'An EU visitor (eu-central-1)', conclusion: eu }] };
+    return route.fulfill({ json: body, headers: { 'access-control-allow-origin': '*' } });
+  });
+  await page.goto('/demo/');
+  const aws = page.locator('.tile[data-workflow="e2e-aws.yml"]');
+  await expect(aws).toHaveAttribute('data-status', 'fail');
+  await expect(aws.locator('.checked')).toContainText('Checked just now');
+  // A reload within ten minutes reads the cache: still red, though GitHub now says the run passed.
+  eu = 'success';
+  await page.reload();
+  await expect(aws).toHaveAttribute('data-status', 'fail');
+  await aws.getByRole('link', { name: 'Check again' }).click();
+  await expect(aws).toHaveAttribute('data-status', 'pass');
+});
