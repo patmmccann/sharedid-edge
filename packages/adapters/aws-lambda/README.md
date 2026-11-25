@@ -375,15 +375,15 @@ The [Live tests (AWS) workflow](../../../.github/workflows/e2e-aws.yml) checks t
 | Stack | What |
 | --- | --- |
 | `sharedid-e2e` | This package's `template.yaml` with the Cloudflare `e2e` environment's settings (no pixel caching, `reflect` with `uid1` and `_ga`, `clickid`), on `/_sid` |
-| `sharedid-e2e-platform` | `template.yaml` with `SID_MODULES=ip,geo,ua,bot` and an allowed origin, on `/_sid-platform`: the modules that read what CloudFront passes |
-| `sharedid-e2e-site` | [`live/site.yaml`](live/site.yaml): a private S3 bucket with the test page and its Prebid.js bundle (`e2e/site/public`), behind a distribution with S3 origin access control. Both functions' behaviours are added as [for an existing distribution](#add-the-behaviour-to-an-existing-distribution), with the managed `CachingDisabled` and `AllViewerExceptHostHeader` policies. |
+| `sharedid-e2e-platform` | `template.yaml` with `SID_MODULES=ip,geo,ua,bot,reflect,clickid` (the modules that read what CloudFront passes, and the `e2e` settings), no pixel caching and an allowed origin, on `/platform/_sid`: the endpoint of the copy of the test page at `/platform/`, the [live demo](https://e2e.sharedid.dev/demo/)'s platform-modules tile |
+| `sharedid-e2e-site` | [`live/site.yaml`](live/site.yaml): a private S3 bucket with the test page and its Prebid.js bundle (`e2e/site/public`), at `/` and as a copy under `platform/` (the page is also the object `platform/`, which CloudFront fetches for `/platform/`), behind a distribution with S3 origin access control. Both functions' behaviours are added as [for an existing distribution](#add-the-behaviour-to-an-existing-distribution), with the managed `CachingDisabled` and `AllViewerExceptHostHeader` policies. |
 | `sharedid-e2e-conformance` | `template.yaml` with `CreateDistribution=true` and the default settings, on a distribution of its own, for the conformance suite's default-configuration cases |
 | `sharedid-eu-visitor` (eu-central-1) | [`live/eu-visitor.yaml`](live/eu-visitor.yaml), deployed by [`live/eu-visitor.sh`](live/eu-visitor.sh): [the EU visitor](#the-eu-visitor), a function in Frankfurt that requests the live setups from a German address |
 
 The packaged code goes in one more S3 bucket, `sharedid-e2e-deploy-<account>`. The script then uploads the site and invalidates its cache. The function stacks need the site distribution's ID (the only distribution allowed to invoke them) and its domain. Both exist only once the site stack does, so the first deployment deploys the function stacks twice. Then the workflow runs:
 
 - `npm run verify-deployment -- --site https://<distribution>.cloudfront.net`.
-- [`scripts/check-cloudfront.ts`](../../../scripts/check-cloudfront.ts) against `/_sid-platform`. It checks that:
+- [`scripts/check-cloudfront.ts`](../../../scripts/check-cloudfront.ts) against `/platform/_sid`. It checks that:
   - the client IP is the address `checkip.amazonaws.com` sees;
   - there's a `device.geo` country;
   - Chrome's Client Hints become `device.sua`;
@@ -393,8 +393,8 @@ The packaged code goes in one more S3 bucket, `sharedid-e2e-deploy-<account>`. T
   - each request reaches the function (no caching);
   - the function URL refuses direct requests.
 - The conformance suite's default-configuration cases, against the conformance distribution (`node conformance/dist/run.js --base-url https://<distribution>.cloudfront.net/_sid`). These cases need no client IP or location of their own. The cases that do need them run against the local stand-ins, since a live run only has the runner's real address and location. The Cloudflare live run does the same.
-- The Playwright tests in [`e2e/`](../../../e2e/AGENTS.md), against the test site, in Chromium, Firefox and WebKit.
-- [The EU visitor](#the-eu-visitor), after deploying it: GDPR on `/_sid` and `/_sid-platform` for a visitor in Germany.
+- The Playwright tests in [`e2e/`](../../../e2e/AGENTS.md), against the test site, in Chromium, Firefox and WebKit, and against its `/platform/` copy (`E2E_PATH=/platform`).
+- [The EU visitor](#the-eu-visitor), after deploying it: GDPR on `/_sid` and `/platform/_sid` for a visitor in Germany.
 
 A failing run, after a merge or overnight, opens an issue, or comments on the open one; the next green run on `main` that deployed and tested (including a re-run of the failed jobs) comments and closes it.
 
@@ -412,14 +412,14 @@ The live runs come from GitHub's runners in the US, where GDPR doesn't apply. So
 - **What it is:** [`live/eu-visitor.yaml`](live/eu-visitor.yaml), the stack `sharedid-eu-visitor`: a Node.js 24 function with its code inline, and an execution role with no permissions (so it can't write logs either). It holds no secrets, logs nothing and has no function URL: only `aws lambda invoke`, with the live tests' credentials, can call it. It requests `https` URLs only, at most 40 per call.
 - **Deploying it:** [`live/eu-visitor.sh`](live/eu-visitor.sh), with the same credentials as `deploy.sh`; it's idempotent. The AWS live tests' `eu-visitor` job runs it on every run, then the checks; the other live workflows only invoke it.
 - **The check:** [`scripts/check-eu-visitor.ts`](../../../scripts/check-eu-visitor.ts) invokes it and asserts, for each target, with no `gdpr` parameter so GDPR follows from the location: `/v1` and `/sync` without a TC string are `denied: tcf: GDPR applies and there is no TC string`, with no ID and no `Set-Cookie`; with the conformance suite's TC string that consents to Purposes 1 and 2, `/v1` returns an ID and sets `_pubcid`, and `/sync` sets the ID Prebid.js sends; where `geo` is on, `device.geo.country` is an EU member state. It first checks that Cloudflare places the function's address in the EU.
-- **Where it runs:** an `eu-visitor` job in each live workflow, after its deploy and checks, against that workflow's own targets ([the shared action](../../../.github/actions/eu-visitor/action.yml)): the test site's `/_sid` and `/_sid-platform` here, `e2e.sharedid.dev` in the Cloudflare live tests, and the upstream-operator and SaaS publishers. Elsewhere it needs `AWS_E2E_ROLE_ARN` and is skipped without it. A failure fails the run like any other check.
+- **Where it runs:** an `eu-visitor` job in each live workflow, after its deploy and checks, against that workflow's own targets ([the shared action](../../../.github/actions/eu-visitor/action.yml)): the test site's `/_sid` and `/platform/_sid` here, `e2e.sharedid.dev` in the Cloudflare live tests, and the upstream-operator and SaaS publishers. Elsewhere it needs `AWS_E2E_ROLE_ARN` and is skipped without it. A failure fails the run like any other check.
 
 By hand, once the stacks are deployed:
 
 ```sh
 AWS_PROFILE=<profile> packages/adapters/aws-lambda/live/eu-visitor.sh
 npx tsc -b packages/core packages/modules/geo      # or npm run build
-AWS_PROFILE=<profile> npx tsx scripts/check-eu-visitor.ts --target https://<site>.cloudfront.net/_sid   --geo https://<site>.cloudfront.net/_sid-platform --geo https://<a site with geo>/_sid
+AWS_PROFILE=<profile> npx tsx scripts/check-eu-visitor.ts --target https://<site>.cloudfront.net/_sid   --geo https://<site>.cloudfront.net/platform/_sid --geo https://<a site with geo>/_sid
 ```
 
 ### Setting it up
@@ -448,9 +448,10 @@ npm ci && npm run build && npm run bundle -w @sharedid-edge/aws-lambda
 npm ci --prefix e2e
 AWS_PROFILE=<profile> packages/adapters/aws-lambda/live/deploy.sh      # prints the site and conformance URLs
 npm run verify-deployment -- --site https://<site>.cloudfront.net
-npx tsx scripts/check-cloudfront.ts --endpoint https://<site>.cloudfront.net/_sid-platform
+npx tsx scripts/check-cloudfront.ts --endpoint https://<site>.cloudfront.net/platform/_sid
 node conformance/dist/run.js --base-url https://<conformance>.cloudfront.net/_sid
 cd e2e && E2E_BASE_URL=https://<site>.cloudfront.net E2E_COOKIE_DOMAIN=<site>.cloudfront.net npx playwright test
+cd e2e && E2E_BASE_URL=https://<site>.cloudfront.net E2E_PATH=/platform E2E_COOKIE_DOMAIN=<site>.cloudfront.net npx playwright test
 ```
 
 To remove everything, empty the site bucket first. Deleting a stack with a distribution takes a while, since CloudFormation disables the distribution and waits for that to deploy.

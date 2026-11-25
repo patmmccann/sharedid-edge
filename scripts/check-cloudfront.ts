@@ -1,7 +1,7 @@
 // Checks what a real CloudFront distribution passes to the SharedID Edge function behind it: this project's AWS live
 // tests (.github/workflows/e2e-aws.yml; packages/adapters/aws-lambda/README.md, Live tests), not for deployers.
 //
-//   npx tsx scripts/check-cloudfront.ts --endpoint https://d111111abcdef8.cloudfront.net/_sid-platform
+//   npx tsx scripts/check-cloudfront.ts --endpoint https://d111111abcdef8.cloudfront.net/platform/_sid
 //                                       [--allowed-origin https://allowed.example] [--function-url https://….on.aws/]
 //                                       [--event viewer-request]
 //
@@ -29,7 +29,7 @@ const { values } = parseArgs({
   }
 });
 if (values.endpoint === undefined) {
-  console.error('Usage: check-cloudfront --endpoint https://<distribution>/_sid-platform [--allowed-origin https://allowed.example] [--function-url https://<id>.lambda-url.<region>.on.aws/] [--event viewer-request]');
+  console.error('Usage: check-cloudfront --endpoint https://<distribution>/platform/_sid [--allowed-origin https://allowed.example] [--function-url https://<id>.lambda-url.<region>.on.aws/] [--event viewer-request]');
   process.exit(2);
 }
 let endpoint = values.endpoint;

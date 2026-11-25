@@ -16,6 +16,16 @@
       shape: 'A Worker on the site\u2019s own route, e2e.sharedid.dev/_sid/*, beside the static site on the same hostname.',
       site: 'https://e2e.sharedid.dev/',
       workflow: 'e2e-cloudflare.yml',
+      // Not the /platform jobs, the tile below.
+      jobs: /^(?!.*\/platform)/,
+      embed: true
+    },
+    {
+      name: 'Cloudflare Worker, with the IP and location modules',
+      shape: 'A second Worker, on e2e.sharedid.dev/platform/_sid/*, with the ip and geo modules reading Cloudflare\u2019s request data, beside a copy of the page at /platform/.',
+      site: 'https://e2e.sharedid.dev/platform/',
+      workflow: 'e2e-cloudflare.yml',
+      jobs: /^Deploy to sharedid\.dev|\/platform/,
       embed: true
     },
     {
@@ -25,6 +35,15 @@
       workflow: 'e2e-aws.yml',
       // The CloudFront jobs and the EU visitor of this distribution, not the Lambda@Edge ones.
       jobs: /CloudFront|^An EU visitor \(eu-central-1\)$/
+    },
+    {
+      name: 'AWS CloudFront + Lambda, with the IP and location modules',
+      shape: 'A second function behind the same distribution\u2019s /platform/_sid/* behaviour, with the ip, geo, ua and bot modules reading CloudFront\u2019s viewer headers, beside a copy of the page at /platform/.',
+      site: 'https://da614puh352or.cloudfront.net/platform/',
+      workflow: 'e2e-aws.yml',
+      // The deploy (which deploys this function too), the /platform browser tests, and the EU visitor, which requests
+      // /platform/_sid.
+      jobs: /^Deploy to CloudFront|\/platform|^An EU visitor \(eu-central-1\)$/
     },
     {
       name: 'Vercel',
@@ -214,7 +233,7 @@
   }
 
   function tile(spec, live) {
-    var node = el('div', { 'class': 'tile', 'data-status': 'pending', 'data-workflow': spec.workflow }, [
+    var node = el('div', { 'class': 'tile', 'data-status': 'pending', 'data-workflow': spec.workflow, 'data-site': spec.site || '' }, [
       el('h3', {}, [el('span', { 'class': 'icon', text: ICONS.pending }), spec.name]),
       el('p', { 'class': 'shape', text: spec.shape }),
       el('div', { 'class': 'run', text: 'Loading the latest run\u2026' })

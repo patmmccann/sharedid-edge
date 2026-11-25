@@ -658,6 +658,40 @@ test('when consent rules the ID out, the clickid row says so rather than failing
   await expect(page.locator('#sid-verdict')).not.toHaveAttribute('data-status', 'fail');
 });
 
+// The demo's tiles for the main sites and for the copies with the platform modules, at /platform/.
+const AWS_TILE = '.tile[data-workflow="e2e-aws.yml"]:not([data-site$="/platform/"])';
+const AWS_PLATFORM_TILE = '.tile[data-workflow="e2e-aws.yml"][data-site$="/platform/"]';
+const CLOUDFLARE_TILE = '.tile[data-workflow="e2e-cloudflare.yml"]:not([data-site$="/platform/"])';
+const CLOUDFLARE_PLATFORM_TILE = '.tile[data-workflow="e2e-cloudflare.yml"][data-site$="/platform/"]';
+
+test('the demo\'s /platform tiles count only their own jobs, and the main sites\' tiles not theirs', async ({ page }) => {
+  test.skip(LIVE, 'the demo\'s tiles are checked once, locally');
+  await page.route('https://api.github.com/**', route => {
+    const url = route.request().url();
+    const body = url.includes('/workflows/')
+      ? { workflow_runs: [{ id: url.includes('e2e-aws.yml') ? 2 : 1, updated_at: new Date().toISOString(), html_url: 'https://github.com/', event: 'push', head_sha: '0123456789abcdef' }] }
+      : url.includes('/runs/2/')
+        ? { jobs: [
+          { name: 'Deploy to CloudFront, verify, conformance', conclusion: 'success' },
+          { name: 'Prebid.js end to end, live on CloudFront (chromium)', conclusion: 'failure' },
+          { name: 'Prebid.js end to end, live on /platform (chromium)', conclusion: 'success' },
+          { name: 'An EU visitor (eu-central-1)', conclusion: 'success' }
+        ] }
+        : { jobs: [
+          { name: 'Deploy to sharedid.dev, verify, conformance', conclusion: 'success' },
+          { name: 'Prebid.js end to end, live (chromium)', conclusion: 'success' },
+          { name: 'Deploy /platform (platform modules), check', conclusion: 'success' },
+          { name: 'Prebid.js end to end, live on /platform (chromium)', conclusion: 'failure' }
+        ] };
+    return route.fulfill({ json: body, headers: { 'access-control-allow-origin': '*' } });
+  });
+  await page.goto('/demo/');
+  await expect(page.locator(CLOUDFLARE_TILE)).toHaveAttribute('data-status', 'pass');
+  await expect(page.locator(CLOUDFLARE_PLATFORM_TILE)).toHaveAttribute('data-status', 'fail');
+  await expect(page.locator(AWS_TILE)).toHaveAttribute('data-status', 'fail');
+  await expect(page.locator(AWS_PLATFORM_TILE)).toHaveAttribute('data-status', 'pass');
+});
+
 test('the demo\'s AWS tile turns red when its EU visitor fails', async ({ page }) => {
   test.skip(LIVE, 'the demo\'s tiles are checked once, locally');
   await page.route('https://api.github.com/**', route => {
@@ -673,7 +707,7 @@ test('the demo\'s AWS tile turns red when its EU visitor fails', async ({ page }
     return route.fulfill({ json: body, headers: { 'access-control-allow-origin': '*' } });
   });
   await page.goto('/demo/');
-  await expect(page.locator('.tile[data-workflow="e2e-aws.yml"]')).toHaveAttribute('data-status', 'fail');
+  await expect(page.locator(AWS_TILE)).toHaveAttribute('data-status', 'fail');
   // The Lambda@Edge jobs aren't this tile's: with only them failing, it would pass.
 });
 
@@ -688,7 +722,7 @@ test('a demo tile says when it last checked, and "Check again" skips the cache',
     return route.fulfill({ json: body, headers: { 'access-control-allow-origin': '*' } });
   });
   await page.goto('/demo/');
-  const aws = page.locator('.tile[data-workflow="e2e-aws.yml"]');
+  const aws = page.locator(AWS_TILE);
   await expect(aws).toHaveAttribute('data-status', 'fail');
   await expect(aws.locator('.checked')).toContainText('Checked just now');
   // A reload within ten minutes reads the cache: still red, though GitHub now says the run passed.

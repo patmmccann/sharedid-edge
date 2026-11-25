@@ -1,12 +1,14 @@
 /* global process */
 // Writes the Wrangler configurations of this project's upstream-operator and Cloudflare for SaaS live tests (README.md,
 // The upstream-operator and Cloudflare for SaaS setups) into live/.out/, from the hostnames in the environment. Not for
-// deployers. upstream.sh and saas.sh run it; see either for the variables.
+// deployers. upstream.sh and saas.sh run it; see either for the variables. The Cloudflare live tests workflow
+// (.github/workflows/e2e-cloudflare.yml) runs platform.
 //
 //   node live/configs.mjs upstream       # .out/endpoint.json, .out/forward.json
 //   node live/configs.mjs saas           # .out/saas.json, .out/saas-site.json
 //   node live/configs.mjs node-upstream  # .out/node-upstream-publisher.json, .out/node-upstream-conformance.json
 //   node live/configs.mjs node-upstream-hosts   # prints SID_HOSTS of the Node.js live test's endpoint
+//   node live/configs.mjs platform       # .out/platform.json, .out/platform-site.json (the live demo's platform modules)
 import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -138,6 +140,30 @@ if (kind === 'upstream') {
     routes: [{ pattern: `${site}${conformancePrefix}/_sid/*`, zone_name: zone }],
     vars: { SID_ENDPOINT: need('NODE_UPSTREAM_CONFORMANCE_ENDPOINT') }
   });
+} else if (kind === 'platform') {
+  // The live demo's platform-modules deployment (.github/workflows/e2e-cloudflare.yml): a second SharedID Edge Worker
+  // on <site><prefix>/_sid/*, with the e2e settings plus the modules that read Cloudflare's request data, and the e2e
+  // test page as static assets at <site><prefix>/, so the main e2e environment (wrangler.jsonc, env.e2e) keeps its
+  // settings. The more specific route wins: <prefix>/_sid/* over <prefix>/* over the test site's /*.
+  const site = need('PLATFORM_SITE');
+  const zone = need('PLATFORM_ZONE');
+  const prefix = need('PLATFORM_PREFIX');
+  const { SID_MODULE_CONFIG: moduleConfig, ...settings } = e2eSite(need('PLATFORM_COOKIE_DOMAIN'));
+  write('platform', {
+    ...sharedIdWorker,
+    name: process.env['PLATFORM_WORKER'] ?? 'sharedid-edge-e2e-platform',
+    routes: [{ pattern: `${site}${prefix}/_sid/*`, zone_name: zone }],
+    vars: { ...settings, SID_BASE_PATH: `${prefix}/_sid`, SID_MODULE_CONFIG: JSON.stringify(moduleConfig) }
+  });
+  const assets = join(out, 'platform-site');
+  rmSync(assets, { recursive: true, force: true });
+  cpSync(join(here, '../../../../e2e/site/public'), join(assets, prefix), { recursive: true });
+  write('platform-site', {
+    ...common,
+    name: process.env['PLATFORM_SITE_WORKER'] ?? 'sharedid-edge-e2e-platform-site',
+    assets: { directory: './platform-site' },
+    routes: [{ pattern: `${site}${prefix}/*`, zone_name: zone }]
+  });
 } else {
-  throw new Error('Usage: node live/configs.mjs upstream|saas|node-upstream|node-upstream-hosts');
+  throw new Error('Usage: node live/configs.mjs upstream|saas|node-upstream|node-upstream-hosts|platform');
 }
