@@ -713,7 +713,7 @@ test('with consent, /_sid/v1 has the IP address encrypted to the test key, a fre
 
 test('without consent for the address (a TC string without Special Feature 1, or GPC), there\'s no encrypted IP address', async ({ page }) => {
   test.skip(EIP_PRIVATE_KEY === '', 'no encrypted-ip test key (E2E_EIP_PRIVATE_KEY)');
-  for (const [query, headers] of [[`?gdpr=1&gdpr_consent=${tcString('given')}`, {}], ['?gdpr=0', { 'Sec-GPC': '1' }]] as const) {
+  for (const [query, headers] of [[`?gdpr=1&gdpr_consent=${tcString('purpose1Only')}`, {}], ['?gdpr=0', { 'Sec-GPC': '1' }]] as const) {
     const body = await v1Json(page, query, headers);
     expect(body.eip, query).toBeUndefined();
     expect(body.ext?.modules?.['encrypted-ip']?.status, query).toBe('empty');
@@ -723,14 +723,14 @@ test('without consent for the address (a TC string without Special Feature 1, or
 test('the results panel\'s encrypted-ip row: well formed with consent, grey without it', async ({ page }) => {
   test.skip(EIP_PRIVATE_KEY === '', 'no encrypted-ip test key (E2E_EIP_PRIVATE_KEY)');
   const row = page.locator('[data-check="eip"]');
-  // GDPR doesn't apply: no TC string, so the address may be used.
-  await visit(page, '/?consent=notApplicable&checks=1');
+  // The default scenario's TC string opts in to Special Feature 1, which the address needs under GDPR.
+  await visit(page, '/?checks=1');
   await expect(row).toHaveAttribute('data-status', 'pass');
   await expect(row).toContainText(EIP_RECIPIENT);
   // The value itself isn't shown.
   await expect(row).not.toContainText(/[A-Za-z0-9_-]{67,}/);
-  // The default scenario's TC string has no Special Feature 1.
-  await visit(page, '/?checks=1');
+  // purpose1Only's TC string has no Special Feature 1.
+  await visit(page, '/?consent=purpose1Only&checks=1');
   await expect(row).toHaveAttribute('data-status', 'info');
   await expect(row).toContainText('Special Feature 1');
 });
