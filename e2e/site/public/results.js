@@ -13,7 +13,10 @@
 //   - the ua and bot modules' answers in that /_sid/v1 JSON: device data (ortb2.device) and the bot verdict
 //     (ortb2.device.ext.traffic), each grey where the module isn't on, and encrypted-ip's eip: well formed, not shown;
 //   - the HttpOnly recovery copy, on demand: "Delete _pubcid" deletes the script-readable cookie, as Safari's cap would,
-//     and asks /_sid/v1 again, which should restore the same id from _pubcid_sv (X-SharedID-Source: recovery).
+//     and asks /_sid/v1 again, which should restore the same id from _pubcid_sv (X-SharedID-Source: recovery);
+//   - the reflect and clickid modules, from cookies alone: uid1 (vendor-uid1.js) server-set for a year and restored
+//     after "Delete uid1 and reload", and a landing page's ?gclid= kept in _sid_gclid. Their controls reload the page,
+//     so Prebid.js's pixel call is still the only request.
 //
 // Every check is a row with data-check="<name>" and data-status="pass" | "fail" | "info" | "pending"; the summary is
 // #sid-verdict with the same data-status. tests/prebid-sharedid.spec.ts reads them.
@@ -48,10 +51,20 @@
   var rows = {};
   var panel;
 
+  // Set when the worker says this page view's consent rules the ID out: then the rows that look for a cookie the
+  // worker rightly didn't set say so, rather than failing, even when they finish after the worker's answer.
+  var denied;
+  var CONSENT_ROWS = ['cookie', 'same-id', 'eids', 'reflect', 'clickid'];
+
   /** Sets a check's row: its status, title and details (strings, or nodes). */
   function report(name, status, title, details) {
     var row = rows[name];
     if (!row) return;
+    if (status === 'fail' && denied !== undefined && CONSENT_ROWS.indexOf(name) >= 0) {
+      status = 'info';
+      title += ' (consent: ' + denied + ')';
+      details = [];
+    }
     row.setAttribute('data-status', status);
     row.querySelector('.sid-icon').textContent = ICONS[status];
     row.querySelector('.sid-title').textContent = title;
@@ -95,6 +108,8 @@
     ['recovery', 'The HttpOnly recovery copy'],
     ['modules', 'Edge modules: visitor IP and location'],
     ['id5', 'ID5 ID (server-to-server)'],
+    ['reflect', 'A vendor\u2019s cookie kept by the reflect module'],
+    ['clickid', 'An ad click ID kept by the clickid module'],
     ['device', 'Device data (the ua module)'],
     ['bot', 'Bot verdict (the bot and ua modules)'],
     ['eip', 'Your IP address, encrypted (the encrypted-ip module)']
@@ -252,8 +267,9 @@
         report('worker', 'info', 'The worker set no ID: ' + answer.denied, head.concat([code('X-SharedID-Status: ' + answer.denied),
           ': this page view’s consent rules the ID out, so the endpoint stores none and deletes what was there.']));
         // Not failures, then: there's meant to be no ID.
-        ['cookie', 'same-id', 'eids'].forEach(function (name) {
-          if (rows[name].getAttribute('data-status') === 'fail') report(name, 'info', rows[name].querySelector('.sid-title').textContent + ' (consent: ' + answer.denied + ')', []);
+        denied = answer.denied;
+        CONSENT_ROWS.forEach(function (name) {
+          if (rows[name].getAttribute('data-status') === 'fail') report(name, 'fail', rows[name].querySelector('.sid-title').textContent, []);
         });
       } else if (id && id === readCookie('_pubcid') && (cookieId === undefined || id === cookieId)) {
         report('worker', 'pass', 'The worker has the same ID', head.concat([
@@ -450,19 +466,19 @@
     ]);
   }
 
-  /** Deletes _pubcid on every domain it can be on, as Safari's cap or a cookie cleaner would. */
-  function deletePubcid() {
+  /** Deletes a cookie on every domain it can be on, as Safari's cap or a cookie cleaner would. */
+  function deleteCookie(name) {
     var secure = location.protocol === 'https:' ? '; Secure' : '';
     var labels = location.hostname.split('.');
-    document.cookie = '_pubcid=; Path=/; Max-Age=0; SameSite=Lax' + secure;
+    document.cookie = name + '=; Path=/; Max-Age=0; SameSite=Lax' + secure;
     for (var i = 0; i < labels.length - 1; i++) {
-      document.cookie = '_pubcid=; Path=/; Domain=' + labels.slice(i).join('.') + '; Max-Age=0; SameSite=Lax' + secure;
+      document.cookie = name + '=; Path=/; Domain=' + labels.slice(i).join('.') + '; Max-Age=0; SameSite=Lax' + secure;
     }
   }
 
   function recover() {
     var id = recoveryId;
-    deletePubcid();
+    deleteCookie('_pubcid');
     var gone = readCookie('_pubcid') === undefined;
     report('recovery', 'pending', 'Deleted _pubcid; asking the worker\u2026', []);
     return askWorker().then(function (answer) {
@@ -487,6 +503,110 @@
     });
   }
 
+  // The reflect and clickid modules, which every live deployment runs on Prebid.js's pixel call. Neither check sends
+  // anything to /_sid/*: their buttons reload the page, and Prebid.js's own /_sid/sync call does the work.
+
+  /** A cookie as the Cookie Store API reports it (null when absent), or undefined where page script can't see it. */
+  function storedCookie(name) {
+    if (!window.cookieStore || typeof window.cookieStore.get !== 'function') return Promise.resolve(undefined);
+    return window.cookieStore.get(name).then(function (cookie) { return cookie || null; }, function () { return undefined; });
+  }
+
+  /** How long a cookie has left, in days, or undefined where the browser doesn't say. */
+  function daysLeft(cookie) {
+    return cookie && typeof cookie.expires === 'number' ? days(cookie.expires - Date.now()) : undefined;
+  }
+
+  /** This page's path and query, with some query parameters changed (null removes one). */
+  function withParams(changes) {
+    var next = new URLSearchParams(location.search);
+    Object.keys(changes).forEach(function (key) {
+      if (changes[key] === null) next.delete(key);
+      else next.set(key, changes[key]);
+    });
+    var query = next.toString();
+    return location.pathname + (query === '' ? '' : '?' + query);
+  }
+
+  // reflect: vendor-uid1.js, a stand-in ID vendor's tag, writes uid1 from page script (7 days at most in Safari); the
+  // worker sets it again on Prebid.js's pixel call, for a year, with an HttpOnly backup (_sid_keep). "Delete uid1 and
+  // reload" deletes it and reloads with ?vendor=late, so the vendor tag runs after the pixel call and can't re-mint it
+  // first, and with ?uid1was=<value>, the value the worker should restore from the backup.
+  function reflectCheck() {
+    var was = params.get('uid1was');
+    var vendor = params.get('vendor');
+    var expected = was === null ? undefined : encodeURIComponent(was);
+    var restore = button('Delete uid1 and reload', function () {
+      var value = readCookie('uid1');
+      deleteCookie('uid1');
+      location.assign(withParams({ vendor: 'late', uid1was: value === undefined ? null : decodeURIComponent(value) }));
+    });
+    restore.id = 'sid-uid1-delete';
+    return wait(function () { return expected === undefined || readCookie('uid1') === expected; }, 2000).then(function () {
+      return storedCookie('uid1');
+    }).then(function (cookie) {
+      var value = readCookie('uid1');
+      var left = daysLeft(cookie);
+      var about = ['A stand-in ID vendor tag (', code('vendor-uid1.js'), ') writes ', code('uid1'),
+        ' from page script, which Safari keeps for 7 days at most. The worker sets it again on Prebid.js\u2019s ',
+        code(SID + '/sync'), ' call, for a year, with an HttpOnly backup. '];
+      var kept = left === undefined
+        ? ['This browser doesn\u2019t show cookie expiry to page script (the Cookie Store API' +
+          (location.protocol === 'https:' ? '' : ', which needs https') + '); the worker sets it with ', code('Max-Age=31536000'), '. ']
+        : ['Your browser will keep it for ' + left + ' days. '];
+      var now = ['Now: ', code('uid1=' + String(value)), '. '];
+      if (value === undefined) {
+        report('reflect', was === null ? 'info' : 'fail', was === null ? 'No uid1 on this page view' : 'uid1 wasn\u2019t restored',
+          about.concat(vendor === 'none' ? ['This page view leaves the vendor tag out (', code('?vendor=none'), ').'] : [el('br'), restore]));
+      } else if (was !== null) {
+        var same = value === expected;
+        report('reflect', same ? 'pass' : 'fail', same ? 'The worker restored uid1, with the same value' : 'uid1 wasn\u2019t restored', about.concat([
+          'You deleted ', code('uid1=' + String(expected)), ' and reloaded. ', same
+            ? 'Prebid.js\u2019s pixel call brought it back from the backup, before the vendor tag ran. '
+            : 'The worker didn\u2019t restore it. '
+        ], now, kept, [el('br'), restore]));
+      } else if (left !== undefined && left > 300) {
+        report('reflect', 'pass', 'The server keeps uid1 for ' + left + ' days', about.concat(now, kept, [el('br'), restore]));
+      } else if (left !== undefined && left <= 8 && vendor === null) {
+        report('reflect', 'fail', 'uid1 is capped at ' + left + ' days', about.concat(now, kept, ['The worker didn\u2019t set it again.']));
+      } else {
+        report('reflect', 'info', 'uid1 is here: delete it to see it restored', about.concat(now, kept, [el('br'), restore]));
+      }
+    });
+  }
+
+  // clickid: a landing page's ?gclid=, read from the pixel call's Referer, kept in a server-set _sid_gclid
+  // (<seconds>.<gclid>) for 90 days. The "try it" link reloads the page with a made-up click ID.
+  function clickidCheck() {
+    var gclid = params.get('gclid');
+    var tryIt = el('a', {
+      id: 'sid-gclid-try',
+      href: withParams({ gclid: 'demo-' + Math.random().toString(36).slice(2, 10), uid1was: null }),
+      text: 'Try it: reload this page as an ad click\u2019s landing page, with ?gclid=demo-\u2026'
+    });
+    function clickId(value) { return value === undefined ? undefined : decodeURIComponent(value).replace(/^[0-9]+\./, ''); }
+    return wait(function () { return gclid === null || clickId(readCookie('_sid_gclid')) === gclid; }, 2000).then(function () {
+      return storedCookie('_sid_gclid');
+    }).then(function (cookie) {
+      var value = readCookie('_sid_gclid');
+      var left = daysLeft(cookie);
+      var about = ['An ad click lands on a page with a click ID in its URL (', code('gclid'), ', ', code('fbclid'), ', ', code('msclkid'),
+        '\u2026). The worker reads it from the ', code('Referer'), ' of Prebid.js\u2019s pixel call and keeps it in ',
+        code('_sid_gclid'), ', a server-set cookie page script can read, for 90 days from the click' +
+        (left === undefined ? '' : ' (' + left + ' days left)') + '. '];
+      if (gclid !== null) {
+        var ok = clickId(value) === gclid;
+        report('clickid', ok ? 'pass' : 'fail', ok ? 'The server kept this page\u2019s click ID' : 'The click ID wasn\u2019t kept', about.concat([
+          'This page view\u2019s URL has ', code('gclid=' + gclid), '; the cookie: ', code('_sid_gclid=' + String(value)), '.'
+        ]));
+      } else if (value !== undefined) {
+        report('clickid', 'info', 'A click ID from an earlier landing page', about.concat([code('_sid_gclid=' + value), '. ', el('br'), tryIt]));
+      } else {
+        report('clickid', 'info', 'No ad click ID on this page view: try it', about.concat([el('br'), tryIt]));
+      }
+    });
+  }
+
   function run() {
     render();
     var pbjs = window.pbjs;
@@ -508,7 +628,7 @@
         var why = optedOut ? 'You opted out (_pubcid_optout), so Prebid.js stores no ID.'
           : consent === 'denied' ? 'This page view denies consent (?consent=denied), so Prebid.js stores no ID.' : '';
         report('sync', why ? 'info' : 'fail', 'Prebid.js didn\u2019t call ' + SID + '/sync', [why || 'No pixelUrl request within 15 seconds.']);
-        ['cookie', 'same-id', 'eids', 'lifetime', 'worker', 'recovery', 'modules', 'id5', 'device', 'bot', 'eip'].forEach(function (name) {
+        ['cookie', 'same-id', 'eids', 'lifetime', 'worker', 'recovery', 'modules', 'id5', 'reflect', 'clickid', 'device', 'bot', 'eip'].forEach(function (name) {
           report(name, 'info', rows[name].querySelector('.sid-title').textContent.replace(/[:\u2026]+$/, '') + ': not checked', []);
         });
         return undefined;
@@ -549,7 +669,7 @@
       report('eids', eidId !== undefined && eidId === cookieId ? 'pass' : 'fail', eidId === cookieId ? 'The ID goes into every bid request' : 'The ID isn\u2019t in the bid request EIDs', [
         'Prebid.js adds these EIDs to every bid request, as ', code('ortb2.user.ext.eids'), ' (', code('pbjs.getUserIdsAsEids()'), '):', json(eids)
       ]);
-      var checks = [lifetime()];
+      var checks = [lifetime(), reflectCheck(), clickidCheck()];
       if (automated) {
         report('worker', 'info', 'What the worker says: not asked', [
           'Under automation the page sends nothing of its own to the endpoint. ', button('Ask the worker', function () { void workerChecks(cookieId); })
