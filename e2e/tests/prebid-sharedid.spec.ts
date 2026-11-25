@@ -786,7 +786,7 @@ test('the results panel shows the device data and the bot verdict, and the brows
   await expect(page.locator('#sid-verdict')).toHaveAttribute('data-status', 'pass');
 });
 
-test('a client that names itself as a bot (curl) is flagged, and with SID_SKIP_BOTS gets no SharedID', async ({ page }) => {
+test('a client that names itself as a bot (curl) is flagged, and with SID_SKIP_BOTS gets no SharedID, from /_sid/v1 or /_sid/sync', async ({ page }) => {
   test.skip(!MODULES.has('ua') || !MODULES.has('bot'), 'the deployment runs ua and bot only with E2E_MODULES=ua,bot');
   // gdpr=0, as a page outside the EU may send: so it's the bot verdict, not missing consent, that decides.
   const response = await page.request.get(`${SID}/v1?gdpr=0`, { headers: { 'User-Agent': 'curl/8.5.0', Accept: '*/*' } });
@@ -797,6 +797,14 @@ test('a client that names itself as a bot (curl) is flagged, and with SID_SKIP_B
   expect(body.ortb2?.device?.ext?.traffic).toMatchObject({ bot: true, botKind: 'declared' });
   expect(body.ortb2?.device?.ext?.traffic?.sources).toContain('ua');
   expect((await response.headersArray()).filter(h => h.name.toLowerCase() === 'set-cookie' && h.value.startsWith('_pubcid='))).toEqual([]);
+
+  // Prebid.js's pixel call, as curl would send it, with the id Prebid.js would mint: ua's bot check runs on /sync too,
+  // so no ID there either.
+  const sync = await page.request.get(`${SID}/sync?gdpr=0&id=${encodeURIComponent(encodeURIComponent(`pubcid:${crypto.randomUUID()}`))}`, { headers: { 'User-Agent': 'curl/8.5.0', Accept: '*/*' } });
+  expect(sync.status()).toBe(200);
+  expect(sync.headers()['x-sharedid-status']).toBe('skipped: bot');
+  expect(sync.headers()['x-sharedid-modules']).toContain('ua=ok');
+  expect((await sync.headersArray()).filter(h => h.name.toLowerCase() === 'set-cookie' && h.value.startsWith('_pubcid'))).toEqual([]);
 });
 
 /**

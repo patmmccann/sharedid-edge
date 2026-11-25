@@ -41,10 +41,11 @@
     "kind": "module",
     "name": "ua",
     "title": "device data and the bot flag",
-    "summary": "`ortb2.device` from User-Agent Client Hints (`sua`, `devicetype`, `os`, `osv`, `model`), and `device.ext.traffic` with `bot: true` for crawlers that identify themselves",
+    "summary": "`ortb2.device` from User-Agent Client Hints (`sua`, `devicetype`, `os`, `osv`, `model`), and `device.ext.traffic` with `bot: true` for crawlers that identify themselves (on `/sync` too, for `SID_SKIP_BOTS`)",
     "settings": "`ua`: also send `device.ua`; `parser`: `bowser`, in a build with Bowser, parses the `User-Agent` too",
     "routes": [
-      "v1"
+      "v1",
+      "sync"
     ]
   }
 }

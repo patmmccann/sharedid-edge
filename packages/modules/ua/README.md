@@ -2,7 +2,7 @@
 
 The `ua` module for [SharedID Edge](../../../README.md): the browser's User-Agent Client Hints and `User-Agent` header in the `/_sid/v1` payload as OpenRTB 2.6 device data (`ortb2.device.sua`, `devicetype`, `os`, `osv`, `make`, `model`), plus a **bot flag** for crawlers that identify themselves, in the shared traffic signal `ortb2.device.ext.traffic`.
 
-It runs on `/_sid/v1` only: `/_sid/sync` returns an image, so there's nowhere to put the device data.
+It returns device data on `/_sid/v1` only: `/_sid/sync` returns an image, so there's nowhere to put it. On `/_sid/sync` it runs only its bot check, so that with `SID_SKIP_BOTS` a crawler gets no SharedID from Prebid.js's pixel call either ([On `/_sid/sync`](#on-_sidsync)).
 
 The worker sees the request headers before any script on the page runs. Prebid.js fills `device.sua` from `navigator.userAgentData` too, but only once it has loaded, only in Chromium browsers, and not where a privacy extension blocks the API. The headers arrive regardless. The bot flag lets the page skip or mark auctions for Googlebot, Bingbot, link previewers such as Slackbot or `facebookexternalhit`, and other automated clients.
 
@@ -12,6 +12,7 @@ The worker sees the request headers before any script on the page runs. Prebid.j
 - [Fields](#fields)
 - [Responses](#responses)
 - [The traffic signal](#the-traffic-signal)
+- [On `/_sid/sync`](#on-_sidsync)
 - [Scheduled crawler-list updates](#scheduled-crawler-list-updates)
 - [Consent](#consent)
 - [Settings](#settings)
@@ -225,7 +226,19 @@ if (payload.ortb2?.device?.ext?.traffic?.bot) {
 }
 ```
 
-Core reads the module's `device.ext.traffic` as its report to the shared [traffic signal](../../../docs/modules.md#the-traffic-signal) and merges it with the other reports (the `bot` module's, the platform's), most cautious first, so `sources` lists every contributor. With `SID_SKIP_BOTS=declared` (or `likely`), a crawler `ua` flags gets no SharedID.
+Core reads the module's `device.ext.traffic` as its report to the shared [traffic signal](../../../docs/modules.md#the-traffic-signal) and merges it with the other reports (the `bot` module's, the platform's), most cautious first, so `sources` lists every contributor. With `SID_SKIP_BOTS=declared` (or `likely`), a crawler `ua` flags gets no SharedID, from `/_sid/v1` or `/_sid/sync`.
+
+## On `/_sid/sync`
+
+Prebid.js calls `/_sid/sync` (its `pixelUrl`) on page views, so that's where most SharedIDs are set. The module runs there too, but only checks whether the `User-Agent` names a crawler, bot or other automated client, with the same parser and crawler list as on `/_sid/v1`. It reads no Client Hints and builds no device data there, since the response is an image. When the client names itself, its report joins the traffic verdict, and with `SID_SKIP_BOTS=declared` (or `likely`) the pixel call sets no ID, as `/_sid/v1` wouldn't:
+
+```sh
+curl -si 'https://www.example.com/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d' -A 'curl/8.5.0' | grep -i '^x-sharedid\|^set-cookie'
+# x-sharedid-status: skipped: bot
+# x-sharedid-modules: ua=ok
+```
+
+A browser's request gets `x-sharedid-modules: ua=empty` and its ID as usual. Without `SID_SKIP_BOTS`, the report changes nothing on `/_sid/sync`. An existing ID is never deleted for being a bot. To keep the module off `/_sid/sync`, list the modules that should run there in `SID_SYNC_MODULES` without `ua` (`none` for none).
 
 ## Scheduled crawler-list updates
 

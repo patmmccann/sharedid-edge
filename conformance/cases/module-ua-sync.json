@@ -1,0 +1,41 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "The ua module on /sync (Prebid.js's pixelUrl) without SID_SKIP_BOTS: it runs there for its bot check alone, reports ok for a client whose User-Agent names it as a bot and empty for a browser, and changes nothing else: the ID is set as before, from the id parameter. skip-bots-ua-sync.json has the same requests with SID_SKIP_BOTS=declared.",
+  "config": { "SID_MODULES": "ua" },
+  "cases": [
+    {
+      "name": "a client that names itself as a bot still gets the ID without SID_SKIP_BOTS",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d",
+        "headers": { "user-agent": "curl/8.5.0" }
+      },
+      "expect": {
+        "status": 200,
+        "headers": { "content-type": "image/gif", "x-sharedid-source": "param", "x-sharedid-modules": "ua=ok" },
+        "absentHeaders": ["x-sharedid-status"],
+        "cookies": [
+          { "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" },
+          { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "a browser's request is unchanged, and the module reports empty",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d",
+        "headers": { "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1" }
+      },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-source": "param", "x-sharedid-modules": "ua=empty", "cache-control": "private, max-age=86400" },
+        "absentHeaders": ["x-sharedid-status"],
+        "cookies": [
+          { "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" },
+          { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }
+        ],
+        "onlyListedCookies": true
+      }
+    }
+  ]
+}

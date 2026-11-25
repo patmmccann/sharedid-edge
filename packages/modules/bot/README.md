@@ -209,7 +209,7 @@ A core setting, off by default, that uses the merged traffic signal from every s
 
 A skipped request gets no ID cookie, no `sharedid` and no `pubcid.org` eid, and carries `X-SharedID-Status: skipped: bot`. An existing ID is **never deleted**, so a misclassified visitor keeps theirs (it's just not refreshed on that request). Consent comes first: with GPC, COPPA, opt-out or denied consent, the ID is deleted as usual and the status is `denied: …`.
 
-The module also runs on `/_sid/sync`, which Prebid.js's `pixelUrl` calls on page views, so its signals skip there too, merged with the platform's verdict: a likely bot doesn't get from the pixel call an ID it wouldn't get from `/_sid/v1`. There the signal isn't returned (the response is a GIF); `X-SharedID-Modules: bot=ok` shows the module reported something. To keep it off `/_sid/sync`, list the other modules in `SID_SYNC_MODULES` (or set it to `none`); see [Modules on `/_sid/sync`](../../../docs/modules.md#modules-on-_sidsync).
+The module also runs on `/_sid/sync`, which Prebid.js's `pixelUrl` calls on page views, so its signals skip there too, merged with the platform's verdict: a likely bot doesn't get from the pixel call an ID it wouldn't get from `/_sid/v1`. The [`ua`](../ua/README.md#on-_sidsync) module's bot check runs there too, so with `declared` a client that names itself as a crawler is skipped on the pixel call as well. There the signal isn't returned (the response is a GIF); `X-SharedID-Modules: bot=ok` shows the module reported something. To keep it off `/_sid/sync`, list the other modules in `SID_SYNC_MODULES` (or set it to `none`); see [Modules on `/_sid/sync`](../../../docs/modules.md#modules-on-_sidsync).
 
 ## Using it in Prebid.js
 

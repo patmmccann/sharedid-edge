@@ -294,6 +294,10 @@ function scheduledBotTest(crawlers: UaCrawlerOptions | undefined): { readonly is
  *
  * `crawlers` gives the parsers a crawler list from scheduled data in place of isbot's compiled-in one (see
  * {@link UaCrawlerOptions}). Without a usable snapshot, the compiled-in list decides and the module reports `stale`.
+ *
+ * It also runs on `/sync` (Prebid.js's `pixelUrl`), where there's no payload: there it only checks whether the
+ * User-Agent names a bot, and reports that as its traffic report, so `SID_SKIP_BOTS` covers the pixel call too. No
+ * Client Hints are read and no device data is built there.
  */
 export function createUaModule(
   options: { readonly parser?: UserAgentParser; readonly bowser?: UserAgentParser; readonly crawlers?: UaCrawlerOptions } = {}
@@ -311,9 +315,17 @@ export function createUaModule(
   };
   return defineModule({
     name: 'ua',
-    run({ request, consent, config }: ModuleContext): ModuleResult | undefined {
+    // Also on /sync, for the bot test alone: its report counts towards SID_SKIP_BOTS there, as the bot module's does.
+    routes: ['v1', 'sync'],
+    run({ request, route, consent, config }: ModuleContext): ModuleResult | undefined {
       const settings = uaSettings(config);
       const { isBot, stale } = scheduledBotTest(crawlers);
+      if (route === 'sync') {
+        const userAgent = visitorUserAgent(request.headers);
+        const bot = userAgent !== undefined && parserFor(settings.parser)(userAgent, isBot).bot;
+        if (bot) return { traffic: { bot: true, botKind: 'declared' }, ...(stale ? { stale: true } : {}) };
+        return stale ? { stale: true } : undefined;
+      }
       const device = uaDevice(readClientHints(request.headers), visitorUserAgent(request.headers), {
         highEntropy: highEntropyDenial(consent) === undefined,
         includeUa: settings.ua,

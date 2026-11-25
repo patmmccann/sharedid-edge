@@ -1,0 +1,86 @@
+{
+  "$schema": "../case-file.schema.json",
+  "description": "SID_SKIP_BOTS=declared with the ua module, which runs on /sync for its bot check alone (no device data there): a client whose User-Agent names it as a bot (curl) gets no ID from Prebid.js's pixel call, as from /v1, with X-SharedID-Status: skipped: bot, and an existing ID is neither refreshed nor deleted. A browser's User-Agent is unaffected: the module reports empty and the ID is set as usual. module-ua-sync.json has the same requests without SID_SKIP_BOTS.",
+  "config": { "SID_MODULES": "ua", "SID_SKIP_BOTS": "declared" },
+  "cases": [
+    {
+      "name": "on /sync, a client that names itself as a bot gets no ID from the id parameter",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d",
+        "headers": { "user-agent": "curl/8.5.0" }
+      },
+      "expect": {
+        "status": 200,
+        "headers": { "content-type": "image/gif", "cache-control": "no-store", "x-sharedid-status": "skipped: bot", "x-sharedid-modules": "ua=ok" },
+        "absentHeaders": ["x-sharedid-source"],
+        "noCookies": true
+      }
+    },
+    {
+      "name": "on /sync, its existing ID is neither refreshed nor deleted",
+      "request": {
+        "path": "/_sid/sync",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+          "cookie": "_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d; _pubcid_sv=c29cb2ae-769d-42f6-891a-f53cadee823d"
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-status": "skipped: bot", "x-sharedid-modules": "ua=ok" },
+        "absentHeaders": ["x-sharedid-source"],
+        "noCookies": true
+      }
+    },
+    {
+      "name": "on /sync, a browser gets the ID as usual, and the module reports empty",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d",
+        "headers": {
+          "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+          "sec-ch-ua": "\"Google Chrome\";v=\"142\", \"Chromium\";v=\"142\", \"Not_A Brand\";v=\"24\"",
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": "\"Windows\""
+        }
+      },
+      "expect": {
+        "status": 200,
+        "headers": { "content-type": "image/gif", "x-sharedid-source": "param", "x-sharedid-modules": "ua=empty", "cache-control": "private, max-age=86400" },
+        "absentHeaders": ["x-sharedid-status"],
+        "cookies": [
+          { "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" },
+          { "name": "_pubcid_sv", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }
+        ],
+        "onlyListedCookies": true
+      }
+    },
+    {
+      "name": "on /sync, a request without a User-Agent isn't taken for a bot",
+      "request": {
+        "path": "/_sid/sync?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d",
+        "headers": { "user-agent": "" }
+      },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-source": "param", "x-sharedid-modules": "ua=empty" },
+        "absentHeaders": ["x-sharedid-status"],
+        "cookies": [{ "name": "_pubcid", "value": "c29cb2ae-769d-42f6-891a-f53cadee823d" }]
+      }
+    },
+    {
+      "name": "on /v1, the same client is skipped, with the traffic signal",
+      "request": {
+        "path": "/_sid/v1",
+        "headers": { "user-agent": "curl/8.5.0" }
+      },
+      "expect": {
+        "status": 200,
+        "headers": { "x-sharedid-status": "skipped: bot" },
+        "absentHeaders": ["x-sharedid-source"],
+        "jsonIncludes": { "v": 1, "eids": [], "ortb2": { "device": { "ext": { "traffic": { "bot": true, "botKind": "declared", "sources": ["ua"] } } } } },
+        "jsonAbsent": ["sharedid"],
+        "noCookies": true
+      }
+    }
+  ]
+}

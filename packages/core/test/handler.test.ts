@@ -489,6 +489,15 @@ describe('modules on /sync', () => {
     expect(((await v1.json()) as PayloadV1).ext.modules['synconly']).toEqual({ ms: 0, status: 'skipped', reason: 'not on /v1' });
   });
 
+  it('tells a module which route it runs on', async () => {
+    const routes: string[] = [];
+    const both = defineModule({ name: 'both', routes: ['v1', 'sync'], run: ({ route }) => { routes.push(route); return undefined; } });
+    const h = handler({ SID_MODULES: 'both' }, { modules: [both] });
+    await h(get('/_sid/sync'));
+    await h(get('/_sid/v1'));
+    expect(routes).toEqual(['sync', 'v1']);
+  });
+
   it('sets only the cookies: eids and ortb2 are ignored, and the pixel response is otherwise unchanged', async () => {
     const mixed = defineModule({
       name: 'mixed',
