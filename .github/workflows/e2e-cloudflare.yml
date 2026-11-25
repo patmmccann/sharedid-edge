@@ -119,6 +119,112 @@ jobs:
           path: e2e/test-results
           retention-days: 7
 
+  # The live demo's platform-modules deployment: a second SharedID Edge Worker on e2e.sharedid.dev/platform/_sid/*, with
+  # the e2e settings plus the ip and geo modules (packages/adapters/cloudflare/live/configs.mjs, platform), and the test
+  # page at e2e.sharedid.dev/platform/, so the main e2e environment's settings stay as they are.
+  platform:
+    name: Deploy /platform (platform modules), check
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PLATFORM_SITE: e2e.sharedid.dev
+      PLATFORM_ZONE: sharedid.dev
+      PLATFORM_PREFIX: /platform
+      PLATFORM_COOKIE_DOMAIN: sharedid.dev
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            e2e/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Install e2e dependencies, and the page's Prebid.js bundle
+        run: |
+          npm ci --prefix e2e
+          npm run bundle-prebid --prefix e2e
+      - name: The encrypted-ip test key (the ENCRYPTED_IP_TEST_KEY secret), if set
+        env:
+          ENCRYPTED_IP_TEST_KEY: ${{ secrets.ENCRYPTED_IP_TEST_KEY }}
+        run: |
+          if [ -z "$ENCRYPTED_IP_TEST_KEY" ]; then
+            echo "::notice::encrypted-ip isn't built in: set the ENCRYPTED_IP_TEST_KEY repository secret to demonstrate it (docs/verification.md, the encrypted-ip row)."
+            exit 0
+          fi
+          # The public key and its recipient only (scripts/encrypted-ip-test-key.mjs); the private key stays in the secret.
+          config="$(node scripts/encrypted-ip-test-key.mjs)"
+          echo "ENCRYPTED_IP_CONFIG=$config" >> "$GITHUB_ENV"
+      - name: Deploy the Worker and its test page (live/configs.mjs platform)
+        working-directory: packages/adapters/cloudflare
+        run: |
+          # With the test key, the Worker is built from an entry point with encrypted-ip (scripts/module-list.mjs).
+          if [ -n "${ENCRYPTED_IP_CONFIG:-}" ]; then
+            node ../../../scripts/module-list.mjs .sharedid-modules --worker --module @sharedid-edge/module-encrypted-ip#encryptedIpModule
+          fi
+          node live/configs.mjs platform
+          npx wrangler deploy --config live/.out/platform.json
+          npx wrangler deploy --config live/.out/platform-site.json
+      # The first request waits up to 150 seconds for the new versions to answer.
+      - name: The real address and country arrive, forged headers change nothing (scripts/check-live-site.ts)
+        run: npx tsx scripts/check-live-site.ts --site "https://$PLATFORM_SITE" --base-path "$PLATFORM_PREFIX/_sid" --cookie-domain "$PLATFORM_COOKIE_DOMAIN" --wait 150
+      - name: verify-deployment
+        run: npm run verify-deployment -- --site "https://$PLATFORM_SITE" --endpoint "https://$PLATFORM_SITE$PLATFORM_PREFIX/_sid"
+
+  platform-browsers:
+    name: Prebid.js end to end, live on /platform (${{ matrix.browser }})
+    needs: platform
+    runs-on: ubuntu-latest
+    outputs:
+      infrastructure: ${{ steps.browser.outputs.infrastructure }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: npm ci
+      - name: Install the browser and its system dependencies
+        id: browser
+        uses: ./.github/actions/install-browser
+        with:
+          browser: ${{ matrix.browser }}
+      - name: Unmodified Prebid.js against https://e2e.sharedid.dev/platform/ (${{ matrix.browser }})
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: https://e2e.sharedid.dev
+          E2E_PATH: /platform
+          E2E_COOKIE_DOMAIN: sharedid.dev
+          # ua and bot, with SID_SKIP_BOTS=declared (live/configs.mjs platform): the device and bot verdict tests.
+          E2E_MODULES: ua,bot
+          # The encrypted-ip tests decrypt with it; without it (no secret), they skip.
+          E2E_EIP_PRIVATE_KEY: ${{ secrets.ENCRYPTED_IP_TEST_KEY }}
+        run: npx playwright test --project=${{ matrix.browser }}
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-live-platform-${{ matrix.browser }}
+          path: e2e/test-results
+          retention-days: 7
+
   # The live demo's id5 deployment: a second SharedID Edge Worker, built with the id5 vendor module, on
   # e2e.sharedid.dev/id5/_sid/*, with the e2e settings plus ip, geo and id5 (partner 173, ID5's test partner, against
   # ID5's real API; packages/adapters/cloudflare/live/configs.mjs, id5), and the test page at e2e.sharedid.dev/id5/.
@@ -237,7 +343,7 @@ jobs:
   # The EU visitor (eu-visitor) is skipped without the AWS role; the other jobs must pass.
   report:
     name: Report the run
-    needs: [deploy, browsers, id5, id5-browsers, eu-visitor]
+    needs: [deploy, browsers, platform, platform-browsers, id5, id5-browsers, eu-visitor]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -256,6 +362,6 @@ jobs:
       - uses: ./.github/actions/live-issue
         with:
           needs: ${{ toJSON(needs) }}
-          required: deploy browsers id5 id5-browsers
+          required: deploy browsers platform platform-browsers id5 id5-browsers
           title: Live Cloudflare tests are failing
           summary: The live tests on sharedid.dev failed

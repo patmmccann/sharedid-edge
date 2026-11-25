@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test as base, type BrowserContext, type Page, type Request, type Response } from '@playwright/test';
+// The encrypted-ip module's test receiver, written independently of the module's own HPKE code.
+import { open as openHpke, privateKey as privateKeyFromRaw } from '../../packages/modules/encrypted-ip/test/receiver.js';
 
 /** A request the page sent to SharedID Edge: its path and query, and the cookies the browser sent with it. */
 interface SidRequest {
@@ -760,6 +762,168 @@ test('when consent rules the ID out, the clickid row says so rather than failing
   await expect(page.locator('#sid-verdict')).not.toHaveAttribute('data-status', 'fail');
 });
 
+/**
+ * The modules the deployment under test runs beyond the browser tests' settings (E2E_MODULES, comma-separated): ua and
+ * bot locally (server.ts) and on the live platform-module deployments, which also set SID_SKIP_BOTS=declared.
+ */
+const MODULES = new Set((process.env['E2E_MODULES'] ?? (LIVE ? '' : 'ua,bot')).split(',').map(name => name.trim()).filter(name => name !== ''));
+
+interface TrafficPayload {
+  sharedid?: string;
+  ortb2?: { device?: { ext?: { traffic?: { bot?: boolean; botKind?: string; sources?: string[] } } } };
+}
+
+test('the results panel shows the device data and the bot verdict, and the browser isn\'t taken for a bot', async ({ page, context }) => {
+  test.skip(!MODULES.has('ua') || !MODULES.has('bot'), 'the deployment runs ua and bot only with E2E_MODULES=ua,bot');
+  await visit(page, '/?checks=1');
+  await expect(page.locator('[data-check="worker"]')).toHaveAttribute('data-status', 'pass');
+  await expect(page.locator('[data-check="device"]')).toHaveAttribute('data-status', 'pass');
+  // Device data comes from Client Hints, which only Chromium sends, and only over https; the row says which.
+  await expect(page.locator('[data-check="device"]')).toContainText(/The edge read your device|no device data from this browser/);
+  await expect(page.locator('[data-check="bot"]')).toHaveAttribute('data-status', 'pass');
+  await expect(page.locator('[data-check="bot"]')).toContainText('Not flagged as a bot');
+  expect((await cookie(context, '_pubcid'))?.value).toBeDefined();
+  await expect(page.locator('#sid-verdict')).toHaveAttribute('data-status', 'pass');
+});
+
+test('a client that names itself as a bot (curl) is flagged, and with SID_SKIP_BOTS gets no SharedID', async ({ page }) => {
+  test.skip(!MODULES.has('ua') || !MODULES.has('bot'), 'the deployment runs ua and bot only with E2E_MODULES=ua,bot');
+  // gdpr=0, as a page outside the EU may send: so it's the bot verdict, not missing consent, that decides.
+  const response = await page.request.get(`${SID}/v1?gdpr=0`, { headers: { 'User-Agent': 'curl/8.5.0', Accept: '*/*' } });
+  expect(response.status()).toBe(200);
+  expect(response.headers()['x-sharedid-status']).toBe('skipped: bot');
+  const body = await response.json() as TrafficPayload;
+  expect(body.sharedid).toBeUndefined();
+  expect(body.ortb2?.device?.ext?.traffic).toMatchObject({ bot: true, botKind: 'declared' });
+  expect(body.ortb2?.device?.ext?.traffic?.sources).toContain('ua');
+  expect((await response.headersArray()).filter(h => h.name.toLowerCase() === 'set-cookie' && h.value.startsWith('_pubcid='))).toEqual([]);
+});
+
+/**
+ * The encrypted-ip module's test key (E2E_EIP_PRIVATE_KEY: an X25519 private key, 32 bytes as unpadded base64url),
+ * held live only as the ENCRYPTED_IP_TEST_KEY repository secret; the deployments get its public key
+ * (scripts/encrypted-ip-test-key.mjs). Locally, server.ts uses RFC 9180's published test-vector key, whose private key
+ * is public too. Empty (live, without the secret) skips the encrypted-ip tests.
+ */
+const EIP_PRIVATE_KEY = process.env['E2E_EIP_PRIVATE_KEY'] ?? (LIVE ? '' : 'RhLFUCY_yK1YN13z9VeqxTHSaFCQPlWp8j8h2FNOisg');
+const EIP_RECIPIENT = 'eip-test.sharedid.dev';
+
+interface EipPayload {
+  eip?: { pbs?: Record<string, { value: string; kid: string; stale?: boolean }> };
+  ortb2?: { device?: { ip?: string; ipv6?: string } };
+  ext?: { modules?: Record<string, { status: string }> };
+}
+
+/** The test key pair: the private key, and the public key's raw bytes (for decrypting) and kid. */
+async function eipKey(privateKey: string): Promise<{ key: CryptoKey; publicKey: Uint8Array<ArrayBuffer>; kid: string }> {
+  const raw = Buffer.from(privateKey, 'base64url');
+  const key = await privateKeyFromRaw(new Uint8Array(raw));
+  const extractable = await crypto.subtle.importKey('pkcs8', new Uint8Array([...Buffer.from('302e020100300506032b656e04220420', 'hex'), ...raw]), { name: 'X25519' }, true, ['deriveBits']);
+  const { x } = await crypto.subtle.exportKey('jwk', extractable);
+  const publicKey = new Uint8Array(Buffer.from(String(x), 'base64url'));
+  return { key, publicKey, kid: Buffer.from(await crypto.subtle.digest('SHA-256', publicKey)).toString('base64url').slice(0, 8) };
+}
+
+/** Decrypts an encrypted-ip value to the address, or undefined when this key can't. */
+async function decryptIp(value: string, key: { key: CryptoKey; publicKey: Uint8Array<ArrayBuffer> }): Promise<string | undefined> {
+  try {
+    return new TextDecoder().decode(await openHpke(new Uint8Array(Buffer.from(value, 'base64url')), key.key, key.publicKey));
+  } catch {
+    return undefined;
+  }
+}
+
+async function v1Json(page: Page, query: string, headers: Record<string, string> = {}): Promise<EipPayload> {
+  const response = await page.request.get(`${SID}/v1${query}`, { headers });
+  expect(response.status()).toBe(200);
+  return await response.json() as EipPayload;
+}
+
+test('with consent, /_sid/v1 has the IP address encrypted to the test key, a fresh value each time, which only that key decrypts', async ({ page }) => {
+  test.skip(EIP_PRIVATE_KEY === '', 'no encrypted-ip test key (E2E_EIP_PRIVATE_KEY)');
+  const key = await eipKey(EIP_PRIVATE_KEY);
+  // gdpr=0, as a page outside the EU may send; the server-side address check needs no TC string with Special Feature 1.
+  const first = await v1Json(page, '?gdpr=0');
+  const second = await v1Json(page, '?gdpr=0');
+  const values = [first, second].map(body => body.eip?.pbs?.[EIP_RECIPIENT]);
+  for (const value of values) {
+    expect(value?.value).toMatch(/^[A-Za-z0-9_-]{67,124}$/);
+    // The kid follows the key: a new key pair, a new kid (scripts/encrypted-ip-test-key.mjs); locally, server.ts's.
+    expect(value?.kid).toBe(LIVE ? key.kid : 'rfc9180');
+  }
+  expect(values[0]?.value).not.toBe(values[1]?.value);
+  const addresses = await Promise.all(values.map(value => decryptIp(String(value?.value), key)));
+  // The ip module's plain address, where the deployment runs it (live); locally, server.ts's stand-in client address.
+  const expected = first.ortb2?.device?.ip ?? first.ortb2?.device?.ipv6 ?? (LIVE ? undefined : '203.0.114.7');
+  for (const address of addresses) {
+    if (expected === undefined) expect(address).toMatch(/^[0-9a-f:.]+$/i);
+    else expect(address).toBe(expected);
+  }
+  expect(addresses[0]).toBe(addresses[1]);
+  // Another key can't read it.
+  const pair = await crypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']);
+  const other = { key: pair.privateKey, publicKey: new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey)) };
+  expect(await decryptIp(String(values[0]?.value), other)).toBeUndefined();
+});
+
+test('without consent for the address (a TC string without Special Feature 1, or GPC), there\'s no encrypted IP address', async ({ page }) => {
+  test.skip(EIP_PRIVATE_KEY === '', 'no encrypted-ip test key (E2E_EIP_PRIVATE_KEY)');
+  for (const [query, headers] of [[`?gdpr=1&gdpr_consent=${tcString('purpose1Only')}`, {}], ['?gdpr=0', { 'Sec-GPC': '1' }]] as const) {
+    const body = await v1Json(page, query, headers);
+    expect(body.eip, query).toBeUndefined();
+    expect(body.ext?.modules?.['encrypted-ip']?.status, query).toBe('empty');
+  }
+});
+
+test('the results panel\'s encrypted-ip row: well formed with consent, grey without it', async ({ page }) => {
+  test.skip(EIP_PRIVATE_KEY === '', 'no encrypted-ip test key (E2E_EIP_PRIVATE_KEY)');
+  const row = page.locator('[data-check="eip"]');
+  // The default scenario's TC string opts in to Special Feature 1, which the address needs under GDPR.
+  await visit(page, '/?checks=1');
+  await expect(row).toHaveAttribute('data-status', 'pass');
+  await expect(row).toContainText(EIP_RECIPIENT);
+  // The value itself isn't shown.
+  await expect(row).not.toContainText(/[A-Za-z0-9_-]{67,}/);
+  // purpose1Only's TC string has no Special Feature 1.
+  await visit(page, '/?consent=purpose1Only&checks=1');
+  await expect(row).toHaveAttribute('data-status', 'info');
+  await expect(row).toContainText('Special Feature 1');
+});
+
+// The demo's tiles for the main sites and for the copies with the platform modules, at /platform/.
+const AWS_TILE = '.tile[data-workflow="e2e-aws.yml"]:not([data-site$="/platform/"])';
+const AWS_PLATFORM_TILE = '.tile[data-workflow="e2e-aws.yml"][data-site$="/platform/"]';
+const CLOUDFLARE_TILE = '.tile[data-workflow="e2e-cloudflare.yml"]:not([data-site$="/platform/"]):not([data-site$="/id5/"])';
+const CLOUDFLARE_PLATFORM_TILE = '.tile[data-workflow="e2e-cloudflare.yml"][data-site$="/platform/"]';
+
+test('the demo\'s /platform tiles count only their own jobs, and the main sites\' tiles not theirs', async ({ page }) => {
+  test.skip(LIVE, 'the demo\'s tiles are checked once, locally');
+  await page.route('https://api.github.com/**', route => {
+    const url = route.request().url();
+    const body = url.includes('/workflows/')
+      ? { workflow_runs: [{ id: url.includes('e2e-aws.yml') ? 2 : 1, updated_at: new Date().toISOString(), html_url: 'https://github.com/', event: 'push', head_sha: '0123456789abcdef' }] }
+      : url.includes('/runs/2/')
+        ? { jobs: [
+          { name: 'Deploy to CloudFront, verify, conformance', conclusion: 'success' },
+          { name: 'Prebid.js end to end, live on CloudFront (chromium)', conclusion: 'failure' },
+          { name: 'Prebid.js end to end, live on /platform (chromium)', conclusion: 'success' },
+          { name: 'An EU visitor (eu-central-1)', conclusion: 'success' }
+        ] }
+        : { jobs: [
+          { name: 'Deploy to sharedid.dev, verify, conformance', conclusion: 'success' },
+          { name: 'Prebid.js end to end, live (chromium)', conclusion: 'success' },
+          { name: 'Deploy /platform (platform modules), check', conclusion: 'success' },
+          { name: 'Prebid.js end to end, live on /platform (chromium)', conclusion: 'failure' }
+        ] };
+    return route.fulfill({ json: body, headers: { 'access-control-allow-origin': '*' } });
+  });
+  await page.goto('/demo/');
+  await expect(page.locator(CLOUDFLARE_TILE)).toHaveAttribute('data-status', 'pass');
+  await expect(page.locator(CLOUDFLARE_PLATFORM_TILE)).toHaveAttribute('data-status', 'fail');
+  await expect(page.locator(AWS_TILE)).toHaveAttribute('data-status', 'fail');
+  await expect(page.locator(AWS_PLATFORM_TILE)).toHaveAttribute('data-status', 'pass');
+});
+
 test('the demo\'s AWS tile turns red when its EU visitor fails', async ({ page }) => {
   test.skip(LIVE, 'the demo\'s tiles are checked once, locally');
   await page.route('https://api.github.com/**', route => {
@@ -775,7 +939,7 @@ test('the demo\'s AWS tile turns red when its EU visitor fails', async ({ page }
     return route.fulfill({ json: body, headers: { 'access-control-allow-origin': '*' } });
   });
   await page.goto('/demo/');
-  await expect(page.locator('.tile[data-workflow="e2e-aws.yml"]')).toHaveAttribute('data-status', 'fail');
+  await expect(page.locator(AWS_TILE)).toHaveAttribute('data-status', 'fail');
   // The Lambda@Edge jobs aren't this tile's: with only them failing, it would pass.
 });
 
@@ -790,7 +954,7 @@ test('a demo tile says when it last checked, and "Check again" skips the cache',
     return route.fulfill({ json: body, headers: { 'access-control-allow-origin': '*' } });
   });
   await page.goto('/demo/');
-  const aws = page.locator('.tile[data-workflow="e2e-aws.yml"]');
+  const aws = page.locator(AWS_TILE);
   await expect(aws).toHaveAttribute('data-status', 'fail');
   await expect(aws.locator('.checked')).toContainText('Checked just now');
   // A reload within ten minutes reads the cache: still red, though GitHub now says the run passed.

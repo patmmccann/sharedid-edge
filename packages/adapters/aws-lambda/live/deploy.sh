@@ -11,14 +11,15 @@
 #
 #   <prefix>-deploy-<account>   S3 bucket for the packaged function code (aws cloudformation package)
 #   <prefix>                    template.yaml: the e2e settings (as the Cloudflare e2e environment), /_sid
-#   <prefix>-platform           template.yaml: ip, geo, ua and bot, for scripts/check-cloudfront.ts, /_sid-platform
+#   <prefix>-platform           template.yaml: ip, geo, ua and bot (for scripts/check-cloudfront.ts) and the e2e settings,
+#                               /platform/_sid, for the live demo's copy of the test page at /platform/
 #   <prefix>-site               live/site.yaml: the test site's bucket and distribution, with both behaviours
 #   <prefix>-conformance        template.yaml with CreateDistribution: the default configuration, its own distribution
 #
-# then uploads e2e/site/public (with the Prebid.js bundle) and invalidates the site's cache. The function stacks
-# need the site's distribution ID (who may invoke them) and domain (the cookie domain), which exist only once the site
-# stack does, so a first deployment deploys them twice. It prints the hostnames as GitHub step outputs when
-# GITHUB_OUTPUT is set.
+# then uploads e2e/site/public (with the Prebid.js bundle), at / and at /platform/, and invalidates the site's cache.
+# The function stacks need the site's distribution ID (who may invoke them) and domain (the cookie domain), which exist
+# only once the site stack does, so a first deployment deploys them twice. It prints the hostnames as GitHub step
+# outputs when GITHUB_OUTPUT is set.
 set -euo pipefail
 
 # Git Bash on Windows: don't turn arguments like /* or /_sid into Windows paths for aws.exe.
@@ -27,6 +28,9 @@ export AWS_REGION="${AWS_REGION:-us-east-1}"
 export AWS_DEFAULT_REGION="$AWS_REGION"
 aws="${AWS_CLI:-aws}"
 prefix="${SID_LIVE_PREFIX:-sharedid-e2e}"
+# The platform function's base path, beside the live demo's copy of the test page at /platform/. Passed to the site
+# stack too: on an update, CloudFormation keeps a parameter's existing value unless it's given.
+platform_base_path=/platform/_sid
 
 package_dir="$(cd "$(dirname "$0")/.." && pwd)"
 repo_root="$(cd "$package_dir/../../.." && pwd)"
@@ -85,16 +89,29 @@ deploy_functions() {
     public_origin="https://$domain"
     uid1_domain="\"domain\":\"$domain\","
   fi
+  local module_config="{\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,$uid1_domain\"httpOnly\":false,\"restore\":true},{\"name\":\"_ga\",\"maxAgeDays\":400,\"restore\":true}]}}"
   # As the Cloudflare e2e environment (packages/adapters/cloudflare/wrangler.jsonc, env.e2e): no pixel caching,
   # reflect with uid1 and _ga, and clickid; the cookie domain is the distribution's own (see README.md, Live tests).
   deploy "$prefix" "$out/packaged.yaml" \
     "DistributionId=$distribution" "SidCookieDomain=$cookie_domain" "SidPublicOrigin=$public_origin" \
     SidSyncCacheSeconds=0 SidModules=reflect,clickid \
-    "SidModuleConfig={\"reflect\":{\"cookies\":[{\"name\":\"uid1\",\"maxAgeDays\":365,$uid1_domain\"httpOnly\":false,\"restore\":true},{\"name\":\"_ga\",\"maxAgeDays\":400,\"restore\":true}]}}"
-  # The modules that read what CloudFront adds (scripts/check-cloudfront.ts), with an allowed origin for CORS.
+    "SidModuleConfig=$module_config"
+  # The modules that read what CloudFront adds (scripts/check-cloudfront.ts), with an allowed origin for CORS, on
+  # /platform/_sid, beside the live demo's copy of the test page at /platform/: so the e2e settings too (no pixel
+  # caching, reflect and clickid), for the browser tests run there with E2E_PATH=/platform; and SID_SKIP_BOTS=declared,
+  # so a client that names itself as a bot gets none from /_sid/v1 (E2E_MODULES=ua,bot). Not bot's missingHeaders:
+  # check-cloudfront sends a Chrome User-Agent without Sec-Fetch-* headers, which that heuristic calls a likely bot.
+  # With the ENCRYPTED_IP_TEST_KEY secret, the workflow builds the opt-in encrypted-ip module into the bundle and sets
+  # ENCRYPTED_IP_CONFIG, the test key's recipients (scripts/encrypted-ip-test-key.mjs): this function lists it.
+  local platform_modules=ip,geo,ua,bot,reflect,clickid platform_config="$module_config"
+  if [ -n "${ENCRYPTED_IP_CONFIG:-}" ]; then
+    platform_modules="$platform_modules,encrypted-ip"
+    platform_config="${module_config%\}},\"encrypted-ip\":$ENCRYPTED_IP_CONFIG}"
+  fi
   deploy "$prefix-platform" "$out/packaged.yaml" \
-    "DistributionId=$distribution" "SidCookieDomain=$cookie_domain" "SidPublicOrigin=$public_origin" SidBasePath=/_sid-platform \
-    SidModules=ip,geo,ua,bot SidAllowedOrigins=https://allowed.example
+    "DistributionId=$distribution" "SidCookieDomain=$cookie_domain" "SidPublicOrigin=$public_origin" "SidBasePath=$platform_base_path" \
+    SidSyncCacheSeconds=0 "SidModules=$platform_modules" SidAllowedOrigins=https://allowed.example SidSkipBots=declared \
+    "SidModuleConfig=$platform_config" SidModuleTimeoutMs=200
 }
 
 distribution="$(output "$prefix-site" DistributionId)"
@@ -104,6 +121,7 @@ deploy_functions "$distribution" "$domain"
 deploy "$prefix-site" live/site.yaml \
   "SidOriginDomainName=$(output "$prefix" OriginDomainName)" \
   "SidOriginAccessControlId=$(output "$prefix" OriginAccessControlId)" \
+  "PlatformBasePath=$platform_base_path" \
   "PlatformOriginDomainName=$(output "$prefix-platform" OriginDomainName)" \
   "PlatformOriginAccessControlId=$(output "$prefix-platform" OriginAccessControlId)"
 
@@ -123,7 +141,13 @@ deploy "$prefix-conformance" "$out/packaged.yaml" \
 (cd "$repo_root" && npm run bundle-prebid --prefix e2e >/dev/null)
 bucket="$(output "$prefix-site" BucketName)"
 # s3 sync needs a path aws.exe can read: relative to the repository root.
-(cd "$repo_root" && "$aws" s3 sync e2e/site/public "s3://$bucket" --delete --no-progress)
+(cd "$repo_root" && "$aws" s3 sync e2e/site/public "s3://$bucket" --delete --no-progress --exclude 'platform/*')
+# The live demo's platform copy at /platform/, its endpoint the platform stack's /platform/_sid. The page's scripts are
+# relative to it, so the same files work there. CloudFront's DefaultRootObject applies to / only, so the page is also
+# the object platform/ itself, which CloudFront fetches for /platform/.
+(cd "$repo_root" && "$aws" s3 sync e2e/site/public "s3://$bucket/platform" --delete --no-progress)
+(cd "$repo_root" && "$aws" s3api put-object --bucket "$bucket" --key platform/ --body e2e/site/public/index.html \
+  --content-type 'text/html; charset=utf-8' >/dev/null)
 invalidation="$("$aws" cloudfront create-invalidation --distribution-id "$distribution" --paths '/*' --query Invalidation.Id --output text)"
 echo "Waiting for invalidation $invalidation"
 "$aws" cloudfront wait invalidation-completed --distribution-id "$distribution" --id "$invalidation"

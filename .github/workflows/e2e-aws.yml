@@ -65,7 +65,19 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - run: npm ci
       - run: npm run build
-      - run: npm run bundle -w @sharedid-edge/aws-lambda
+      - name: The encrypted-ip test key (the ENCRYPTED_IP_TEST_KEY secret), if set
+        env:
+          ENCRYPTED_IP_TEST_KEY: ${{ secrets.ENCRYPTED_IP_TEST_KEY }}
+        run: |
+          if [ -z "$ENCRYPTED_IP_TEST_KEY" ]; then
+            echo "::notice::encrypted-ip isn't built in: set the ENCRYPTED_IP_TEST_KEY repository secret to demonstrate it (docs/verification.md, the encrypted-ip row)."
+            exit 0
+          fi
+          # The public key and its recipient only (scripts/encrypted-ip-test-key.mjs); the private key stays in the secret.
+          config="$(node scripts/encrypted-ip-test-key.mjs)"
+          echo "ENCRYPTED_IP_CONFIG=$config" >> "$GITHUB_ENV"
+      - name: Bundle the function, with encrypted-ip when the test key is set
+        run: npm run bundle -w @sharedid-edge/aws-lambda ${ENCRYPTED_IP_CONFIG:+-- --module @sharedid-edge/module-encrypted-ip#encryptedIpModule}
       - name: Install e2e dependencies
         working-directory: e2e
         run: npm ci
@@ -77,7 +89,7 @@ jobs:
       - name: verify-deployment
         run: npm run verify-deployment -- --site "${{ steps.deploy.outputs.site }}"
       - name: What CloudFront passes to the function
-        run: npx tsx scripts/check-cloudfront.ts --endpoint "${{ steps.deploy.outputs.site }}/_sid-platform" --function-url "${{ steps.deploy.outputs.platform-function-url }}"
+        run: npx tsx scripts/check-cloudfront.ts --endpoint "${{ steps.deploy.outputs.site }}/platform/_sid" --function-url "${{ steps.deploy.outputs.platform-function-url }}"
       - name: Conformance suite (default-configuration cases) against the live function
         run: node conformance/dist/run.js --base-url "${{ steps.deploy.outputs.conformance }}/_sid"
 
@@ -125,8 +137,58 @@ jobs:
           path: e2e/test-results
           retention-days: 7
 
+  # The live demo's platform copy of the test page, /platform/ on the same distribution, with its endpoint the platform
+  # stack's /platform/_sid: ip, geo, ua and bot beside the e2e settings (live/deploy.sh). The main site's /_sid keeps
+  # its own settings.
+  platform-browsers:
+    name: Prebid.js end to end, live on /platform (${{ matrix.browser }})
+    needs: deploy
+    runs-on: ubuntu-latest
+    outputs:
+      infrastructure: ${{ steps.browser.outputs.infrastructure }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: npm ci
+      - name: Install the browser and its system dependencies
+        id: browser
+        uses: ./.github/actions/install-browser
+        with:
+          browser: ${{ matrix.browser }}
+      - name: Unmodified Prebid.js against the test site's /platform/ (${{ matrix.browser }})
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: ${{ needs.deploy.outputs.site }}
+          E2E_PATH: /platform
+          E2E_COOKIE_DOMAIN: ${{ needs.deploy.outputs.cookie-domain }}
+          # ua and bot, with SID_SKIP_BOTS=declared (live/deploy.sh): the device and bot verdict tests.
+          E2E_MODULES: ua,bot
+          # The encrypted-ip tests decrypt with it; without it (no secret), they skip.
+          E2E_EIP_PRIVATE_KEY: ${{ secrets.ENCRYPTED_IP_TEST_KEY }}
+        run: npx playwright test --project=${{ matrix.browser }}
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-aws-platform-${{ matrix.browser }}
+          path: e2e/test-results
+          retention-days: 7
+
   # GDPR for a real visitor in the EU: the function sharedid-eu-visitor in eu-central-1, which this job deploys first,
-  # requests the test site's /_sid and /_sid-platform from a German address (.github/actions/eu-visitor). Required: it
+  # requests the test site's /_sid and /platform/_sid from a German address (.github/actions/eu-visitor). Required: it
   # runs whenever deploy did, with the same role.
   eu-visitor:
     name: An EU visitor (eu-central-1)
@@ -145,7 +207,7 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_E2E_ROLE_ARN }}
           targets: ${{ needs.deploy.outputs.site }}/_sid
-          geo-targets: ${{ needs.deploy.outputs.site }}/_sid-platform
+          geo-targets: ${{ needs.deploy.outputs.site }}/platform/_sid
           deploy: 'true'
 
   # Lambda@Edge (README.md, Lambda@Edge): the adapter's functions on the origin-request and viewer-request events of a
@@ -279,7 +341,7 @@ jobs:
   # jobs aren't required: skipped until AWS_LAMBDA_EDGE_ENABLED is set, and a failure once they run opens the issue.
   report:
     name: Report the run
-    needs: [deploy, browsers, eu-visitor, lambda-edge, lambda-edge-browsers, lambda-edge-eu-visitor]
+    needs: [deploy, browsers, platform-browsers, eu-visitor, lambda-edge, lambda-edge-browsers, lambda-edge-eu-visitor]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -298,6 +360,6 @@ jobs:
       - uses: ./.github/actions/live-issue
         with:
           needs: ${{ toJSON(needs) }}
-          required: deploy browsers eu-visitor
+          required: deploy browsers platform-browsers eu-visitor
           title: Live AWS tests are failing
           summary: The live tests on AWS failed

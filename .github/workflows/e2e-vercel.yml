@@ -76,7 +76,19 @@ jobs:
             packages/adapters/vercel/example/package-lock.json
       - run: npm ci
       - run: npm run build
-      - run: npm run bundle -w @sharedid-edge/vercel
+      - name: The encrypted-ip test key (the ENCRYPTED_IP_TEST_KEY secret), if set
+        env:
+          ENCRYPTED_IP_TEST_KEY: ${{ secrets.ENCRYPTED_IP_TEST_KEY }}
+        run: |
+          if [ -z "$ENCRYPTED_IP_TEST_KEY" ]; then
+            echo "::notice::encrypted-ip isn't built in: set the ENCRYPTED_IP_TEST_KEY repository secret to demonstrate it (docs/verification.md, the encrypted-ip row)."
+            exit 0
+          fi
+          # The public key and its recipient only (scripts/encrypted-ip-test-key.mjs); the private key stays in the secret.
+          config="$(node scripts/encrypted-ip-test-key.mjs)"
+          echo "ENCRYPTED_IP_CONFIG=$config" >> "$GITHUB_ENV"
+      - name: Bundle the adapter, with encrypted-ip when the test key is set
+        run: npm run bundle -w @sharedid-edge/vercel ${ENCRYPTED_IP_CONFIG:+-- --module @sharedid-edge/module-encrypted-ip#encryptedIpModule}
       - name: Install e2e dependencies, and build the test page's Prebid.js bundle
         working-directory: e2e
         run: |
@@ -143,6 +155,10 @@ jobs:
           E2E_BASE_URL: ${{ needs.deploy.outputs.site }}
           # The production hostname itself: vercel.app is a public suffix (see the Live tests section).
           E2E_COOKIE_DOMAIN: ${{ needs.deploy.outputs.cookie-domain }}
+          # ua and bot, with SID_SKIP_BOTS=declared (live/deploy.sh): the device and bot verdict tests.
+          E2E_MODULES: ua,bot
+          # The encrypted-ip tests decrypt with it; without it (no secret), they skip.
+          E2E_EIP_PRIVATE_KEY: ${{ secrets.ENCRYPTED_IP_TEST_KEY }}
         run: npx playwright test --project=${{ matrix.browser }}
       - name: Upload the Playwright report
         if: failure()
