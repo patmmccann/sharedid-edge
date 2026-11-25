@@ -264,7 +264,7 @@ describe('run', () => {
     const request = new Request('https://www.example.com/_sid/v1', { headers: { Cookie: cookie } });
     const url = new URL(request.url);
     return {
-      request, url, platform: {}, sharedId: undefined, consent: readConsent(url, request.headers, new Map(), {}),
+      request, url, route: 'v1', platform: {}, sharedId: undefined, consent: readConsent(url, request.headers, new Map(), {}),
       cookies: new Map(), optedOut: false, cookieDomain, storage, config, secrets: {}
     };
   };

@@ -439,6 +439,51 @@ describe('the ua module in the handler', () => {
   });
 });
 
+describe('the ua module on /sync', () => {
+  const sync = async (env: Record<string, string>, headers: Record<string, string>, module = uaModule, query = '?id=pubcid%253Ac29cb2ae-769d-42f6-891a-f53cadee823d'): Promise<Response> =>
+    createHandler({ config: resolveConfig({ SID_COOKIE_DOMAIN: 'example.com', ...env }), modules: [module] })(new Request(`https://www.example.com/_sid/sync${query}`, { headers }), {});
+  const setsPubcid = (response: Response): boolean => response.headers.getSetCookie().some(cookie => cookie.startsWith('_pubcid=c29cb2ae'));
+
+  it('runs there when listed, and reports a self-named bot', async () => {
+    const response = await sync({ SID_MODULES: 'ua' }, { 'User-Agent': 'curl/8.5.0' });
+    expect(response.headers.get('content-type')).toBe('image/gif');
+    expect(response.headers.get('x-sharedid-modules')).toBe('ua=ok');
+    // Without SID_SKIP_BOTS the report changes nothing: the ID is set as before.
+    expect(setsPubcid(response)).toBe(true);
+    expect(response.headers.get('x-sharedid-status')).toBeNull();
+  });
+  it('with SID_SKIP_BOTS=declared, a self-named bot gets no ID from the pixel call, and an existing one isn\'t deleted', async () => {
+    for (const ua of ['curl/8.5.0', UA.googlebot, UA.bingbot]) {
+      const response = await sync({ SID_MODULES: 'ua', SID_SKIP_BOTS: 'declared' }, { 'User-Agent': ua, Cookie: '_pubcid=c29cb2ae-769d-42f6-891a-f53cadee823d' });
+      expect(response.headers.get('x-sharedid-status'), ua).toBe('skipped: bot');
+      expect(response.headers.getSetCookie(), ua).toEqual([]);
+    }
+  });
+  it('leaves a browser alone: empty, and the ID set as usual, under SID_SKIP_BOTS too', async () => {
+    for (const headers of [{ 'User-Agent': UA.chromeAndroidReduced, ...CHROME_ANDROID_HIGH }, { 'User-Agent': UA.safariIphone }, {}, { 'User-Agent': 'Amazon CloudFront' }]) {
+      const response = await sync({ SID_MODULES: 'ua', SID_SKIP_BOTS: 'declared' }, headers);
+      expect(response.headers.get('x-sharedid-modules')).toBe('ua=empty');
+      expect(setsPubcid(response)).toBe(true);
+      expect(response.headers.get('x-sharedid-status')).toBeNull();
+    }
+  });
+  it('builds no device data there: it reads only the User-Agent, with the parser the setting chooses', async () => {
+    const seen: string[] = [];
+    const module = createUaModule({ parser: userAgent => { seen.push(userAgent); return { bot: false, type: 'tv', os: { name: 'Roku' } }; } });
+    const response = await sync({ SID_MODULES: 'ua' }, { 'User-Agent': 'Roku/DVP-9.10', ...CHROME_ANDROID_HIGH }, module);
+    expect(seen).toEqual(['Roku/DVP-9.10']);
+    // A device the parser recognised, but no bot: nothing to report on /sync.
+    expect(response.headers.get('x-sharedid-modules')).toBe('ua=empty');
+    const bowser = await sync({ SID_MODULES: 'ua', SID_MODULE_CONFIG: '{"ua":{"parser":"bowser"}}', SID_SKIP_BOTS: 'declared' }, { 'User-Agent': UA.googlebot }, uaModuleWithBowser);
+    expect(bowser.headers.get('x-sharedid-status')).toBe('skipped: bot');
+  });
+  it('doesn\'t run there with SID_SYNC_MODULES=none', async () => {
+    const response = await sync({ SID_MODULES: 'ua', SID_SYNC_MODULES: 'none', SID_SKIP_BOTS: 'declared' }, { 'User-Agent': 'curl/8.5.0' });
+    expect(response.headers.get('x-sharedid-modules')).toBeNull();
+    expect(setsPubcid(response)).toBe(true);
+  });
+});
+
 describe('the Bowser option (parser "bowser")', () => {
   const env = { SID_MODULES: 'ua', SID_MODULE_CONFIG: '{"ua":{"parser":"bowser","ua":true}}' };
   const device = async (headers: Record<string, string>, path = '/_sid/v1'): Promise<unknown> => {

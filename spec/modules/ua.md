@@ -2,7 +2,7 @@
 
 Part of the [SharedID Edge specification](../SPEC.md). The general rules for modules, including consent, time limits and [modules on `/sync`](../SPEC.md#modules-on-sync), are there.
 
-Name `ua`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`, and on `/v1` only. It maps the request's User-Agent Client Hints and `User-Agent` header to OpenRTB 2.6 `ortb2.device` fields, and flags self-identified bots in the shared traffic signal.
+Name `ua`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`, on `/v1` and `/sync` (`routes` `v1`, `sync`). On `/v1` it maps the request's User-Agent Client Hints and `User-Agent` header to OpenRTB 2.6 `ortb2.device` fields, and flags self-identified bots in the shared traffic signal. On `/sync` it does only the bot check (see [On `/sync`](#on-sync)).
 
 - **Client Hints** are read as RFC 8941 structured fields:
   - `Sec-CH-UA` and `Sec-CH-UA-Full-Version-List`: a list of strings, each with a string `v` parameter. Members without one are left out. **GREASE** brands (`Not`, `A` and `Brand` separated and surrounded by punctuation, such as `Not A(Brand`, `Not_A Brand` or `(Not(A:Brand`) MUST be left out. A malformed list is ignored as a whole. At most 8 brands are kept, of at most 64 characters each.
@@ -39,3 +39,12 @@ Name `ua`; no `purposes`, no `gvlid`. It runs only when listed in `SID_MODULES`,
 
   `stale` never changes the module's other output or its status: with no field to return, it's `empty` with `stale: true`. Without the option, the module uses the compiled-in list and never reports `stale`. The module never downloads a list or reads storage while answering a request.
 - When there's no field to return, it returns nothing (status `empty`). Nothing is stored or logged.
+
+## On `/sync`
+
+Prebid.js's `pixelUrl` call has no payload, but its traffic reports count for [Skipping bots](../SPEC.md#skipping-bots) (see [Modules on `/sync`](../SPEC.md#modules-on-sync)). There the module MUST only decide whether the `User-Agent` identifies the client as a crawler, bot or other automated client, with the same parser and crawler list as on `/v1` (the `parser` setting, the scheduled list and `stale` work the same), and:
+
+- when it does, report `{ "bot": true, "botKind": "declared" }` as its traffic report (status `ok`), so with `SID_SKIP_BOTS` set to `declared` or `likely` the pixel call sets no ID, as `/v1` doesn't;
+- otherwise, including without a `User-Agent` or with `Amazon CloudFront`, return nothing (status `empty`).
+
+It MUST NOT read Client Hints or build device data there: `/sync` returns an image, so it would be work for nothing. Without `SID_SKIP_BOTS`, its report changes nothing on `/sync`. With `SID_SYNC_MODULES` set, it runs on `/sync` only when listed there.

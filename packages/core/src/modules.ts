@@ -8,6 +8,12 @@ import type { EncryptedIp, EncryptedIpValue, Eid, ModuleReport, PlatformInfo } f
 export interface ModuleContext {
   readonly request: Request;
   readonly url: URL;
+  /**
+   * The route the module is running on: `v1`, or `sync` for a module whose `routes` include it. A module that
+   * returns data on `/v1` and only a traffic report on `/sync` (the `ua` module) reads it to skip the work `/sync`
+   * can't use.
+   */
+  readonly route: ModuleRoute;
   readonly platform: PlatformInfo;
   /** The SharedID for this request, when storage is allowed. */
   readonly sharedId: string | undefined;
@@ -315,7 +321,7 @@ export interface ModuleRunOutput {
 export async function runModules(
   registry: ModuleRegistry,
   config: SharedIdEdgeConfig,
-  base: Omit<ModuleContext, 'config' | 'secrets' | 'fetch'>,
+  base: Omit<ModuleContext, 'config' | 'secrets' | 'fetch' | 'route'>,
   now: () => number,
   route: ModuleRoute = 'v1',
   fetchFor?: (module: EdgeModule) => ModuleFetch | undefined
@@ -349,7 +355,7 @@ export async function runModules(
     try {
       const fetch = module.fetching === undefined ? undefined : fetchFor?.(module);
       const result = await withTimeout(
-        Promise.resolve(module.run({ ...base, config: config.moduleConfig[name] ?? {}, secrets: config.moduleSecrets[name] ?? {}, ...(fetch === undefined ? {} : { fetch }) })),
+        Promise.resolve(module.run({ ...base, route, config: config.moduleConfig[name] ?? {}, secrets: config.moduleSecrets[name] ?? {}, ...(fetch === undefined ? {} : { fetch }) })),
         config.moduleTimeoutMs
       );
       const ms = Math.round(now() - start);
