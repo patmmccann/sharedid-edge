@@ -129,6 +129,14 @@ async function onlySync(sid: SidLog): Promise<SidRequest | undefined> {
 /** Against a live deployment (E2E_BASE_URL), which doesn't build the opt-in gpp module. */
 const LIVE = process.env['E2E_BASE_URL'] !== undefined;
 
+/**
+ * Whether the deployment runs the id5 module: locally always; live, when E2E_MODULES (the opt-in modules the live
+ * deployment builds, comma-separated) lists it.
+ */
+const ID5 = !LIVE || (process.env['E2E_MODULES'] ?? '').split(',').map(name => name.trim()).includes('id5');
+/** Against ID5's real API, whose IDs vary, rather than the local stub's `ID5*e2e-stub`. */
+const REAL_ID5 = LIVE && ID5;
+
 test('unmodified Prebid.js sharedIdSystem with pixelUrl gets a long-lived server-set SharedID', async ({ page, context, sid }) => {
   // First visit: Prebid.js mints an id and sends it to pixelUrl before writing its own cookie.
   await visit(page);
@@ -502,7 +510,16 @@ test('the results panel shows the integration working, and the HttpOnly copy res
   await visit(page, '/?checks=1');
   await expect(page.locator('[data-check="worker"]')).toHaveAttribute('data-status', 'pass');
   await expect(page.locator('[data-check="worker"]')).toContainText('X-SharedID-Source: cookie');
-  await expect(page.locator('#sid-verdict')).toHaveAttribute('data-status', 'pass');
+  const id5Row = page.locator('[data-check="id5"]');
+  await expect(id5Row).not.toHaveAttribute('data-status', 'pending');
+  if (REAL_ID5 && await id5Row.getAttribute('data-status') === 'fail') {
+    // Against ID5 itself, its own opt-out (or an answer slower than the module's time limit on this page view) leaves
+    // the panel's ID5 row red, since the page can't tell why; the ID5 tests below check it strictly. Every other row
+    // must still pass.
+    await expect(page.locator('[data-check]:not([data-check="id5"])[data-status="fail"]')).toHaveCount(0);
+  } else {
+    await expect(page.locator('#sid-verdict')).toHaveAttribute('data-status', 'pass');
+  }
   await page.locator('#sid-recover').click();
   await expect(page.locator('[data-check="recovery"]')).toHaveAttribute('data-status', 'pass');
   expect((await cookie(context, '_pubcid'))?.value).toBe(id);
@@ -540,14 +557,7 @@ interface Id5Payload {
 }
 const ID5_COOKIE = 'sid_id5_173';
 
-/**
- * Whether the deployment runs the id5 module: locally always; live, when E2E_MODULES (the opt-in modules the live
- * deployment builds, comma-separated) lists it.
- */
-const ID5 = !LIVE || (process.env['E2E_MODULES'] ?? '').split(',').map(name => name.trim()).includes('id5');
 const NO_ID5 = 'this deployment doesn\'t build the id5 module (E2E_MODULES)';
-/** Against ID5's real API, whose IDs vary, rather than the local stub's `ID5*e2e-stub`. */
-const REAL_ID5 = LIVE && ID5;
 
 /** Loads the page with the results panel's worker checks, and returns the panel's /_sid/v1 answer. */
 async function visitWithWorker(page: Page, path: string): Promise<{ readonly payload: Id5Payload; readonly response: Response }> {
