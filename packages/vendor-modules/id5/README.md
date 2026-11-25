@@ -12,7 +12,7 @@
 
 The `id5` module for [SharedID Edge](../../../README.md): the [ID5 ID](https://id5.io), fetched server-to-server by your edge worker and returned as EIDs in the `/_sid/v1` payload. It helps when a visitor's browser doesn't load ID5's own script or reach ID5's domain: the ID comes back from your own domain.
 
-**It needs your own ID5 partner number and agreement with ID5.** The module calls ID5's API with your partner number, so you need an ID5 account, a signed agreement, and ID5 to have turned on server-side fetching for that partner (until then ID5 answers with an error, and the module returns nothing). An upstream operator or hosting company running one endpoint for many publishers uses its own partner number and declares itself as ID5's `provider`. Written from ID5's public documentation and Prebid.js's ID5 module, not by ID5: **confirm the request with ID5 for your partner account** (see [The request](#the-request)). It's been tested against a stub of ID5's API, never against ID5 itself.
+**It needs your own ID5 partner number and agreement with ID5.** The module calls ID5's API with your partner number, so you need an ID5 account, a signed agreement, and ID5 to have turned on server-side fetching for that partner (until then ID5 answers with an error, and the module returns nothing). An upstream operator or hosting company running one endpoint for many publishers uses its own partner number and declares itself as ID5's `provider`. Written from ID5's public documentation and Prebid.js's ID5 module, not by ID5: **confirm the request with ID5 for your partner account** (see [The request](#the-request)). It's tested against a stub of ID5's API, and live against ID5's real API with ID5's test partner number, 173 (see [How it's tested](#how-its-tested)).
 
 ## Contents
 
@@ -259,11 +259,12 @@ Other exports: `id5ModuleConfig()` (the settings parser), `parseId5Reply()`, `ex
 
 ## How it's tested
 
-Never against ID5 itself: there's no live partner number yet, and partner 173 (ID5's test partner) appears only in tests and examples.
+Against a stub of ID5 locally and in CI, and against ID5's real API with partner 173 (ID5's test partner) on two of the project's live deployments ([verification](../../../docs/verification.md#opt-in-and-vendor-modules)).
 
 - **Unit tests** (`test/id5.test.ts`) run the module through core's handler against a stub ID5 server (core's `forwardFetch`): ID5's answers and opt-out, the exact request body, the cache and its refresh with the signature, timeouts and back-off, every consent denial, IPv4, IPv6 and non-routable addresses, `browsers`.
 - **The conformance suite** (`conformance/cases/module-id5.json`) runs on every target that can send requests. On the Node.js server and its container image behind nginx (CI's `container` job, no account), ID5 is a stub running as its own process or container, so the server's request to "ID5" really goes over the network. A check script (`conformance/src/id5-checks.ts`) then makes requests in turn: the EID, the cache answering the next request without a second call to the stub, nothing sent on GPC, opt-out, missing vendor consent or a `us_privacy` opt-out, the SharedID sent as `puid` with consent, and ID5's opt-out.
-- **The browser tests** (`e2e/`, local) run unmodified Prebid.js against a test server with the module and an in-process stub: the EID in `/_sid/v1`, the `HttpOnly` cache sent back and reused, and no ID5 ID when consent is denied, with a GPP opt-out or with GPC. The e2e page's results panel has an "ID5 ID (server-to-server)" row.
+- **The browser tests** (`e2e/`) run unmodified Prebid.js against a test server with the module and an in-process stub: the EID in `/_sid/v1`, the `HttpOnly` cache sent back and reused, and no ID5 ID when consent is denied, with a GPP opt-out or with GPC. The e2e page's results panel has an "ID5 ID (server-to-server)" row.
+- **Live, against ID5's real API** (partner 173, on every run of the live workflows on `main`): a Cloudflare Worker built with the module on `e2e.sharedid.dev/id5/`, and the Node.js server's container image with the module on, as an upstream operator's endpoint on AWS Lambda behind a Cloudflare publisher, on `e2e.sharedid.dev/node-upstream-id5/`. The same browser tests run there (`E2E_MODULES=id5`): with consent, an ID from ID5 (or ID5's own opt-out), cached and reused; none with denied consent or GPC. They use `timeoutMs: 1000`: see the troubleshooting row on `empty` below. The live demo (https://e2e.sharedid.dev/demo/) links to both.
 
 Tests point the module at a stub by replacing what's behind core's `fetch`, never by changing `endpoint`, which only ever accepts ID5's hosts.
 
@@ -277,6 +278,7 @@ Tests point the module at a stub by replacing what's behind core's `fetch`, neve
 | `status` is `timeout` | `SID_MODULE_TIMEOUT_MS` is too short; set it above `timeoutMs`. |
 | `status` is `error` | Invalid settings: `partner` missing or not a whole number, an unknown key (a typo), an `endpoint` that isn't https on ID5's hosts, or a bad `domain`. |
 | `status` is `empty` on the first visit, `ok` later | ID5 took longer than `timeoutMs`. The next request tries again; raise `timeoutMs` (and `SID_MODULE_TIMEOUT_MS`) if it keeps happening. |
+| Always `empty`, `forwards: true`, and `ms` close to `timeoutMs` | Every request times out. A request on a new connection to ID5 includes the TLS handshake: from a test machine it took about 350 ms, about 100 ms once the connection was open. Where the first request takes longer than `timeoutMs`, it's abandoned before the connection is open, so the next one starts again. Raise `timeoutMs` (the project's live tests use `1000`, with `SID_MODULE_TIMEOUT_MS` at `1250`). |
 | Always `empty`, `forwards: true` | ID5 answers with an error: server-side fetching isn't turned on for your partner number yet, or the request fields need confirming with ID5 (see [The request](#the-request)). The module asks again every hour. Or the visitor's address isn't routable (a private network, a test machine), or there's no user agent. |
 | `forwards: false` | Opt-out, GPC, COPPA or missing consent for this visitor. |
 | Nothing for visitors on Chrome, Firefox, Android or Windows | `"browsers": "webkit27"` limits the module to Apple WebKit 27 or later; set it to `all` (or leave it out) to ask for everyone. |

@@ -267,7 +267,7 @@ jobs:
       # live/edge-site.yaml, live/eu-visitor.yaml; e2e-aws.yml deploys them, never from a pull request) and the
       # upstream-operator live setup's CloudFront publisher (packages/adapters/cloudflare/live; deployed by hand).
       - name: Lint packages/adapters/aws-lambda/template.yaml, edge-template.yaml, live/site.yaml, live/edge-site.yaml, live/eu-visitor.yaml, the CloudFront publisher and the Node.js upstream live test
-        run: pipx run --spec 'cfn-lint>=1,<2' cfn-lint packages/adapters/aws-lambda/template.yaml packages/adapters/aws-lambda/edge-template.yaml packages/adapters/aws-lambda/live/site.yaml packages/adapters/aws-lambda/live/edge-site.yaml packages/adapters/aws-lambda/live/eu-visitor.yaml packages/adapters/cloudflare/live/publisher-cloudfront.yaml packages/adapters/node/live/upstream.yaml
+        run: pipx run --spec 'cfn-lint>=1,<2' cfn-lint packages/adapters/aws-lambda/template.yaml packages/adapters/aws-lambda/edge-template.yaml packages/adapters/aws-lambda/live/site.yaml packages/adapters/aws-lambda/live/edge-site.yaml packages/adapters/aws-lambda/live/eu-visitor.yaml packages/adapters/cloudflare/live/publisher-cloudfront.yaml packages/adapters/node/live/upstream.yaml packages/adapters/node/live/upstream-id5.yaml
 
   azure-template:
     name: Bicep templates (az bicep build, no Azure account)

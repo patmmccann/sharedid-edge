@@ -7,6 +7,8 @@ name: Live tests (Node.js container as an upstream endpoint)
 #
 #   - e2e.sharedid.dev/node-upstream/       the e2e test page, and /_sid/* forwarded to the endpoint (forward.js)
 #   - e2e.sharedid.dev/node-upstream-conformance/_sid/*   forwarded to the same image on the default settings
+#   - e2e.sharedid.dev/node-upstream-id5/      the same, to a third function from the same image with the id5 vendor
+#                                              module on (ID5's real API, partner 173, ID5's test partner): the id5 jobs
 #
 # The hostname is shared with the Cloudflare live tests, which own its root and /_sid/*; this setup has its own paths.
 #
@@ -36,6 +38,7 @@ env:
   NODE_UPSTREAM_COOKIE_DOMAIN: sharedid.dev
   NODE_UPSTREAM_PREFIX: /node-upstream
   NODE_UPSTREAM_CONFORMANCE_PREFIX: /node-upstream-conformance
+  NODE_UPSTREAM_ID5_PREFIX: /node-upstream-id5
 
 jobs:
   config:
@@ -169,6 +172,115 @@ jobs:
           path: e2e/test-results
           retention-days: 7
 
+  # The live demo's id5 deployment: the image the deploy job pushed, as a function of its own (the stack
+  # sharedid-node-upstream-id5, live/upstream-id5.yaml) with the id5 vendor module on, behind its own publisher Worker
+  # on e2e.sharedid.dev/node-upstream-id5/ (live/upstream.sh id5). The deploy job's functions and Workers are untouched;
+  # it runs whether or not the deploy job's checks passed, once the image is there.
+  id5:
+    name: Deploy /node-upstream-id5 (the id5 module, against ID5), check
+    needs: [config, deploy]
+    if: ${{ !cancelled() && needs.config.outputs.ready == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            e2e/package-lock.json
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_E2E_ROLE_ARN }}
+          role-session-name: sharedid-edge-node-upstream-id5-${{ github.run_id }}
+          aws-region: us-east-1
+      - run: npm ci
+      - run: npm run build
+      - name: Install e2e dependencies, and the page's Prebid.js bundle
+        run: |
+          npm ci --prefix e2e
+          npm run bundle-prebid --prefix e2e
+      - name: Write the upstream secret
+        env:
+          SECRET: ${{ secrets.UPSTREAM_SECRET_NODE }}
+        run: |
+          NODE_UPSTREAM_SECRETS_DIR="$RUNNER_TEMP/sharedid-live"
+          echo "NODE_UPSTREAM_SECRETS_DIR=$NODE_UPSTREAM_SECRETS_DIR" >> "$GITHUB_ENV"
+          umask 077
+          mkdir -p "$NODE_UPSTREAM_SECRETS_DIR"
+          printf '%s\n' "$SECRET" > "$NODE_UPSTREAM_SECRETS_DIR/upstream-secret-node"
+      - name: Deploy (live/upstream.sh id5)
+        id: deployed
+        run: bash packages/adapters/node/live/upstream.sh id5
+      - name: Remove the upstream secret
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/sharedid-live"
+      - name: Through the publisher, and the endpoint called directly (scripts/check-live-site.ts)
+        if: ${{ !cancelled() && steps.deployed.outcome == 'success' }}
+        env:
+          ENDPOINT: ${{ steps.deployed.outputs.id5-endpoint }}
+        run: >-
+          npx tsx scripts/check-live-site.ts --site "https://$NODE_UPSTREAM_SITE" --base-path "$NODE_UPSTREAM_ID5_PREFIX/_sid"
+          --cookie-domain "$NODE_UPSTREAM_COOKIE_DOMAIN" --endpoint "$ENDPOINT" --wait 150
+      - name: verify-deployment
+        if: ${{ !cancelled() && steps.deployed.outcome == 'success' }}
+        run: npm run verify-deployment -- --site "https://$NODE_UPSTREAM_SITE" --endpoint "https://$NODE_UPSTREAM_SITE$NODE_UPSTREAM_ID5_PREFIX/_sid"
+
+  # The browser tests on /node-upstream-id5/, with the ID5 tests on (E2E_MODULES=id5), as on Cloudflare's /id5/.
+  id5-browsers:
+    name: Prebid.js end to end through the publisher, on /node-upstream-id5 (${{ matrix.browser }})
+    needs: id5
+    runs-on: ubuntu-latest
+    outputs:
+      infrastructure: ${{ steps.browser.outputs.infrastructure }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: npm ci
+      - name: Install the browser and its system dependencies
+        id: browser
+        uses: ./.github/actions/install-browser
+        with:
+          browser: ${{ matrix.browser }}
+      - name: Unmodified Prebid.js against https://${{ env.NODE_UPSTREAM_SITE }}${{ env.NODE_UPSTREAM_ID5_PREFIX }}/ (${{ matrix.browser }})
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: https://${{ env.NODE_UPSTREAM_SITE }}
+          E2E_PATH: ${{ env.NODE_UPSTREAM_ID5_PREFIX }}
+          E2E_COOKIE_DOMAIN: ${{ env.NODE_UPSTREAM_COOKIE_DOMAIN }}
+          E2E_MODULES: id5
+        run: npx playwright test --project=${{ matrix.browser }}
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-node-upstream-id5-${{ matrix.browser }}
+          path: e2e/test-results
+          retention-days: 7
+
   # GDPR for a real visitor in the EU, through the publisher: the function sharedid-eu-visitor in eu-central-1 (deployed
   # by the AWS live tests) requests the endpoint from a German address.
   eu-visitor:
@@ -191,7 +303,7 @@ jobs:
   # On main: a failing run opens an issue, or comments on the open one; a passing run closes it (.github/actions/live-issue).
   report:
     name: Report the run
-    needs: [config, deploy, browsers, eu-visitor]
+    needs: [config, deploy, browsers, id5, id5-browsers, eu-visitor]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.config.outputs.ready == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -210,6 +322,6 @@ jobs:
       - uses: ./.github/actions/live-issue
         with:
           needs: ${{ toJSON(needs) }}
-          required: config deploy browsers eu-visitor
+          required: config deploy browsers id5 id5-browsers eu-visitor
           title: Live Node.js upstream tests are failing
           summary: The Node.js container upstream live tests failed

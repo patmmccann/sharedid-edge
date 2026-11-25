@@ -225,6 +225,97 @@ jobs:
           path: e2e/test-results
           retention-days: 7
 
+  # The live demo's id5 deployment: a second SharedID Edge Worker, built with the id5 vendor module, on
+  # e2e.sharedid.dev/id5/_sid/*, with the e2e settings plus ip, geo and id5 (partner 173, ID5's test partner, against
+  # ID5's real API; packages/adapters/cloudflare/live/configs.mjs, id5), and the test page at e2e.sharedid.dev/id5/.
+  # Independent of the deploy job: its own Workers, routes and build; the main e2e environment keeps its own.
+  id5:
+    name: Deploy /id5 (the id5 module, against ID5), check
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ID5_SITE: e2e.sharedid.dev
+      ID5_ZONE: sharedid.dev
+      ID5_PREFIX: /id5
+      ID5_COOKIE_DOMAIN: sharedid.dev
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            e2e/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Install e2e dependencies, and the page's Prebid.js bundle
+        run: |
+          npm ci --prefix e2e
+          npm run bundle-prebid --prefix e2e
+      - name: Deploy the Worker with id5 and its test page (live/configs.mjs id5)
+        working-directory: packages/adapters/cloudflare
+        run: |
+          node live/configs.mjs id5
+          npx wrangler deploy --config live/.out/id5.json
+          npx wrangler deploy --config live/.out/id5-site.json
+      # The first request waits up to 150 seconds for the new versions to answer.
+      - name: The real address and country arrive, forged headers change nothing (scripts/check-live-site.ts)
+        run: npx tsx scripts/check-live-site.ts --site "https://$ID5_SITE" --base-path "$ID5_PREFIX/_sid" --cookie-domain "$ID5_COOKIE_DOMAIN" --wait 150
+      - name: verify-deployment
+        run: npm run verify-deployment -- --site "https://$ID5_SITE" --endpoint "https://$ID5_SITE$ID5_PREFIX/_sid"
+
+  # The browser tests on /id5/, with the ID5 tests on (E2E_MODULES=id5): with consent the ID5 ID from ID5's real API
+  # (or ID5's own documented decline), and nothing sent with denied consent or Global Privacy Control.
+  id5-browsers:
+    name: Prebid.js end to end, live on /id5 (${{ matrix.browser }})
+    needs: id5
+    runs-on: ubuntu-latest
+    outputs:
+      infrastructure: ${{ steps.browser.outputs.infrastructure }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: npm ci
+      - name: Install the browser and its system dependencies
+        id: browser
+        uses: ./.github/actions/install-browser
+        with:
+          browser: ${{ matrix.browser }}
+      - name: Unmodified Prebid.js against https://e2e.sharedid.dev/id5/ (${{ matrix.browser }})
+        working-directory: e2e
+        env:
+          E2E_BASE_URL: https://e2e.sharedid.dev
+          E2E_PATH: /id5
+          E2E_COOKIE_DOMAIN: sharedid.dev
+          E2E_MODULES: id5
+        run: npx playwright test --project=${{ matrix.browser }}
+      - name: Upload the Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-live-id5-${{ matrix.browser }}
+          path: e2e/test-results
+          retention-days: 7
+
   # GDPR for a real visitor in the EU: the function sharedid-eu-visitor in eu-central-1 (deployed by the AWS live tests)
   # requests e2e.sharedid.dev/_sid from a German address (.github/actions/eu-visitor). It needs the AWS live tests'
   # role, AWS_E2E_ROLE_ARN; without it, it's skipped.
@@ -252,7 +343,7 @@ jobs:
   # The EU visitor (eu-visitor) is skipped without the AWS role; the other jobs must pass.
   report:
     name: Report the run
-    needs: [deploy, browsers, platform, platform-browsers, eu-visitor]
+    needs: [deploy, browsers, platform, platform-browsers, id5, id5-browsers, eu-visitor]
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -271,6 +362,6 @@ jobs:
       - uses: ./.github/actions/live-issue
         with:
           needs: ${{ toJSON(needs) }}
-          required: deploy browsers platform platform-browsers
+          required: deploy browsers platform platform-browsers id5 id5-browsers
           title: Live Cloudflare tests are failing
           summary: The live tests on sharedid.dev failed
