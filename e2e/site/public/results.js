@@ -11,7 +11,7 @@
 //     and JSON (the id, the modules' output) a page can read. It runs on its own for a person (navigator.webdriver is
 //     false), with ?checks=1, or from the "Ask the worker" button;
 //   - the ua and bot modules' answers in that /_sid/v1 JSON: device data (ortb2.device) and the bot verdict
-//     (ortb2.device.ext.traffic), each grey where the module isn't on;
+//     (ortb2.device.ext.traffic), each grey where the module isn't on, and encrypted-ip's eip: well formed, not shown;
 //   - the HttpOnly recovery copy, on demand: "Delete _pubcid" deletes the script-readable cookie, as Safari's cap would,
 //     and asks /_sid/v1 again, which should restore the same id from _pubcid_sv (X-SharedID-Source: recovery);
 //   - the reflect and clickid modules, from cookies alone: uid1 (vendor-uid1.js) server-set for a year and restored
@@ -111,7 +111,8 @@
     ['reflect', 'A vendor\u2019s cookie kept by the reflect module'],
     ['clickid', 'An ad click ID kept by the clickid module'],
     ['device', 'Device data (the ua module)'],
-    ['bot', 'Bot verdict (the bot and ua modules)']
+    ['bot', 'Bot verdict (the bot and ua modules)'],
+    ['eip', 'Your IP address, encrypted (the encrypted-ip module)']
   ];
 
   function render() {
@@ -284,6 +285,7 @@
       id5(answer.body, answer.denied);
       deviceCheck(answer.body);
       botCheck(answer.body);
+      encryptedIpCheck(answer.body);
       if (!answer.denied && id) recoveryReady(id);
       return answer;
     }, function (error) {
@@ -292,6 +294,7 @@
       report('id5', 'info', 'ID5 ID (server-to-server): no answer', []);
       report('device', 'info', 'Device data: no answer', []);
       report('bot', 'info', 'Bot verdict: no answer', []);
+      report('eip', 'info', 'Encrypted IP address: no answer', []);
     });
   }
 
@@ -412,6 +415,42 @@
     } else {
       report('bot', 'pass', 'Not flagged as a bot', head.concat([' Your browser sent what browsers send, and its User-Agent names no crawler.'], ja4));
     }
+  }
+
+  // The opt-in encrypted-ip module, from the worker's /_sid/v1 answer: the client's address encrypted to each recipient's
+  // public key, in the payload's eip (never in ortb2). The row checks each value is well formed (unpadded base64url,
+  // 67 to 124 characters, with a kid) and doesn't show it: only the recipient's private key can read it.
+  function encryptedIpCheck(body) {
+    var statuses = (body.ext && body.ext.modules) || {};
+    var status = statuses['encrypted-ip'];
+    var about = ['The ', code('encrypted-ip'), ' module encrypts your IP address to the public key of each recipient (Google Publisher Tag, or a Prebid Server host), ',
+      'so the page can pass it on without any script being able to read it. '];
+    if (!status) {
+      report('eip', 'info', 'No encrypted-ip module on this deployment', about.concat(['It\u2019s opt-in at build time, and isn\u2019t on here.']));
+      return;
+    }
+    var eip = body.eip || {};
+    var values = [];
+    if (eip.google) values.push(['Google', eip.google]);
+    Object.keys(eip.pbs || {}).forEach(function (host) { values.push([host, eip.pbs[host]]); });
+    if (values.length === 0) {
+      var why = status.status === 'error' ? 'its settings are invalid.'
+        : status.stale ? 'no recipient has a usable key.'
+          : readCookie('euconsent-v2') !== undefined ? 'this page\u2019s TC string doesn\u2019t opt in to TCF Special Feature 1 (precise geolocation), which the IP address needs under GDPR, as for the plain address.'
+            : 'consent rules it out, or the platform gave no client address.';
+      report('eip', status.status === 'error' ? 'fail' : 'info', 'No encrypted IP address on this page view', about.concat(['It answered ', code(status.status), ': ', why]));
+      return;
+    }
+    var wellFormed = values.every(function (entry) {
+      return typeof entry[1].value === 'string' && /^[A-Za-z0-9_-]{67,124}$/.test(entry[1].value) && typeof entry[1].kid === 'string' && entry[1].kid !== '';
+    });
+    var list = values.map(function (entry) {
+      return entry[0] + ' (key ' + String(entry[1].kid) + ', ' + String(entry[1].value).length + ' characters' + (entry[1].stale ? ', stale key' : '') + ')';
+    }).join('; ');
+    report('eip', wellFormed ? 'pass' : 'fail', wellFormed ? 'The edge encrypted your IP address for ' + values.length + (values.length === 1 ? ' recipient' : ' recipients') : 'A malformed encrypted IP address',
+      about.concat([code('eip'), ': ', list, '. ', wellFormed
+        ? 'Each is a fresh encryption, different on every request, and only that recipient\u2019s private key can read it, so it isn\u2019t shown here.'
+        : 'A value should be unpadded base64url of 67 to 124 characters, with the kid of the key it was encrypted to.']));
   }
 
   var recoveryId;
@@ -589,7 +628,7 @@
         var why = optedOut ? 'You opted out (_pubcid_optout), so Prebid.js stores no ID.'
           : consent === 'denied' ? 'This page view denies consent (?consent=denied), so Prebid.js stores no ID.' : '';
         report('sync', why ? 'info' : 'fail', 'Prebid.js didn\u2019t call ' + SID + '/sync', [why || 'No pixelUrl request within 15 seconds.']);
-        ['cookie', 'same-id', 'eids', 'lifetime', 'worker', 'recovery', 'modules', 'id5', 'reflect', 'clickid', 'device', 'bot'].forEach(function (name) {
+        ['cookie', 'same-id', 'eids', 'lifetime', 'worker', 'recovery', 'modules', 'id5', 'reflect', 'clickid', 'device', 'bot', 'eip'].forEach(function (name) {
           report(name, 'info', rows[name].querySelector('.sid-title').textContent.replace(/[:\u2026]+$/, '') + ': not checked', []);
         });
         return undefined;
@@ -640,6 +679,7 @@
         report('id5', 'info', 'ID5 ID (server-to-server): ask the worker first', []);
         report('device', 'info', 'Device data: ask the worker first', []);
         report('bot', 'info', 'Bot verdict: ask the worker first', []);
+        report('eip', 'info', 'Encrypted IP address: ask the worker first', []);
       } else {
         checks.push(workerChecks(cookieId));
       }

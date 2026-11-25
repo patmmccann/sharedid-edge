@@ -101,10 +101,17 @@ deploy_functions() {
   # caching, reflect and clickid), for the browser tests run there with E2E_PATH=/platform; and SID_SKIP_BOTS=declared,
   # so a client that names itself as a bot gets none from /_sid/v1 (E2E_MODULES=ua,bot). Not bot's missingHeaders:
   # check-cloudfront sends a Chrome User-Agent without Sec-Fetch-* headers, which that heuristic calls a likely bot.
+  # With the ENCRYPTED_IP_TEST_KEY secret, the workflow builds the opt-in encrypted-ip module into the bundle and sets
+  # ENCRYPTED_IP_CONFIG, the test key's recipients (scripts/encrypted-ip-test-key.mjs): this function lists it.
+  local platform_modules=ip,geo,ua,bot,reflect,clickid platform_config="$module_config"
+  if [ -n "${ENCRYPTED_IP_CONFIG:-}" ]; then
+    platform_modules="$platform_modules,encrypted-ip"
+    platform_config="${module_config%\}},\"encrypted-ip\":$ENCRYPTED_IP_CONFIG}"
+  fi
   deploy "$prefix-platform" "$out/packaged.yaml" \
     "DistributionId=$distribution" "SidCookieDomain=$cookie_domain" "SidPublicOrigin=$public_origin" "SidBasePath=$platform_base_path" \
-    SidSyncCacheSeconds=0 SidModules=ip,geo,ua,bot,reflect,clickid SidAllowedOrigins=https://allowed.example SidSkipBots=declared \
-    "SidModuleConfig=$module_config"
+    SidSyncCacheSeconds=0 "SidModules=$platform_modules" SidAllowedOrigins=https://allowed.example SidSkipBots=declared \
+    "SidModuleConfig=$platform_config" SidModuleTimeoutMs=200
 }
 
 distribution="$(output "$prefix-site" DistributionId)"
