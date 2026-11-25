@@ -530,11 +530,24 @@ test('the results panel\'s own /_sid/v1 call carries the page\'s consent, so a G
   await expect(page.locator('#sid-verdict')).not.toHaveAttribute('data-status', 'fail');
 });
 
-// The id5 vendor module (server.ts runs it against a stub of ID5 in its own process; the live deployments don't build
-// it). The browser sees only the worker: the ID5 EID in /_sid/v1, and the HttpOnly cache cookie. What the stub received
-// is checked by the module's unit tests and the conformance suite, not here.
-interface Id5Payload { readonly eids?: readonly { readonly source: string; readonly uids: readonly { readonly id: string }[] }[] }
+// The id5 vendor module. Locally, server.ts runs it against a stub of ID5 in its own process; live, only the
+// deployments that build it (E2E_MODULES=id5: e2e.sharedid.dev/id5/ and /node-upstream-id5/) run it, against ID5's real
+// API with partner 173, ID5's test partner. The browser sees only the worker: the ID5 EID in /_sid/v1, and the HttpOnly
+// cache cookie. What ID5 receives is checked by the module's unit tests and the conformance suite, not here.
+interface Id5Payload {
+  readonly eids?: readonly { readonly source: string; readonly uids: readonly { readonly id: string }[] }[];
+  readonly ext?: { readonly modules?: { readonly id5?: { readonly status?: string; readonly forwards?: boolean } } };
+}
 const ID5_COOKIE = 'sid_id5_173';
+
+/**
+ * Whether the deployment runs the id5 module: locally always; live, when E2E_MODULES (the opt-in modules the live
+ * deployment builds, comma-separated) lists it.
+ */
+const ID5 = !LIVE || (process.env['E2E_MODULES'] ?? '').split(',').map(name => name.trim()).includes('id5');
+const NO_ID5 = 'this deployment doesn\'t build the id5 module (E2E_MODULES)';
+/** Against ID5's real API, whose IDs vary, rather than the local stub's `ID5*e2e-stub`. */
+const REAL_ID5 = LIVE && ID5;
 
 /** Loads the page with the results panel's worker checks, and returns the panel's /_sid/v1 answer. */
 async function visitWithWorker(page: Page, path: string): Promise<{ readonly payload: Id5Payload; readonly response: Response }> {
@@ -548,26 +561,70 @@ function id5Eid(payload: Id5Payload): { readonly id: string } | undefined {
   return payload.eids?.find(eid => eid.source === 'id5-sync.com')?.uids[0];
 }
 
+/** The module's cache cookie, decoded (base64url JSON): `e`, ID5's EIDs; `o: 1`, ID5's own opt-out. */
+interface Id5Cache { readonly e?: readonly unknown[]; readonly o?: number }
+function id5Cache(value: string): Id5Cache {
+  return JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as Id5Cache;
+}
+
+/**
+ * Page views with the panel's /_sid/v1 call until the worker has ID5's answer in its cache cookie, which it sets only
+ * when ID5 answered. The stub always answers at once; ID5 itself may take longer than the module's time limit on a page
+ * view (the module answers without it and asks again next time), so live it gets up to four page views. Fails when the
+ * module reports an error or a timeout, or ID5's answer never comes (no routable client IP, the request refused).
+ */
+async function visitUntilId5Answers(page: Page, context: BrowserContext): Promise<{ readonly payload: Id5Payload; readonly cache: Id5Cache; readonly value: string }> {
+  for (let attempt = 1; ; attempt++) {
+    const { payload } = await visitWithWorker(page, '/?checks=1');
+    expect(['ok', 'empty']).toContain(payload.ext?.modules?.id5?.status);
+    expect(payload.ext?.modules?.id5?.forwards).toBe(true);
+    const value = (await cookie(context, ID5_COOKIE))?.value;
+    if (value !== undefined) return { payload, cache: id5Cache(value), value };
+    if (!REAL_ID5 || attempt === 4) throw new Error(`no answer from ID5 cached in ${ID5_COOKIE} after ${String(attempt)} page views`);
+  }
+}
+
+/**
+ * The ID5 ID the worker returns, checked against its cache: locally the stub's; live, any ID ID5 gives, or none when
+ * ID5 answered with its opt-out (its documented way of declining), which the test records. Any other answer without an
+ * ID (an error from ID5, which the module caches as a back-off) fails.
+ */
+function expectId5Id(payload: Id5Payload, cache: Id5Cache): string | undefined {
+  const id = id5Eid(payload)?.id;
+  if (!REAL_ID5) {
+    expect(id).toBe('ID5*e2e-stub');
+    return id;
+  }
+  if (cache.o === 1) {
+    test.info().annotations.push({ type: 'id5', description: 'ID5 answered with its opt-out: no ID5 ID for this visitor' });
+    expect(id).toBeUndefined();
+    return undefined;
+  }
+  expect(cache.e?.length ?? 0, 'ID5 answered without an ID or its opt-out (an error?)').toBeGreaterThan(0);
+  expect(id).toMatch(/\S/);
+  return id;
+}
+
 test('with consent, /_sid/v1 has the ID5 ID the worker fetched server-to-server, cached in an HttpOnly cookie', async ({ page, context }) => {
-  test.skip(LIVE, 'the live deployments don\'t build the id5 module');
-  const { payload } = await visitWithWorker(page, '/?checks=1');
-  expect(id5Eid(payload)?.id).toBe('ID5*e2e-stub');
+  test.skip(!ID5, NO_ID5);
+  const { payload, cache } = await visitUntilId5Answers(page, context);
+  const id = expectId5Id(payload, cache);
   expect((await cookie(context, ID5_COOKIE))?.httpOnly).toBe(true);
+  if (id === undefined) return;
   await expect(page.locator('[data-check="id5"]')).toHaveAttribute('data-status', 'pass');
-  await expect(page.locator('[data-check="id5"]')).toContainText('ID5*e2e-stub');
+  await expect(page.locator('[data-check="id5"]')).toContainText(id);
 });
 
 test('the ID5 cache cookie is sent back and reused: the next page view gets the ID without a new cache', async ({ page, context, sid }) => {
-  test.skip(LIVE, 'the live deployments don\'t build the id5 module');
-  await visit(page);
-  const first = (await cookie(context, ID5_COOKIE))?.value;
-  expect(first).toBeDefined();
+  test.skip(!ID5, NO_ID5);
+  const { payload: before, value: first } = await visitUntilId5Answers(page, context);
   sid.reset();
   const sync = page.waitForResponse(response => new URL(response.url()).pathname === `${SID}/sync`);
   const { payload, response } = await visitWithWorker(page, '/?checks=1');
-  expect(id5Eid(payload)?.id).toBe('ID5*e2e-stub');
+  expect(id5Eid(payload)?.id).toBe(id5Eid(before)?.id);
+  expectId5Id(payload, id5Cache(first));
   // The browser sent the cache with the page view's requests, and neither answer replaced it.
-  for (const request of await sid.requests()) expect(request.cookie).toContain(`${ID5_COOKIE}=${String(first)}`);
+  for (const request of await sid.requests()) expect(request.cookie).toContain(`${ID5_COOKIE}=${first}`);
   for (const answer of [await sync, response]) {
     expect((await answer.headerValues('set-cookie')).filter(line => line.startsWith(`${ID5_COOKIE}=`))).toEqual([]);
   }
@@ -575,19 +632,21 @@ test('the ID5 cache cookie is sent back and reused: the next page view gets the 
 });
 
 test('without purpose 1 consent, there\'s no ID5 ID and the cache is deleted', async ({ page, context }) => {
-  test.skip(LIVE, 'the live deployments don\'t build the id5 module');
-  await visit(page);
-  expect(await cookie(context, ID5_COOKIE)).toBeDefined();
+  test.skip(!ID5, NO_ID5);
+  await visitUntilId5Answers(page, context);
   await page.goto(at('/?consent=denied'));
   await expect.poll(() => gdprMeta(page)).toMatchObject({ gdprApplies: true });
   // tcfControl stops Prebid.js's sync; the endpoint reads the denied string from euconsent-v2.
   const response = await page.request.get(`${SID}/v1`);
-  expect(id5Eid(await response.json() as Id5Payload)).toBeUndefined();
+  const payload = await response.json() as Id5Payload;
+  expect(id5Eid(payload)).toBeUndefined();
+  // Consent rules it out (core skips the module where GDPR applies, else the module declines): nothing goes to ID5.
+  expect(['skipped', 'empty']).toContain(payload.ext?.modules?.id5?.status);
   expect(await cookie(context, ID5_COOKIE)).toBeUndefined();
 });
 
 test('with a GPP opt-out, there\'s no ID5 ID, and the panel says consent ruled it out', async ({ page, context }) => {
-  test.skip(LIVE, 'the live deployments don\'t build the id5 or gpp modules');
+  test.skip(LIVE, 'the live deployments don\'t build the opt-in gpp module');
   const { payload } = await visitWithWorker(page, '/?consent=none&gpp=usnatOptOut&checks=1');
   expect(id5Eid(payload)).toBeUndefined();
   expect(await cookie(context, ID5_COOKIE)).toBeUndefined();
@@ -595,14 +654,47 @@ test('with a GPP opt-out, there\'s no ID5 ID, and the panel says consent ruled i
 });
 
 test('with Global Privacy Control, there\'s no ID5 ID, and an existing cache is deleted', async ({ page, context }) => {
-  test.skip(LIVE, 'the live deployments don\'t build the id5 module');
-  await visit(page);
-  expect(await cookie(context, ID5_COOKIE)).toBeDefined();
+  test.skip(!ID5, NO_ID5);
+  await visitUntilId5Answers(page, context);
   await page.setExtraHTTPHeaders({ 'Sec-GPC': '1' });
   const { payload } = await visitWithWorker(page, '/?checks=1');
   expect(id5Eid(payload)).toBeUndefined();
+  // GPC: the module may send nothing, so nothing went to ID5.
+  expect(payload.ext?.modules?.id5?.forwards).toBe(false);
   expect(await cookie(context, ID5_COOKIE)).toBeUndefined();
   await expect(page.locator('[data-check="id5"]')).toHaveAttribute('data-status', 'info');
+});
+
+test('the demo\'s ID5 tiles count only their own jobs, and the main tiles of their workflows not theirs', async ({ page }) => {
+  test.skip(LIVE, 'the demo\'s tiles are checked once, locally');
+  await page.route('https://api.github.com/**', route => {
+    const url = route.request().url();
+    const run = url.includes('e2e-cloudflare.yml') ? 1 : url.includes('e2e-node-upstream.yml') ? 3 : 2;
+    const jobs: Record<string, { name: string; conclusion: string }[]> = {
+      '/runs/1/': [
+        { name: 'Deploy to sharedid.dev, verify, conformance', conclusion: 'success' },
+        { name: 'Prebid.js end to end, live (chromium)', conclusion: 'success' },
+        { name: 'Deploy /id5 (the id5 module, against ID5), check', conclusion: 'success' },
+        { name: 'Prebid.js end to end, live on /id5 (chromium)', conclusion: 'failure' }
+      ],
+      '/runs/3/': [
+        { name: 'Deploy the image to AWS and the publisher to Cloudflare, then check them', conclusion: 'success' },
+        { name: 'Prebid.js end to end through the publisher (chromium)', conclusion: 'failure' },
+        { name: 'Deploy /node-upstream-id5 (the id5 module, against ID5), check', conclusion: 'success' },
+        { name: 'Prebid.js end to end through the publisher, on /node-upstream-id5 (chromium)', conclusion: 'success' }
+      ]
+    };
+    const body = url.includes('/workflows/')
+      ? { workflow_runs: [{ id: run, updated_at: new Date().toISOString(), html_url: 'https://github.com/', event: 'push', head_sha: '0123456789abcdef' }] }
+      : { jobs: Object.entries(jobs).find(([path]) => url.includes(path))?.[1] ?? [] };
+    return route.fulfill({ json: body, headers: { 'access-control-allow-origin': '*' } });
+  });
+  await page.goto('/demo/');
+  const tile = (name: RegExp) => page.locator('.tile').filter({ has: page.locator('h3', { hasText: name }) });
+  await expect(tile(/Cloudflare Worker$/)).toHaveAttribute('data-status', 'pass');
+  await expect(tile(/Cloudflare Worker with ID5$/)).toHaveAttribute('data-status', 'fail');
+  await expect(tile(/on AWS Lambda behind a Cloudflare publisher$/)).toHaveAttribute('data-status', 'fail');
+  await expect(tile(/Cloudflare publisher, with ID5$/)).toHaveAttribute('data-status', 'pass');
 });
 
 test('the demo\'s AWS tile turns red when its EU visitor fails', async ({ page }) => {

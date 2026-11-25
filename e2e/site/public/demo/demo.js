@@ -16,6 +16,16 @@
       shape: 'A Worker on the site\u2019s own route, e2e.sharedid.dev/_sid/*, beside the static site on the same hostname.',
       site: 'https://e2e.sharedid.dev/',
       workflow: 'e2e-cloudflare.yml',
+      // Not the /id5 jobs, the ID5 tile's.
+      jobs: /^(?!.*\/id5\b)/,
+      embed: true
+    },
+    {
+      name: 'Cloudflare Worker with ID5',
+      shape: 'A second Worker, built with the id5 module, on e2e.sharedid.dev/id5/_sid/*: it fetches the ID5 ID from ID5’s API server-to-server (test partner 173), beside a copy of the page at /id5/.',
+      site: 'https://e2e.sharedid.dev/id5/',
+      workflow: 'e2e-cloudflare.yml',
+      jobs: /\/id5\b/,
       embed: true
     },
     {
@@ -62,6 +72,16 @@
       shape: 'The Node.js server\u2019s container image as an upstream endpoint on AWS Lambda; a Cloudflare publisher forwards e2e.sharedid.dev/node-upstream/_sid/* to it.',
       site: 'https://e2e.sharedid.dev/node-upstream/',
       workflow: 'e2e-node-upstream.yml',
+      // Not the /node-upstream-id5 jobs, the ID5 tile's.
+      jobs: /^(?!.*node-upstream-id5)/,
+      embed: true
+    },
+    {
+      name: 'Node.js container behind a Cloudflare publisher, with ID5',
+      shape: 'The same container image as a second endpoint on AWS Lambda, with the id5 module fetching the ID5 ID from ID5’s API (test partner 173); a Cloudflare publisher forwards e2e.sharedid.dev/node-upstream-id5/_sid/* to it.',
+      site: 'https://e2e.sharedid.dev/node-upstream-id5/',
+      workflow: 'e2e-node-upstream.yml',
+      jobs: /node-upstream-id5/,
       embed: true
     }
   ];

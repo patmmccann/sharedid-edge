@@ -7,9 +7,16 @@
 //   node live/configs.mjs saas           # .out/saas.json, .out/saas-site.json
 //   node live/configs.mjs node-upstream  # .out/node-upstream-publisher.json, .out/node-upstream-conformance.json
 //   node live/configs.mjs node-upstream-hosts   # prints SID_HOSTS of the Node.js live test's endpoint
+//   node live/configs.mjs id5            # .out/id5.json, .out/id5-site.json (the live demo's id5 Worker)
+//   node live/configs.mjs node-upstream-id5        # .out/node-upstream-id5-publisher.json
+//   node live/configs.mjs node-upstream-id5-hosts  # prints SID_HOSTS of the Node.js live test's id5 endpoint
+// The id5 ones run the id5 vendor module against ID5's real API with partner 173, ID5's test partner: the Cloudflare
+// live tests workflow (.github/workflows/e2e-cloudflare.yml) runs id5, and the Node.js upstream one's id5 part
+// (packages/adapters/node/live/upstream.sh id5) the other two.
 import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeModuleList, writeWorkerEntry } from '../../../../scripts/module-list.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const out = join(here, '.out');
@@ -39,6 +46,30 @@ function e2eSite(cookieDomain) {
       }
     }
   };
+}
+
+/**
+ * e2eSite's settings plus the id5 vendor module, against ID5's real API: partner 173 (ID5's test partner), every
+ * browser (no `browsers`), its cache cookie on the cookie domain. One setting differs from the default: `timeoutMs`
+ * is 1000, not 300, with the module time limit above it, as the README's "Turning it on" says. A first request opens
+ * a new TLS connection to ID5, which took about 350 ms from a test machine (about 100 ms once open); a 300 ms limit
+ * abandons it before it's open, so every request starts again and none comes back. The module must be in the build too.
+ */
+function e2eId5Site(cookieDomain) {
+  const site = e2eSite(cookieDomain);
+  return {
+    ...site,
+    SID_MODULES: `${site.SID_MODULES},id5`,
+    SID_MODULE_TIMEOUT_MS: '1250',
+    SID_MODULE_CONFIG: { ...site.SID_MODULE_CONFIG, id5: { partner: 173, timeoutMs: 1000 } }
+  };
+}
+
+/** The e2e test page as static assets at <prefix>/ in .out/<name>/, so it calls <prefix>/_sid. Returns the folder. */
+function pageAt(name, prefix) {
+  rmSync(join(out, name), { recursive: true, force: true });
+  cpSync(join(here, '../../../../e2e/site/public'), join(out, name, prefix), { recursive: true });
+  return `./${name}`;
 }
 
 // Every Worker: no workers.dev, no logs, and the date wrangler.jsonc uses.
@@ -138,6 +169,47 @@ if (kind === 'upstream') {
     routes: [{ pattern: `${site}${conformancePrefix}/_sid/*`, zone_name: zone }],
     vars: { SID_ENDPOINT: need('NODE_UPSTREAM_CONFORMANCE_ENDPOINT') }
   });
+} else if (kind === 'id5') {
+  // The live demo's id5 deployment (.github/workflows/e2e-cloudflare.yml): a SharedID Edge Worker built with the id5
+  // vendor module (scripts/module-list.mjs, as the module's README says), on <site><prefix>/_sid/*, and the e2e test
+  // page as static assets at <site><prefix>/, so the main e2e environment (wrangler.jsonc, env.e2e) keeps its build
+  // and settings. The more specific route wins: <prefix>/_sid/* over <prefix>/* over the test site's /*.
+  const site = need('ID5_SITE');
+  const zone = need('ID5_ZONE');
+  const prefix = need('ID5_PREFIX');
+  const modules = join(out, 'id5-modules');
+  writeModuleList(modules, { modules: ['@sharedid-edge/module-id5#id5Module'] });
+  writeWorkerEntry(modules, join(here, '..'));
+  const { SID_MODULE_CONFIG: moduleConfig, ...settings } = e2eId5Site(need('ID5_COOKIE_DOMAIN'));
+  write('id5', {
+    ...common,
+    main: './id5-modules/worker.ts',
+    minify: true,
+    name: process.env['ID5_WORKER'] ?? 'sharedid-edge-e2e-id5',
+    routes: [{ pattern: `${site}${prefix}/_sid/*`, zone_name: zone }],
+    vars: { ...settings, SID_BASE_PATH: `${prefix}/_sid`, SID_MODULE_CONFIG: JSON.stringify(moduleConfig) }
+  });
+  write('id5-site', {
+    ...common,
+    name: process.env['ID5_SITE_WORKER'] ?? 'sharedid-edge-e2e-id5-site',
+    assets: { directory: pageAt('id5-site', prefix) },
+    routes: [{ pattern: `${site}${prefix}/*`, zone_name: zone }]
+  });
+} else if (kind === 'node-upstream-id5-hosts') {
+  // The Node.js server's id5 live test (packages/adapters/node/live/upstream.sh id5): SID_HOSTS of its endpoint.
+  process.stdout.write(`${JSON.stringify({ [need('NODE_UPSTREAM_SITE')]: e2eId5Site(need('NODE_UPSTREAM_COOKIE_DOMAIN')) })}\n`);
+} else if (kind === 'node-upstream-id5') {
+  // The publisher in front of the Node.js server's id5 endpoint (upstream.sh id5), as node-upstream's: forward.js on
+  // <site><id5 prefix>/_sid/*, and the e2e test page at <site><id5 prefix>/.
+  const prefix = need('NODE_UPSTREAM_ID5_PREFIX');
+  write('node-upstream-id5-publisher', {
+    ...common,
+    name: process.env['NODE_UPSTREAM_ID5_WORKER'] ?? 'sharedid-node-upstream-id5-publisher',
+    main: '../forward.js',
+    assets: { directory: pageAt('node-upstream-id5-site', prefix), run_worker_first: [`${prefix}/_sid/*`] },
+    routes: [{ pattern: `${need('NODE_UPSTREAM_SITE')}${prefix}/*`, zone_name: need('NODE_UPSTREAM_ZONE') }],
+    vars: { SID_ENDPOINT: need('NODE_UPSTREAM_ID5_ENDPOINT') }
+  });
 } else {
-  throw new Error('Usage: node live/configs.mjs upstream|saas|node-upstream|node-upstream-hosts');
+  throw new Error('Usage: node live/configs.mjs upstream|saas|node-upstream|node-upstream-hosts|id5|node-upstream-id5|node-upstream-id5-hosts');
 }

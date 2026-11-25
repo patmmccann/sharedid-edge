@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  SharedID Edge's live test of the Node.js server's container image with the id5 vendor module, as an upstream
+  operator's endpoint in trusted-upstream mode behind a publisher's Cloudflare Worker (packages/adapters/node/README.md,
+  Live tests). One Lambda function from the same image as the sharedid-node-upstream stack's (with AWS Lambda Web
+  Adapter, live/Dockerfile.lambda) and its public function URL: the browser tests' settings plus id5, which asks ID5's
+  real API with partner 173, ID5's test partner. Not for deployers.
+
+Parameters:
+  ImageUri:
+    Type: String
+    Description: The image in ECR (<account>.dkr.ecr.<region>.amazonaws.com/sharedid-node-upstream:<commit>).
+  UpstreamSecrets:
+    Type: String
+    NoEcho: true
+    Description: SID_UPSTREAM_SECRETS, a JSON array with the publisher Worker's shared secret.
+  BasePath:
+    Type: String
+    Default: /node-upstream-id5/_sid
+    Description: SID_BASE_PATH (the publisher forwards the path as it is).
+  Hosts:
+    Type: String
+    Description: SID_HOSTS (the publisher's hostname and its settings, with id5, JSON).
+
+Resources:
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # As the sharedid-node-upstream stack's Endpoint, plus the id5 module, which the image has and SID_MODULE_PACKAGES
+  # adds to the built-in ones; SID_HOSTS turns it on with the partner number. The function reaches ID5 over the public
+  # internet (no VPC), with the visitor's address from X-SID-Client-IP, which the publisher sets.
+  Endpoint:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref AWS::StackName
+      PackageType: Image
+      Code: { ImageUri: !Ref ImageUri }
+      Role: !GetAtt Role.Arn
+      Architectures: [x86_64]
+      MemorySize: 512
+      Timeout: 10
+      Environment:
+        Variables:
+          SID_UPSTREAM_SECRETS: !Ref UpstreamSecrets
+          SID_CLIENT_IP_HEADER: x-sid-client-ip
+          SID_LOCATION_HEADERS: '{"country":"x-sid-country","regionCode":"x-sid-region"}'
+          SID_BASE_PATH: !Ref BasePath
+          SID_COOKIE_DOMAIN: host-only
+          SID_MODULE_PACKAGES: '@sharedid-edge/module-id5#id5Module'
+          SID_HOSTS: !Ref Hosts
+
+  # A public function URL: anyone may call it, and the endpoint answers 403 without the shared secret.
+  EndpointUrl:
+    Type: AWS::Lambda::Url
+    Properties: { TargetFunctionArn: !Ref Endpoint, AuthType: NONE }
+  EndpointUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties: { FunctionName: !Ref Endpoint, Action: lambda:InvokeFunctionUrl, Principal: '*', FunctionUrlAuthType: NONE }
+  EndpointInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties: { FunctionName: !Ref Endpoint, Action: lambda:InvokeFunction, Principal: '*', InvokedViaFunctionUrl: true }
+
+  # Kept for two weeks: the server logs only its start-up line and errors, never requests.
+  EndpointLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: !Sub '/aws/lambda/${Endpoint}', RetentionInDays: 14 }
+
+Outputs:
+  EndpointUrl:
+    Value: !GetAtt EndpointUrl.FunctionUrl
