@@ -603,6 +603,7 @@ test('with Global Privacy Control, there\'s no ID5 ID, and an existing cache is 
   expect(id5Eid(payload)).toBeUndefined();
   expect(await cookie(context, ID5_COOKIE)).toBeUndefined();
   await expect(page.locator('[data-check="id5"]')).toHaveAttribute('data-status', 'info');
+});
 
 /** Loads the page with a click on the panel (a button or link that reloads it), and waits for the sync. */
 async function reloadWith(page: Page, click: () => Promise<void>): Promise<void> {
