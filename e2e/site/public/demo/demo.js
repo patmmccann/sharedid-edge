@@ -21,8 +21,8 @@
       embed: true
     },
     {
-      name: 'Cloudflare Worker, with the IP and location modules',
-      shape: 'A second Worker, on e2e.sharedid.dev/platform/_sid/*, with the ip and geo modules reading Cloudflare\u2019s request data, beside a copy of the page at /platform/.',
+      name: 'Cloudflare Worker, with the IP, location, device and bot modules',
+      shape: 'A second Worker, on e2e.sharedid.dev/platform/_sid/*, with the ip, geo, ua and bot modules reading Cloudflare\u2019s request data, beside a copy of the page at /platform/.',
       site: 'https://e2e.sharedid.dev/platform/',
       workflow: 'e2e-cloudflare.yml',
       jobs: /^Deploy to sharedid\.dev|\/platform/,
@@ -37,7 +37,7 @@
       jobs: /CloudFront|^An EU visitor \(eu-central-1\)$/
     },
     {
-      name: 'AWS CloudFront + Lambda, with the IP and location modules',
+      name: 'AWS CloudFront + Lambda, with the IP, location, device and bot modules',
       shape: 'A second function behind the same distribution\u2019s /platform/_sid/* behaviour, with the ip, geo, ua and bot modules reading CloudFront\u2019s viewer headers, beside a copy of the page at /platform/.',
       site: 'https://da614puh352or.cloudfront.net/platform/',
       workflow: 'e2e-aws.yml',

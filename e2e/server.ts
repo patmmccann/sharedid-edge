@@ -1,13 +1,15 @@
 // Test site: serves a page that loads unmodified Prebid.js (a bundle of the npm package's chunks, bundle-prebid.ts), and answers
-// /_sid/* with SharedID Edge (the built core package and the reflect, clickid, gpp and id5 modules), on one origin, as a publisher's CDN would.
+// /_sid/* with SharedID Edge (the built core package and the reflect, clickid, gpp, id5, ua and bot modules), on one origin, as a publisher's CDN would.
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { connect } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 import { createHandler, resolveConfig, settingsFromEnv, trustedUpstreamFromEnv, withTrustedUpstream, type ForwardFetch, type PlatformInfo, type SharedIdEdgeHandler } from '../packages/core/dist/index.js';
+import { botModule } from '../packages/modules/bot/dist/index.js';
 import { clickIdModule } from '../packages/modules/clickid/dist/index.js';
 import { gppModule } from '../packages/modules/gpp/dist/index.js';
 import { reflectModule } from '../packages/modules/reflect/dist/index.js';
+import { uaModule } from '../packages/modules/ua/dist/index.js';
 import { id5Module } from '../packages/vendor-modules/id5/dist/index.js';
 
 // The live test site's files (site/public): the page, its scripts, the demo (demo/) and the Prebid.js bundle
@@ -19,7 +21,10 @@ const port = Number(process.env['PORT'] ?? 4310);
 // /sync, so Prebid.js's pixel call refreshes uid1 and keeps _ga; so does clickid, which keeps ad click IDs from the
 // landing page's URL (the pixel call's Referer). The opt-in gpp module reads the US opt-outs in the gpp and gpp_sid
 // parameters Prebid.js adds to the pixel call with pixelConsent: true. The live deployments don't build it, so the
-// tests that need it run locally only.
+// tests that need it run locally only. ua and bot (with missingHeaders) answer /_sid/v1's device data and traffic
+// signal, as on the live platform-module deployments, with SID_SKIP_BOTS=declared: a client that names itself as a bot
+// gets no SharedID from /_sid/v1 (ua, which declares it, runs there only), and the tests check the browsers aren't taken
+// for one.
 // The id5 vendor module, against a stub of ID5's fetch endpoint in this process: the handler's forwardFetch, as in the
 // module's unit tests, so the server's request to ID5 never leaves this process and the browser never sees it. Core
 // still applies its checks (ID5's declared hosts, https) before calling it. The stub answers with one EID,
@@ -45,7 +50,8 @@ const handler = createHandler({
     // writes _pubcid on sharedid.test, so the endpoint does too, as on the live site with sharedid.dev.
     SID_COOKIE_DOMAIN: 'sharedid.test',
     SID_SYNC_CACHE_SECONDS: '0',
-    SID_MODULES: 'reflect,clickid,gpp,id5',
+    SID_MODULES: 'reflect,clickid,gpp,id5,ua,bot',
+    SID_SKIP_BOTS: 'declared',
     // id5 waits up to 300 ms for ID5 (here, the stub), so the module time limit is above it.
     SID_MODULE_TIMEOUT_MS: '1000',
     // uid1 as the reflect README's walkthrough configures it: on the domain the vendor tag writes it on, readable by
@@ -53,10 +59,11 @@ const handler = createHandler({
     SID_MODULE_CONFIG: JSON.stringify({
       reflect: { cookies: [{ name: 'uid1', maxAgeDays: 365, domain: 'sharedid.test', httpOnly: false, restore: true }, { name: '_ga', maxAgeDays: 400, restore: true }] },
       // ID5's test partner, and the cache cookie on the cookie domain.
-      id5: { partner: 173, domain: 'sharedid.test' }
+      id5: { partner: 173, domain: 'sharedid.test' },
+      bot: { missingHeaders: true }
     })
   }),
-  modules: [reflectModule, clickIdModule, gppModule, id5Module],
+  modules: [reflectModule, clickIdModule, gppModule, id5Module, uaModule, botModule],
   forwardFetch: id5Stub
 });
 

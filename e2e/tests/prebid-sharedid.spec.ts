@@ -658,6 +658,43 @@ test('when consent rules the ID out, the clickid row says so rather than failing
   await expect(page.locator('#sid-verdict')).not.toHaveAttribute('data-status', 'fail');
 });
 
+/**
+ * The modules the deployment under test runs beyond the browser tests' settings (E2E_MODULES, comma-separated): ua and
+ * bot locally (server.ts) and on the live platform-module deployments, which also set SID_SKIP_BOTS=declared.
+ */
+const MODULES = new Set((process.env['E2E_MODULES'] ?? (LIVE ? '' : 'ua,bot')).split(',').map(name => name.trim()).filter(name => name !== ''));
+
+interface TrafficPayload {
+  sharedid?: string;
+  ortb2?: { device?: { ext?: { traffic?: { bot?: boolean; botKind?: string; sources?: string[] } } } };
+}
+
+test('the results panel shows the device data and the bot verdict, and the browser isn\'t taken for a bot', async ({ page, context }) => {
+  test.skip(!MODULES.has('ua') || !MODULES.has('bot'), 'the deployment runs ua and bot only with E2E_MODULES=ua,bot');
+  await visit(page, '/?checks=1');
+  await expect(page.locator('[data-check="worker"]')).toHaveAttribute('data-status', 'pass');
+  await expect(page.locator('[data-check="device"]')).toHaveAttribute('data-status', 'pass');
+  // Device data comes from Client Hints, which only Chromium sends, and only over https; the row says which.
+  await expect(page.locator('[data-check="device"]')).toContainText(/The edge read your device|no device data from this browser/);
+  await expect(page.locator('[data-check="bot"]')).toHaveAttribute('data-status', 'pass');
+  await expect(page.locator('[data-check="bot"]')).toContainText('Not flagged as a bot');
+  expect((await cookie(context, '_pubcid'))?.value).toBeDefined();
+  await expect(page.locator('#sid-verdict')).toHaveAttribute('data-status', 'pass');
+});
+
+test('a client that names itself as a bot (curl) is flagged, and with SID_SKIP_BOTS gets no SharedID', async ({ page }) => {
+  test.skip(!MODULES.has('ua') || !MODULES.has('bot'), 'the deployment runs ua and bot only with E2E_MODULES=ua,bot');
+  // gdpr=0, as a page outside the EU may send: so it's the bot verdict, not missing consent, that decides.
+  const response = await page.request.get(`${SID}/v1?gdpr=0`, { headers: { 'User-Agent': 'curl/8.5.0', Accept: '*/*' } });
+  expect(response.status()).toBe(200);
+  expect(response.headers()['x-sharedid-status']).toBe('skipped: bot');
+  const body = await response.json() as TrafficPayload;
+  expect(body.sharedid).toBeUndefined();
+  expect(body.ortb2?.device?.ext?.traffic).toMatchObject({ bot: true, botKind: 'declared' });
+  expect(body.ortb2?.device?.ext?.traffic?.sources).toContain('ua');
+  expect((await response.headersArray()).filter(h => h.name.toLowerCase() === 'set-cookie' && h.value.startsWith('_pubcid='))).toEqual([]);
+});
+
 // The demo's tiles for the main sites and for the copies with the platform modules, at /platform/.
 const AWS_TILE = '.tile[data-workflow="e2e-aws.yml"]:not([data-site$="/platform/"])';
 const AWS_PLATFORM_TILE = '.tile[data-workflow="e2e-aws.yml"][data-site$="/platform/"]';
